@@ -10,7 +10,7 @@ import { primaryAuthority, enabledSources, registry } from './src/sources/index.
 import { approvalMessage, decidedMessage, evidenceReport, channelCaption, instagramCaption } from './src/format.js';
 import { renderCard, closeBrowser } from './src/render/index.js';
 import { publishTelegram, sendForApproval } from './src/publish/telegram.js';
-import { publishInstagram, instagramConfigured, remainingQuota } from './src/publish/instagram.js';
+import { publishInstagram, instagramConfigured, remainingQuota, refreshToken, tokenDaysLeft, authMode } from './src/publish/instagram.js';
 import { publishTargets, targetsHe } from './src/publish/targets.js';
 import { imagesEnabled } from './src/images.js';
 import { reasonHe } from './src/verify.js';
@@ -353,6 +353,28 @@ function logReject(entry) {
   }
 }
 
+// The Instagram Login path issues 60-day tokens. Nothing about their expiry is
+// visible until publishing simply starts failing, so this runs on boot and once
+// a day; refreshToken() itself decides whether it is actually due.
+async function maybeRefreshIgToken() {
+  if (!instagramConfigured() || authMode() === 'facebook') return;
+  try {
+    const r = await refreshToken();
+    if (r.refreshed) {
+      console.log(`   instagram: token refreshed, ${Math.round(r.daysLeft)} days left`);
+      await notify.send(bot.telegram, staging, `🔑 טוקן אינסטגרם חודש — תקף עוד ${Math.round(r.daysLeft)} ימים`);
+    }
+  } catch (e) {
+    console.error('instagram: token refresh failed:', e.message);
+    await notify.send(
+      bot.telegram,
+      staging,
+      `🔴 חידוש טוקן אינסטגרם נכשל: ${e.message}
+אם לא יחודש, הפרסום יפסיק לעבוד. הרץ npm run ig-token.`
+    );
+  }
+}
+
 async function doRun({ announce = true } = {}) {
   if (running) return null;
   running = true;
@@ -444,7 +466,12 @@ bot.command('igquota', async (ctx) => {
   if (!instagramConfigured()) return ctx.reply('אינסטגרם לא מוגדר');
   try {
     const left = await remainingQuota();
-    ctx.reply(left == null ? 'לא התקבלה מכסה מ-Graph API' : `📸 נותרו ${left} פרסומים ב-24 השעות הקרובות`);
+    const days = tokenDaysLeft();
+    const lines = [left == null ? 'לא התקבלה מכסה מ-Graph API' : `📸 נותרו ${left} פרסומים ב-24 השעות הקרובות`];
+    // The token's remaining life is the thing that silently kills this
+    // integration, so it is reported next to the quota rather than hidden.
+    if (days != null) lines.push(`🔑 הטוקן תקף עוד ${days} ימים (מתחדש אוטומטית)`);
+    ctx.reply(lines.join('\n'));
   } catch (e) {
     ctx.reply(`שגיאה: ${e.message}`);
   }
@@ -480,6 +507,7 @@ function tick() {
   // timer so a restart mid-day doesn't trigger a second run.
   if (day !== lastRunDay && now.getHours() >= Number(RUN_HOUR)) {
     lastRunDay = day;
+    maybeRefreshIgToken().catch(() => {});
     doRun().catch((e) => console.error('daily run failed:', e.message));
   }
 
@@ -524,6 +552,8 @@ async function main() {
   if (!CHANNEL_ID) console.log('   telegram: approval only (no CHANNEL_ID set, nothing posts to a channel)');
   console.log(`   images: ${imagesEnabled() ? 'a provider is configured' : 'text-led cards only'}`);
   console.log(`   daily run at ${RUN_HOUR}:00 · target ${dailyTarget()} · drip every ${POST_INTERVAL_MINUTES} min`);
+
+  await maybeRefreshIgToken();
 
   setInterval(() => {
     publishNext().catch((e) => console.error('publish error:', e.message));

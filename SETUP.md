@@ -191,27 +191,34 @@ which is where most of the friction lives.
 
 ### 3.3 Get a token
 
-In your app, add the **Instagram** product, then use its Business Login flow (or
-the Graph API Explorer with the host set to `.instagram.com/`) to generate a
-token for your Instagram account. Copy it, then:
+**Ignore the Graph API Explorer.** On this path you never touch it, and you
+never pick permissions from a dropdown. It is one button in the App Dashboard.
+
+1. App Dashboard → left menu → **Instagram** → **API setup with Instagram
+   business login**
+2. **Step 1** — add your Instagram account if it isn't listed
+3. **Step 3, "Generate access token"** → click **Generate token** next to your
+   account → log in to Instagram → **copy the token**
+4. Still on that page, copy the **Instagram app secret** from step 1.
+   ⚠️ This is *not* the Facebook app secret on the Basic Settings page. They are
+   different values and the exchange fails with the wrong one.
+
+Then:
 
 ```
 npm run ig-token
 ```
 
-It exchanges the short-lived token for a long-lived one, resolves your Instagram
-user id, and prints the two lines for `.env`:
+It asks for those two, exchanges the 1-hour token for a 60-day one, resolves
+your Instagram user id, and records the expiry so the bot can keep it alive.
+Paste the two printed lines into `.env`.
 
-```
-IG_USER_ID=...
-IG_ACCESS_TOKEN=...
-```
-
-**On token expiry:** the Instagram Login path issues 60-day tokens. The bot
-refreshes automatically — on boot and daily, whenever fewer than 20 days remain
-— and stores the refreshed value in `data/store.json` rather than `.env`, so it
-survives restarts. `/igquota` reports days remaining. This is the one thing that
-would otherwise work perfectly for two months and then stop dead.
+**On expiry — this is the part that bites.** Instagram Login tokens last 60
+days. The bot refreshes automatically on boot and once a day, whenever fewer
+than 20 days remain, and stores the refreshed value in `data/store.json` rather
+than `.env` so it survives restarts. `/igquota` reports days remaining. Without
+that, publishing would work perfectly for two months and then stop dead with no
+warning.
 
 ### 3.4 Check before publishing
 

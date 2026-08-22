@@ -1,26 +1,28 @@
+import { loadEnv } from '../src/env.js';
+loadEnv();
+
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
+import * as store from '../src/store.js';
 
-// Turns the short-lived token from the Graph API Explorer into the two values
-// .env actually needs: IG_USER_ID and IG_ACCESS_TOKEN.
+// Turns the 1-hour token from the App Dashboard into the two values .env needs,
+// and seeds the refresh clock so the bot can keep it alive afterwards.
 //
-// This exists because the manual version is three curls that each return
-// something called "access_token", and only the third one is correct. Picking
-// the wrong one is not an error you find out about now — it works perfectly
-// and then the pipeline dies 60 days later. So the script does the whole chain
-// and then *verifies* the result with debug_token instead of asking you to
-// eyeball a web page.
+// Supports both auth paths. The default (Instagram Login) is the one worth
+// using: no Facebook Page, no permissions dropdown, no Graph API Explorer —
+// just a "Generate token" button in the dashboard.
 //
 //   npm run ig-token
 //
-// Nothing is written to disk and nothing is passed as a shell argument, so the
-// app secret stays out of your shell history.
+// Reads its inputs interactively, so the app secret never lands in shell
+// history, and prints only what you need to paste.
 
+const IG_HOST = 'https://graph.instagram.com';
+const FB_HOST = 'https://graph.facebook.com';
 const V = process.env.GRAPH_API_VERSION || 'v21.0';
-const GRAPH = `https://graph.facebook.com/${V}`;
 
-async function get(path, params) {
-  const url = `${GRAPH}/${path}?${new URLSearchParams(params)}`;
+async function get(host, path, params, { versioned = true } = {}) {
+  const url = `${host}${versioned ? `/${V}` : ''}/${path}?${new URLSearchParams(params)}`;
   const res = await fetch(url);
   const json = await res.json().catch(() => ({}));
   if (!res.ok || json.error) {
@@ -30,158 +32,148 @@ async function get(path, params) {
   return json;
 }
 
-const line = () => console.log('─'.repeat(64));
-
-async function main() {
+const line = () => console.log('─'.repeat(66));
+const ask = async (q) => {
   const rl = createInterface({ input: stdin, output: stdout });
+  const a = (await rl.question(q)).trim();
+  rl.close();
+  return a;
+};
 
+/* -------------------------------------------------------------------------- */
+/* Instagram Login (default)                                                  */
+/* -------------------------------------------------------------------------- */
+
+async function instagramLogin() {
   console.log(`
-Before running this, get a SHORT-LIVED token:
+INSTAGRAM LOGIN  (no Facebook Page needed)
 
-  1. https://developers.facebook.com/tools/explorer/
-  2. "Meta App" dropdown       -> your app (TiyulPlus)
-  3. "User or Page" dropdown   -> User Token
-  4. Add these four permissions:
-       instagram_basic
-       instagram_content_publish
-       pages_show_list
-       pages_read_engagement
-  5. Click "Generate Access Token", approve, and pick your Page and
-     Instagram account in the popup.
-  6. Copy the long string from the "Access Token" box.
+In the App Dashboard:
 
-That token expires in about an hour. That is expected — it is only the
-starting point, and this script trades it for the durable one.
+  1. Left menu -> Instagram -> "API setup with Instagram business login"
+  2. Step 1 adds your Instagram account, if it isn't there already
+  3. Step 3, "Generate access token" -> click Generate token next to your
+     account -> log in to Instagram -> copy the token
+  4. On that same page, copy the "Instagram app secret" (step 1). It is NOT
+     the same value as the Facebook app secret on the Basic Settings page.
+
+The token you copied lasts one hour. That is expected — this trades it for a
+60-day one and records when it expires, so the bot can refresh it from then on.
 `);
 
-  const appId = (await rl.question('App ID: ')).trim();
-  const appSecret = (await rl.question('App secret: ')).trim();
-  const shortToken = (await rl.question('Short-lived token from the Explorer: ')).trim();
-  rl.close();
+  const appSecret = await ask('Instagram app secret: ');
+  const shortToken = await ask('Token from "Generate token": ');
+  if (!appSecret || !shortToken) throw new Error('both values are required');
 
-  if (!appId || !appSecret || !shortToken) {
-    console.error('\nAll three are required.');
-    process.exitCode = 1;
-    return;
-  }
+  // 1. 1 hour -> 60 days. Unversioned host path: this endpoint is not versioned.
+  console.log('\n1/3  exchanging for a long-lived token...');
+  const long = await get(
+    IG_HOST,
+    'access_token',
+    { grant_type: 'ig_exchange_token', client_secret: appSecret, access_token: shortToken },
+    { versioned: false }
+  );
+  const token = long.access_token;
+  const expiresIn = Number(long.expires_in) || 60 * 24 * 3600;
+  if (!token) throw new Error('no long-lived token came back');
+  console.log(`     ok — valid ${Math.round(expiresIn / 86400)} days`);
 
-  // 1. short-lived user token -> long-lived user token (~60 days).
+  // 2. Who is it for.
+  console.log('2/3  resolving the account...');
+  const me = await get(IG_HOST, 'me', { fields: 'id,username', access_token: token });
+  if (!me.id) throw new Error('/me returned no id');
+  console.log(`     @${me.username || '?'} (${me.id})`);
+
+  // 3. Seed the refresh clock now. Without a recorded expiry the bot cannot
+  //    tell how long is left, and the whole point of storing it is that the
+  //    refreshed value has to outlive .env.
+  console.log('3/3  recording the expiry so the bot can auto-refresh...');
+  store.setIgToken({ token, expiresAt: Date.now() + expiresIn * 1000 });
+  console.log('     saved to data/store.json');
+
+  return { igUserId: me.id, token, expiresIn, mode: 'instagram' };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Facebook Login (fallback)                                                  */
+/* -------------------------------------------------------------------------- */
+
+async function facebookLogin() {
+  console.log(`
+FACEBOOK LOGIN  (requires a Facebook Page linked to the Instagram account)
+
+Graph API Explorer -> your app -> "Get User Access Token" -> permissions
+instagram_basic, instagram_content_publish, pages_show_list,
+pages_read_engagement -> Generate -> copy the EAAG... token.
+`);
+
+  const appId = await ask('Facebook App ID: ');
+  const appSecret = await ask('Facebook App secret: ');
+  const shortToken = await ask('Short-lived user token: ');
+  if (!appId || !appSecret || !shortToken) throw new Error('all three are required');
+
   console.log('\n1/4  exchanging for a long-lived user token...');
-  const longLived = await get('oauth/access_token', {
+  const long = await get(FB_HOST, 'oauth/access_token', {
     grant_type: 'fb_exchange_token',
     client_id: appId,
     client_secret: appSecret,
     fb_exchange_token: shortToken,
   });
-  const userToken = longLived.access_token;
-  console.log('     ok');
 
-  // 2. long-lived user token -> Page token. THIS is the one that matters: a
-  //    Page token derived from a long-lived user token carries no expiry.
   console.log('2/4  finding your Page...');
-  const pages = await get('me/accounts', { access_token: userToken });
+  const pages = await get(FB_HOST, 'me/accounts', { access_token: long.access_token });
   const list = pages.data || [];
-
-  if (!list.length) {
-    console.error(`
-No Pages came back. Usually one of:
-  - the Instagram account is not linked to a Facebook Page yet
-  - you did not tick the Page in the Explorer's login popup
-  - pages_show_list was not among the granted permissions
-`);
-    process.exitCode = 1;
-    return;
-  }
-
-  let page = list[0];
-  if (list.length > 1) {
-    const rl2 = createInterface({ input: stdin, output: stdout });
-    console.log('');
-    list.forEach((p, i) => console.log(`     [${i + 1}] ${p.name}`));
-    const pick = Number(await rl2.question('     which Page? '));
-    rl2.close();
-    page = list[Number.isFinite(pick) && list[pick - 1] ? pick - 1 : 0];
-  }
+  if (!list.length) throw new Error('no Pages — the Instagram account is probably not linked to one');
+  const page = list[0];
   console.log(`     ${page.name}`);
 
-  // 3. Page -> the Instagram account attached to it.
   console.log('3/4  finding the Instagram account on that Page...');
-  const linked = await get(page.id, {
+  const linked = await get(FB_HOST, page.id, {
     fields: 'instagram_business_account',
     access_token: page.access_token,
   });
   const igUserId = linked.instagram_business_account?.id;
+  if (!igUserId) throw new Error(`the Page "${page.name}" has no Instagram Business account attached`);
 
-  if (!igUserId) {
-    console.error(`
-That Page has no Instagram Business account attached.
-
-Fix it in the Instagram app: Settings -> Account type and tools ->
-Switch to professional account, then link "${page.name}". A personal
-Instagram account cannot publish through the API at all.
-`);
-    process.exitCode = 1;
-    return;
-  }
-  console.log(`     ${igUserId}`);
-
-  // 4. Verify rather than trust. This is the whole point of the script: the
-  //    wrong token behaves identically today and fails silently in two months.
-  console.log('4/4  verifying the token...');
-  const debug = await get('debug_token', {
+  console.log('4/4  verifying the token never expires...');
+  const debug = await get(FB_HOST, 'debug_token', {
     input_token: page.access_token,
     access_token: `${appId}|${appSecret}`,
   });
-  const d = debug.data || {};
-  const neverExpires = d.expires_at === 0;
-  const scopes = d.scopes || [];
-  const missing = ['instagram_basic', 'instagram_content_publish', 'pages_read_engagement'].filter(
-    (s) => !scopes.includes(s)
-  );
+  if (debug.data?.expires_at !== 0) {
+    throw new Error('that is a user token, not a Page token — it would die in ~60 days');
+  }
+  console.log('     ok — never expires');
 
-  console.log(`     type: ${d.type || 'unknown'}`);
-  console.log(`     expires: ${neverExpires ? 'never ✓' : new Date((d.expires_at || 0) * 1000).toISOString()}`);
-  if (missing.length) console.log(`     ⚠ missing permissions: ${missing.join(', ')}`);
+  return { igUserId, token: page.access_token, mode: 'facebook' };
+}
+
+/* -------------------------------------------------------------------------- */
+
+async function main() {
+  const mode = (process.env.IG_AUTH || 'instagram').toLowerCase();
+  const result = mode === 'facebook' ? await facebookLogin() : await instagramLogin();
 
   line();
-  if (!neverExpires) {
-    console.log(`
-⚠  This token has an expiry date, which means it is a USER token, not a
-   PAGE token — it will stop working on the date above and publishing will
-   fail silently from then on.
-
-   Re-run and make sure you are copying the token from the Explorer's
-   "Access Token" box while "User Token" is selected. If it keeps happening,
-   the Page may not be properly linked.
-`);
-    process.exitCode = 1;
-    return;
-  }
-  if (missing.length) {
-    console.log(`
-⚠  The token works but is missing permissions the pipeline needs. Re-generate
-   it in the Explorer with all four ticked.
-`);
-    process.exitCode = 1;
-    return;
-  }
-
   console.log(`
-Done. Put these two lines in .env:
+Put these in .env:
 
-IG_USER_ID=${igUserId}
-IG_ACCESS_TOKEN=${page.access_token}
+IG_USER_ID=${result.igUserId}
+IG_ACCESS_TOKEN=${result.token}
+${result.mode === 'facebook' ? 'IG_AUTH=facebook\n' : ''}
+Also make sure CARD_PUBLIC_BASE_URL points at a PUBLIC https directory —
+Instagram fetches the card image from that URL itself, so a card that only
+exists on local disk cannot be published.
 
-Then check it end to end without publishing anything:
-
-  npm start        and send /igquota in the Telegram DM
+Then:  npm start   and send /igquota in the Telegram DM.
 `);
   line();
 }
 
 main().catch((e) => {
-  console.error(`\nFailed: ${e.message}`);
-  console.error('\nIf it mentions an invalid or expired token, the short-lived one timed out —');
-  console.error('generate a fresh one in the Explorer and run this again.');
+  console.error(`\nFailed: ${e.message}\n`);
+  if (/expired|invalid|OAuth/i.test(e.message)) {
+    console.error('That usually means the 1-hour token timed out — generate a fresh one and rerun.');
+  }
   process.exitCode = 1;
 });
