@@ -195,7 +195,7 @@ BrickDeal.
 | `src/pipeline.js` | The daily pass: gather → rank → build until the target is met |
 | `src/render/` | `theme.js` (tokens + CSS), `templates.js` (the five layouts), `index.js` (Chromium → JPEG) |
 | `src/images.js` | Image provenance policy. Three permitted origins, tag required |
-| `src/images/pexels.js` | The stock provider. Portrait crops, bytes inlined rather than hotlinked |
+| `src/images/pexels.js` | The stock provider. Portrait crops, bytes inlined rather than hotlinked. Pexels requires no attribution, so cards carry none — the provenance still shows in the approval message |
 | `src/publish/` | `telegram.js`, `instagram.js` (Graph API two-step) |
 | `src/format.js` | The approval message and the published captions — kept deliberately separate |
 | `src/store.js` | Dedupe, staging, pending edits, publish queue, and the published log the quotas are computed from |

@@ -116,7 +116,6 @@ const photoCss = `
     background: linear-gradient(to bottom, rgba(16,32,31,0.72), rgba(16,32,31,0));
   }
   .layer { position: relative; z-index: 2; display: flex; flex-direction: column; height: 100%; }
-  .credit { font-size: 19px; color: rgba(242,236,224,0.5); margin-top: 12px; }
 `;
 
 /** photoFull — full-bleed picture, the description sitting in the bottom third. */
@@ -142,7 +141,6 @@ function photoFullCard(d, accent, image) {
         <div class="foot">
           <div class="src">מקור: <span class="ltr">${e(sourceLabel(srcUrl(d)))}</span></div>
         </div>
-        ${image.credit ? `<div class="credit"><span class="ltr">${e(image.credit)}</span></div>` : ''}
       </div>
     </div>
   </div>`;
@@ -180,7 +178,6 @@ function photoBandCard(d, accent, image) {
       <div class="foot">
         <div class="src">מקור: <span class="ltr">${e(sourceLabel(srcUrl(d)))}</span></div>
       </div>
-      ${image.credit ? `<div class="credit"><span class="ltr">${e(image.credit)}</span></div>` : ''}
     </div>
   </div>`;
 }
@@ -206,7 +203,6 @@ function photoFrameCard(d, accent, image) {
     <div class="foot">
       <div class="src">מקור: <span class="ltr">${e(sourceLabel(srcUrl(d)))}</span></div>
     </div>
-      ${image.credit ? `<div class="credit"><span class="ltr">${e(image.credit)}</span></div>` : ''}
   </div>`;
 }
 
