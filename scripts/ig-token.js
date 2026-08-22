@@ -57,28 +57,63 @@ In the App Dashboard:
   4. On that same page, copy the "Instagram app secret" (step 1). It is NOT
      the same value as the Facebook app secret on the Basic Settings page.
 
-The token you copied lasts one hour. That is expected — this trades it for a
-60-day one and records when it expires, so the bot can refresh it from then on.
+Whatever the dashboard hands you — a 1-hour token or an already-long-lived one
+— this sorts it out and records when it expires, so the bot can refresh it.
 `);
 
   const appSecret = await ask('Instagram app secret: ');
   const shortToken = await ask('Token from "Generate token": ');
   if (!appSecret || !shortToken) throw new Error('both values are required');
 
-  // 1. 1 hour -> 60 days. Unversioned host path: this endpoint is not versioned.
-  console.log('\n1/3  exchanging for a long-lived token...');
-  const long = await get(
-    IG_HOST,
-    'access_token',
-    { grant_type: 'ig_exchange_token', client_secret: appSecret, access_token: shortToken },
-    { versioned: false }
-  );
-  const token = long.access_token;
-  const expiresIn = Number(long.expires_in) || 60 * 24 * 3600;
-  if (!token) throw new Error('no long-lived token came back');
-  console.log(`     ok — valid ${Math.round(expiresIn / 86400)} days`);
+  // The dashboard's "Generate token" button already hands back a LONG-LIVED
+  // token, while the OAuth Business Login flow hands back a 1-hour one. They
+  // need opposite calls and there is no field distinguishing them, so try the
+  // exchange and fall back to a refresh.
+  //
+  // Getting this wrong is not obvious: exchanging an already-long-lived token
+  // fails with "Session key invalid (code 452)", which reads exactly like an
+  // expired token and sends you back to the dashboard to generate another one
+  // that fails the same way.
+  console.log('\n1/3  getting a 60-day token...');
+  let token = null;
+  let expiresIn = null;
 
-  // 2. Who is it for.
+  try {
+    const long = await get(
+      IG_HOST,
+      'access_token',
+      { grant_type: 'ig_exchange_token', client_secret: appSecret, access_token: shortToken },
+      { versioned: false }
+    );
+    token = long.access_token;
+    expiresIn = Number(long.expires_in);
+    console.log('     exchanged a short-lived token');
+  } catch (exchangeError) {
+    const refreshed = await get(
+      IG_HOST,
+      'refresh_access_token',
+      { grant_type: 'ig_refresh_token', access_token: shortToken },
+      { versioned: false }
+    ).catch(() => null);
+
+    if (!refreshed?.access_token) {
+      throw new Error(
+        `neither exchange nor refresh worked. Exchange said: ${exchangeError.message}. ` +
+          'If it mentions an invalid session, generate a fresh token in the dashboard and retry.'
+      );
+    }
+    token = refreshed.access_token;
+    expiresIn = Number(refreshed.expires_in);
+    console.log('     token was already long-lived — refreshed it instead');
+  }
+
+  if (!token) throw new Error('no long-lived token came back');
+  expiresIn = Number.isFinite(expiresIn) && expiresIn > 0 ? expiresIn : 60 * 24 * 3600;
+  console.log(`     valid ${Math.round(expiresIn / 86400)} days`);
+
+  // 2. Who is it for. The id MUST come from /me, not from the number shown
+  //    beside the account in the dashboard — those are different namespaces on
+  //    this path, and the dashboard one is rejected by the publish endpoints.
   console.log('2/3  resolving the account...');
   const me = await get(IG_HOST, 'me', { fields: 'id,username', access_token: token });
   if (!me.id) throw new Error('/me returned no id');
