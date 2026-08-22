@@ -1,5 +1,4 @@
 import { baseCss, escapeHtml as e, palette, pillarAccent, CARD_W, CARD_H } from './theme.js';
-import { pillarHe } from '../pillars.js';
 
 // The layout set.
 //
@@ -62,7 +61,12 @@ function sourceLabel(url) {
   }
 }
 
-const placeLine = (d) => [d.place, d.country].filter(Boolean).join(' · ');
+// "יפן · יפן" happened: for a country-level post the model fills place and
+// country with the same word. Dedupe rather than print it twice.
+const placeLine = (d) => {
+  const parts = [d.place, d.country].map((x) => String(x || '').trim()).filter(Boolean);
+  return [...new Set(parts)].join(' · ');
+};
 
 const brandMark = `<div class="brand">טיול<span>+</span></div>`;
 
@@ -70,16 +74,21 @@ const brandMark = `<div class="brand">טיול<span>+</span></div>`;
 /* Text-led shell                                                             */
 /* -------------------------------------------------------------------------- */
 
-function shell({ accent, kicker, body, place, url, extraCss = '' }) {
+// The header label used to be the pillar name — "מתי ללכת", "עובדה מפתיעה".
+// That is a taxonomy label, and it reads like one: it tells the reader which
+// bucket the post came out of, which is a fact about our filing system rather
+// than about the place. The place name does the same job of orienting the
+// reader and is actually information, so it goes here and comes out of the
+// footer. Cards with no place simply show the brand mark alone.
+function shell({ accent, kicker, body, url, extraCss = '' }) {
   return `<style>${baseCss()}${extraCss}</style>
 <div class="card" style="--accent:${accent}">
   <div class="head">
     ${brandMark}
-    <div class="kicker">${e(kicker)}</div>
+    <div class="kicker">${e(kicker || '')}</div>
   </div>
   <div class="body">${body}</div>
   <div class="foot">
-    <div class="place">${e(place || '')}</div>
     <div class="src">מקור: <span class="ltr">${e(sourceLabel(url))}</span></div>
   </div>
 </div>`;
@@ -125,13 +134,12 @@ function photoFullCard(d, accent, image) {
     <img class="bg" src="${e(image.src)}" alt="">
     <div class="scrim-top"></div><div class="scrim-bottom"></div>
     <div class="layer">
-      <div class="head">${brandMark}<div class="kicker">${e(pillarHe(d.pillar))}</div></div>
+      <div class="head">${brandMark}<div class="kicker">${e(placeLine(d))}</div></div>
       <div class="pf-text">
         <div class="rule"></div>
         <div class="headline ${headlineSize(d.headline, { max: 'md' })}">${e(d.headline)}</div>
         ${d.subhead ? `<div class="subhead">${e(d.subhead)}</div>` : ''}
         <div class="foot">
-          <div class="place">${e(placeLine(d))}</div>
           <div class="src">מקור: <span class="ltr">${e(sourceLabel(srcUrl(d)))}</span></div>
         </div>
         ${image.credit ? `<div class="credit"><span class="ltr">${e(image.credit)}</span></div>` : ''}
@@ -164,13 +172,12 @@ function photoBandCard(d, accent, image) {
     <div class="pb-img">
       <img class="bg" src="${e(image.src)}" alt="">
       <div class="scrim-top"></div>
-      <div class="pb-chip">${brandMark}<div class="kicker">${e(pillarHe(d.pillar))}</div></div>
+      <div class="pb-chip">${brandMark}<div class="kicker">${e(placeLine(d))}</div></div>
     </div>
     <div class="pb-body">
       <div class="headline ${headlineSize(d.headline, { max: 'md' })}">${e(d.headline)}</div>
       ${d.subhead ? `<div class="subhead">${e(d.subhead)}</div>` : ''}
       <div class="foot">
-        <div class="place">${e(placeLine(d))}</div>
         <div class="src">מקור: <span class="ltr">${e(sourceLabel(srcUrl(d)))}</span></div>
       </div>
     </div>
@@ -189,14 +196,13 @@ function photoFrameCard(d, accent, image) {
     .head { border-bottom: none; padding-bottom: 0; }
   </style>
   <div class="card photo-card" style="--accent:${accent}">
-    <div class="head">${brandMark}<div class="kicker">${e(pillarHe(d.pillar))}</div></div>
+    <div class="head">${brandMark}<div class="kicker">${e(placeLine(d))}</div></div>
     <div class="pfr-img"><img class="bg" src="${e(image.src)}" alt=""></div>
     <div class="pfr-body">
       <div class="headline ${headlineSize(d.headline, { max: 'md' })}">${e(d.headline)}</div>
       ${d.subhead ? `<div class="subhead">${e(d.subhead)}</div>` : ''}
     </div>
     <div class="foot">
-      <div class="place">${e(placeLine(d))}</div>
       <div class="src">מקור: <span class="ltr">${e(sourceLabel(srcUrl(d)))}</span></div>
     </div>
   </div>`;
@@ -209,8 +215,7 @@ function photoFrameCard(d, accent, image) {
 function factCard(d, accent) {
   return shell({
     accent,
-    kicker: pillarHe(d.pillar),
-    place: placeLine(d),
+    kicker: placeLine(d),
     url: srcUrl(d),
     body: `
       <div class="rule"></div>
@@ -224,8 +229,7 @@ function numbersCard(d, accent) {
   const s = d.stat || {};
   return shell({
     accent,
-    kicker: pillarHe(d.pillar),
-    place: placeLine(d),
+    kicker: placeLine(d),
     url: srcUrl(d),
     extraCss: `
       .stat { display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap; }
@@ -240,14 +244,17 @@ function numbersCard(d, accent) {
       .stat-unit { font-size: 62px; font-weight: 800; color: var(--accent); }
       .stat-label { font-size: 34px; font-weight: 600; color: ${palette.paperDim}; }
       .body { gap: 30px; }`,
+    // Deliberately only the figure and the headline. The first version also
+    // rendered stat.label AND the subhead, which meant the same fact appeared
+    // three times in three registers - the card read like a paragraph with a
+    // big number stuck on top. The card is the hook; the caption carries the
+    // detail.
     body: `
       <div class="stat">
         <div class="stat-value">${e(s.value)}</div>
         ${s.unit ? `<div class="stat-unit">${e(s.unit)}</div>` : ''}
       </div>
-      ${s.label ? `<div class="stat-label">${e(s.label)}</div>` : ''}
-      <div class="headline ${headlineSize(d.headline, { max: 'md' })}">${e(d.headline)}</div>
-      ${d.subhead ? `<div class="subhead">${e(d.subhead)}</div>` : ''}`,
+      <div class="headline ${headlineSize(d.headline, { max: 'md' })}">${e(d.headline)}</div>`,
   });
 }
 
@@ -262,8 +269,7 @@ function compareCard(d, accent) {
 
   return shell({
     accent,
-    kicker: pillarHe(d.pillar),
-    place: placeLine(d),
+    kicker: placeLine(d),
     url: srcUrl(d),
     extraCss: `
       .cmps { display: flex; flex-direction: column; gap: 28px; }
@@ -297,8 +303,7 @@ function tipsCard(d, accent) {
 
   return shell({
     accent,
-    kicker: pillarHe(d.pillar),
-    place: placeLine(d),
+    kicker: placeLine(d),
     url: srcUrl(d),
     extraCss: `
       .tips { list-style: none; display: flex; flex-direction: column; gap: 34px; }
@@ -349,8 +354,7 @@ function whenToGoCard(d, accent, data) {
 
   return shell({
     accent,
-    kicker: pillarHe('timing'),
-    place: placeLine(d),
+    kicker: placeLine(d),
     url: srcUrl(d),
     extraCss: `
       .strip { display: grid; grid-template-columns: repeat(12, 1fr); gap: 10px; }
@@ -371,8 +375,7 @@ function whenToGoCard(d, accent, data) {
 function alertCard(d, accent) {
   return shell({
     accent,
-    kicker: pillarHe('entry'),
-    place: placeLine(d),
+    kicker: placeLine(d),
     url: srcUrl(d),
     extraCss: `
       .badge {
@@ -398,8 +401,7 @@ function routeCard(d, accent) {
 
   return shell({
     accent,
-    kicker: pillarHe('route'),
-    place: placeLine(d),
+    kicker: placeLine(d),
     url: srcUrl(d),
     extraCss: `
       .leg { display: flex; align-items: center; gap: 26px; }

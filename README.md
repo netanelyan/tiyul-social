@@ -54,7 +54,7 @@ request, and these needed to be guarantees.
 | Nothing publishes without approval | `bot.js` — the only path to `enqueue()` is the `ok:` button handler |
 | No claim without a primary source | `src/verify.js` + the `allowlist` in `sources.json` — suffix-matched on a domain-label boundary, re-checked after redirects |
 | Claims must come from the source, not from memory | `src/verify.js` — the draft returns verbatim quotes and every one is checked against the fetched page. A paraphrased quote fails the whole draft |
-| Images: stock / our catalogue / AI only, never scraped | `src/images.js` — three named providers, provenance tag required, shown in the approval message *and* printed on the card |
+| Images: stock / our catalogue / AI only, never scraped | `src/images.js` — three named providers, provenance tag required, shown in the approval message *and* printed on the card. Pexels is wired (`src/images/pexels.js`); the other two refuse rather than publish an image they cannot label |
 | AI images generic only, never the specific place | `src/images.js` — `assertGenericAiPrompt()` rejects a prompt containing the post's own place or country |
 | Instagram via the official Graph API only | `src/publish/instagram.js` — the documented two-step `/media` → `/media_publish` handshake |
 | Hebrew and RTL correct in the rendered card | `src/render/` — real browser bidi, bundled font, and a hard check that the font loaded before screenshotting |
@@ -99,8 +99,10 @@ Ten layouts, all 1080×1350 (4:5 — the tallest ratio Instagram accepts). Two
 families.
 
 **Photo-led** — the picture is the point and the words sit under it. All three
-need an image, and all three degrade to `fact` when there isn't one, which in
-v1 is every time.
+need an image and degrade to `fact` without one. Set `PEXELS_API_KEY` and they
+become available: the drafting step is told images can be fetched, picks a photo
+layout when the story warrants one, and supplies an English search term (stock
+libraries index in English; the draft's place name is Hebrew).
 
 - **photoFull** — full-bleed picture, headline and one line over its bottom
   third. The headline is capped one size smaller than on the text cards on
@@ -127,6 +129,18 @@ licensing rather than managing it.
 - **route** — a new or returning line out of TLV, with the connector pointing
   origin→destination. The arrowhead is drawn rather than typed, because the ✈
   glyph's own direction varies by font and would silently point the wrong way.
+
+**The card is a hook, not the post.** It carries the headline and at most one
+short line; the context, the caveat and the practical detail go in the caption.
+The first version of the numbers card rendered a stat label, a headline *and* a
+subhead, so the same fact appeared three times in three registers and the card
+read like a paragraph with a big number on top. The drafting prompt now says an
+empty subhead is a good answer.
+
+The header label is the **place**, not the pillar. It used to print the category
+— "מתי ללכת", "עובדה מפתיעה" — which is a fact about our filing system rather
+than about the place, and reads like one. The place orients the reader just as
+well and is actually information.
 
 The drafting step picks the layout from the content and fills that layout's
 payload. A layout whose payload comes back incomplete — a tips card with two
@@ -181,6 +195,7 @@ BrickDeal.
 | `src/pipeline.js` | The daily pass: gather → rank → build until the target is met |
 | `src/render/` | `theme.js` (tokens + CSS), `templates.js` (the five layouts), `index.js` (Chromium → JPEG) |
 | `src/images.js` | Image provenance policy. Three permitted origins, tag required |
+| `src/images/pexels.js` | The stock provider. Portrait crops, bytes inlined rather than hotlinked |
 | `src/publish/` | `telegram.js`, `instagram.js` (Graph API two-step) |
 | `src/format.js` | The approval message and the published captions — kept deliberately separate |
 | `src/store.js` | Dedupe, staging, pending edits, publish queue, and the published log the quotas are computed from |

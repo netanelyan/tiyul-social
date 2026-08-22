@@ -56,7 +56,7 @@ export async function toCandidate(item, { render = true } = {}) {
   // 2. Hebrew copy + layout choice + the quotes that back every claim.
   let d;
   try {
-    d = await draftPost(item, sourceText);
+    d = await draftPost(item, sourceText, { imagesAvailable: imagesEnabled() });
   } catch (e) {
     throw new RejectedError('draft_failed', e.message);
   }

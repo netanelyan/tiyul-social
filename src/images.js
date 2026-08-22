@@ -12,9 +12,12 @@
 // the approval message *and* on the card itself, and anything without one is
 // refused rather than published with a shrug.
 //
-// v1 ships with no provider enabled: the four text-led layouts need no
-// photograph, which sidesteps licensing entirely rather than managing it. The
-// machinery is here so turning a provider on is a config change, not a rewrite.
+// Pexels is wired as the stock provider. The other two remain stubs: our own
+// catalogue needs photos to exist first, and AI generation is deliberately last
+// because of the constraint below, which rules it out for exactly the case
+// people reach for it (a picture of the place the post is about).
+
+import * as pexels from './images/pexels.js';
 
 export const PROVENANCE = {
   stock: 'סטוק ברישיון מסחרי',
@@ -50,16 +53,16 @@ export function assertGenericAiPrompt(prompt, { place, country } = {}) {
 
 const providers = {
   /**
-   * Commercial-license stock. Pluggable on purpose — the pipeline cares that an
-   * image is licensed for commercial use, not which library it came from.
-   * Wire a provider here and set its key to enable the photo layout.
+   * Commercial-license stock, via Pexels. Pluggable on purpose — the pipeline
+   * cares that an image is licensed for commercial use, not which library it
+   * came from.
    */
-  async stock() {
-    if (!process.env.PEXELS_API_KEY && !process.env.UNSPLASH_ACCESS_KEY) return null;
-    throw new ImagePolicyError(
-      'a stock key is set but no stock provider is implemented yet — ' +
-        'implement it in src/images.js before enabling, rather than silently posting without one'
-    );
+  async stock(draft) {
+    if (!pexels.configured()) return null;
+    // The search term is English and comes from the drafting step, because the
+    // draft's place name is Hebrew and stock libraries index in English.
+    const q = draft?.imageQuery || [draft?.place, draft?.country].filter(Boolean).join(' ');
+    return pexels.search(q);
   },
 
   /** Our own catalogue: a directory plus a manifest of what each photo shows. */
@@ -76,12 +79,7 @@ const providers = {
 };
 
 export const imagesEnabled = () =>
-  Boolean(
-    process.env.PEXELS_API_KEY ||
-      process.env.UNSPLASH_ACCESS_KEY ||
-      process.env.CATALOGUE_DIR ||
-      process.env.IMAGE_GEN_API_KEY
-  );
+  Boolean(pexels.configured() || process.env.CATALOGUE_DIR || process.env.IMAGE_GEN_API_KEY);
 
 /**
  * Find an image for a draft, or null.
@@ -93,7 +91,13 @@ export const imagesEnabled = () =>
  */
 export async function findImage(draft, { order = ['catalogue', 'stock', 'ai'] } = {}) {
   for (const name of order) {
-    const got = await providers[name](draft);
+    // One provider failing is not a reason to publish nothing: fall through to
+    // the next, and ultimately to a text card. A policy violation still throws.
+    const got = await providers[name](draft).catch((e) => {
+      if (e instanceof ImagePolicyError) throw e;
+      console.error(`images: ${name} failed — ${e.message}`);
+      return null;
+    });
     if (got?.src) {
       if (!PROVENANCE[got.provenance]) {
         throw new ImagePolicyError(`provider "${name}" returned an unknown provenance`);

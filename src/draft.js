@@ -98,6 +98,13 @@ const DRAFT_SCHEMA = {
       required: ['from', 'to', 'operator', 'startsOn'],
       additionalProperties: false,
     },
+    image_query: {
+      type: 'string',
+      description:
+        'ENGLISH search terms for a stock photograph to sit behind the card, 2-5 words. ' +
+        'Empty string for a text-led layout. Stock libraries index in English, so this ' +
+        'is never Hebrew.',
+    },
     caption: { type: 'string', description: 'Hebrew caption for Telegram and Instagram' },
     evidence: {
       type: 'array',
@@ -130,6 +137,7 @@ const DRAFT_SCHEMA = {
     'stat',
     'compare',
     'route',
+    'image_query',
     'caption',
     'evidence',
   ],
@@ -167,9 +175,10 @@ honestly is the wrong layout — say so by choosing another, never by padding.
 
 Text-led (no photograph needed — these are the default):
 - fact: one surprising, specific, verifiable fact. The headline IS the fact.
-- numbers: when a single figure carries the story. Fill "stat": the figure in
-  digits, a short unit, and one line saying what it counts. Only when the number
-  is genuinely striking on its own.
+- numbers: when a single figure carries the story. Fill "stat" with the figure
+  in digits and a short unit. The card shows the figure and the headline and
+  nothing else, so the headline must be the whole point - do not also restate it
+  in the subhead. Only when the number is genuinely striking on its own.
 - compare: a widely held belief that the source contradicts. Fill "compare":
   a is the wrong belief, b is what the source actually says. Only when the
   source really does contradict something, never as a rhetorical frame.
@@ -179,8 +188,18 @@ Text-led (no photograph needed — these are the default):
 - route: a new or returning route out of Tel Aviv. Fill "route" with origin,
   destination, operator and start date. Never a fare, in any field.
 
-Photo-led (ONLY when an image has been supplied — see IMAGE AVAILABLE below;
-if none was supplied these are forbidden and the card would fall back anyway):
+Photo-led (ONLY when IMAGE AVAILABLE below says yes; otherwise forbidden, and
+the card would fall back to a text layout anyway).
+
+When you choose one of these, fill "image_query" with 2-5 ENGLISH words naming
+what should be behind the card. Name the actual place when the post is about a
+place - "Lisbon old town alley", "Kyoto wooden bridge", "Faroe Islands cliffs".
+Describe the scene you want, not the abstract idea: "Tokyo metro platform"
+finds something; "Japanese efficiency" does not.
+
+Prefer a text-led layout when the story is a number, a rule or a comparison. A
+photograph behind an arrivals statistic is decoration; behind a hidden village
+it is the content. If the picture would only be wallpaper, do not ask for one.
 - photoFull: full-bleed picture, headline and one supporting line over the
   bottom of it. The strongest choice when the place itself is the story.
 - photoBand: picture on top, a solid band of type beneath. Best when the
@@ -188,13 +207,28 @@ if none was supplied these are forbidden and the card would fall back anyway):
 - photoFrame: inset picture with a gallery caption under it. Quieter, good for
   a single object or detail rather than a landscape.
 
+WHAT THE CARD IS FOR
+The card is a hook, not the post. Someone scrolling gives it under a second.
+It carries the headline and, at most, one short line. Everything else - the
+context, the caveat, the practical detail - goes in the caption underneath.
+
+The failure mode to avoid is a card that reads like a paragraph: a headline,
+then a supporting line, then another line restating the same fact in different
+words. If your subhead is saying what the headline already said, leave it empty.
+Empty is a good answer. A card with four lines of type on it is a card nobody
+finishes reading.
+
 WRITING THE CARD
 - headline: 4-9 Hebrew words. Concrete and specific. A number, a name, a place.
   Never clickbait, never "אתם לא תאמינו", never a question you don't answer.
-- subhead: one short line that adds information the headline didn't. May be empty.
+- subhead: ONE short line, under about twelve words, adding something the
+  headline did not say. Often the right answer is an empty string. Never a
+  second sentence, never a restatement.
 - bullets (tips only): three items, each a 1-3 word title and one short sentence.
-- caption: 2-4 sentences. Say the useful thing plainly, then why it matters to
-  someone actually going. No hashtag spam — at most three, at the end, in Hebrew.
+- caption: SHORT. Two or three sentences, and stop. It is read under a picture
+  on a phone, not as an article. Say the useful thing plainly, then why it
+  matters to someone actually going. Do not restate the headline - it is
+  already the largest thing on the card. At most three hashtags, at the end.
 - Numbers, dates and prices go in digits. Dates as they'd be read in Israel.
 
 TONE
@@ -238,7 +272,7 @@ approximation. Entry fees and other on-the-ground costs are fine.`;
  * Throws on API failure so the caller can record a reason and move on; a
  * candidate that can't be drafted is simply not staged.
  */
-export async function draft(item, sourceText, { image = null } = {}) {
+export async function draft(item, sourceText, { imagesAvailable = false } = {}) {
   if (!hasApiKey()) throw new Error('ANTHROPIC_API_KEY is not set — drafting is required');
 
   const user = [
@@ -246,9 +280,9 @@ export async function draft(item, sourceText, { image = null } = {}) {
     `URL: ${item.url}`,
     item.publishedAt ? `PUBLISHED: ${item.publishedAt}` : null,
     `LANGUAGE OF SOURCE: ${item.lang}`,
-    image
-      ? `IMAGE AVAILABLE: yes (provenance: ${image.provenance}) — the "photo" layout is permitted.`
-      : 'IMAGE AVAILABLE: no — do not choose the "photo" layout.',
+    imagesAvailable
+      ? 'IMAGE AVAILABLE: yes - licensed stock can be fetched, so the photo layouts are permitted. Fill image_query if you choose one.'
+      : 'IMAGE AVAILABLE: no - the photo layouts are forbidden; leave image_query empty.',
     item.pillarHints?.length ? `LIKELY PILLARS: ${item.pillarHints.join(', ')}` : null,
     '',
     `TITLE: ${item.title}`,
@@ -326,6 +360,7 @@ function normalise(d, item) {
     layout: LAYOUTS.includes(d.layout) ? d.layout : 'fact',
     pillar: PILLAR_KEYS.includes(d.pillar) ? d.pillar : item.pillarHints?.[0] || 'place',
     tags: Array.isArray(d.tags) ? d.tags.filter((t) => TAGS.includes(t)) : [],
+    imageQuery: s(d.image_query),
     place: s(d.place),
     country: s(d.country),
     headline: s(d.headline),

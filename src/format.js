@@ -31,12 +31,28 @@ export function channelCaption(cand) {
   return lines.join('\n').trim();
 }
 
-/** Instagram has no clickable links in captions, so the URL is written out plainly. */
+/**
+ * The Instagram caption. Deliberately short.
+ *
+ * Three things are NOT here, and each is a decision rather than an omission:
+ *
+ *   - the headline, because it is already the largest thing on the image;
+ *     repeating it is the caption's most common way of wasting its first line.
+ *   - the source URL, because it is unclickable on Instagram and long. The
+ *     attribution still ships: the card itself prints "מקור: <domain>" in its
+ *     footer, so the claim stays traceable in the artefact people actually see.
+ *   - the brand name, which the site line already carries.
+ *
+ * The approval message is unaffected and still carries the full source URL
+ * every time. That rule is about what YOU see before tapping, not about what
+ * gets published.
+ */
 export function instagramCaption(cand) {
-  const brand = process.env.BRAND_NAME || 'טיול+';
-  const parts = [clean(cand.headline), '', String(cand.caption || '').trim()];
-  if (cand.sourceUrl) parts.push('', `מקור: ${cand.sourceUrl}`);
-  if (brand) parts.push('', brand);
+  const parts = [String(cand.caption || '').trim()];
+
+  const site = (process.env.SITE_URL || '').trim();
+  if (site) parts.push('', `עוד כאלה: ${site}`);
+
   return parts.join('\n').trim().slice(0, 2200); // IG caption limit
 }
 

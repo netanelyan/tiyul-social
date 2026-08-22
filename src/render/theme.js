@@ -120,8 +120,8 @@ body {
 }
 .brand span { color: var(--accent); }
 .kicker {
-  font-size: 27px;
-  font-weight: 600;
+  font-size: 29px;
+  font-weight: 700;
   color: var(--accent);
   letter-spacing: 0.2px;
 }
@@ -174,7 +174,6 @@ body {
   font-size: 24px;
   color: ${palette.paperDim};
 }
-.foot .place { font-weight: 600; color: ${palette.paper}; }
 .foot .src { font-weight: 400; }
 `;
 }

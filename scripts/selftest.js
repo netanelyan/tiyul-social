@@ -11,7 +11,7 @@ import { scoreItem } from '../src/score.js';
 import { candidateId } from '../src/candidate.js';
 import { renderHtml, LAYOUTS, PHOTO_LAYOUTS, isPhotoLayout } from '../src/render/templates.js';
 import { assertGenericAiPrompt, ImagePolicyError } from '../src/images.js';
-import { approvalMessage } from '../src/format.js';
+import { approvalMessage, instagramCaption } from '../src/format.js';
 import { publishTargets } from '../src/publish/targets.js';
 import { hyphensOnly } from '../src/draft.js';
 
@@ -376,6 +376,86 @@ ok(
   hyphensOnly(`א ${EM} ב${NL}ג`).includes(NL),
   'a naive \\s* around the dash swallows the newline and flattens a multi-line caption'
 );
+
+/* -------------------------------------------------------------------------- */
+group('instagram caption - short, no source URL, site line');
+
+const capCand = {
+  headline: 'העמק שנפתח רק 60 יום בשנה',
+  // String.fromCharCode(10) rather than an escape: this file is edited by
+  // scripts often enough that a literal backslash-n keeps getting mangled.
+  caption: ['שאר השנה הדרך סגורה.', 'ההרשמה נפתחת בינואר.'].join(String.fromCharCode(10)),
+  sourceUrl: 'https://www.govt.nz/some/very/long/path/that/nobody/can/tap',
+};
+
+const withSite = (v, fn) => {
+  const prev = process.env.SITE_URL;
+  if (v === undefined) delete process.env.SITE_URL;
+  else process.env.SITE_URL = v;
+  try { return fn(); } finally {
+    if (prev === undefined) delete process.env.SITE_URL; else process.env.SITE_URL = prev;
+  }
+};
+
+withSite('https://tiyulplus.com', () => {
+  const cap = instagramCaption(capCand);
+  ok('omits the source URL - unclickable on Instagram, and the card footer carries it', !cap.includes('govt.nz'));
+  ok('omits the headline rather than repeating what the image already shows', !cap.includes(capCand.headline));
+  ok('carries the site line', cap.includes('tiyulplus.com'));
+  ok('keeps the caption body', cap.includes('ההרשמה נפתחת בינואר'));
+  ok('stays short', cap.length < 300, `${cap.length} chars`);
+});
+withSite(undefined, () => {
+  ok('no site line when SITE_URL is unset', !instagramCaption(capCand).includes('עוד כאלה'));
+});
+
+/* -------------------------------------------------------------------------- */
+group('pexels stock provider');
+
+{
+  const realFetch = globalThis.fetch;
+  const realKey = process.env.PEXELS_API_KEY;
+  process.env.PEXELS_API_KEY = 'test-key';
+
+  const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+  let searchUrl = null;
+  let sentAuth = null;
+
+  globalThis.fetch = async (url, opts = {}) => {
+    if (String(url).includes('api.pexels.com')) {
+      searchUrl = String(url);
+      sentAuth = opts.headers?.Authorization;
+      return {
+        ok: true,
+        json: async () => ({
+          photos: [
+            { width: 400, src: { portrait: 'https://x/small.jpg' }, photographer: 'Too Small' },
+            { width: 2000, src: { portrait: 'https://images.pexels.com/p.jpg' }, photographer: 'Ada L', url: 'https://pexels.com/photo/1' },
+          ],
+        }),
+      };
+    }
+    return {
+      ok: true,
+      headers: { get: () => 'image/jpeg' },
+      arrayBuffer: async () => jpeg.buffer.slice(jpeg.byteOffset, jpeg.byteOffset + jpeg.byteLength),
+    };
+  };
+
+  const { search } = await import('../src/images/pexels.js');
+  const got = await search('Lisbon old town alley');
+
+  ok('sends the API key as an Authorization header', sentAuth === 'test-key');
+  ok('asks for portrait crops - the card is 4:5, a landscape crop loses the subject', /orientation=portrait/.test(searchUrl || ''));
+  ok('inlines the bytes as a data URI rather than hotlinking', got?.src?.startsWith('data:image/jpeg;base64,'));
+  eq('tags provenance as stock', got?.provenance, 'stock');
+  ok('credits the photographer', got?.credit?.includes('Ada L'));
+  ok('skips photos narrower than the card', !/Too Small/.test(JSON.stringify(got)));
+  eq('an empty query returns null rather than searching', await search('  '), null);
+
+  globalThis.fetch = realFetch;
+  if (realKey === undefined) delete process.env.PEXELS_API_KEY; else process.env.PEXELS_API_KEY = realKey;
+}
 
 /* -------------------------------------------------------------------------- */
 group('registry integrity');
