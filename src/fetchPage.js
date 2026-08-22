@@ -65,7 +65,12 @@ export function htmlToText(html) {
   // trying to filter their text out line by line afterwards.
   s = s.replace(/<(nav|header|footer|aside)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ');
   s = s.replace(new RegExp(`</?(?:${BLOCK_TAGS})\\b[^>]*>`, 'gi'), '\n');
-  s = s.replace(/<[^>]+>/g, ' ');
+  // Inline tags collapse to nothing, not to a space. Replacing them with a
+  // space is the obvious move and it detaches punctuation from its sentence:
+  // `<p>From <b>October</b>.</p>` came out as "From October ." — which then
+  // fails an exact-quote check for a claim that was genuinely in the source.
+  // Block-level structure is already preserved by the newline pass above.
+  s = s.replace(/<[^>]+>/g, '');
   s = decodeEntities(s);
   s = s.replace(/[ \t ]+/g, ' ');
   s = s.replace(/\n\s*\n\s*\n+/g, '\n\n');
@@ -91,10 +96,21 @@ const BOILERPLATE =
 
 export function stripBoilerplate(lines) {
   const kept = lines.filter((l) => !BOILERPLATE.test(l));
-  // If the filter ate almost everything, the page is probably structured in a
-  // way these patterns misread — return the original rather than hand the
-  // drafting step a page that has been gutted.
-  return kept.length >= Math.min(5, lines.length) ? kept : lines;
+  if (!kept.length) return lines;
+
+  // Distrust the filter only when it removed the overwhelming majority of a
+  // substantial page — that points at patterns misreading the page's structure
+  // rather than a page that genuinely was mostly consent text.
+  //
+  // The first version of this guard required the kept lines to outnumber a
+  // fixed threshold, which meant a short page (a five-line advisory, say) fell
+  // back to the unstripped text and quietly put cookie notices back into the
+  // evidence pool — the exact thing this function exists to prevent.
+  const size = (ls) => ls.reduce((n, l) => n + l.length, 0);
+  const before = size(lines);
+  if (before > 2000 && size(kept) < before * 0.15) return lines;
+
+  return kept;
 }
 
 const NAMED = {

@@ -9,6 +9,7 @@
   },
   "scripts": {
     "start": "node bot.js",
+    "test": "node scripts/selftest.js",
     "run-once": "node scripts/run-once.js",
     "check-sources": "node scripts/check-sources.js",
     "render-samples": "node scripts/render-samples.js",

@@ -62,7 +62,14 @@ export async function fetchFeed(source) {
   const { body } = await fetchText(source.url, {
     accept: 'application/atom+xml,application/rss+xml,application/xml,text/xml;q=0.9,*/*;q=0.8',
   });
+  return parseFeed(body, source);
+}
 
+/**
+ * The parsing half, split out from the fetching half so the RSS-vs-Atom
+ * handling can be tested against fixtures without going near the network.
+ */
+export function parseFeed(body, source) {
   let doc;
   try {
     doc = parser.parse(body);
