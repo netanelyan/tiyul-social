@@ -256,6 +256,17 @@ ok('interpolated content is escaped', !html.includes('<script>alert(1)</script>'
 ok('ampersand escaped', html.includes('a &amp; b'));
 ok('document declares Hebrew and RTL', html.includes('lang="he"') && html.includes('dir="rtl"'));
 ok('the font is inlined, not linked', html.includes('data:font/ttf;base64,') && !html.includes('fonts.googleapis'));
+// Regression: candidate.js sets `sourceUrl`, the sample fixtures use `url`.
+// Reading only one printed the literal word "source" on every real card.
+ok(
+  'the source domain comes from sourceUrl (what a real candidate carries)',
+  renderHtml({ ...draft, url: undefined, sourceUrl: 'https://www.jnto.go.jp/news/x' }).includes('jnto.go.jp')
+);
+ok(
+  'and still from url (what the sample fixtures carry)',
+  renderHtml({ ...draft, sourceUrl: undefined, url: 'https://whc.unesco.org/en/news/x' }).includes('unesco.org')
+);
+
 eq('ten layouts registered', LAYOUTS.length, 10);
 ok('the photo family is identified as such', PHOTO_LAYOUTS.every(isPhotoLayout) && !isPhotoLayout('fact'));
 

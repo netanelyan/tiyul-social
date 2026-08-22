@@ -46,6 +46,13 @@ function headlineSize(text, { max = 'xl' } = {}) {
   return n > 30 ? 'lg' : 'xl';
 }
 
+// Candidates carry the URL as `sourceUrl` (set in candidate.js from the final,
+// post-redirect address); the sample fixtures use `url`. Reading only one of
+// them silently printed the literal word "source" on every real card, because
+// sourceLabel() catches the parse failure and falls back. Source attribution is
+// the whole point of this pipeline, so it reads both.
+const srcUrl = (d) => d.sourceUrl || d.url || '';
+
 // A source URL is Latin text inside an RTL line — always isolated, never bare.
 function sourceLabel(url) {
   try {
@@ -125,7 +132,7 @@ function photoFullCard(d, accent, image) {
         ${d.subhead ? `<div class="subhead">${e(d.subhead)}</div>` : ''}
         <div class="foot">
           <div class="place">${e(placeLine(d))}</div>
-          <div class="src">מקור: <span class="ltr">${e(sourceLabel(d.url))}</span></div>
+          <div class="src">מקור: <span class="ltr">${e(sourceLabel(srcUrl(d)))}</span></div>
         </div>
         ${image.credit ? `<div class="credit"><span class="ltr">${e(image.credit)}</span></div>` : ''}
       </div>
@@ -164,7 +171,7 @@ function photoBandCard(d, accent, image) {
       ${d.subhead ? `<div class="subhead">${e(d.subhead)}</div>` : ''}
       <div class="foot">
         <div class="place">${e(placeLine(d))}</div>
-        <div class="src">מקור: <span class="ltr">${e(sourceLabel(d.url))}</span></div>
+        <div class="src">מקור: <span class="ltr">${e(sourceLabel(srcUrl(d)))}</span></div>
       </div>
     </div>
   </div>`;
@@ -190,7 +197,7 @@ function photoFrameCard(d, accent, image) {
     </div>
     <div class="foot">
       <div class="place">${e(placeLine(d))}</div>
-      <div class="src">מקור: <span class="ltr">${e(sourceLabel(d.url))}</span></div>
+      <div class="src">מקור: <span class="ltr">${e(sourceLabel(srcUrl(d)))}</span></div>
     </div>
   </div>`;
 }
@@ -204,7 +211,7 @@ function factCard(d, accent) {
     accent,
     kicker: pillarHe(d.pillar),
     place: placeLine(d),
-    url: d.url,
+    url: srcUrl(d),
     body: `
       <div class="rule"></div>
       <div class="headline ${headlineSize(d.headline)}">${e(d.headline)}</div>
@@ -219,7 +226,7 @@ function numbersCard(d, accent) {
     accent,
     kicker: pillarHe(d.pillar),
     place: placeLine(d),
-    url: d.url,
+    url: srcUrl(d),
     extraCss: `
       .stat { display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap; }
       .stat-value {
@@ -257,7 +264,7 @@ function compareCard(d, accent) {
     accent,
     kicker: pillarHe(d.pillar),
     place: placeLine(d),
-    url: d.url,
+    url: srcUrl(d),
     extraCss: `
       .cmps { display: flex; flex-direction: column; gap: 28px; }
       .cmp { border-right: 8px solid var(--c); padding: 26px 30px 28px; background: ${palette.inkSoft}; border-radius: 14px; }
@@ -292,7 +299,7 @@ function tipsCard(d, accent) {
     accent,
     kicker: pillarHe(d.pillar),
     place: placeLine(d),
-    url: d.url,
+    url: srcUrl(d),
     extraCss: `
       .tips { list-style: none; display: flex; flex-direction: column; gap: 34px; }
       .tip { display: flex; gap: 26px; align-items: flex-start; }
@@ -344,7 +351,7 @@ function whenToGoCard(d, accent, data) {
     accent,
     kicker: pillarHe('timing'),
     place: placeLine(d),
-    url: d.url,
+    url: srcUrl(d),
     extraCss: `
       .strip { display: grid; grid-template-columns: repeat(12, 1fr); gap: 10px; }
       .m { display: flex; flex-direction: column; align-items: center; gap: 12px; }
@@ -366,7 +373,7 @@ function alertCard(d, accent) {
     accent,
     kicker: pillarHe('entry'),
     place: placeLine(d),
-    url: d.url,
+    url: srcUrl(d),
     extraCss: `
       .badge {
         align-self: flex-start;
@@ -393,7 +400,7 @@ function routeCard(d, accent) {
     accent,
     kicker: pillarHe('route'),
     place: placeLine(d),
-    url: d.url,
+    url: srcUrl(d),
     extraCss: `
       .leg { display: flex; align-items: center; gap: 26px; }
       .ep { font-size: 66px; font-weight: 900; line-height: 1.1; white-space: nowrap; }
