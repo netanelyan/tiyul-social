@@ -204,6 +204,10 @@ Minimum to boot: `TG_BOT_TOKEN`, `CHANNEL_ID`, `STAGING_CHAT_ID`, `OWNER_ID`,
 staging chat — the first because it can publish, the second because an approval
 gate with nowhere to send approvals isn't a gate.
 
+**[SETUP.md](./SETUP.md) is the step-by-step** for getting the Telegram bot and
+the Instagram Graph API credentials in place, including the token exchange that
+otherwise leaves you with a pipeline that dies after 60 days.
+
 Instagram additionally needs `IG_USER_ID`, `IG_ACCESS_TOKEN` and
 `CARD_PUBLIC_BASE_URL`. Without them the channel still works and every approval
 card says so up front.
