@@ -18,7 +18,7 @@ const ttlMs = () => Math.max(0, Number(process.env.SEEN_TTL_DAYS ?? '45')) * DAY
 const publishedWindowMs = () =>
   Math.max(1, Number(process.env.QUOTA_WINDOW_DAYS ?? '30')) * DAY_MS;
 
-const empty = { seen: {}, queue: [], staging: {}, pendingEdit: {}, published: [] };
+const empty = { seen: {}, queue: [], staging: {}, pendingEdit: {}, published: [], igToken: null };
 let state = load();
 
 function pruneSeen(s) {
@@ -173,5 +173,16 @@ export const publishedToday = () => {
   start.setHours(0, 0, 0, 0);
   return state.published.filter((p) => p.ts >= start.getTime()).length;
 };
+
+// --- Instagram token ---------------------------------------------------------
+// The Instagram Login path issues 60-day tokens that must be refreshed. The
+// refreshed value has to outlive the process, or every restart would fall back
+// to the stale seed in .env and the pipeline would still die on day 60. So the
+// env var is the starting point and this is the source of truth thereafter.
+export function setIgToken({ token, expiresAt }) {
+  state.igToken = { token, expiresAt, updatedAt: Date.now() };
+  save();
+}
+export const getIgToken = () => state.igToken || null;
 
 export { existsSync };

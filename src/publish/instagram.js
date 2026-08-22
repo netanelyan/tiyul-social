@@ -1,25 +1,52 @@
+import * as store from '../store.js';
+
 // Instagram publishing, through the official Graph API only.
 //
-// The Content Publishing API is a two-step handshake, and the first step is the
-// one that shapes the whole design:
+// Two auth paths exist and they are not interchangeable:
 //
+//   IG_AUTH=instagram  (default) — "Instagram API with Instagram Login".
+//       Host graph.instagram.com. No Facebook Page required at all. Tokens are
+//       long-lived (60 days) and MUST be refreshed before they lapse.
+//   IG_AUTH=facebook             — "Instagram API with Facebook Login".
+//       Host graph.facebook.com. Requires a linked Facebook Page. The Page
+//       token it yields never expires, so there is nothing to refresh.
+//
+// The default is `instagram` because it needs no Page and two permissions
+// instead of four. The cost is that its token expires, which is why
+// refreshToken() exists and why bot.js calls it on boot and daily. A 60-day
+// token with no refresh is a pipeline that works perfectly until it silently
+// stops two months in — the exact failure the Page-token path avoided.
+//
+// The publishing handshake itself is identical on both:
 //   1. POST /{ig-user-id}/media         with image_url  -> a creation_id
 //   2. POST /{ig-user-id}/media_publish with creation_id -> the published post
 //
-// In step 1 the bytes do NOT travel through our request. We hand Instagram a
-// URL and Instagram's servers go and fetch it themselves. That single fact is
-// why rendered cards are written into a directory a web server already serves
-// (CARD_OUTPUT_DIR) and why CARD_PUBLIC_BASE_URL is not optional for this path:
-// a card that only exists on local disk cannot be published, no matter how
-// correct everything else is.
-//
-// No unofficial endpoints, no session cookies, no private mobile API.
+// In step 1 the bytes do NOT travel through our request — we hand Instagram a
+// URL and Instagram's servers fetch it themselves. That is why rendered cards
+// must live somewhere publicly reachable over https (CARD_PUBLIC_BASE_URL), and
+// why a card that only exists on local disk cannot be published.
 
-const GRAPH = 'https://graph.facebook.com';
 const VERSION = process.env.GRAPH_API_VERSION || 'v21.0';
 
+export const authMode = () => (process.env.IG_AUTH || 'instagram').toLowerCase();
+
+export const graphHost = () =>
+  authMode() === 'facebook' ? 'https://graph.facebook.com' : 'https://graph.instagram.com';
+
 export const instagramConfigured = () =>
-  Boolean(process.env.IG_USER_ID && process.env.IG_ACCESS_TOKEN && process.env.CARD_PUBLIC_BASE_URL);
+  Boolean(currentToken() && process.env.IG_USER_ID && process.env.CARD_PUBLIC_BASE_URL);
+
+/**
+ * The token actually in use.
+ *
+ * A refreshed token is persisted to the store, so it survives restarts and
+ * outlives the seed value in .env. The env var is the starting point, not the
+ * source of truth — otherwise every refresh would be forgotten on restart and
+ * the pipeline would die at day 60 anyway.
+ */
+export function currentToken() {
+  return store.getIgToken()?.token || process.env.IG_ACCESS_TOKEN || null;
+}
 
 export class InstagramError extends Error {
   constructor(message, { step, code, subcode } = {}) {
@@ -30,9 +57,8 @@ export class InstagramError extends Error {
   }
 }
 
-async function graph(path, { method = 'GET', params = {}, step } = {}) {
-  const token = process.env.IG_ACCESS_TOKEN;
-  const url = new URL(`${GRAPH}/${VERSION}/${path}`);
+async function graph(path, { method = 'GET', params = {}, step, token = currentToken() } = {}) {
+  const url = new URL(`${graphHost()}/${VERSION}/${path}`);
   const body = new URLSearchParams({ ...params, access_token: token });
 
   let res;
@@ -46,7 +72,7 @@ async function graph(path, { method = 'GET', params = {}, step } = {}) {
             headers: { 'content-type': 'application/x-www-form-urlencoded' },
             body,
           });
-    json = await res.json();
+    json = await res.json().catch(() => ({}));
   } catch (e) {
     throw new InstagramError(`network error: ${e.message}`, { step });
   }
@@ -62,12 +88,69 @@ async function graph(path, { method = 'GET', params = {}, step } = {}) {
   return json;
 }
 
+/* -------------------------------------------------------------------------- */
+/* Token refresh                                                              */
+/* -------------------------------------------------------------------------- */
+
+const DAY_MS = 86_400_000;
+// Refresh with plenty of runway. Instagram will not refresh a token younger
+// than 24 hours, and refuses outright once one has actually expired — so the
+// window has to be wide enough that a few days of downtime can't strand it.
+const REFRESH_WHEN_DAYS_LEFT = 20;
+
 /**
- * How many posts are left in Instagram's rolling 24-hour window.
+ * Refresh the long-lived token if it is getting close to expiry.
  *
- * The cap is 25. Worth asking before publishing rather than discovering it as a
- * failure mid-run — at two or three posts a day it should never bind, and if it
- * ever does, that is a signal something is wrong upstream.
+ * Only meaningful on the Instagram Login path; the Facebook path's Page token
+ * has no expiry, so this is a no-op there.
+ *
+ * Returns { refreshed, daysLeft } and never throws for a routine "not due yet".
+ */
+export async function refreshToken({ force = false } = {}) {
+  if (authMode() === 'facebook') return { refreshed: false, reason: 'page tokens do not expire' };
+
+  const token = currentToken();
+  if (!token) return { refreshed: false, reason: 'no token configured' };
+
+  const saved = store.getIgToken();
+  const expiresAt = saved?.expiresAt ?? null;
+  const daysLeft = expiresAt ? (expiresAt - Date.now()) / DAY_MS : null;
+
+  // With no recorded expiry we cannot know how long is left, so refresh once to
+  // establish one. That is also the first-run case, straight after .env is set.
+  if (!force && daysLeft !== null && daysLeft > REFRESH_WHEN_DAYS_LEFT) {
+    return { refreshed: false, daysLeft, reason: 'not due yet' };
+  }
+
+  const r = await graph('refresh_access_token', {
+    params: { grant_type: 'ig_refresh_token' },
+    step: 'refresh_token',
+    token,
+  });
+
+  if (!r.access_token) throw new InstagramError('refresh returned no token', { step: 'refresh_token' });
+
+  const newExpiry = Date.now() + (Number(r.expires_in) || 60 * 24 * 3600) * 1000;
+  store.setIgToken({ token: r.access_token, expiresAt: newExpiry });
+
+  return { refreshed: true, daysLeft: (newExpiry - Date.now()) / DAY_MS };
+}
+
+/** Days until the stored token lapses, or null if unknown / not applicable. */
+export function tokenDaysLeft() {
+  if (authMode() === 'facebook') return null;
+  const saved = store.getIgToken();
+  if (!saved?.expiresAt) return null;
+  return Math.round((saved.expiresAt - Date.now()) / DAY_MS);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Publishing                                                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * How many posts remain in Instagram's rolling 24-hour window (the cap is 25).
+ * Worth asking before publishing rather than discovering it as a failure.
  */
 export async function remainingQuota() {
   const r = await graph(`${process.env.IG_USER_ID}/content_publishing_limit`, {
@@ -103,15 +186,14 @@ async function waitForContainer(creationId, { timeoutMs = 60_000, intervalMs = 3
 }
 
 /**
- * Publish one card to Instagram.
- *
- * Refuses up front when it can't work, rather than failing between the two
- * steps — a half-completed publish is the one state with no clean recovery.
+ * Publish one card. Refuses up front when it cannot work, rather than failing
+ * between the two steps — a half-completed publish is the one state with no
+ * clean recovery.
  */
 export async function publishInstagram(cand) {
   if (!instagramConfigured()) {
     throw new InstagramError(
-      'Instagram is not configured (needs IG_USER_ID, IG_ACCESS_TOKEN and CARD_PUBLIC_BASE_URL)',
+      'Instagram is not configured (needs IG_ACCESS_TOKEN, IG_USER_ID and CARD_PUBLIC_BASE_URL)',
       { step: 'config' }
     );
   }

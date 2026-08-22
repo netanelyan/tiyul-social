@@ -159,118 +159,106 @@ clear error rather than Graph's generic "media could not be fetched".
 
 ---
 
-## 3. Instagram
+## 3. Instagram — when you're ready, not before
 
-Allow an afternoon. Most of this is Meta's setup, not ours.
+**You do not need this to use the pipeline.** Meta's app console is genuinely
+painful, and getting stuck in it is normal rather than a sign you did something
+wrong. Everything else works without it — see "Running without Instagram" below,
+which takes about a minute and gives you the complete approve-and-publish loop.
+
+Come back to this section when you actually want posts on Instagram.
 
 ### 3.1 Account shape
 
-Instagram must be a **Business or Creator** account, and it must be **linked to a
-Facebook Page**. In the Instagram app: Settings → Account type and tools →
-Switch to professional account, then link the Page. A personal Instagram account
-cannot publish via the API at all.
+The Instagram account must be **Business or Creator**. In the Instagram app:
+Settings → Account type and tools → Switch to professional account. A personal
+account cannot publish through the API on any path.
 
-### 3.2 Create a Meta app
+### 3.2 Which auth path
 
-[developers.facebook.com](https://developers.facebook.com) → My Apps → Create App
-→ type **Business**. Add the **Instagram** product (in older console versions,
-"Instagram Graph API"). Note the **App ID** and **App Secret**.
+There are two, and they are not interchangeable. The code supports both via
+`IG_AUTH`:
 
-You do **not** need App Review to publish to your own accounts: while the app is
-in Development mode, anyone with an Admin/Developer/Tester role on it can use
-these permissions. App Review is only required to act on accounts you don't
-control.
+| | `IG_AUTH=instagram` (default) | `IG_AUTH=facebook` |
+|---|---|---|
+| Facebook Page | **not needed** | required, linked to the IG account |
+| Permissions | `instagram_business_basic`, `instagram_business_content_publish` | `instagram_basic`, `instagram_content_publish`, `pages_show_list`, `pages_read_engagement` |
+| Host | `graph.instagram.com` | `graph.facebook.com` |
+| Token | 60 days, **auto-refreshed by the bot** | Page token, never expires |
+
+Start with the default. It needs no Facebook Page and half the permissions,
+which is where most of the friction lives.
 
 ### 3.3 Get a token
 
-**The App ID and App Secret do not go in `.env`.** Nothing in the code reads
-them — `src/publish/instagram.js` only ever uses `IG_USER_ID`,
-`IG_ACCESS_TOKEN`, `CARD_PUBLIC_BASE_URL` and `GRAPH_API_VERSION`. The App ID
-and Secret are used once, to mint the token, and then you're done with them:
-
-```
-App ID + App Secret  ──(once)──▶  IG_ACCESS_TOKEN + IG_USER_ID  ──▶  .env
-```
-
-First, a short-lived token from the
-[Graph API Explorer](https://developers.facebook.com/tools/explorer/):
-
-1. **Meta App** dropdown → your app
-2. **User or Page** dropdown → **User Token**
-3. Add these four permissions:
-   `instagram_basic`, `instagram_content_publish`, `pages_show_list`,
-   `pages_read_engagement`
-4. **Generate Access Token** → approve → tick your Page and Instagram account
-   in the popup
-5. Copy the string from the **Access Token** box
-
-That one expires in about an hour. It's only the starting point. Then:
+In your app, add the **Instagram** product, then use its Business Login flow (or
+the Graph API Explorer with the host set to `.instagram.com/`) to generate a
+token for your Instagram account. Copy it, then:
 
 ```
 npm run ig-token
 ```
 
-It asks for the App ID, App Secret and that short-lived token, runs the whole
-exchange, and prints the two lines to paste into `.env`. Nothing is written to
-disk and nothing is passed as a shell argument, so the secret stays out of your
-shell history.
-
-**Why a script rather than three curls:** the chain returns three different
-values all called `access_token`, and only the last one is correct. The one you
-want is the **Page** token — derived from a long-lived user token, it carries no
-expiry at all. Pick the wrong one and it works perfectly today, then stops dead
-about 60 days later, silently. So the script finishes by calling `debug_token`
-and refuses to hand you a token unless it comes back `expires: never` with all
-the required scopes present.
-
-If you'd rather do it by hand, it's `oauth/access_token`
-(`grant_type=fb_exchange_token`) → `me/accounts` → `{page-id}?fields=
-instagram_business_account`, then verify in the
-[Access Token Debugger](https://developers.facebook.com/tools/debug/accesstoken/).
-
-You end up with:
+It exchanges the short-lived token for a long-lived one, resolves your Instagram
+user id, and prints the two lines for `.env`:
 
 ```
-IG_USER_ID=17841400000000000
-IG_ACCESS_TOKEN=EAAG...
-GRAPH_API_VERSION=v21.0
+IG_USER_ID=...
+IG_ACCESS_TOKEN=...
 ```
 
-### 3.4 Check it before publishing
+**On token expiry:** the Instagram Login path issues 60-day tokens. The bot
+refreshes automatically — on boot and daily, whenever fewer than 20 days remain
+— and stores the refreshed value in `data/store.json` rather than `.env`, so it
+survives restarts. `/igquota` reports days remaining. This is the one thing that
+would otherwise work perfectly for two months and then stop dead.
+
+### 3.4 Check before publishing
 
 ```
 npm start
 ```
 
-Then `/igquota` in the DM. It should report how many posts remain in the rolling
-24-hour window. That call exercises the token, the app permissions and the IG
-user id in one go, without posting anything — if it errors, fix that before
-approving a card.
-
-Instagram's cap is **25 posts per 24 hours**. At two or three a day it should
-never bind; if it ever does, something upstream is wrong.
+Then `/igquota` in the DM. It exercises the token, the permissions and the user
+id in one call without posting anything. Instagram's cap is 25 posts per 24
+hours; at two or three a day it should never bind.
 
 ### 3.5 What publishing actually does
 
-On approve, the item joins the queue and drips out one every
-`POST_INTERVAL_MINUTES`. Instagram publishing is the documented two-step:
 `POST /media` → poll the container until `FINISHED` → `POST /media_publish`.
 
-The retry rule is about **double-posting, not about which destination matters
-more**:
+The retry rule is about **double-posting, not which destination matters more**:
 
-- **Nothing published** → safe to retry, so the item goes back on the queue.
-  With Instagram as your only target, that covers every failure: a token blip, a
-  hosting outage, a Graph 5xx. You get a DM each attempt, up to 3, then it is
-  dropped from the queue — loudly, never silently. The card file is kept.
-- **Something published** → not retried, because retrying would duplicate
-  whichever destination succeeded. Only reachable if you later add
-  `CHANNEL_ID`; you get told which one failed and decide.
+- **Nothing published** → safe to retry, so it goes back on the queue. Three
+  attempts, then dropped — loudly, never silently. The card file is kept.
+- **Something published** → not retried, since that would duplicate whichever
+  destination succeeded. You get told which failed and decide.
 
-Cards are 1080×1350 (4:5), JPEG — inside Instagram's accepted range (4:5 to
-1.91:1) and its 8 MB limit, with room to spare.
+Cards are 1080×1350 (4:5), JPEG — inside Instagram's accepted range and its
+8 MB limit with room to spare.
 
 ---
+
+## Running without Instagram
+
+The fastest way to a working pipeline. Point publishing at your own Telegram DM:
+
+```
+CHANNEL_ID=<your user id — the same number as OWNER_ID>
+```
+
+```
+npm start
+```
+
+Send `/run`, tap approve on a card, and the published version arrives in the
+same chat. That is the entire loop — gather, rank, verify, draft, render,
+approve, publish — with nothing stubbed.
+
+The only cost is that approval cards and published posts share one thread, so
+"waiting on you" and "already out" stop being visually distinct. Fine for days;
+annoying eventually, at which point either make a private channel or come back
+to §3.
 
 ## 4. Running it for real
 
