@@ -50,7 +50,7 @@ request, and these needed to be guarantees.
 
 | Rule | Enforced by |
 |---|---|
-| The source URL is always in the approval message | `src/format.js` — pushed unconditionally, never truncated, never hidden behind a link label |
+| The source URL is always in the approval message | `src/format.js` — pushed unconditionally, never truncated, never hidden behind a link label. The published card and caption carry no source; the rule is about what you see before tapping |
 | Nothing publishes without approval | `bot.js` — the only path to `enqueue()` is the `ok:` button handler |
 | No claim without a primary source | `src/verify.js` + the `allowlist` in `sources.json` — suffix-matched on a domain-label boundary, re-checked after redirects |
 | Claims must come from the source, not from memory | `src/verify.js` — the draft returns verbatim quotes and every one is checked against the fetched page. A paraphrased quote fails the whole draft |
@@ -195,7 +195,7 @@ BrickDeal.
 | `src/pipeline.js` | The daily pass: gather → rank → build until the target is met |
 | `src/render/` | `theme.js` (tokens + CSS), `templates.js` (the five layouts), `index.js` (Chromium → JPEG) |
 | `src/images.js` | Image provenance policy. Three permitted origins, tag required |
-| `src/images/pexels.js` | The stock provider. Portrait crops, bytes inlined rather than hotlinked. Pexels requires no attribution, so cards carry none — the provenance still shows in the approval message |
+| `src/images/pexels.js` | The stock provider. Portrait crops, bytes inlined rather than hotlinked |
 | `src/publish/` | `telegram.js`, `instagram.js` (Graph API two-step) |
 | `src/format.js` | The approval message and the published captions — kept deliberately separate |
 | `src/store.js` | Dedupe, staging, pending edits, publish queue, and the published log the quotas are computed from |

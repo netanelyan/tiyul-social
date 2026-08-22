@@ -277,15 +277,12 @@ ok('interpolated content is escaped', !html.includes('<script>alert(1)</script>'
 ok('ampersand escaped', html.includes('a &amp; b'));
 ok('document declares Hebrew and RTL', html.includes('lang="he"') && html.includes('dir="rtl"'));
 ok('the font is inlined, not linked', html.includes('data:font/ttf;base64,') && !html.includes('fonts.googleapis'));
-// Regression: candidate.js sets `sourceUrl`, the sample fixtures use `url`.
-// Reading only one printed the literal word "source" on every real card.
+// The card is a hook, not a citation: no source line, no credit line. The
+// sourcing rule is unaffected - it lives in the approval message, which is
+// asserted separately below and prints the URL unconditionally.
 ok(
-  'the source domain comes from sourceUrl (what a real candidate carries)',
-  renderHtml({ ...draft, url: undefined, sourceUrl: 'https://www.jnto.go.jp/news/x' }).includes('jnto.go.jp')
-);
-ok(
-  'and still from url (what the sample fixtures carry)',
-  renderHtml({ ...draft, sourceUrl: undefined, url: 'https://whc.unesco.org/en/news/x' }).includes('unesco.org')
+  'the card carries no source line',
+  !renderHtml({ ...draft, sourceUrl: 'https://www.jnto.go.jp/news/x' }).includes('jnto.go.jp')
 );
 
 // The card carries no photographer or library credit - Pexels does not require

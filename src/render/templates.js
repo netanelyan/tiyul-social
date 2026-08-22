@@ -45,21 +45,11 @@ function headlineSize(text, { max = 'xl' } = {}) {
   return n > 30 ? 'lg' : 'xl';
 }
 
-// Candidates carry the URL as `sourceUrl` (set in candidate.js from the final,
-// post-redirect address); the sample fixtures use `url`. Reading only one of
-// them silently printed the literal word "source" on every real card, because
-// sourceLabel() catches the parse failure and falls back. Source attribution is
-// the whole point of this pipeline, so it reads both.
-const srcUrl = (d) => d.sourceUrl || d.url || '';
-
-// A source URL is Latin text inside an RTL line — always isolated, never bare.
-function sourceLabel(url) {
-  try {
-    return new URL(url).hostname.replace(/^www\./, '');
-  } catch {
-    return 'source';
-  }
-}
+// The card carries no source line. That is a presentation decision, not a
+// weakening of the sourcing rule: the approval message still prints the full
+// source URL unconditionally on every candidate, and nothing publishes without
+// a tap on that message. What changed is that the artefact people scroll past
+// is a hook rather than a citation.
 
 // "יפן · יפן" happened: for a country-level post the model fills place and
 // country with the same word. Dedupe rather than print it twice.
@@ -80,7 +70,7 @@ const brandMark = `<div class="brand">טיול<span>+</span></div>`;
 // than about the place. The place name does the same job of orienting the
 // reader and is actually information, so it goes here and comes out of the
 // footer. Cards with no place simply show the brand mark alone.
-function shell({ accent, kicker, body, url, extraCss = '' }) {
+function shell({ accent, kicker, body, extraCss = '' }) {
   return `<style>${baseCss()}${extraCss}</style>
 <div class="card" style="--accent:${accent}">
   <div class="head">
@@ -88,9 +78,6 @@ function shell({ accent, kicker, body, url, extraCss = '' }) {
     <div class="kicker">${e(kicker || '')}</div>
   </div>
   <div class="body">${body}</div>
-  <div class="foot">
-    <div class="src">מקור: <span class="ltr">${e(sourceLabel(url))}</span></div>
-  </div>
 </div>`;
 }
 
@@ -138,9 +125,6 @@ function photoFullCard(d, accent, image) {
         <div class="rule"></div>
         <div class="headline ${headlineSize(d.headline, { max: 'md' })}">${e(d.headline)}</div>
         ${d.subhead ? `<div class="subhead">${e(d.subhead)}</div>` : ''}
-        <div class="foot">
-          <div class="src">מקור: <span class="ltr">${e(sourceLabel(srcUrl(d)))}</span></div>
-        </div>
       </div>
     </div>
   </div>`;
@@ -175,9 +159,6 @@ function photoBandCard(d, accent, image) {
     <div class="pb-body">
       <div class="headline ${headlineSize(d.headline, { max: 'md' })}">${e(d.headline)}</div>
       ${d.subhead ? `<div class="subhead">${e(d.subhead)}</div>` : ''}
-      <div class="foot">
-        <div class="src">מקור: <span class="ltr">${e(sourceLabel(srcUrl(d)))}</span></div>
-      </div>
     </div>
   </div>`;
 }
@@ -200,9 +181,6 @@ function photoFrameCard(d, accent, image) {
       <div class="headline ${headlineSize(d.headline, { max: 'md' })}">${e(d.headline)}</div>
       ${d.subhead ? `<div class="subhead">${e(d.subhead)}</div>` : ''}
     </div>
-    <div class="foot">
-      <div class="src">מקור: <span class="ltr">${e(sourceLabel(srcUrl(d)))}</span></div>
-    </div>
   </div>`;
 }
 
@@ -214,7 +192,6 @@ function factCard(d, accent) {
   return shell({
     accent,
     kicker: placeLine(d),
-    url: srcUrl(d),
     body: `
       <div class="rule"></div>
       <div class="headline ${headlineSize(d.headline)}">${e(d.headline)}</div>
@@ -228,7 +205,6 @@ function numbersCard(d, accent) {
   return shell({
     accent,
     kicker: placeLine(d),
-    url: srcUrl(d),
     extraCss: `
       .stat { display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap; }
       .stat-value {
@@ -268,7 +244,6 @@ function compareCard(d, accent) {
   return shell({
     accent,
     kicker: placeLine(d),
-    url: srcUrl(d),
     extraCss: `
       .cmps { display: flex; flex-direction: column; gap: 28px; }
       .cmp { border-right: 8px solid var(--c); padding: 26px 30px 28px; background: ${palette.inkSoft}; border-radius: 14px; }
@@ -302,7 +277,6 @@ function tipsCard(d, accent) {
   return shell({
     accent,
     kicker: placeLine(d),
-    url: srcUrl(d),
     extraCss: `
       .tips { list-style: none; display: flex; flex-direction: column; gap: 34px; }
       .tip { display: flex; gap: 26px; align-items: flex-start; }
@@ -353,7 +327,6 @@ function whenToGoCard(d, accent, data) {
   return shell({
     accent,
     kicker: placeLine(d),
-    url: srcUrl(d),
     extraCss: `
       .strip { display: grid; grid-template-columns: repeat(12, 1fr); gap: 10px; }
       .m { display: flex; flex-direction: column; align-items: center; gap: 12px; }
@@ -374,7 +347,6 @@ function alertCard(d, accent) {
   return shell({
     accent,
     kicker: placeLine(d),
-    url: srcUrl(d),
     extraCss: `
       .badge {
         align-self: flex-start;
@@ -400,7 +372,6 @@ function routeCard(d, accent) {
   return shell({
     accent,
     kicker: placeLine(d),
-    url: srcUrl(d),
     extraCss: `
       .leg { display: flex; align-items: center; gap: 26px; }
       .ep { font-size: 66px; font-weight: 900; line-height: 1.1; white-space: nowrap; }
@@ -439,7 +410,7 @@ function routeCard(d, accent) {
 /**
  * Build the full HTML document for a card.
  *
- * `draft` is a normalised draft (src/draft.js) plus the candidate's `url`.
+ * `draft` is a normalised draft (src/draft.js).
  * `data` carries any structured payload a layout draws directly (climate months).
  */
 export function renderHtml(draft, { data = null, image = null } = {}) {

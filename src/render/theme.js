@@ -163,17 +163,5 @@ body {
   background: var(--accent);
 }
 
-/* --- footer ------------------------------------------------------------- */
-.foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  padding-top: 28px;
-  border-top: 1px solid ${palette.line};
-  font-size: 24px;
-  color: ${palette.paperDim};
-}
-.foot .src { font-weight: 400; }
 `;
 }
