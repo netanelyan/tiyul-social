@@ -9,7 +9,7 @@ import { monthlyNormals, verdictFor } from '../src/sources/climate.js';
 import { quotaBlock } from '../src/pillars.js';
 import { scoreItem } from '../src/score.js';
 import { candidateId } from '../src/candidate.js';
-import { renderHtml, LAYOUTS } from '../src/render/templates.js';
+import { renderHtml, LAYOUTS, PHOTO_LAYOUTS, isPhotoLayout } from '../src/render/templates.js';
 import { assertGenericAiPrompt, ImagePolicyError } from '../src/images.js';
 import { approvalMessage } from '../src/format.js';
 
@@ -254,8 +254,37 @@ ok('interpolated content is escaped', !html.includes('<script>alert(1)</script>'
 ok('ampersand escaped', html.includes('a &amp; b'));
 ok('document declares Hebrew and RTL', html.includes('lang="he"') && html.includes('dir="rtl"'));
 ok('the font is inlined, not linked', html.includes('data:font/ttf;base64,') && !html.includes('fonts.googleapis'));
-ok('photo layout falls back when there is no image', renderHtml({ ...draft, layout: 'photo' }).includes('class="card "'));
-eq('five layouts registered', LAYOUTS.length, 5);
+eq('ten layouts registered', LAYOUTS.length, 10);
+ok('the photo family is identified as such', PHOTO_LAYOUTS.every(isPhotoLayout) && !isPhotoLayout('fact'));
+
+// A photo layout with no image must degrade to a text card, never render an
+// empty frame. With no image provider configured this is not an edge case — it
+// is what happens on every single render today.
+for (const l of PHOTO_LAYOUTS) {
+  const noImage = renderHtml({ ...draft, layout: l });
+  ok(`${l} falls back to a text card when no image is supplied`, !noImage.includes('class="bg"') && noImage.includes('&lt;script&gt;'));
+  ok(`${l} renders a background image when one is supplied`, renderHtml({ ...draft, layout: l }, { image: { src: 'data:image/png;base64,AA', provenance: 'stock' } }).includes('class="bg"'));
+}
+
+// Layout-specific payloads must actually reach the card.
+ok(
+  'numbers renders the figure, isolated so bidi cannot reorder it',
+  (() => {
+    const h = renderHtml({ ...draft, layout: 'numbers', stat: { value: '3,715', unit: 'מטר', label: 'גובה' } });
+    return h.includes('3,715') && /unicode-bidi:\s*isolate/.test(h);
+  })()
+);
+ok(
+  'compare renders both panels',
+  renderHtml({ ...draft, layout: 'compare', compare: { aTitle: 'מיתוס', aText: 'א', bTitle: 'מציאות', bText: 'ב' } }).includes('מציאות')
+);
+ok(
+  'route renders origin and destination',
+  (() => {
+    const h = renderHtml({ ...draft, layout: 'route', route: { from: 'תל אביב', to: 'טביליסי', operator: '', startsOn: '' } });
+    return h.includes('טביליסי') && h.includes('תל אביב');
+  })()
+);
 
 /* -------------------------------------------------------------------------- */
 group('approval message — the source URL is never optional');

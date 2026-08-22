@@ -3,17 +3,56 @@ loadEnv();
 
 import path from 'node:path';
 import { renderCard, closeBrowser } from '../src/render/index.js';
-import { LAYOUTS } from '../src/render/templates.js';
+import { LAYOUTS, isPhotoLayout } from '../src/render/templates.js';
+import { sampleImage } from './sample-image.js';
 
 // Renders one sample of every layout into ./samples so the output can actually
 // be looked at. This exists because "the Hebrew is correct" is not something
 // you can establish by reading the HTML — the bidi algorithm, the font's
 // shaping, and the line breaking all happen at render time. Look at the JPEGs.
+//
+// The photo layouts are rendered against a procedurally generated placeholder
+// (scripts/sample-image.js) rather than a real photograph. Without one they
+// degrade to the fact card, which is correct behaviour but means the whole
+// photo family would be invisible here.
 
 const OUT = path.join(process.cwd(), 'samples');
 
+const common = { pillar: 'place', place: 'ליסבון', country: 'פורטוגל', bullets: [] };
+
 const samples = {
+  photoFull: {
+    ...common,
+    layout: 'photoFull',
+    headline: 'הרובע שכל ליסבון מגיעה אליו רק בסופי שבוע',
+    subhead: 'בין השוק לנמל, עשר דקות הליכה מהמרכז — ובשבת בבוקר הוא שייך למקומיים בלבד.',
+    url: 'https://whc.unesco.org/en/news/example',
+    scene: 'coast',
+  },
+  photoBand: {
+    ...common,
+    layout: 'photoBand',
+    pillar: 'hidden',
+    place: 'פיורדלנד',
+    country: 'ניו זילנד',
+    headline: 'העמק שנפתח למבקרים רק 60 יום בשנה',
+    subhead: 'שאר השנה הדרך סגורה בגלל מפולות. ההרשמה נפתחת בינואר ונסגרת תוך שבועות.',
+    url: 'https://www.govt.nz/example',
+    scene: 'mountains',
+  },
+  photoFrame: {
+    ...common,
+    layout: 'photoFrame',
+    pillar: 'fact',
+    place: 'קיוטו',
+    country: 'יפן',
+    headline: 'הגשר שנבנה מחדש כל 20 שנה — בכוונה',
+    subhead: 'המסורת שומרת על הידע של הבנייה, לא על העץ עצמו.',
+    url: 'https://www.jnto.go.jp/news/example',
+    scene: 'city',
+  },
   fact: {
+    ...common,
     layout: 'fact',
     pillar: 'fact',
     place: 'סלינה',
@@ -21,9 +60,36 @@ const samples = {
     headline: 'האגם היחיד באירופה שמשנה צבע פעמיים בשנה',
     subhead: 'הסיד שנשטף מההרים מגיב לטמפרטורה — ובאפריל ובאוקטובר המים עוברים מטורקיז לירוק כהה.',
     url: 'https://whc.unesco.org/en/news/example',
-    bullets: [],
+  },
+  numbers: {
+    ...common,
+    layout: 'numbers',
+    pillar: 'fact',
+    place: 'האיים הקנריים',
+    country: 'ספרד',
+    headline: 'זה הר הגעש הגבוה ביותר על אדמת ספרד',
+    subhead: 'הרכבל עוצר 200 מטר מתחת לפסגה, והמעבר האחרון דורש אישור מראש שנגמר שבועות מראש.',
+    stat: { value: '3,715', unit: 'מטר', label: 'גובה הפסגה של הטיידה מעל פני הים' },
+    url: 'https://whc.unesco.org/en/news/example',
+  },
+  compare: {
+    ...common,
+    layout: 'compare',
+    pillar: 'tip',
+    place: 'איסלנד',
+    country: '',
+    headline: 'הזוהר הצפוני לא עובד ככה',
+    subhead: '',
+    compare: {
+      aTitle: 'מה שחושבים',
+      aText: 'צריך להגיע בדצמבר, בשיא החורף, כדי לראות זוהר צפוני.',
+      bTitle: 'מה שקורה בפועל',
+      bText: 'ספטמבר ומרץ נותנים את אותן שעות חשיכה עם מזג אוויר נוח יותר וסיכוי גבוה יותר לשמיים בהירים.',
+    },
+    url: 'https://www.govt.nz/example',
   },
   tips: {
+    ...common,
     layout: 'tips',
     pillar: 'tip',
     place: 'טוקיו',
@@ -38,6 +104,7 @@ const samples = {
     ],
   },
   whenToGo: {
+    ...common,
     layout: 'whenToGo',
     pillar: 'timing',
     place: 'אתונה',
@@ -45,9 +112,9 @@ const samples = {
     headline: 'מתי באמת כדאי לטוס לאתונה',
     subhead: 'ממוצע רב-שנתי של טמפרטורות ומשקעים — אפריל ואוקטובר הם החלון הנוח באמת.',
     url: 'https://archive-api.open-meteo.com/v1/archive?latitude=37.98',
-    bullets: [],
   },
   alert: {
+    ...common,
     layout: 'alert',
     pillar: 'entry',
     place: 'האיחוד האירופי',
@@ -55,17 +122,17 @@ const samples = {
     headline: 'הרישום הביומטרי בגבולות שנגן נכנס לתוקף בהדרגה',
     subhead: 'בכניסה הראשונה תידרשו לטביעות אצבע ולתצלום פנים. כדאי להגיע לשדה מוקדם יותר מהרגיל.',
     url: 'https://www.gov.uk/foreign-travel-advice/example',
-    bullets: [],
   },
-  photo: {
-    layout: 'photo',
-    pillar: 'place',
-    place: 'ליסבון',
-    country: 'פורטוגל',
-    headline: 'הרובע שכל ליסבון מגיעה אליו רק בסופי שבוע',
-    subhead: 'בין השוק לנמל, ובעשר דקות הליכה מהמרכז.',
-    url: 'https://example.gov/lisbon',
-    bullets: [],
+  route: {
+    ...common,
+    layout: 'route',
+    pillar: 'route',
+    place: 'תל אביב · טביליסי',
+    country: '',
+    headline: 'קו ישיר חדש לבירת גאורגיה, ארבע פעמים בשבוע',
+    subhead: 'הטיסה נוחתת לפנות בוקר, כך שיום ההגעה נשאר שלם.',
+    route: { from: 'תל אביב', to: 'טביליסי', operator: 'ג׳ורג׳יאן איירווייז', startsOn: '3 בנובמבר' },
+    url: 'https://www.gov.uk/foreign-travel-advice/example',
   },
 };
 
@@ -91,14 +158,19 @@ const climateData = {
 async function main() {
   for (const layout of LAYOUTS) {
     const draft = samples[layout];
+    if (!draft) {
+      console.log(`${layout.padEnd(11)} -> no sample defined`);
+      continue;
+    }
     const r = await renderCard(draft, {
       id: `sample-${layout}`,
       data: layout === 'whenToGo' ? climateData : null,
+      image: isPhotoLayout(layout) ? sampleImage(draft.scene) : null,
       outDir: OUT,
     });
-    console.log(`${layout.padEnd(10)} -> ${r.file} (${(r.bytes / 1024).toFixed(0)} KB)`);
+    console.log(`${layout.padEnd(11)} -> ${path.basename(r.file)} (${(r.bytes / 1024).toFixed(0)} KB)`);
   }
-  console.log(`\nLook at the JPEGs in ${OUT} — not the HTML.`);
+  console.log(`\n${LAYOUTS.length} layouts written to ${OUT} — look at the JPEGs, not the HTML.`);
 }
 
 main()

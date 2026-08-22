@@ -59,6 +59,45 @@ const DRAFT_SCHEMA = {
         additionalProperties: false,
       },
     },
+    // Layout-specific payloads. The JSON Schema subset the API accepts requires
+    // every property to be listed in `required`, so these are always present and
+    // are filled with empty strings when the chosen layout doesn't use them.
+    // normalise() below falls the layout back when its payload is incomplete.
+    stat: {
+      type: 'object',
+      description: 'For the numbers layout. Empty strings otherwise.',
+      properties: {
+        value: { type: 'string', description: 'The figure itself, digits only, e.g. "2,576"' },
+        unit: { type: 'string', description: 'Short unit in Hebrew, e.g. "מדרגות", or empty' },
+        label: { type: 'string', description: 'One short Hebrew line saying what the figure counts' },
+      },
+      required: ['value', 'unit', 'label'],
+      additionalProperties: false,
+    },
+    compare: {
+      type: 'object',
+      description: 'For the compare layout: a is the wrong belief, b is what is actually true.',
+      properties: {
+        aTitle: { type: 'string' },
+        aText: { type: 'string' },
+        bTitle: { type: 'string' },
+        bText: { type: 'string' },
+      },
+      required: ['aTitle', 'aText', 'bTitle', 'bText'],
+      additionalProperties: false,
+    },
+    route: {
+      type: 'object',
+      description: 'For the route layout. Never include a fare anywhere in these fields.',
+      properties: {
+        from: { type: 'string', description: 'Origin in Hebrew, almost always "תל אביב"' },
+        to: { type: 'string', description: 'Destination in Hebrew' },
+        operator: { type: 'string', description: 'Airline in Hebrew, or empty' },
+        startsOn: { type: 'string', description: 'When it starts, as an Israeli reader would write it, or empty' },
+      },
+      required: ['from', 'to', 'operator', 'startsOn'],
+      additionalProperties: false,
+    },
     caption: { type: 'string', description: 'Hebrew caption for Telegram and Instagram' },
     evidence: {
       type: 'array',
@@ -88,6 +127,9 @@ const DRAFT_SCHEMA = {
     'headline',
     'subhead',
     'bullets',
+    'stat',
+    'compare',
+    'route',
     'caption',
     'evidence',
   ],
@@ -120,11 +162,31 @@ CONTENT PILLARS
 ${pillarList}
 
 CHOOSING A LAYOUT
+Pick the one the content actually fits. A layout whose payload you cannot fill
+honestly is the wrong layout — say so by choosing another, never by padding.
+
+Text-led (no photograph needed — these are the default):
 - fact: one surprising, specific, verifiable fact. The headline IS the fact.
+- numbers: when a single figure carries the story. Fill "stat": the figure in
+  digits, a short unit, and one line saying what it counts. Only when the number
+  is genuinely striking on its own.
+- compare: a widely held belief that the source contradicts. Fill "compare":
+  a is the wrong belief, b is what the source actually says. Only when the
+  source really does contradict something, never as a rhetorical frame.
 - tips: exactly three short practical tips. Use only when you have three distinct ones.
 - whenToGo: seasonal timing. Only for climate/timing sources that carry month data.
 - alert: an entry, visa, permit or border change. Lead with what changed and from when.
-- photo: only when a specific image has been supplied. Do not choose it otherwise.
+- route: a new or returning route out of Tel Aviv. Fill "route" with origin,
+  destination, operator and start date. Never a fare, in any field.
+
+Photo-led (ONLY when an image has been supplied — see IMAGE AVAILABLE below;
+if none was supplied these are forbidden and the card would fall back anyway):
+- photoFull: full-bleed picture, headline and one supporting line over the
+  bottom of it. The strongest choice when the place itself is the story.
+- photoBand: picture on top, a solid band of type beneath. Best when the
+  supporting line needs more room than a scrim can carry legibly.
+- photoFrame: inset picture with a gallery caption under it. Quieter, good for
+  a single object or detail rather than a landscape.
 
 WRITING THE CARD
 - headline: 4-9 Hebrew words. Concrete and specific. A number, a name, a place.
@@ -233,17 +295,38 @@ function normalise(d, item) {
     bullets: Array.isArray(d.bullets)
       ? d.bullets.slice(0, 3).map((b) => ({ title: s(b?.title), text: s(b?.text) }))
       : [],
+    stat: { value: s(d.stat?.value), unit: s(d.stat?.unit), label: s(d.stat?.label) },
+    compare: {
+      aTitle: s(d.compare?.aTitle),
+      aText: s(d.compare?.aText),
+      bTitle: s(d.compare?.bTitle),
+      bText: s(d.compare?.bText),
+    },
+    route: {
+      from: s(d.route?.from) || 'תל אביב',
+      to: s(d.route?.to),
+      operator: s(d.route?.operator),
+      startsOn: s(d.route?.startsOn),
+    },
     evidence: Array.isArray(d.evidence)
       ? d.evidence.map((e) => ({ claim: s(e?.claim), quote: String(e?.quote ?? '') }))
       : [],
   };
 
-  // A tips card with two bullets renders as a hole in the layout. Rather than
-  // pad it, fall back to the text-led fact card, which one good line can carry.
-  if (out.layout === 'tips' && out.bullets.filter((b) => b.title && b.text).length < 3) {
-    out.layout = 'fact';
-    out.bullets = [];
-  }
+  // A layout whose payload came back incomplete renders as a hole — a tips card
+  // with two bullets, a numbers card with no number. Rather than pad it with
+  // filler, fall back to the fact card, which one good line can carry on its
+  // own. Same principle as the photo layouts degrading when there is no image.
+  const complete = {
+    tips: () => out.bullets.filter((b) => b.title && b.text).length === 3,
+    numbers: () => Boolean(out.stat.value),
+    compare: () => Boolean(out.compare.aTitle && out.compare.aText && out.compare.bTitle && out.compare.bText),
+    route: () => Boolean(out.route.to),
+  };
+  if (complete[out.layout] && !complete[out.layout]()) out.layout = 'fact';
+
+  // Clear payloads the surviving layout doesn't use, so nothing unused reaches
+  // the renderer or the store.
   if (out.layout !== 'tips') out.bullets = [];
 
   return out;

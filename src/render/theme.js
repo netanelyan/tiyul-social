@@ -146,6 +146,7 @@ body {
 .headline.xl { font-size: 104px; }
 .headline.lg { font-size: 86px; }
 .headline.md { font-size: 70px; }
+.headline.sm { font-size: 56px; }
 
 .subhead {
   font-size: 40px;

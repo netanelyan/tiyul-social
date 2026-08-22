@@ -91,23 +91,55 @@ allowlist included.
 
 ## Templates
 
-Five layouts, all 1080×1350 (4:5 — the tallest ratio Instagram accepts). Four
-need no photograph at all, which is the answer to image licensing rather than a
-workaround for it.
+Ten layouts, all 1080×1350 (4:5 — the tallest ratio Instagram accepts). Two
+families.
+
+**Photo-led** — the picture is the point and the words sit under it. All three
+need an image, and all three degrade to `fact` when there isn't one, which in
+v1 is every time.
+
+- **photoFull** — full-bleed picture, headline and one line over its bottom
+  third. The headline is capped one size smaller than on the text cards on
+  purpose: an 86px headline wrapping to three lines pushes the scrim halfway up
+  the frame and buries the photograph.
+- **photoBand** — picture on top, a solid band of type beneath it. Best when the
+  supporting line needs more room than a scrim can carry legibly.
+- **photoFrame** — inset picture with a gallery caption under it. Quieter; suits
+  a single object or detail rather than a landscape.
+
+**Text-led** — no photograph at all, which is what actually sidesteps image
+licensing rather than managing it.
 
 - **fact** — one surprising, specific claim, set large. The headline *is* the fact.
+- **numbers** — a single figure carrying the card. The numeral is bidi-isolated,
+  because a Hebrew unit sitting beside a Latin figure is exactly where the
+  reordering goes wrong.
+- **compare** — a widely held belief against what the source actually says.
 - **tips** — three numbered practical tips.
 - **whenToGo** — a twelve-month strip, good / shoulder / avoid, drawn straight from
   the climate data rather than from anything the model wrote, so the card and the
   source cannot drift apart.
 - **alert** — an entry or visa change: what changed, from when, who it affects.
-- **photo** — photo-led with a gradient scrim. The only one needing an image, and
-  it falls back to `fact` when there isn't one — which is every time in v1.
+- **route** — a new or returning line out of TLV, with the connector pointing
+  origin→destination. The arrowhead is drawn rather than typed, because the ✈
+  glyph's own direction varies by font and would silently point the wrong way.
 
-The drafting step picks the layout from the content, and is told it may not
-choose `photo` unless an image was actually supplied.
+The drafting step picks the layout from the content and fills that layout's
+payload. A layout whose payload comes back incomplete — a tips card with two
+bullets, a numbers card with no figure — falls back to `fact` rather than
+rendering a hole, on the same principle as the photo layouts degrading without
+an image. The photo family is forbidden to the model unless an image was
+actually supplied.
 
-`npm run render-samples` writes one of each to `samples/`. **Look at the JPEGs.**
+`npm run render-samples` writes one of each to `samples/`, with the photo family
+rendered against a procedurally generated placeholder (`scripts/sample-image.js`)
+— without one they'd all degrade to text cards and the whole photo family would
+be invisible. That generator is a preview aid and lives in `scripts/` rather than
+`src/` precisely so it can't become a content source: the provenance rules in
+`src/images.js` still allow only licensed stock, our own catalogue, or generic
+AI, and a procedural placeholder is none of them.
+
+**Look at the JPEGs.**
 Whether the Hebrew is right is not a question you can answer by reading the
 HTML — bidi resolution, glyph shaping and line breaking all happen at render
 time. That's also why Chromium is in the dependency list: it's doing real

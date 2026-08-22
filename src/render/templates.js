@@ -1,32 +1,52 @@
 import { baseCss, escapeHtml as e, palette, pillarAccent, CARD_W, CARD_H } from './theme.js';
 import { pillarHe } from '../pillars.js';
 
-// The layout set. Four of the five need no photograph at all, which is the
-// answer to the image-licensing problem rather than a workaround for it: a fact,
-// a set of tips, a seasonal strip and an entry-rule change are all better served
+// The layout set.
+//
+// Two families. The photo family puts a photograph in charge and lets the words
+// sit underneath it; the text-led family needs no photograph at all, which is
+// what actually sidesteps image licensing rather than managing it — a fact, a
+// set of tips, a seasonal strip and an entry-rule change are all better served
 // by type than by a stock photo of somewhere the post isn't even about.
-export const LAYOUTS = ['photo', 'fact', 'tips', 'whenToGo', 'alert'];
+//
+// Every layout is 1080x1350 (4:5), the tallest ratio Instagram accepts.
+
+export const PHOTO_LAYOUTS = ['photoFull', 'photoBand', 'photoFrame'];
+export const TEXT_LAYOUTS = ['fact', 'numbers', 'compare', 'tips', 'whenToGo', 'alert', 'route'];
+export const LAYOUTS = [...PHOTO_LAYOUTS, ...TEXT_LAYOUTS];
+
+export const isPhotoLayout = (l) => PHOTO_LAYOUTS.includes(l);
+
+// What a photo layout degrades to when no image is available. Never an empty
+// frame — in v1, with no image provider configured, this is the path that
+// actually runs every time.
+export const PHOTO_FALLBACK = 'fact';
 
 export const LAYOUT_HE = {
-  photo: 'כרטיס תמונה',
+  photoFull: 'תמונה מלאה',
+  photoBand: 'תמונה + פס טקסט',
+  photoFrame: 'תמונה ממוסגרת',
   fact: 'כרטיס עובדה',
+  numbers: 'כרטיס מספר',
+  compare: 'מיתוס מול מציאות',
   tips: 'כרטיס טיפים',
   whenToGo: 'מתי ללכת',
   alert: 'עדכון כניסה',
+  route: 'קו חדש',
 };
 
 const HE_MONTH_ABBR = ['ינו', 'פבר', 'מרץ', 'אפר', 'מאי', 'יונ', 'יול', 'אוג', 'ספט', 'אוק', 'נוב', 'דצמ'];
 
-// Hebrew sets tighter than Latin at the same point size, so the thresholds are
-// tuned against rendered Hebrew rather than character counts borrowed from an
-// English layout.
+// Hebrew sets tighter than Latin at the same point size, so these thresholds
+// are tuned against rendered Hebrew rather than borrowed from an English layout.
 function headlineSize(text, { max = 'xl' } = {}) {
   const n = String(text || '').length;
+  if (max === 'md') return n > 60 ? 'sm' : 'md';
   if (max === 'lg' || n > 46) return n > 70 ? 'md' : 'lg';
   return n > 30 ? 'lg' : 'xl';
 }
 
-// A source URL is latin text inside an RTL line — always isolated, never bare.
+// A source URL is Latin text inside an RTL line — always isolated, never bare.
 function sourceLabel(url) {
   try {
     return new URL(url).hostname.replace(/^www\./, '');
@@ -35,11 +55,19 @@ function sourceLabel(url) {
   }
 }
 
-function shell({ accent, kicker, body, place, url, extraCss = '', bodyClass = '' }) {
+const placeLine = (d) => [d.place, d.country].filter(Boolean).join(' · ');
+
+const brandMark = `<div class="brand">טיול<span>+</span></div>`;
+
+/* -------------------------------------------------------------------------- */
+/* Text-led shell                                                             */
+/* -------------------------------------------------------------------------- */
+
+function shell({ accent, kicker, body, place, url, extraCss = '' }) {
   return `<style>${baseCss()}${extraCss}</style>
-<div class="card ${bodyClass}" style="--accent:${accent}">
+<div class="card" style="--accent:${accent}">
   <div class="head">
-    <div class="brand">טיול<span>+</span></div>
+    ${brandMark}
     <div class="kicker">${e(kicker)}</div>
   </div>
   <div class="body">${body}</div>
@@ -50,10 +78,125 @@ function shell({ accent, kicker, body, place, url, extraCss = '', bodyClass = ''
 </div>`;
 }
 
-const placeLine = (d) => [d.place, d.country].filter(Boolean).join(' · ');
+/* -------------------------------------------------------------------------- */
+/* Photo family — the picture leads, the words sit under it                   */
+/* -------------------------------------------------------------------------- */
+
+const photoCss = `
+  .photo-card { padding: 0; }
+  .bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  /* Two scrims, not one. The bottom carries the text and needs to be nearly
+     opaque where the words sit; the top only has to lift the brand mark off a
+     bright sky. A single full-height gradient would either wash out the
+     photograph or leave the headline unreadable over a pale horizon. */
+  .scrim-bottom {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 52%;
+    background: linear-gradient(to top,
+      rgba(16,32,31,0.97) 0%, rgba(16,32,31,0.94) 34%,
+      rgba(16,32,31,0.62) 66%, rgba(16,32,31,0) 100%);
+  }
+  .scrim-top {
+    position: absolute; left: 0; right: 0; top: 0; height: 22%;
+    background: linear-gradient(to bottom, rgba(16,32,31,0.72), rgba(16,32,31,0));
+  }
+  .layer { position: relative; z-index: 2; display: flex; flex-direction: column; height: 100%; }
+  .credit { font-size: 19px; color: rgba(242,236,224,0.5); margin-top: 12px; }
+`;
+
+/** photoFull — full-bleed picture, the description sitting in the bottom third. */
+function photoFullCard(d, accent, image) {
+  // The headline is capped a size smaller than on the text cards. This layout's
+  // job is to be mainly a picture, and an 86px headline wrapping to three lines
+  // pushes the scrim halfway up the frame and buries the photograph.
+  return `<style>${baseCss()}${photoCss}
+    .layer { padding: 66px 78px 58px; justify-content: space-between; }
+    .pf-text { display: flex; flex-direction: column; gap: 20px; }
+    .pf-text .subhead { font-size: 36px; }
+    .head { border-bottom: none; padding-bottom: 0; }
+  </style>
+  <div class="card photo-card" style="--accent:${accent}">
+    <img class="bg" src="${e(image.src)}" alt="">
+    <div class="scrim-top"></div><div class="scrim-bottom"></div>
+    <div class="layer">
+      <div class="head">${brandMark}<div class="kicker">${e(pillarHe(d.pillar))}</div></div>
+      <div class="pf-text">
+        <div class="rule"></div>
+        <div class="headline ${headlineSize(d.headline, { max: 'md' })}">${e(d.headline)}</div>
+        ${d.subhead ? `<div class="subhead">${e(d.subhead)}</div>` : ''}
+        <div class="foot">
+          <div class="place">${e(placeLine(d))}</div>
+          <div class="src">מקור: <span class="ltr">${e(sourceLabel(d.url))}</span></div>
+        </div>
+        ${image.credit ? `<div class="credit"><span class="ltr">${e(image.credit)}</span></div>` : ''}
+      </div>
+    </div>
+  </div>`;
+}
+
+/** photoBand — picture on top, a solid band of type beneath it. */
+function photoBandCard(d, accent, image) {
+  return `<style>${baseCss()}${photoCss}
+    .photo-card { display: flex; flex-direction: column; }
+    .pb-img { position: relative; height: 60%; flex: none; overflow: hidden; }
+    .pb-img .bg { position: absolute; }
+    .pb-chip {
+      position: absolute; z-index: 2; top: 44px; right: 48px;
+      display: flex; align-items: center; gap: 18px;
+      background: rgba(16,32,31,0.82); backdrop-filter: blur(2px);
+      padding: 14px 26px; border-radius: 999px;
+    }
+    .pb-chip .brand { font-size: 32px; }
+    .pb-chip .kicker { font-size: 22px; }
+    .pb-body {
+      flex: 1; min-height: 0; display: flex; flex-direction: column;
+      justify-content: center; gap: 26px; padding: 54px 78px 58px;
+      border-top: 6px solid var(--accent);
+    }
+  </style>
+  <div class="card photo-card" style="--accent:${accent}">
+    <div class="pb-img">
+      <img class="bg" src="${e(image.src)}" alt="">
+      <div class="scrim-top"></div>
+      <div class="pb-chip">${brandMark}<div class="kicker">${e(pillarHe(d.pillar))}</div></div>
+    </div>
+    <div class="pb-body">
+      <div class="headline ${headlineSize(d.headline, { max: 'md' })}">${e(d.headline)}</div>
+      ${d.subhead ? `<div class="subhead">${e(d.subhead)}</div>` : ''}
+      <div class="foot">
+        <div class="place">${e(placeLine(d))}</div>
+        <div class="src">מקור: <span class="ltr">${e(sourceLabel(d.url))}</span></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+/** photoFrame — inset picture with a gallery caption under it. */
+function photoFrameCard(d, accent, image) {
+  return `<style>${baseCss()}${photoCss}
+    .photo-card { padding: 62px 66px 56px; }
+    .pfr-img {
+      position: relative; height: 700px; flex: none;
+      border-radius: 20px; overflow: hidden; margin-top: 30px;
+    }
+    .pfr-body { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 22px; padding-top: 40px; }
+    .head { border-bottom: none; padding-bottom: 0; }
+  </style>
+  <div class="card photo-card" style="--accent:${accent}">
+    <div class="head">${brandMark}<div class="kicker">${e(pillarHe(d.pillar))}</div></div>
+    <div class="pfr-img"><img class="bg" src="${e(image.src)}" alt=""></div>
+    <div class="pfr-body">
+      <div class="headline ${headlineSize(d.headline, { max: 'md' })}">${e(d.headline)}</div>
+      ${d.subhead ? `<div class="subhead">${e(d.subhead)}</div>` : ''}
+    </div>
+    <div class="foot">
+      <div class="place">${e(placeLine(d))}</div>
+      <div class="src">מקור: <span class="ltr">${e(sourceLabel(d.url))}</span></div>
+    </div>
+  </div>`;
+}
 
 /* -------------------------------------------------------------------------- */
-/* Layouts                                                                    */
+/* Text-led layouts                                                           */
 /* -------------------------------------------------------------------------- */
 
 function factCard(d, accent) {
@@ -66,6 +209,68 @@ function factCard(d, accent) {
       <div class="rule"></div>
       <div class="headline ${headlineSize(d.headline)}">${e(d.headline)}</div>
       ${d.subhead ? `<div class="subhead">${e(d.subhead)}</div>` : ''}`,
+  });
+}
+
+/** numbers — one figure carries the whole card. */
+function numbersCard(d, accent) {
+  const s = d.stat || {};
+  return shell({
+    accent,
+    kicker: pillarHe(d.pillar),
+    place: placeLine(d),
+    url: d.url,
+    extraCss: `
+      .stat { display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap; }
+      .stat-value {
+        font-size: 232px; font-weight: 900; line-height: 0.88;
+        letter-spacing: -6px; color: var(--accent);
+        /* The figure is the point of this card, and a Hebrew label sitting
+           beside a Latin numeral is exactly where bidi reorders things. Isolate
+           it so "12" never ends up on the wrong side of "אלף". */
+        direction: ltr; unicode-bidi: isolate;
+      }
+      .stat-unit { font-size: 62px; font-weight: 800; color: var(--accent); }
+      .stat-label { font-size: 34px; font-weight: 600; color: ${palette.paperDim}; }
+      .body { gap: 30px; }`,
+    body: `
+      <div class="stat">
+        <div class="stat-value">${e(s.value)}</div>
+        ${s.unit ? `<div class="stat-unit">${e(s.unit)}</div>` : ''}
+      </div>
+      ${s.label ? `<div class="stat-label">${e(s.label)}</div>` : ''}
+      <div class="headline ${headlineSize(d.headline, { max: 'md' })}">${e(d.headline)}</div>
+      ${d.subhead ? `<div class="subhead">${e(d.subhead)}</div>` : ''}`,
+  });
+}
+
+/** compare — two panels, for myth-vs-reality and before-vs-after. */
+function compareCard(d, accent) {
+  const c = d.compare || {};
+  const panel = (title, text, colour, mark) => `
+    <div class="cmp" style="--c:${colour}">
+      <div class="cmp-head"><span class="cmp-mark">${mark}</span>${e(title)}</div>
+      <div class="cmp-text">${e(text)}</div>
+    </div>`;
+
+  return shell({
+    accent,
+    kicker: pillarHe(d.pillar),
+    place: placeLine(d),
+    url: d.url,
+    extraCss: `
+      .cmps { display: flex; flex-direction: column; gap: 28px; }
+      .cmp { border-right: 8px solid var(--c); padding: 26px 30px 28px; background: ${palette.inkSoft}; border-radius: 14px; }
+      .cmp-head { display: flex; align-items: center; gap: 14px; font-size: 34px; font-weight: 800; color: var(--c); margin-bottom: 12px; }
+      .cmp-mark { font-size: 30px; }
+      .cmp-text { font-size: 33px; line-height: 1.4; color: ${palette.paper}; }
+      .body { gap: 36px; }`,
+    body: `
+      <div class="headline ${headlineSize(d.headline, { max: 'md' })}">${e(d.headline)}</div>
+      <div class="cmps">
+        ${panel(c.aTitle, c.aText, palette.clay, '✕')}
+        ${panel(c.bTitle, c.bText, palette.sage, '✓')}
+      </div>`,
   });
 }
 
@@ -113,19 +318,18 @@ function whenToGoCard(d, accent, data) {
   const months = data?.months || [];
   const colour = { good: palette.sage, shoulder: palette.amber, avoid: palette.clay };
 
-  // The strip is drawn from the climate data itself, never from anything the
-  // model wrote — so what the card claims and what the source says cannot drift.
-  // In an RTL grid the first cell lands on the right, which is where a Hebrew
-  // reader expects January.
+  // Drawn from the climate data itself, never from anything the model wrote —
+  // so what the card claims and what the source says cannot drift apart. In an
+  // RTL grid the first cell lands on the right, which is where a Hebrew reader
+  // expects January.
   const cells = months
-    .map((m) => {
-      const c = colour[m.verdict] || 'rgba(242,236,224,0.2)';
-      return `
+    .map(
+      (m) => `
       <div class="m">
-        <div class="m-bar" style="background:${c}"></div>
+        <div class="m-bar" style="background:${colour[m.verdict] || 'rgba(242,236,224,0.2)'}"></div>
         <div class="m-name">${HE_MONTH_ABBR[m.month]}</div>
-      </div>`;
-    })
+      </div>`
+    )
     .join('');
 
   const legend = [
@@ -177,57 +381,86 @@ function alertCard(d, accent) {
   });
 }
 
-function photoCard(d, accent, image) {
-  // Provenance is printed on the card itself, not only in the approval message,
-  // so a published card carries its own licence trail.
-  const credit = image?.credit ? `<div class="credit"><span class="ltr">${e(image.credit)}</span></div>` : '';
-  return `<style>${baseCss()}
-    .photo-card { padding: 0; }
-    .bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-    .scrim {
-      position: absolute; inset: 0;
-      background: linear-gradient(to top,
-        rgba(16,32,31,0.96) 0%, rgba(16,32,31,0.86) 30%,
-        rgba(16,32,31,0.30) 62%, rgba(16,32,31,0.20) 100%);
-    }
-    .layer { position: relative; z-index: 2; display: flex; flex-direction: column;
-             height: 100%; padding: 74px 78px 66px; }
-    .credit { font-size: 20px; color: rgba(242,236,224,0.55); margin-top: 10px; }
-  </style>
-  <div class="card photo-card" style="--accent:${accent}">
-    ${image?.src ? `<img class="bg" src="${e(image.src)}" alt="">` : ''}
-    <div class="scrim"></div>
-    <div class="layer">
-      <div class="head">
-        <div class="brand">טיול<span>+</span></div>
-        <div class="kicker">${e(pillarHe(d.pillar))}</div>
+/** route — a new or returning line out of TLV. Never fares. */
+function routeCard(d, accent) {
+  const r = d.route || {};
+  const meta = [
+    r.operator ? ['מפעילה', r.operator] : null,
+    r.startsOn ? ['מתחיל', r.startsOn] : null,
+  ].filter(Boolean);
+
+  return shell({
+    accent,
+    kicker: pillarHe('route'),
+    place: placeLine(d),
+    url: d.url,
+    extraCss: `
+      .leg { display: flex; align-items: center; gap: 26px; }
+      .ep { font-size: 66px; font-weight: 900; line-height: 1.1; white-space: nowrap; }
+      .ep.to { color: var(--accent); }
+      /* The connector points from origin to destination. In an RTL row the
+         origin sits on the right, so the arrowhead belongs on the left end —
+         drawn rather than typed, because the ✈ glyph's own direction varies by
+         font and would silently point the wrong way. */
+      .link { flex: 1; display: flex; align-items: center; min-width: 40px; }
+      .link .dash { flex: 1; height: 4px; border-radius: 2px; background: repeating-linear-gradient(
+          to right, var(--accent) 0 16px, transparent 16px 28px); }
+      .link .tip {
+        width: 0; height: 0; margin-left: -2px;
+        border-top: 12px solid transparent; border-bottom: 12px solid transparent;
+        border-right: 18px solid var(--accent);
+      }
+      .meta { display: flex; flex-direction: column; gap: 16px; }
+      .row { display: flex; gap: 16px; font-size: 32px; align-items: baseline; }
+      .row .k { color: ${palette.paperDim}; min-width: 130px; }
+      .row .v { font-weight: 700; }
+      .body { gap: 40px; }`,
+    body: `
+      <div class="leg">
+        <div class="ep">${e(r.from || 'תל אביב')}</div>
+        <div class="link"><div class="tip"></div><div class="dash"></div></div>
+        <div class="ep to">${e(r.to)}</div>
       </div>
-      <div class="body" style="justify-content:flex-end">
-        <div class="rule"></div>
-        <div class="headline ${headlineSize(d.headline, { max: 'lg' })}">${e(d.headline)}</div>
-        ${d.subhead ? `<div class="subhead">${e(d.subhead)}</div>` : ''}
-      </div>
-      <div class="foot">
-        <div class="place">${e(placeLine(d))}</div>
-        <div class="src">מקור: <span class="ltr">${e(sourceLabel(d.url))}</span></div>
-      </div>
-      ${credit}
-    </div>
-  </div>`;
+      <div class="headline ${headlineSize(d.headline, { max: 'md' })}">${e(d.headline)}</div>
+      ${meta.length ? `<div class="meta">${meta.map(([k, v]) => `<div class="row"><div class="k">${k}</div><div class="v">${e(v)}</div></div>`).join('')}</div>` : ''}
+      ${d.subhead ? `<div class="subhead">${e(d.subhead)}</div>` : ''}`,
+  });
 }
+
+/* -------------------------------------------------------------------------- */
 
 /**
  * Build the full HTML document for a card.
  *
  * `draft` is a normalised draft (src/draft.js) plus the candidate's `url`.
- * `data` carries any structured payload the layout draws directly (climate months).
+ * `data` carries any structured payload a layout draws directly (climate months).
  */
 export function renderHtml(draft, { data = null, image = null } = {}) {
   const accent = pillarAccent[draft.pillar] || palette.amber;
   const d = draft;
 
+  // A photo layout without a photograph is an empty frame, so it degrades to
+  // the text card instead. With no image provider configured this is not an
+  // edge case — it is what happens on every render.
+  const layout = isPhotoLayout(d.layout) && !image?.src ? PHOTO_FALLBACK : d.layout;
+
   let inner;
-  switch (d.layout) {
+  switch (layout) {
+    case 'photoFull':
+      inner = photoFullCard(d, accent, image);
+      break;
+    case 'photoBand':
+      inner = photoBandCard(d, accent, image);
+      break;
+    case 'photoFrame':
+      inner = photoFrameCard(d, accent, image);
+      break;
+    case 'numbers':
+      inner = numbersCard(d, accent);
+      break;
+    case 'compare':
+      inner = compareCard(d, accent);
+      break;
     case 'tips':
       inner = tipsCard(d, accent);
       break;
@@ -237,10 +470,8 @@ export function renderHtml(draft, { data = null, image = null } = {}) {
     case 'alert':
       inner = alertCard(d, accent);
       break;
-    case 'photo':
-      // Falls back rather than rendering an empty frame: v1 has no image
-      // source wired up, so this is the path that actually runs today.
-      inner = image?.src ? photoCard(d, accent, image) : factCard(d, accent);
+    case 'route':
+      inner = routeCard(d, accent);
       break;
     case 'fact':
     default:

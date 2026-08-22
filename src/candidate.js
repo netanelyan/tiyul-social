@@ -4,6 +4,7 @@ import { draft as draftPost } from './draft.js';
 import { quotaBlock } from './pillars.js';
 import { findImage, imagesEnabled } from './images.js';
 import { renderCard } from './render/index.js';
+import { isPhotoLayout, PHOTO_FALLBACK } from './render/templates.js';
 import { channelCaption, instagramCaption } from './format.js';
 import { instagramConfigured } from './publish/instagram.js';
 
@@ -73,10 +74,10 @@ export async function toCandidate(item, { render = true } = {}) {
   // 5. Image, if any provider is configured. v1 runs with none, so this is null
   //    and the layout choice already assumed as much.
   let image = null;
-  if (imagesEnabled() && d.layout === 'photo') {
+  if (imagesEnabled() && isPhotoLayout(d.layout)) {
     image = await findImage(d).catch(() => null);
   }
-  if (d.layout === 'photo' && !image) d.layout = 'fact';
+  if (isPhotoLayout(d.layout) && !image?.src) d.layout = PHOTO_FALLBACK;
 
   const cand = {
     id,
