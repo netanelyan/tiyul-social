@@ -1,8 +1,21 @@
 # Setup
 
-Getting tiyul+ from a clone to publishing. Telegram first, because it works on
-its own and is the fastest path to seeing a real card; Instagram second, because
-it has the longest lead time and depends on hosting being in place.
+Getting tiyul+ from a clone to publishing.
+
+**The intended shape: Telegram is the approval surface, Instagram is where posts
+go.** No Telegram channel — the bot DMs you a card, you tap approve, it publishes
+to Instagram. A Telegram channel is supported as an *additional* destination if
+you ever want one, but it is optional and off by default.
+
+That makes the order below: Telegram first (it's the fastest way to see a real
+card and it works before Instagram exists), then hosting, then Instagram.
+
+> **You can't skip Instagram and call it done.** The bot refuses to start unless
+> at least one publish destination is configured. With no `CHANNEL_ID` and no
+> Instagram credentials, approving a card would send it nowhere — so it fails
+> closed rather than quietly eating your approvals. While you're still setting
+> Instagram up, `npm run run-once` exercises the whole pipeline without needing
+> either.
 
 Nothing in here goes in the repo. Every value lands in `.env`, which is
 gitignored.
@@ -48,21 +61,20 @@ first-run failure**: Telegram does not let a bot message a user who has never
 messaged it, so without this the bot starts fine and then silently cannot send
 you a single approval card.
 
-### 1.4 Create the channel and add the bot
+### 1.4 Channel — skip this
 
-Create your channel, then Channel → Administrators → Add Administrator → your
-bot. The only permission it needs is **Post Messages**.
-
-For the channel id, either form works:
-
-- **Public channel:** just the handle — `CHANNEL_ID=@tiyulplus`
-- **Private channel:** the numeric `-100…` id. Post any message in the channel,
-  forward it to [@userinfobot](https://t.me/userinfobot), and it reports the
-  channel id.
+Leave `CHANNEL_ID` blank. That's the approval-only setup: the bot DMs you cards,
+and approved posts go to Instagram alone.
 
 ```
-CHANNEL_ID=@tiyulplus
+CHANNEL_ID=
 ```
+
+Only if you later want a Telegram channel *as well*: create it, Channel →
+Administrators → Add Administrator → your bot, permission **Post Messages**,
+then set `CHANNEL_ID=@yourchannel` (or the numeric `-100…` id — post a message
+in the channel, forward it to [@userinfobot](https://t.me/userinfobot), and it
+reports the id). Both destinations then publish, independently.
 
 ### 1.5 Drafting key
 
@@ -74,33 +86,38 @@ Not optional. Unlike BrickDeal, where the AI step was a cosmetic title polish
 that no-oped without a key, drafting *is* the pipeline here — without it there
 are no candidates.
 
-### 1.6 Test it
+### 1.6 Test what you can, now
 
-Point `CHANNEL_ID` at a **throwaway private channel** for the first run.
+These need no publish destination at all, so run them before Instagram exists:
 
 ```
-npm test                 # 82 offline checks, no credentials needed
+npm test                 # 89 offline checks, no credentials needed
 npm run check-sources    # are the feeds alive?
 npm run render-samples   # then look at samples/*.jpg
-npm run run-once         # full pass, printed, publishes nothing
-npm start
+npm run run-once         # full pass — gather, draft, verify, render — publishes nothing
 ```
 
-Then in the DM: `/run`. Within a minute or two you should get approval cards
-with the rendered image, the source URL, and the buttons. Tap **✅ אשר ופרסם**
-on one and it lands in the channel on the next drip tick (`POST_INTERVAL_MINUTES`,
-or `/next` to publish immediately).
+`run-once` is the important one: it exercises everything except the final
+publish, prints each approval message, and shows you what got rejected and why.
+If that looks right, the pipeline is working and only the last step is missing.
 
-Useful once it's running: `/status`, `/why`, `/mix`, `/sources`, `/pending`,
-`/queue`, `/help`.
+`npm start` will refuse until Instagram is configured (or `CHANNEL_ID` is set) —
+that's the fail-closed check, not a bug.
 
-**At this point you have a working pipeline.** Everything below is Instagram.
+Once it does start, in the DM: `/run`. Within a minute or two you get approval
+cards with the rendered image, the source URL, and the buttons. Each card also
+says **where it will publish** before you tap. Approve one and it goes out on the
+next drip tick (`POST_INTERVAL_MINUTES`), or `/next` to publish immediately.
+
+Useful once running: `/status`, `/why`, `/mix`, `/sources`, `/pending`,
+`/queue`, `/igquota`, `/help`.
 
 ---
 
 ## 2. Hosting the cards
 
-Do this before Instagram, because Instagram depends on it.
+Do this before Instagram, because Instagram depends on it — and since Instagram
+is your only publish target, nothing goes out until this is right.
 
 The Graph API's `POST /{ig-user-id}/media` takes an `image_url` that
 **Instagram's own servers fetch** — the bytes never travel through our request.
@@ -225,16 +242,20 @@ never bind; if it ever does, something upstream is wrong.
 
 ### 3.5 What publishing actually does
 
-On approve, the queue drips one item every `POST_INTERVAL_MINUTES`:
+On approve, the item joins the queue and drips out one every
+`POST_INTERVAL_MINUTES`. Instagram publishing is the documented two-step:
+`POST /media` → poll the container until `FINISHED` → `POST /media_publish`.
 
-1. Telegram first. If it fails, the item goes **back on the queue** and you get
-   an alert — an outage must not silently eat something you approved.
-2. Then Instagram: `POST /media` → poll the container until `FINISHED` →
-   `POST /media_publish`.
+The retry rule is about **double-posting, not about which destination matters
+more**:
 
-If Instagram fails the post is **already live in the channel**, so it is
-deliberately not re-queued — retrying would double-post to Telegram. You get a
-failure DM and decide manually. That is a real tradeoff, chosen on purpose.
+- **Nothing published** → safe to retry, so the item goes back on the queue.
+  With Instagram as your only target, that covers every failure: a token blip, a
+  hosting outage, a Graph 5xx. You get a DM each attempt, up to 3, then it is
+  dropped from the queue — loudly, never silently. The card file is kept.
+- **Something published** → not retried, because retrying would duplicate
+  whichever destination succeeded. Only reachable if you later add
+  `CHANNEL_ID`; you get told which one failed and decide.
 
 Cards are 1080×1350 (4:5), JPEG — inside Instagram's accepted range (4:5 to
 1.91:1) and its 8 MB limit, with room to spare.
@@ -264,7 +285,9 @@ pm2 logs tiyul
 
 | Symptom | Cause |
 |---|---|
+| Refuses to start: "No publish destination configured" | Working as intended. Set up Instagram (§3), or set `CHANNEL_ID`. Until then use `npm run run-once`, which needs neither. |
 | Bot starts, no approval cards ever arrive | You never sent it `/start`. Telegram forbids a bot messaging a user who hasn't messaged it first. |
+| Approved, but nothing appeared on Instagram | Check the DM — a failure always reports there. `🔁` means it went back on the queue and will retry; `🔴` means it exhausted 3 attempts and was dropped. |
 | `⛔ not authorized` to your own messages | `OWNER_ID` doesn't match your real user id. Check with @userinfobot. |
 | Refuses to start, complains about `OWNER_ID` / `STAGING_CHAT_ID` | Working as intended. It can publish, so it fails closed. |
 | `/run` stages nothing | Try `/why`. Usually everything gathered was already seen — normal on a repeat run. `npm run check-sources` separates "nothing new" from "a feed broke". |

@@ -6,7 +6,7 @@ import { findImage, imagesEnabled } from './images.js';
 import { renderCard } from './render/index.js';
 import { isPhotoLayout, PHOTO_FALLBACK } from './render/templates.js';
 import { channelCaption, instagramCaption } from './format.js';
-import { instagramConfigured } from './publish/instagram.js';
+import { publishTargets } from './publish/targets.js';
 
 // One source item all the way to a stageable candidate.
 //
@@ -90,7 +90,7 @@ export async function toCandidate(item, { render = true } = {}) {
     data: item.data || null,
     image,
     createdAt: new Date().toISOString(),
-    instagramReady: instagramConfigured(),
+    publishTargets: publishTargets(),
   };
 
   // 6. Render last — it is the only step that costs a browser.

@@ -3,8 +3,11 @@
 A Hebrew travel-content pipeline for Israeli travellers. It reads primary
 sources, picks the best two or three items a day, writes the Hebrew, renders a
 card, and sends it to me on Telegram with the source URL and approve/reject
-buttons. Nothing publishes without a tap. On approve it goes to the Telegram
-channel and to Instagram.
+buttons. Nothing publishes without a tap.
+
+**Telegram is the approval surface; Instagram is where posts go.** There is no
+Telegram channel by default — setting `CHANNEL_ID` adds one as a second
+destination if you want it, and the two publish independently.
 
 It's the same shape as my [BrickDeal bot](./brickdeal-automation-main) — same
 approval gate, same single-JSON-file store, same owner lock, same
@@ -36,7 +39,8 @@ sources (RSS / dataset / a URL I paste)
         ▼
    Telegram staging card: ✅ אשר ופרסם  ❌ דחה  ✏️ ערוך  📎 ציטוטים
         │
-   approved ──▶ publish queue ──▶ drip ──▶ channel + Instagram
+   approved ──▶ publish queue ──▶ drip ──▶ Instagram (+ Telegram channel,
+                                                       if CHANNEL_ID is set)
 ```
 
 ## The rules, and where each one lives in the code
@@ -209,8 +213,14 @@ the Instagram Graph API credentials in place, including the token exchange that
 otherwise leaves you with a pipeline that dies after 60 days.
 
 Instagram additionally needs `IG_USER_ID`, `IG_ACCESS_TOKEN` and
-`CARD_PUBLIC_BASE_URL`. Without them the channel still works and every approval
-card says so up front.
+`CARD_PUBLIC_BASE_URL` — that last one because the Graph API hands Instagram a
+URL its own servers fetch, so a card on local disk cannot publish. Every
+approval card states where it will go before you tap.
+
+The bot refuses to start with no publish destination at all (no `CHANNEL_ID`
+and no Instagram): approving would send the post nowhere, so it fails closed
+rather than quietly eating approvals. `npm run run-once` exercises the whole
+pipeline without needing either.
 
 ### Deployment (pm2)
 
@@ -273,10 +283,13 @@ quickly, but it isn't instant.
 a process that's down at `RUN_HOUR` and comes back later that day will run then.
 If it's down all day, that day is simply skipped.
 
-**Instagram failure is non-fatal by design, and that's a real tradeoff.** By the
-time Instagram runs, the post is already live in the channel — so re-queuing on
-failure would double-post to Telegram. It reports the failure and leaves it for
-a manual decision instead.
+**The publish retry rule is about double-posting, not importance.** If nothing
+published, the item goes back on the queue (up to 3 attempts, then it is dropped
+loudly rather than silently). If *something* published, it is not retried,
+because retrying would duplicate whichever destination succeeded — you get told
+which one failed and decide. An earlier version treated Telegram as primary and
+swallowed Instagram failures, which silently discarded approved posts for anyone
+running Instagram-only.
 
 ## Things I learned building this
 

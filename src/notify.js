@@ -1,5 +1,6 @@
 import { reasonHe } from './verify.js';
 import { pillarHe, PILLAR_KEYS, quotaConfig } from './pillars.js';
+import { TARGET_HE, targetsHe } from './publish/targets.js';
 
 // The Hebrew status messages, as pure formatters plus one thin `send` — same
 // split BrickDeal uses, for the same reason: the strings can be built and
@@ -19,11 +20,12 @@ export async function send(telegram, chatId, text) {
     });
 }
 
-export function startupPing({ sourceCount, queueSize, stagingSize, instagram, images }) {
+export function startupPing({ sourceCount, queueSize, stagingSize, targets, images }) {
   return [
     '🟢 tiyul+ עלה',
     `${sourceCount} מקורות פעילים · ${stagingSize} ממתינים לאישור · ${queueSize} בתור לפרסום`,
-    `אינסטגרם: ${instagram ? 'מוגדר' : 'לא מוגדר (טלגרם בלבד)'} · תמונות: ${images ? 'זמינות' : 'כרטיסי טקסט בלבד'}`,
+    `מפרסם ל: ${targetsHe(targets)}`,
+    `תמונות: ${images ? 'זמינות' : 'כרטיסי טקסט בלבד'}`,
   ].join('\n');
 }
 
@@ -70,14 +72,31 @@ export function rejectSingle(item) {
   return `🗑️ נפסל [${reasonHe(item.reason)}] ${item.title}${detail}\n${item.url}`;
 }
 
-export function published({ headline, telegram, instagram, error }) {
-  const where = [telegram ? 'טלגרם' : null, instagram ? 'אינסטגרם' : null].filter(Boolean);
-  const head = where.length ? `📤 פורסם ל${where.join(' ול')}` : '📤 פורסם';
-  return error ? `${head}\n${headline}\n⚠️ ${error}` : `${head}\n${headline}`;
+export function published({ headline, succeeded, failed = [] }) {
+  const lines = [`📤 פורסם ל${targetsHe(succeeded)}`, headline];
+  // A partial publish is NOT retried — retrying would duplicate whichever
+  // destination succeeded — so this line is the whole record of it. It has to
+  // be unmissable, and it has to say what to do.
+  for (const f of failed) {
+    lines.push(`⚠️ ${TARGET_HE[f.target] || f.target} נכשל: ${f.message}`);
+  }
+  if (failed.length) lines.push('לא ינוסה שוב אוטומטית — פרסום חוזר היה משכפל את מה שכבר עלה.');
+  return lines.join('\n');
 }
 
-export function publishFailed(headline, where, message) {
-  return `🔴 פרסום ל${where} נכשל\n${headline}\n${message}`;
+/** Nothing published at all — safe to retry, so it went back on the queue. */
+export function publishRetrying(headline, failed, attempt, max) {
+  const lines = [`🔁 שום דבר לא פורסם — חזר לתור (ניסיון ${attempt}/${max})`, headline];
+  for (const f of failed) lines.push(`   ${TARGET_HE[f.target] || f.target}: ${f.message}`);
+  return lines.join('\n');
+}
+
+/** Out of retries. Dropped from the queue, but never silently. */
+export function publishGaveUp(headline, failed, attempts) {
+  const lines = [`🔴 פרסום נכשל ${attempts} פעמים — הפריט יורד מהתור`, headline];
+  for (const f of failed) lines.push(`   ${TARGET_HE[f.target] || f.target}: ${f.message}`);
+  lines.push('הכרטיס נשמר. אפשר לפרסם ידנית, או לשלוח שוב את הקישור אחרי שהתקלה נפתרה.');
+  return lines.join('\n');
 }
 
 export function quietAlert(hours) {
@@ -105,7 +124,7 @@ export function statusReport({
   publishedToday,
   lastRunAgoMs,
   postIntervalMinutes,
-  instagram,
+  targets,
 }) {
   const breakdown = Object.entries(rejectedByReason || {})
     .sort((a, b) => b[1] - a[1])
@@ -124,7 +143,7 @@ export function statusReport({
     ...breakdown,
     '',
     `⏱️ סבב אחרון: ${lastRunAgoMs == null ? 'עדיין לא רץ' : `לפני ${humanDuration(lastRunAgoMs)}`}`,
-    `⚙️ דריפ כל ${postIntervalMinutes} דק' · אינסטגרם ${instagram ? 'מוגדר' : 'לא מוגדר'}`,
+    `⚙️ דריפ כל ${postIntervalMinutes} דק' · מפרסם ל${targetsHe(targets)}`,
   ].join('\n');
 }
 

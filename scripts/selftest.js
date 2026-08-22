@@ -12,6 +12,7 @@ import { candidateId } from '../src/candidate.js';
 import { renderHtml, LAYOUTS, PHOTO_LAYOUTS, isPhotoLayout } from '../src/render/templates.js';
 import { assertGenericAiPrompt, ImagePolicyError } from '../src/images.js';
 import { approvalMessage } from '../src/format.js';
+import { publishTargets } from '../src/publish/targets.js';
 
 // Offline behaviour checks. No network, no credentials, no Telegram.
 //
@@ -298,10 +299,54 @@ const cand = {
   evidence: [{ claim: 'a', quote: 'b' }],
   image: null,
 };
-const msg = approvalMessage(cand);
+const msg = approvalMessage({ ...cand, publishTargets: ['instagram'] });
 ok('contains the full source URL verbatim', msg.includes(cand.sourceUrl));
 ok('states the image provenance (or that there is none)', /תמונה:/.test(msg));
 ok('reports how many quotes were verified', /1 ציטוט/.test(msg));
+ok('says where it will publish, before you tap', msg.includes('יפורסם לאינסטגרם'));
+ok('warns when there is nowhere to publish', approvalMessage({ ...cand, publishTargets: [] }).includes('אין יעד פרסום'));
+
+/* -------------------------------------------------------------------------- */
+group('publish targets — Telegram may be approval-only');
+
+const targetsFor = (env) => publishTargets({ ...env });
+const IG = { IG_USER_ID: '1', IG_ACCESS_TOKEN: 'x', CARD_PUBLIC_BASE_URL: 'https://x/c' };
+
+// instagramConfigured() reads process.env directly, so drive it there.
+const withEnv = (patch, fn) => {
+  const saved = {};
+  for (const k of Object.keys(patch)) {
+    saved[k] = process.env[k];
+    if (patch[k] === undefined) delete process.env[k];
+    else process.env[k] = patch[k];
+  }
+  try {
+    return fn();
+  } finally {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+};
+
+withEnv({ ...IG, CHANNEL_ID: undefined }, () => {
+  eq('Instagram only (no channel) is a valid setup', targetsFor({ CHANNEL_ID: undefined }).join(','), 'instagram');
+});
+withEnv({ IG_USER_ID: undefined, IG_ACCESS_TOKEN: undefined, CARD_PUBLIC_BASE_URL: undefined }, () => {
+  eq('Telegram channel only is a valid setup', targetsFor({ CHANNEL_ID: '@c' }).join(','), 'telegram');
+  eq('neither configured yields no targets — bot refuses to start', targetsFor({ CHANNEL_ID: undefined }).length, 0);
+});
+withEnv(IG, () => {
+  eq('both configured publishes to both', targetsFor({ CHANNEL_ID: '@c' }).join(','), 'telegram,instagram');
+});
+withEnv({ ...IG, CARD_PUBLIC_BASE_URL: undefined }, () => {
+  eq(
+    'Instagram without a public card URL is not configured — it cannot fetch the image',
+    targetsFor({ CHANNEL_ID: undefined }).length,
+    0
+  );
+});
 
 /* -------------------------------------------------------------------------- */
 group('registry integrity');

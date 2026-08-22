@@ -11,6 +11,7 @@ import { approvalMessage, decidedMessage, evidenceReport, channelCaption, instag
 import { renderCard, closeBrowser } from './src/render/index.js';
 import { publishTelegram, sendForApproval } from './src/publish/telegram.js';
 import { publishInstagram, instagramConfigured, remainingQuota } from './src/publish/instagram.js';
+import { publishTargets, targetsHe } from './src/publish/targets.js';
 import { imagesEnabled } from './src/images.js';
 import { reasonHe } from './src/verify.js';
 import { LAYOUT_HE } from './src/render/templates.js';
@@ -38,8 +39,19 @@ const {
   QUIET_ALERT_HOURS = '30',
 } = process.env;
 
-if (!TG_BOT_TOKEN || !CHANNEL_ID) {
-  console.error('Set TG_BOT_TOKEN and CHANNEL_ID in .env');
+if (!TG_BOT_TOKEN) {
+  console.error('Set TG_BOT_TOKEN in .env');
+  process.exit(1);
+}
+// At least one publish destination, or approving something sends it nowhere.
+// CHANNEL_ID alone, Instagram alone, or both — but not neither. Telegram being
+// approval-only (no channel) is a supported setup; silently having nowhere to
+// publish is not.
+if (!publishTargets().length) {
+  console.error(
+    'No publish destination configured. Set CHANNEL_ID for a Telegram channel, ' +
+      'or IG_USER_ID + IG_ACCESS_TOKEN + CARD_PUBLIC_BASE_URL for Instagram, or both.'
+  );
   process.exit(1);
 }
 // Fail closed, exactly as BrickDeal does: with no known owner there is nobody
@@ -246,35 +258,57 @@ bot.on('message', async (ctx, next) => {
 // Publishing
 // ---------------------------------------------------------------------------
 
+// How many times a post that failed to publish anywhere goes back on the queue
+// before we stop and hand it to you. Without a cap, a destination that is down
+// for a day turns into an endless retry loop with an alert every drip tick.
+const MAX_PUBLISH_ATTEMPTS = 3;
+
+/**
+ * Publish one approved item to every configured destination.
+ *
+ * The retry rule is about double-posting, not about which destination is more
+ * important — an earlier version treated Telegram as primary and swallowed
+ * Instagram failures, which silently discarded approved posts for anyone
+ * running Instagram-only:
+ *
+ *   - nothing published  -> safe to retry, so it goes back on the queue
+ *   - something published -> retrying would duplicate the destination that
+ *                            succeeded, so it does not go back; you get told
+ *                            which one failed and decide
+ */
 async function publishNext() {
   const cand = store.dequeue();
   if (!cand) return false;
 
-  let tg = null;
-  let ig = null;
-  let error = null;
+  const targets = publishTargets();
+  const done = {};
+  const failed = [];
 
-  try {
-    tg = await publishTelegram(bot.telegram, CHANNEL_ID, cand);
-  } catch (e) {
-    // Telegram failing is the one that matters — put it back so an outage
-    // doesn't silently eat something you already approved.
-    console.error('publish: telegram failed:', e.message);
-    store.enqueue(cand);
-    await notify.send(bot.telegram, staging, notify.publishFailed(cand.headline, 'טלגרם', e.message));
-    return false;
+  for (const target of targets) {
+    try {
+      done[target] =
+        target === 'telegram'
+          ? await publishTelegram(bot.telegram, CHANNEL_ID, cand)
+          : await publishInstagram(cand);
+    } catch (e) {
+      console.error(`publish: ${target} failed:`, e.message);
+      failed.push({ target, message: e.message });
+    }
   }
 
-  if (instagramConfigured()) {
-    try {
-      ig = await publishInstagram(cand);
-    } catch (e) {
-      // Deliberately non-fatal and deliberately NOT a re-queue: the post is
-      // already live in the channel, so retrying the whole item would double-post
-      // there. Instagram is reported as failed and left for a manual decision.
-      console.error('publish: instagram failed:', e.message);
-      error = `אינסטגרם נכשל: ${e.message}`;
+  const succeeded = targets.filter((t) => done[t]);
+
+  if (!succeeded.length) {
+    const attempts = (cand.publishAttempts || 0) + 1;
+    if (attempts < MAX_PUBLISH_ATTEMPTS) {
+      store.enqueue({ ...cand, publishAttempts: attempts });
+      await notify.send(bot.telegram, staging, notify.publishRetrying(cand.headline, failed, attempts, MAX_PUBLISH_ATTEMPTS));
+    } else {
+      // Dropped from the queue, but loudly. An approved post vanishing without
+      // a word is the one outcome worth avoiding here.
+      await notify.send(bot.telegram, staging, notify.publishGaveUp(cand.headline, failed, attempts));
     }
+    return false;
   }
 
   store.recordPublished({
@@ -282,15 +316,11 @@ async function publishNext() {
     pillar: cand.pillar,
     tags: cand.tags,
     layout: cand.layout,
-    telegram: Boolean(tg),
-    instagram: Boolean(ig),
+    telegram: Boolean(done.telegram),
+    instagram: Boolean(done.instagram),
   });
 
-  await notify.send(
-    bot.telegram,
-    staging,
-    notify.published({ headline: cand.headline, telegram: Boolean(tg), instagram: Boolean(ig), error })
-  );
+  await notify.send(bot.telegram, staging, notify.published({ headline: cand.headline, succeeded, failed }));
   return true;
 }
 
@@ -405,7 +435,7 @@ bot.command('status', async (ctx) => {
       publishedToday: store.publishedToday(),
       lastRunAgoMs: lastRunAt ? Date.now() - lastRunAt : null,
       postIntervalMinutes: POST_INTERVAL_MINUTES,
-      instagram: instagramConfigured(),
+      targets: publishTargets(),
     })
   );
 });
@@ -490,7 +520,8 @@ async function main() {
   console.log(`bot live (@${me.username})`);
   console.log(`   owner lock: ON (only ${OWNER_ID})`);
   console.log(`   sources: ${enabledSources().length} enabled`);
-  console.log(`   instagram: ${instagramConfigured() ? 'configured' : 'NOT configured (telegram only)'}`);
+  console.log(`   publishing to: ${publishTargets().join(' + ')}`);
+  if (!CHANNEL_ID) console.log('   telegram: approval only (no CHANNEL_ID set, nothing posts to a channel)');
   console.log(`   images: ${imagesEnabled() ? 'a provider is configured' : 'text-led cards only'}`);
   console.log(`   daily run at ${RUN_HOUR}:00 · target ${dailyTarget()} · drip every ${POST_INTERVAL_MINUTES} min`);
 
@@ -511,7 +542,7 @@ async function main() {
       sourceCount: enabledSources().length,
       queueSize: store.queueSize(),
       stagingSize: store.stagingSize(),
-      instagram: instagramConfigured(),
+      targets: publishTargets(),
       images: imagesEnabled(),
     })
   );

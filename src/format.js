@@ -1,6 +1,7 @@
 import { pillarHe } from './pillars.js';
 import { LAYOUT_HE } from './render/templates.js';
 import { provenanceHe } from './images.js';
+import { targetsHe } from './publish/targets.js';
 
 // Two different texts, for two different readers.
 //
@@ -81,9 +82,11 @@ export function approvalMessage(cand) {
   const n = cand.evidence?.length || 0;
   lines.push(`✅ ${n} ציטוט${n === 1 ? '' : 'ים'} אומת${n === 1 ? '' : 'ו'} מול דף המקור`);
 
-  if (cand.instagramReady === false) {
-    lines.push('⚠️ אינסטגרם לא מוגדר — יפורסם לטלגרם בלבד');
-  }
+  // Approving is the irreversible step, so the card says where it goes before
+  // you tap, not after. Resolved when the candidate was built rather than at
+  // publish time, so what you were shown is what was true when you decided.
+  const targets = cand.publishTargets?.length ? cand.publishTargets : [];
+  lines.push(targets.length ? `📤 יפורסם ל${targetsHe(targets)}` : '⛔ אין יעד פרסום מוגדר');
 
   return lines.join('\n');
 }
