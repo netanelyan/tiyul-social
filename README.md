@@ -332,6 +332,16 @@ by checking the quote appears verbatim in that text — so anything left in the 
 is something a claim can legally be grounded in. A quote lifted from a cookie
 notice would have passed verification and published.
 
+**A word count silently disabled a quarter of the source registry.** The
+evidence check required a quote of at least four words, splitting on spaces.
+Japanese does not put spaces between words, so every Japanese quote counted as
+one word and was rejected as "too short to be evidence of anything" — meaning
+JNTO could never produce a candidate, and the rejection blamed the drafting
+step for something it had done correctly. The check now measures characters for
+scripts that don't separate words, and words for the ones that do. Only visible
+by running a real Japanese item through; no fixture would have caught it,
+because I'd have written the fixture in English.
+
 **The scorer's first draft ranked the single best source last.** FCDO publishes
 one entry per country, titled just "Norway", with the actual change in the summary
 — so a thin-title penalty sent the best entry-change feed to the bottom while

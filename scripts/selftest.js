@@ -120,6 +120,27 @@ throws('rejects a paraphrase', () => verifyEvidence({ evidence: [{ claim: 'x', q
 throws('rejects a quote too short to be evidence', () => verifyEvidence({ evidence: [{ claim: 'x', quote: 'the new' }] }, SRC), 'unsupported_claim');
 throws('rejects a draft that cites nothing', () => verifyEvidence({ evidence: [] }, SRC), 'no_evidence');
 
+// Regression: the minimum quote length was a WORD count, and Japanese does not
+// separate words with spaces. Every Japanese quote counted as one word and was
+// rejected as too short, which made JNTO - one of four enabled sources -
+// structurally unable to produce a candidate.
+const JA_SRC = '2026年8月21日、最大44名対応の箸作り体験を渋谷で開始しました。';
+ok(
+  'accepts a substantial Japanese quote despite it having no spaces',
+  (() => {
+    try {
+      return verifyEvidence({ evidence: [{ claim: 'x', quote: '最大44名対応の箸作り体験を渋谷で開始' }] }, JA_SRC);
+    } catch {
+      return false;
+    }
+  })()
+);
+throws(
+  'still rejects a Japanese quote that is genuinely too short',
+  () => verifyEvidence({ evidence: [{ claim: 'x', quote: '渋谷で' }] }, JA_SRC),
+  'unsupported_claim'
+);
+
 /* -------------------------------------------------------------------------- */
 group('source text extraction — boilerplate must not become citable evidence');
 

@@ -78,6 +78,27 @@ function normalise(s) {
 
 const MIN_QUOTE_WORDS = 4;
 
+// ...but a word count is meaningless in a script that does not separate words
+// with spaces. A perfectly substantial Japanese quote —
+// 「最大44名対応の箸作り体験を渋谷で開始」— splits into exactly one "word" and was
+// rejected as too short to be evidence. That made every Japanese-language
+// source structurally incapable of producing a candidate, and blamed the
+// drafting step for it in the rejection reason.
+//
+// Found by running a real JNTO item through the pipeline. JNTO is one of four
+// enabled sources, so this quietly disabled a quarter of the registry.
+const SPACELESS_SCRIPT =
+  /[぀-ヿ㐀-䶿一-鿿豈-﫿฀-๿]/u;
+const MIN_QUOTE_CHARS_SPACELESS = 10;
+
+/** Is this quote long enough to be evidence of anything? */
+function longEnough(normalised) {
+  if (SPACELESS_SCRIPT.test(normalised)) {
+    return [...normalised].filter((c) => c.trim()).length >= MIN_QUOTE_CHARS_SPACELESS;
+  }
+  return normalised.split(' ').filter(Boolean).length >= MIN_QUOTE_WORDS;
+}
+
 /**
  * Stage 2 — every claim the draft makes must be pinned to a verbatim quote.
  *
@@ -97,7 +118,7 @@ export function verifyEvidence(draft, sourceText) {
   for (const e of evidence) {
     const quote = String(e?.quote || '').trim();
     const needle = normalise(quote);
-    if (needle.split(' ').filter(Boolean).length < MIN_QUOTE_WORDS) {
+    if (!longEnough(needle)) {
       unsupported.push({ quote, why: 'quote too short to be evidence of anything' });
       continue;
     }
