@@ -30,11 +30,29 @@ export function startupPing({ sourceCount, queueSize, stagingSize, targets, imag
 }
 
 /** After a daily gather run — what came in, what survived, what was dropped. */
-export function runReport({ gathered, ranked, staged, rejected, sourceErrors, perSource }) {
+export function runReport({
+  gathered,
+  ranked,
+  staged,
+  rejected,
+  sourceErrors,
+  perSource,
+  draftCalls,
+  budgetExhausted,
+}) {
   const lines = [
     '📥 סבב איסוף הסתיים',
     `${gathered} פריטים נאספו · ${ranked} נבדקו · ${staged} עלו לאישור · ${rejected} נפסלו`,
   ];
+
+  if (draftCalls) lines.push(`✍️ ${draftCalls} קריאות כתיבה`);
+
+  // A run that ran out of budget looks exactly like a quiet news day unless it
+  // says so. The difference matters: one means there was nothing to post, the
+  // other means we stopped looking.
+  if (budgetExhausted) {
+    lines.push('⚠️ תקציב הקריאות נגמר לפני שהושלם היעד - ייתכן שנשארו פריטים טובים');
+  }
 
   const bySource = Object.entries(perSource || {})
     .filter(([, n]) => n > 0)

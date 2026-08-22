@@ -2,7 +2,8 @@ import { loadEnv } from '../src/env.js';
 loadEnv();
 
 import { primaryAuthority, registry } from '../src/sources/index.js';
-import { flightPriceGuard, verifyEvidence, verifyDraftText, RejectedError } from '../src/verify.js';
+import { flightPriceGuard, verifyEvidence, verifyDraftText, minSourceChars, RejectedError } from '../src/verify.js';
+import { safeStem } from '../src/render/index.js';
 import { htmlToText, stripBoilerplate, decodeEntities } from '../src/fetchPage.js';
 import { parseFeed } from '../src/sources/rss.js';
 import { monthlyNormals, verdictFor } from '../src/sources/climate.js';
@@ -251,6 +252,38 @@ eq(
 eq('a fragment does not either', candidateId({ url: 'https://www.gov.uk/a#top' }), candidateId({ url: 'https://www.gov.uk/a' }));
 ok('different pages stay distinct', candidateId({ url: 'https://www.gov.uk/a' }) !== candidateId({ url: 'https://www.gov.uk/b' }));
 ok('a real query parameter is significant', candidateId({ url: 'https://www.gov.uk/a?id=1' }) !== candidateId({ url: 'https://www.gov.uk/a' }));
+
+/* -------------------------------------------------------------------------- */
+group('card filenames — a dedupeId is not automatically a safe filename');
+
+// Found by measuring a real run: two drafting calls a day were being paid for
+// and then thrown away at the render step, because the climate adapter's
+// readable dedupeId contains colons.
+eq('colons are replaced — Windows rejects them outright', safeStem('climate:dubai:2025'), 'climate-dubai-2025');
+eq('a hex id is untouched', safeStem('a1b2c3d4e5f6'), 'a1b2c3d4e5f6');
+ok('nothing survives that would need URL-escaping', /^[A-Za-z0-9._-]+$/.test(safeStem('a b/c:d?e#f')));
+eq('an id of only separators still yields a filename', safeStem(':::'), 'card');
+ok('long ids are bounded', safeStem('x'.repeat(300)).length <= 100);
+
+/* -------------------------------------------------------------------------- */
+group('thin sources are rejected before a drafting call is paid for');
+
+const thinItem = (text, title = 'x') => ({ title, summary: '', url: 'https://www.gov.uk/a', text });
+
+eq(
+  'a Japanese headline stub is under the CJK floor',
+  minSourceChars('お知らせ：安全情報リーフレットを刷新しました。'.repeat(4)),
+  700
+);
+eq('an English page is judged by the higher floor', minSourceChars('a plain english travel advisory update'), 1200);
+ok(
+  'the observed stub sizes (291 and 346 chars) fall under the CJK floor',
+  291 < minSourceChars('日本語') && 346 < minSourceChars('日本語')
+);
+ok(
+  'the thinnest genuinely usable source that day (3157 chars) clears the floor',
+  3157 > minSourceChars('an english advisory')
+);
 
 /* -------------------------------------------------------------------------- */
 group('image policy — AI imagery may only be generic');

@@ -24,6 +24,32 @@ export class RejectedError extends Error {
   }
 }
 
+// How much text a page must carry before it is worth a drafting call.
+//
+// This bar was originally 200 characters, which only caught pages that were
+// literally empty. Measuring a real run showed why that was too low: the
+// press-release stubs on the wire carried 291 and 346 characters, sailed
+// through, and were then correctly rejected by the model as "only a headline,
+// no substantive details" — after the call was paid for. Three of eight calls
+// in one run went that way. Everything genuinely usable that day carried 3,157
+// characters or more, so there is a wide gap to put the bar in.
+//
+// The two floors exist because a character is not a constant unit of
+// information. 300 characters of Japanese is a paragraph; 300 characters of
+// English is a sentence and a half. Judging both by one number would either
+// wave the stubs through or throw away real articles from the Japanese source.
+//
+// Tuned on a sample of one day's items, so both are env-overridable and the
+// rejection reports the count it measured against the floor it used — if this
+// ever starts eating good sources, the digest says so in numbers.
+const THIN_FLOOR = Number(process.env.MIN_SOURCE_CHARS ?? 1200);
+const THIN_FLOOR_SPACELESS = Number(process.env.MIN_SOURCE_CHARS_CJK ?? 700);
+
+export function minSourceChars(text) {
+  return SPACELESS_SCRIPT.test(text) ? THIN_FLOOR_SPACELESS : THIN_FLOOR;
+}
+const thinFloor = minSourceChars;
+
 /**
  * Stage 1 — before spending a drafting call on it.
  * Confirms the source is primary and the page is live, and returns its text.
@@ -53,8 +79,10 @@ export async function verifySource(item) {
   // adapter's own summary is a legitimate part of the record, so it counts
   // toward the text a claim can be grounded in — it came from the same source.
   const combined = [item.title, item.summary, page.text].filter(Boolean).join('\n');
-  if (combined.replace(/\s/g, '').length < 200) {
-    throw new RejectedError('source_too_thin', `${combined.length} chars`);
+  const chars = combined.replace(/\s/g, '').length;
+  const floor = thinFloor(combined);
+  if (chars < floor) {
+    throw new RejectedError('source_too_thin', `${chars} chars, need ${floor}`);
   }
 
   return { sourceText: combined, finalUrl: page.finalUrl, authority: finalAuthority };

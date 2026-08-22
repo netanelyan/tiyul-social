@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { PILLAR_KEYS, PILLARS, TAGS } from './pillars.js';
 import { LAYOUTS } from './render/templates.js';
+import { record as recordUsage } from './usage.js';
 
 // The writing step: source item + the text actually fetched from its page ->
 // Hebrew headline, caption, chosen layout, and the evidence that pins every
@@ -324,6 +325,8 @@ export async function draft(item, sourceText, { imagesAvailable = false } = {}) 
     system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
     messages: [{ role: 'user', content: user }],
   });
+
+  recordUsage(res.usage, MODEL);
 
   if (res.stop_reason === 'refusal') {
     throw new Error(`drafting refused: ${res.stop_details?.category || 'unknown'}`);

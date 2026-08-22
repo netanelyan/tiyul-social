@@ -182,7 +182,7 @@ BrickDeal.
 
 | File | What it does |
 |---|---|
-| `bot.js` | Telegraf bot: owner lock, staging cards and their buttons, the edit flow, the daily-run and drip timers, `/run` `/status` `/why` `/mix` `/sources` `/pending` `/queue` `/next` `/igquota` |
+| `bot.js` | Telegraf bot: owner lock, staging cards and their buttons, the edit flow, the daily-run and drip timers, `/run` `/status` `/why` `/mix` `/sources` `/pending` `/queue` `/next` `/igquota` `/usage` |
 | `sources.json` | The source registry and the primary-authority allowlist |
 | `destinations.json` | Places the climate adapter rotates through, with their Hebrew names |
 | `src/sources/` | `index.js` (registry + allowlist matching + gather), `rss.js` (RSS *and* Atom), `climate.js` (ERA5 normals → a when-to-go item) |

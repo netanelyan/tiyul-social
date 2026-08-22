@@ -3,6 +3,7 @@ loadEnv();
 
 import { Telegraf, Markup } from 'telegraf';
 import * as store from './src/store.js';
+import { usageReport } from './src/usage.js';
 import * as notify from './src/notify.js';
 import { runOnce, dailyTarget } from './src/pipeline.js';
 import { toCandidate, RejectedError } from './src/candidate.js';
@@ -429,6 +430,7 @@ bot.command('sources', (ctx) => {
 });
 
 bot.command('mix', (ctx) => ctx.reply(notify.mixReport(store.recentPublished())));
+bot.command('usage', (ctx) => ctx.reply(usageReport(), { parse_mode: 'Markdown' }));
 
 bot.command('why', (ctx) => {
   const arg = Number((ctx.message.text || '').split(' ')[1]);

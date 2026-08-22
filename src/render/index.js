@@ -13,6 +13,16 @@ import { renderHtml, CARD_W, CARD_H } from './templates.js';
 // for image posts. Telegram takes either, so one format covers both.
 
 let browserPromise = null;
+let idleTimer = null;
+
+// How long a launched Chromium is kept warm after the last render.
+//
+// The cards for a run come in a burst a few seconds apart, then nothing happens
+// for a day. Keeping the browser for the burst avoids paying the ~1.5s launch
+// per card; keeping it for the other 23 hours just holds ~200MB resident on a
+// VPS that is also running BrickDeal. Five minutes covers a run, including a
+// re-render from an edit, with room to spare.
+const IDLE_SHUTDOWN_MS = Number(process.env.RENDER_IDLE_MS ?? 5 * 60_000);
 
 function getBrowser() {
   // Chromium takes a second or two to start; a handful of cards a day would
@@ -21,11 +31,48 @@ function getBrowser() {
   return browserPromise;
 }
 
+function scheduleIdleShutdown() {
+  if (idleTimer) clearTimeout(idleTimer);
+  if (!(IDLE_SHUTDOWN_MS > 0)) return;
+  idleTimer = setTimeout(() => {
+    idleTimer = null;
+    closeBrowser().catch(() => {});
+  }, IDLE_SHUTDOWN_MS);
+  // Do not let a warm browser be the reason the process cannot exit — scripts
+  // like render-samples finish and should just end.
+  idleTimer.unref?.();
+}
+
 export async function closeBrowser() {
+  if (idleTimer) {
+    clearTimeout(idleTimer);
+    idleTimer = null;
+  }
   if (!browserPromise) return;
   const b = await browserPromise.catch(() => null);
   browserPromise = null;
   await b?.close().catch(() => {});
+}
+
+/**
+ * A candidate id is not automatically a safe filename.
+ *
+ * Most ids are hex digests, but a source may supply its own `dedupeId` — the
+ * climate adapter uses `climate:dubai:2025`, which is meaningful and readable
+ * and completely illegal as a Windows filename. That cost two paid drafting
+ * calls per run before it was caught, because the render is the *last* step:
+ * the money is spent by the time the write fails.
+ *
+ * Linux would have accepted the colon and hidden the problem, then handed
+ * Instagram a URL containing `%3A` to fetch. Restricting the stem to characters
+ * that are unambiguous in both a path and a URL settles both cases at once.
+ */
+export function safeStem(id) {
+  const clean = String(id)
+    .replace(/[^A-Za-z0-9._-]+/g, '-')
+    .replace(/^[-.]+|[-.]+$/g, '')
+    .slice(0, 100);
+  return clean || 'card';
 }
 
 export const cardOutputDir = () =>
@@ -110,7 +157,7 @@ export async function renderCard(draft, { id, data = null, image = null, outDir 
     const buf = await page.screenshot({ type: 'jpeg', quality: 92 });
 
     mkdirSync(outDir, { recursive: true });
-    const filename = `${id}.jpg`;
+    const filename = `${safeStem(id)}.jpg`;
     const file = path.join(outDir, filename);
     // Atomic, same as the store: Instagram may fetch this URL moments after we
     // hand it over, and a half-written JPEG would be served as a broken image.
@@ -121,5 +168,6 @@ export async function renderCard(draft, { id, data = null, image = null, outDir 
     return { file, filename, url: cardPublicUrl(filename), bytes: buf.length };
   } finally {
     await context.close().catch(() => {});
+    scheduleIdleShutdown();
   }
 }

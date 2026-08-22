@@ -2,6 +2,7 @@ import { gather, enabledSources } from './sources/index.js';
 import { rank } from './score.js';
 import { toCandidate, candidateId, RejectedError } from './candidate.js';
 import * as store from './store.js';
+import { snapshot as usageSnapshot } from './usage.js';
 
 // The daily loop: gather -> rank -> build the best two or three -> hand them
 // over for approval.
@@ -12,6 +13,19 @@ import * as store from './store.js';
 // quietly turns into a rubber stamp.
 
 export const dailyTarget = () => Math.max(1, Number(process.env.DAILY_TARGET ?? '3'));
+
+/**
+ * Ceiling on drafting calls per run — the only thing here that costs money.
+ *
+ * Without it the run keeps trying until it hits the target or exhausts the
+ * ranked list, so a day where every source is thin or off-topic quietly spends
+ * a full ranked list of calls to produce nothing. The cap turns that from an
+ * open-ended bill into a known one: at the default it is 9 calls, and if the
+ * budget runs out before the target is met the run reports it rather than
+ * pretending there was simply nothing to post.
+ */
+export const draftBudget = (target = dailyTarget()) =>
+  Math.max(1, Number(process.env.MAX_DRAFT_CALLS ?? target * 3));
 
 /**
  * One full pass.
@@ -33,6 +47,8 @@ export async function runOnce({ onStaged, onRejected, target = dailyTarget(), no
     sourceErrors: [],
     perSource: {},
     sourceCount: enabledSources().length,
+    draftCalls: 0,
+    budgetExhausted: false,
   };
 
   const { items, errors, perSource } = await gather({ now });
@@ -43,8 +59,20 @@ export async function runOnce({ onStaged, onRejected, target = dailyTarget(), no
   const candidates = rank(items, { now: now.getTime() });
   summary.ranked = candidates.length;
 
+  // Counted from the usage recorder rather than from loop iterations, because
+  // the two differ: an item rejected by verifySource never reaches the model,
+  // and charging it against a budget for API calls would cut the run short over
+  // something that cost nothing.
+  const budget = draftBudget(target);
+  const callsBefore = usageSnapshot().calls;
+  const callsUsed = () => usageSnapshot().calls - callsBefore;
+
   for (const { item } of candidates) {
     if (summary.staged >= target) break;
+    if (callsUsed() >= budget) {
+      summary.budgetExhausted = true;
+      break;
+    }
 
     const id = candidateId(item);
 
@@ -74,6 +102,7 @@ export async function runOnce({ onStaged, onRejected, target = dailyTarget(), no
     }
   }
 
+  summary.draftCalls = callsUsed();
   return summary;
 }
 

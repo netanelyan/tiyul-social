@@ -7,6 +7,7 @@ import { renderCard } from './render/index.js';
 import { isPhotoLayout, PHOTO_FALLBACK } from './render/templates.js';
 import { channelCaption, instagramCaption } from './format.js';
 import { publishTargets } from './publish/targets.js';
+import { recordWasted } from './usage.js';
 
 // One source item all the way to a stageable candidate.
 //
@@ -47,7 +48,19 @@ export function candidateId(item) {
  * turns into Hebrew for the skip digest. A filter you cannot see is a filter
  * you cannot disagree with.
  */
-export async function toCandidate(item, { render = true } = {}) {
+export async function toCandidate(item, opts = {}) {
+  // Everything from the drafting call onward has already been paid for. If it
+  // dies down there the money is spent either way, so it is counted as waste —
+  // that number is what tells you whether the pre-draft gates are doing enough.
+  try {
+    return await build(item, opts);
+  } catch (e) {
+    if (e?.paidFor) recordWasted();
+    throw e;
+  }
+}
+
+async function build(item, { render = true } = {}) {
   const id = candidateId(item);
 
   // 1. Primary source, reachable, and still on the allowlist after redirects.
@@ -60,6 +73,17 @@ export async function toCandidate(item, { render = true } = {}) {
   } catch (e) {
     throw new RejectedError('draft_failed', e.message);
   }
+  // From here down the call is already billed, so every exit is flagged as
+  // paid-for on the way out. `not_usable` counts: the model read the page and
+  // declined it, which is a correct answer we still paid full price for.
+  try {
+    return await afterDraft();
+  } catch (e) {
+    e.paidFor = true;
+    throw e;
+  }
+
+  async function afterDraft() {
   if (!d.usable) throw new RejectedError('not_usable', d.rejectReason || 'the model declined this source');
 
   // 3. Every quote must literally appear in the page we fetched, and no fares.
@@ -108,4 +132,5 @@ export async function toCandidate(item, { render = true } = {}) {
   cand.instagramCaption = instagramCaption(cand);
 
   return cand;
+  }
 }
