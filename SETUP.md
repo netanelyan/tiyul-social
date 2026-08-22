@@ -183,42 +183,52 @@ control.
 
 ### 3.3 Get a token
 
-Graph API Explorer → select your app → **User Token** → request these scopes:
+**The App ID and App Secret do not go in `.env`.** Nothing in the code reads
+them — `src/publish/instagram.js` only ever uses `IG_USER_ID`,
+`IG_ACCESS_TOKEN`, `CARD_PUBLIC_BASE_URL` and `GRAPH_API_VERSION`. The App ID
+and Secret are used once, to mint the token, and then you're done with them:
 
 ```
-instagram_basic
-instagram_content_publish
-pages_show_list
-pages_read_engagement
+App ID + App Secret  ──(once)──▶  IG_ACCESS_TOKEN + IG_USER_ID  ──▶  .env
 ```
 
-Generate. That token is **short-lived (~1 hour)** — it is not the one you want.
-Three steps to the durable one:
+First, a short-lived token from the
+[Graph API Explorer](https://developers.facebook.com/tools/explorer/):
 
-```sh
-APP_ID=...; APP_SECRET=...; SHORT=...
+1. **Meta App** dropdown → your app
+2. **User or Page** dropdown → **User Token**
+3. Add these four permissions:
+   `instagram_basic`, `instagram_content_publish`, `pages_show_list`,
+   `pages_read_engagement`
+4. **Generate Access Token** → approve → tick your Page and Instagram account
+   in the popup
+5. Copy the string from the **Access Token** box
 
-# 1. short-lived user token -> long-lived user token (~60 days)
-curl -s "https://graph.facebook.com/v21.0/oauth/access_token\
-?grant_type=fb_exchange_token&client_id=$APP_ID\
-&client_secret=$APP_SECRET&fb_exchange_token=$SHORT"
+That one expires in about an hour. It's only the starting point. Then:
 
-# 2. long-lived user token -> the Page token (this is the one to keep)
-LONG=...
-curl -s "https://graph.facebook.com/v21.0/me/accounts?access_token=$LONG"
-
-# 3. Page id -> the Instagram user id
-PAGE_ID=...; PAGE_TOKEN=...
-curl -s "https://graph.facebook.com/v21.0/$PAGE_ID\
-?fields=instagram_business_account&access_token=$PAGE_TOKEN"
+```
+npm run ig-token
 ```
 
-Use the **Page** access token from step 2, not the user token. A Page token
-derived from a long-lived user token does not carry a 60-day expiry, so it
-survives without a refresh job. Confirm that before trusting it — paste it into
-the [Access Token Debugger](https://developers.facebook.com/tools/debug/accesstoken/)
-and check **Expires: Never**. If it shows a date, you exchanged the wrong token
-at step 1 and will get a dead pipeline in two months.
+It asks for the App ID, App Secret and that short-lived token, runs the whole
+exchange, and prints the two lines to paste into `.env`. Nothing is written to
+disk and nothing is passed as a shell argument, so the secret stays out of your
+shell history.
+
+**Why a script rather than three curls:** the chain returns three different
+values all called `access_token`, and only the last one is correct. The one you
+want is the **Page** token — derived from a long-lived user token, it carries no
+expiry at all. Pick the wrong one and it works perfectly today, then stops dead
+about 60 days later, silently. So the script finishes by calling `debug_token`
+and refuses to hand you a token unless it comes back `expires: never` with all
+the required scopes present.
+
+If you'd rather do it by hand, it's `oauth/access_token`
+(`grant_type=fb_exchange_token`) → `me/accounts` → `{page-id}?fields=
+instagram_business_account`, then verify in the
+[Access Token Debugger](https://developers.facebook.com/tools/debug/accesstoken/).
+
+You end up with:
 
 ```
 IG_USER_ID=17841400000000000
@@ -294,6 +304,8 @@ pm2 logs tiyul
 | Everything rejected as `not_primary_source` | The item's own link points off the allowlist. Add the domain to `sources.json` only if it is genuinely a primary source. |
 | Rejected as `unsupported_claim` | The draft's quote didn't appear verbatim in the page. Deliberately strict — a fuzzy quote match is indistinguishable from no check at all. Re-run. |
 | Instagram: "media could not be fetched" | `CARD_PUBLIC_BASE_URL` isn't publicly reachable, or isn't https. Test with `curl -sI` from off the box. |
-| Instagram worked, then stopped ~60 days in | You saved the long-lived *user* token instead of the *Page* token. Redo 3.3 step 2 and confirm **Expires: Never** in the debugger. |
+| Instagram worked, then stopped ~60 days in | You saved the long-lived *user* token instead of the *Page* token. Re-run `npm run ig-token` — it refuses to hand back a token that has an expiry. |
+| `npm run ig-token` says "No Pages came back" | The Instagram account isn't linked to a Facebook Page, or you didn't tick the Page in the Explorer's login popup. |
+| `npm run ig-token` says the Page has no Instagram account | The account is still personal. Instagram app → Settings → Account type and tools → Switch to professional, then link the Page. |
 | `render_failed: Heebo did not load` | `assets/fonts/Heebo.ttf` is missing or corrupt. It refuses rather than shipping a card of tofu boxes. |
 | Cards render but Hebrew looks wrong | Look at `samples/*.jpg`, not the HTML — bidi, shaping and line breaking all happen at render time. |

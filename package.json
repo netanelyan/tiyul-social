@@ -12,6 +12,7 @@
     "test": "node scripts/selftest.js",
     "run-once": "node scripts/run-once.js",
     "check-sources": "node scripts/check-sources.js",
+    "ig-token": "node scripts/ig-token.js",
     "render-samples": "node scripts/render-samples.js",
     "test-url": "node test.js"
   },

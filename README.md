@@ -189,6 +189,7 @@ BrickDeal.
 | `scripts/check-sources.js` | Probe every enabled source live. No drafting, no Telegram |
 | `scripts/run-once.js` | A full pass printed to the terminal instead of sent to Telegram |
 | `scripts/render-samples.js` | One sample card per layout, into `samples/` |
+| `scripts/ig-token.js` | Walks the Instagram token exchange and verifies the result is the non-expiring Page token |
 | `test.js` | Run one URL through verification (and, with a key, the whole pipeline) |
 
 ## Getting it running
