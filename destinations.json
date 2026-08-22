@@ -1,0 +1,37 @@
+{
+  "_comment": [
+    "Destinations the climate adapter rotates through for when-to-go posts.",
+    "Chosen for where Israelis actually fly, not for coverage of the globe.",
+    "`he` is the Hebrew name as it is normally written in Israel — the drafting",
+    "step is told to use exactly this string rather than transliterating afresh",
+    "each time, so the same city doesn't appear under two spellings across posts."
+  ],
+  "destinations": [
+    { "id": "athens",     "he": "אתונה",        "en": "Athens",        "country": "יוון",      "lat": 37.98,  "lon": 23.73 },
+    { "id": "larnaca",    "he": "לרנקה",        "en": "Larnaca",       "country": "קפריסין",   "lat": 34.92,  "lon": 33.62 },
+    { "id": "rome",       "he": "רומא",         "en": "Rome",          "country": "איטליה",    "lat": 41.90,  "lon": 12.50 },
+    { "id": "milan",      "he": "מילאנו",       "en": "Milan",         "country": "איטליה",    "lat": 45.46,  "lon": 9.19 },
+    { "id": "barcelona",  "he": "ברצלונה",      "en": "Barcelona",     "country": "ספרד",      "lat": 41.39,  "lon": 2.17 },
+    { "id": "madrid",     "he": "מדריד",        "en": "Madrid",        "country": "ספרד",      "lat": 40.42,  "lon": -3.70 },
+    { "id": "lisbon",     "he": "ליסבון",       "en": "Lisbon",        "country": "פורטוגל",   "lat": 38.72,  "lon": -9.14 },
+    { "id": "paris",      "he": "פריז",         "en": "Paris",         "country": "צרפת",      "lat": 48.86,  "lon": 2.35 },
+    { "id": "amsterdam",  "he": "אמסטרדם",      "en": "Amsterdam",     "country": "הולנד",     "lat": 52.37,  "lon": 4.90 },
+    { "id": "berlin",     "he": "ברלין",        "en": "Berlin",        "country": "גרמניה",    "lat": 52.52,  "lon": 13.40 },
+    { "id": "prague",     "he": "פראג",         "en": "Prague",        "country": "צ׳כיה",     "lat": 50.08,  "lon": 14.44 },
+    { "id": "budapest",   "he": "בודפשט",       "en": "Budapest",      "country": "הונגריה",   "lat": 47.50,  "lon": 19.04 },
+    { "id": "vienna",     "he": "וינה",         "en": "Vienna",        "country": "אוסטריה",   "lat": 48.21,  "lon": 16.37 },
+    { "id": "london",     "he": "לונדון",       "en": "London",        "country": "אנגליה",    "lat": 51.51,  "lon": -0.13 },
+    { "id": "batumi",     "he": "בטומי",        "en": "Batumi",        "country": "גאורגיה",   "lat": 41.64,  "lon": 41.64 },
+    { "id": "tbilisi",    "he": "טביליסי",      "en": "Tbilisi",       "country": "גאורגיה",   "lat": 41.72,  "lon": 44.79 },
+    { "id": "baku",       "he": "באקו",         "en": "Baku",          "country": "אזרבייג׳ן", "lat": 40.41,  "lon": 49.87 },
+    { "id": "dubai",      "he": "דובאי",        "en": "Dubai",         "country": "איחוד האמירויות", "lat": 25.20, "lon": 55.27 },
+    { "id": "bangkok",    "he": "בנגקוק",       "en": "Bangkok",       "country": "תאילנד",    "lat": 13.76,  "lon": 100.50 },
+    { "id": "phuket",     "he": "פוקט",         "en": "Phuket",        "country": "תאילנד",    "lat": 7.88,   "lon": 98.39 },
+    { "id": "kathmandu",  "he": "קטמנדו",       "en": "Kathmandu",     "country": "נפאל",      "lat": 27.72,  "lon": 85.32 },
+    { "id": "tokyo",      "he": "טוקיו",        "en": "Tokyo",         "country": "יפן",       "lat": 35.68,  "lon": 139.69 },
+    { "id": "reykjavik",  "he": "רייקיאוויק",   "en": "Reykjavik",     "country": "איסלנד",    "lat": 64.15,  "lon": -21.94 },
+    { "id": "nyc",        "he": "ניו יורק",     "en": "New York",      "country": "ארה״ב",     "lat": 40.71,  "lon": -74.01 },
+    { "id": "zanzibar",   "he": "זנזיבר",       "en": "Zanzibar",      "country": "טנזניה",    "lat": -6.16,  "lon": 39.20 },
+    { "id": "seychelles", "he": "סיישל",        "en": "Mahé",          "country": "סיישל",     "lat": -4.62,  "lon": 55.45 }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "name": "tiyul-social",
+  "version": "0.1.0",
+  "description": "Travel content pipeline for tiyul+ — gather, verify, draft, render, approve, publish.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node bot.js",
+    "run-once": "node scripts/run-once.js",
+    "check-sources": "node scripts/check-sources.js",
+    "render-samples": "node scripts/render-samples.js",
+    "test-url": "node test.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.120.0",
+    "fast-xml-parser": "^4.5.0",
+    "playwright": "^1.49.0",
+    "telegraf": "^4.16.3"
+  }
+}

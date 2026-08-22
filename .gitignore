@@ -1,0 +1,15 @@
+node_modules/
+.env
+
+# Runtime state: dedupe history, publish queue, staging, the published log the
+# pillar quotas are computed from. Same reasoning as BrickDeal's — cloning this
+# repo shouldn't leak what has already gone out.
+data/
+
+# Rendered cards. Regenerable from the candidate at any time, and on the VPS
+# these are written straight into the Caddy web root instead (CARD_OUTPUT_DIR).
+out/
+
+# Sample cards from `npm run render-samples` — a local eyeballing aid, not an
+# artifact worth versioning.
+samples/

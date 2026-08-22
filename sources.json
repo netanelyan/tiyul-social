@@ -1,0 +1,167 @@
+{
+  "_comment": [
+    "Source registry. Every candidate must trace to one of these, and `allowlist`",
+    "is what the primary-source rule is actually checked against (src/verify.js).",
+    "",
+    "`enabled: true` means the adapter was run against the live endpoint and it",
+    "returned real items. Entries with `enabled: false` are ones I want but could",
+    "not confirm — the probe result is recorded in `note` so nobody re-discovers",
+    "it. Turn one on only once its adapter genuinely works; a source that 404s",
+    "silently is worse than one that is honestly switched off.",
+    "",
+    "Probed 2026-08-22."
+  ],
+
+  "allowlist": [
+    { "suffix": ".gov", "why": "US federal agencies — NPS, State, CBP, CDC" },
+    { "suffix": ".gov.uk", "why": "UK government, incl. FCDO travel advice" },
+    { "suffix": ".gov.il", "why": "Israeli government — MFA, NSC, Airports Authority" },
+    { "suffix": ".europa.eu", "why": "EU institutions — EES, ETIAS, Schengen" },
+    { "suffix": ".gc.ca", "why": "Government of Canada" },
+    { "suffix": ".gov.au", "why": "Australian government — Smartraveller" },
+    { "suffix": ".govt.nz", "why": "New Zealand government" },
+    { "suffix": "unesco.org", "why": "UNESCO, incl. the World Heritage Centre" },
+    { "suffix": "who.int", "why": "World Health Organization — health entry requirements" },
+    { "suffix": "icao.int", "why": "ICAO" },
+    { "suffix": "iata.org", "why": "IATA" },
+    { "suffix": "jnto.go.jp", "why": "Japan National Tourism Organization (official DMO)" },
+    { "suffix": "go.jp", "why": "Japanese government" },
+    { "suffix": "open-meteo.com", "why": "ERA5 reanalysis climate data — quantitative, citable" },
+    { "suffix": "elal.com", "why": "El Al — primary for its own routes" },
+    { "suffix": "arkia.com", "why": "Arkia — primary for its own routes" },
+    { "suffix": "israir.co.il", "why": "Israir — primary for its own routes" },
+    { "suffix": "ryanair.com", "why": "Ryanair newsroom — primary for its own routes" },
+    { "suffix": "wizzair.com", "why": "Wizz Air — primary for its own routes" },
+    { "suffix": "easyjet.com", "why": "easyJet — primary for its own routes" },
+    { "suffix": "aegeanair.com", "why": "Aegean — primary for its own routes" },
+    { "suffix": "turkishairlines.com", "why": "Turkish Airlines — primary for its own routes" },
+    { "suffix": "lufthansagroup.com", "why": "Lufthansa Group newsroom" },
+    { "suffix": "airfrance.com", "why": "Air France newsroom" },
+    { "suffix": "britishairways.com", "why": "British Airways newsroom" }
+  ],
+
+  "sources": [
+    {
+      "id": "fcdo-travel-advice",
+      "name": "UK FCDO — Foreign travel advice",
+      "kind": "rss",
+      "url": "https://www.gov.uk/foreign-travel-advice.atom",
+      "authority": "government",
+      "pillars": ["entry", "timing"],
+      "lang": "en",
+      "enabled": true,
+      "note": "Probed 2026-08-22: 200, 13KB, items present. Each entry is a country page whose 'latest update' line states what changed — the best single feed for entry and visa changes."
+    },
+    {
+      "id": "unesco-whc",
+      "name": "UNESCO World Heritage Centre — news",
+      "kind": "rss",
+      "url": "https://whc.unesco.org/en/news/rss",
+      "authority": "intergovernmental",
+      "pillars": ["place", "fact", "hidden"],
+      "lang": "en",
+      "enabled": true,
+      "note": "Probed 2026-08-22: 200, 9KB, items present. New inscriptions and site decisions — strong for place and hidden-spot posts."
+    },
+    {
+      "id": "jnto-news",
+      "name": "JNTO — Japan National Tourism Organization",
+      "kind": "rss",
+      "url": "https://www.jnto.go.jp/news/rss.xml",
+      "authority": "official-dmo",
+      "pillars": ["place", "tip", "timing"],
+      "lang": "ja",
+      "enabled": true,
+      "note": "Probed 2026-08-22: 200, 17KB, items present. Japanese-language titles; the drafting step translates, and verify.js still requires the claim to trace to this page."
+    },
+    {
+      "id": "open-meteo-climate",
+      "name": "Open-Meteo Climate API (ERA5)",
+      "kind": "climate",
+      "url": "https://climate-api.open-meteo.com/v1/climate",
+      "authority": "dataset",
+      "pillars": ["timing"],
+      "lang": "data",
+      "enabled": true,
+      "note": "Probed 2026-08-22: 200, valid JSON. Not a feed — a queryable dataset. The adapter asks it about destinations in data/destinations.json and proposes when-to-go candidates from real monthly normals."
+    },
+
+    {
+      "id": "us-state-advisories",
+      "name": "US Dept of State — Travel Advisories",
+      "kind": "rss",
+      "url": "https://travel.state.gov/_res/rss/TAs.xml",
+      "authority": "government",
+      "pillars": ["entry"],
+      "lang": "en",
+      "enabled": false,
+      "note": "Probed 2026-08-22: 200 and well-formed, but the channel contains ZERO items — it is an empty shell. Left off until a feed with actual entries is found."
+    },
+    {
+      "id": "gov-il-nsc",
+      "name": "Israel NSC / MFA — travel warnings",
+      "kind": "html",
+      "url": "https://www.gov.il/he/departments/topics/travel_warnings",
+      "authority": "government",
+      "pillars": ["entry"],
+      "lang": "he",
+      "enabled": false,
+      "note": "Probed 2026-08-22: gov.il sits behind Imperva and returns 403 to any non-browser client. Needs a real browser fetch (we already ship Playwright) before it can be enabled."
+    },
+    {
+      "id": "iaa-news",
+      "name": "Israel Airports Authority — news",
+      "kind": "html",
+      "url": "https://www.iaa.gov.il/",
+      "authority": "government",
+      "pillars": ["route"],
+      "lang": "he",
+      "enabled": false,
+      "note": "Probed 2026-08-22: 404 at every obvious RSS path, and the site is behind the same Imperva stack as gov.il. Primary source for TLV routes, so worth the scraper eventually."
+    },
+    {
+      "id": "eu-ees",
+      "name": "EU — Entry/Exit System & ETIAS",
+      "kind": "html",
+      "url": "https://travel-europe.europa.eu/ees_en",
+      "authority": "intergovernmental",
+      "pillars": ["entry"],
+      "lang": "en",
+      "enabled": false,
+      "note": "Probed 2026-08-22: 200 but client-rendered HTML with no feed. Directly relevant to Israeli travellers to Schengen; needs a Playwright-backed extractor."
+    },
+    {
+      "id": "ryanair-newsroom",
+      "name": "Ryanair — newsroom",
+      "kind": "rss",
+      "url": "https://news.ryanair.com/rss/",
+      "authority": "airline",
+      "pillars": ["route"],
+      "lang": "en",
+      "enabled": false,
+      "note": "Probed 2026-08-22: connection refused to non-browser clients (curl got 000)."
+    },
+    {
+      "id": "wizzair-news",
+      "name": "Wizz Air — media & news",
+      "kind": "html",
+      "url": "https://corporate.wizzair.com/en-GB/media_and_news",
+      "authority": "airline",
+      "pillars": ["route"],
+      "lang": "en",
+      "enabled": false,
+      "note": "Probed 2026-08-22: 404 at the documented path. Needs the current URL confirmed."
+    },
+    {
+      "id": "aegean-press",
+      "name": "Aegean Airlines — press office",
+      "kind": "html",
+      "url": "https://en.about.aegeanair.com/press-office/press-releases/",
+      "authority": "airline",
+      "pillars": ["route"],
+      "lang": "en",
+      "enabled": false,
+      "note": "Probed 2026-08-22: 403 Access Denied to non-browser clients."
+    }
+  ]
+}
