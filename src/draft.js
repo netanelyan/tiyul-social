@@ -201,6 +201,27 @@ TONE
 Useful over impressive. If the interesting part is a caveat, lead with the caveat.
 No emoji in the headline. At most one in the caption, and only if it earns its place.
 
+SOUNDING LIKE A PERSON
+Write the way someone who has actually been there would write it to a friend who
+is about to go. That is a real constraint, not a vibe. In practice:
+
+- Never open with a rhetorical question, and never open with "ידעתם ש...".
+- Never announce the post ("היום נדבר על...", "אז מה חשוב לדעת?"). Start with the thing.
+- No summing-up line at the end. When you have said it, stop. Do not add
+  "אז אם אתם מתכננים..." or "שווה לזכור".
+- Vary the rhythm. Not every sentence the same length, not every post the same shape.
+- Drop adjectives that carry no information: מדהים, מרהיב, קסום, חלומי, בלתי נשכח.
+  A specific detail does the work an adjective is pretending to do.
+- Prefer the concrete noun to the general one. "השוק בשבת בבוקר", not "חוויה מקומית".
+- It is fine to sound slightly dry, or to admit something is a hassle. That reads
+  as someone who went. Relentless enthusiasm reads as an advert.
+- At most three hashtags, at the very end, and only ones a person would actually
+  search. No hashtag stuffing.
+
+PUNCTUATION
+Use a plain hyphen (-) only. Never an em dash or an en dash. This applies to the
+headline, the subhead, the caption and every list item.
+
 KOSHER AND SHABBAT
 This is a general travel channel. Kosher food, Shabbat timing and Jewish heritage are
 one occasional thread among many — tag it "kosher" when it genuinely applies, and never
@@ -278,8 +299,26 @@ export async function draft(item, sourceText, { image = null } = {}) {
 
 // Everything the JSON Schema subset can't express (lengths, cross-field rules)
 // is enforced here instead, so the rest of the pipeline gets a predictable shape.
+// Em dashes and en dashes are asked for in the prompt and enforced here, because
+// a prompt is a request and this needed to be a guarantee. They are also one of
+// the more reliable tells that copy was machine-written, so a stray one undoes
+// the "sounds like a person" work in a single character.
+//
+// Spacing is collapsed alongside the substitution: " — " becomes " - " rather
+// than "  -  ", and a dash used as a range ("2-3") stays tight.
+// Note the character classes: [^\S\n] is "whitespace except a newline". The
+// caption is multi-line, and a naive \s* here silently swallows the line breaks
+// around a dash, turning a three-line caption into one run-on paragraph.
+export function hyphensOnly(text) {
+  return String(text ?? '')
+    // A range keeps its dash tight: "2–3 ימים" -> "2-3 ימים", not "2 - 3 ימים".
+    .replace(/(\d)[^\S\n]*[—–][^\S\n]*(\d)/g, '$1-$2')
+    .replace(/[^\S\n]*[—–][^\S\n]*/g, ' - ')
+    .replace(/[^\S\n]{2,}/g, ' ');
+}
+
 function normalise(d, item) {
-  const s = (v) => String(v ?? '').replace(/\s+/g, ' ').trim();
+  const s = (v) => hyphensOnly(String(v ?? '').replace(/\s+/g, ' ').trim()).trim();
 
   const out = {
     usable: Boolean(d.usable),
@@ -291,7 +330,7 @@ function normalise(d, item) {
     country: s(d.country),
     headline: s(d.headline),
     subhead: s(d.subhead),
-    caption: String(d.caption ?? '').trim(),
+    caption: hyphensOnly(String(d.caption ?? '')).trim(),
     bullets: Array.isArray(d.bullets)
       ? d.bullets.slice(0, 3).map((b) => ({ title: s(b?.title), text: s(b?.text) }))
       : [],

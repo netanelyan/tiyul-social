@@ -8,7 +8,7 @@ import { sampleImage } from './sample-image.js';
 
 // Renders one sample of every layout into ./samples so the output can actually
 // be looked at. This exists because "the Hebrew is correct" is not something
-// you can establish by reading the HTML — the bidi algorithm, the font's
+// you can establish by reading the HTML - the bidi algorithm, the font's
 // shaping, and the line breaking all happen at render time. Look at the JPEGs.
 //
 // The photo layouts are rendered against a procedurally generated placeholder
@@ -25,7 +25,7 @@ const samples = {
     ...common,
     layout: 'photoFull',
     headline: 'הרובע שכל ליסבון מגיעה אליו רק בסופי שבוע',
-    subhead: 'בין השוק לנמל, עשר דקות הליכה מהמרכז — ובשבת בבוקר הוא שייך למקומיים בלבד.',
+    subhead: 'בין השוק לנמל, עשר דקות הליכה מהמרכז - ובשבת בבוקר הוא שייך למקומיים בלבד.',
     url: 'https://whc.unesco.org/en/news/example',
     scene: 'coast',
   },
@@ -46,7 +46,7 @@ const samples = {
     pillar: 'fact',
     place: 'קיוטו',
     country: 'יפן',
-    headline: 'הגשר שנבנה מחדש כל 20 שנה — בכוונה',
+    headline: 'הגשר שנבנה מחדש כל 20 שנה - בכוונה',
     subhead: 'המסורת שומרת על הידע של הבנייה, לא על העץ עצמו.',
     url: 'https://www.jnto.go.jp/news/example',
     scene: 'city',
@@ -58,7 +58,7 @@ const samples = {
     place: 'סלינה',
     country: 'קרואטיה',
     headline: 'האגם היחיד באירופה שמשנה צבע פעמיים בשנה',
-    subhead: 'הסיד שנשטף מההרים מגיב לטמפרטורה — ובאפריל ובאוקטובר המים עוברים מטורקיז לירוק כהה.',
+    subhead: 'הסיד שנשטף מההרים מגיב לטמפרטורה - ובאפריל ובאוקטובר המים עוברים מטורקיז לירוק כהה.',
     url: 'https://whc.unesco.org/en/news/example',
   },
   numbers: {
@@ -110,7 +110,7 @@ const samples = {
     place: 'אתונה',
     country: 'יוון',
     headline: 'מתי באמת כדאי לטוס לאתונה',
-    subhead: 'ממוצע רב-שנתי של טמפרטורות ומשקעים — אפריל ואוקטובר הם החלון הנוח באמת.',
+    subhead: 'ממוצע רב-שנתי של טמפרטורות ומשקעים - אפריל ואוקטובר הם החלון הנוח באמת.',
     url: 'https://archive-api.open-meteo.com/v1/archive?latitude=37.98',
   },
   alert: {
@@ -170,7 +170,7 @@ async function main() {
     });
     console.log(`${layout.padEnd(11)} -> ${path.basename(r.file)} (${(r.bytes / 1024).toFixed(0)} KB)`);
   }
-  console.log(`\n${LAYOUTS.length} layouts written to ${OUT} — look at the JPEGs, not the HTML.`);
+  console.log(`\n${LAYOUTS.length} layouts written to ${OUT} - look at the JPEGs, not the HTML.`);
 }
 
 main()

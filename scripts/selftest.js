@@ -13,6 +13,7 @@ import { renderHtml, LAYOUTS, PHOTO_LAYOUTS, isPhotoLayout } from '../src/render
 import { assertGenericAiPrompt, ImagePolicyError } from '../src/images.js';
 import { approvalMessage } from '../src/format.js';
 import { publishTargets } from '../src/publish/targets.js';
+import { hyphensOnly } from '../src/draft.js';
 
 // Offline behaviour checks. No network, no credentials, no Telegram.
 //
@@ -347,6 +348,23 @@ withEnv({ ...IG, CARD_PUBLIC_BASE_URL: undefined }, () => {
     0
   );
 });
+
+/* -------------------------------------------------------------------------- */
+group('copy style - hyphens only, never em or en dashes');
+
+const EM = '—';
+const EN = '–';
+const NL = '\n';
+
+eq('em dash becomes a spaced hyphen', hyphensOnly(`בין השוק לנמל ${EM} עשר דקות`), 'בין השוק לנמל - עשר דקות');
+eq('en dash too', hyphensOnly(`ליסבון ${EN} פורטוגל`), 'ליסבון - פורטוגל');
+eq('a numeric range stays tight', hyphensOnly(`2${EN}3 ימים`), '2-3 ימים');
+eq('text without dashes is untouched', hyphensOnly('רגיל לגמרי'), 'רגיל לגמרי');
+ok(
+  'caption line breaks survive the substitution',
+  hyphensOnly(`א ${EM} ב${NL}ג`).includes(NL),
+  'a naive \\s* around the dash swallows the newline and flattens a multi-line caption'
+);
 
 /* -------------------------------------------------------------------------- */
 group('registry integrity');
