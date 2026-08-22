@@ -91,7 +91,7 @@ are no candidates.
 These need no publish destination at all, so run them before Instagram exists:
 
 ```
-npm test                 # 89 offline checks, no credentials needed
+npm test                 # 109 offline checks, no credentials needed
 npm run check-sources    # are the feeds alive?
 npm run render-samples   # then look at samples/*.jpg
 npm run run-once         # full pass — gather, draft, verify, render — publishes nothing

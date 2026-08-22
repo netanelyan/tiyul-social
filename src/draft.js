@@ -229,6 +229,14 @@ WRITING THE CARD
   on a phone, not as an article. Say the useful thing plainly, then why it
   matters to someone actually going. Do not restate the headline - it is
   already the largest thing on the card. At most three hashtags, at the end.
+
+  The caption expands the HEADLINE'S subject. It is not a summary of the page.
+  A source often mentions several unrelated things; picking up each one in turn
+  produces a caption that starts on your subject and then wanders. If the
+  headline is about a beach in Normandy, the caption is about that beach - not
+  also about a site removed from a list in Vienna, the global total, and where
+  next year's meeting is. Those facts are true and sourced and still do not
+  belong. One subject per post; the rest is somebody else's post.
 - Numbers, dates and prices go in digits. Dates as they'd be read in Israel.
 
 TONE
@@ -255,6 +263,12 @@ is about to go. That is a real constraint, not a vibe. In practice:
 PUNCTUATION
 Use a plain hyphen (-) only. Never an em dash or an en dash. This applies to the
 headline, the subhead, the caption and every list item.
+
+TAGS
+Optional, and an empty list is the normal answer. Tag only what the post is
+actually about: "nature" for a coastline, "city" for an urban post, "food" for
+a food one. A tag that is merely adjacent is worse than none, because the tags
+are what the topic-balance report is computed from - a mis-tag quietly skews it.
 
 KOSHER AND SHABBAT
 This is a general travel channel. Kosher food, Shabbat timing and Jewish heritage are

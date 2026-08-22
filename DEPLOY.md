@@ -64,7 +64,7 @@ The bot writes cards as the user it runs as, into a directory owned by
 ## 4. Verify before starting anything
 
 ```bash
-npm test            # 96 offline checks, no credentials needed
+npm test            # 109 offline checks, no credentials needed
 npm run check-sources
 npm run check-cards
 ```
