@@ -5,16 +5,18 @@ import path from 'node:path';
 import { renderCard, closeBrowser } from '../src/render/index.js';
 import { LAYOUTS, isPhotoLayout } from '../src/render/templates.js';
 import { sampleImage } from './sample-image.js';
+import { configured as pexelsConfigured, search as pexelsSearch } from '../src/images/pexels.js';
 
 // Renders one sample of every layout into ./samples so the output can actually
 // be looked at. This exists because "the Hebrew is correct" is not something
 // you can establish by reading the HTML - the bidi algorithm, the font's
 // shaping, and the line breaking all happen at render time. Look at the JPEGs.
 //
-// The photo layouts are rendered against a procedurally generated placeholder
-// (scripts/sample-image.js) rather than a real photograph. Without one they
-// degrade to the fact card, which is correct behaviour but means the whole
-// photo family would be invisible here.
+// The photo layouts need a photograph or they degrade to the fact card, which
+// is correct behaviour but would make the whole family invisible here. With
+// PEXELS_API_KEY set they render against the real provider, which is what
+// actually ships; without it they fall back to procedural scenery
+// (scripts/sample-image.js) so the layouts stay reviewable either way.
 
 const OUT = path.join(process.cwd(), 'samples');
 
@@ -28,6 +30,7 @@ const samples = {
     subhead: 'עשר דקות הליכה מהמרכז.',
     url: 'https://whc.unesco.org/en/news/example',
     scene: 'coast',
+    imageQuery: 'Lisbon old town alley',
   },
   photoBand: {
     ...common,
@@ -39,6 +42,7 @@ const samples = {
     subhead: 'שאר השנה הדרך סגורה בגלל מפולות.',
     url: 'https://www.govt.nz/example',
     scene: 'mountains',
+    imageQuery: 'Fiordland New Zealand valley',
   },
   photoFrame: {
     ...common,
@@ -50,6 +54,7 @@ const samples = {
     subhead: 'המסורת שומרת על הידע של הבנייה, לא על העץ עצמו.',
     url: 'https://www.jnto.go.jp/news/example',
     scene: 'city',
+    imageQuery: 'Kyoto wooden bridge',
   },
   fact: {
     ...common,
@@ -155,6 +160,21 @@ const climateData = {
   ],
 };
 
+// Real photo when we can, procedural scenery when we can't. A live search that
+// returns nothing is not a failure worth stopping for - fall back and say so.
+async function imageFor(draft) {
+  if (pexelsConfigured() && draft.imageQuery) {
+    try {
+      const got = await pexelsSearch(draft.imageQuery);
+      if (got?.src) return got;
+      console.log(`   (pexels: no result for "${draft.imageQuery}", using placeholder)`);
+    } catch (e) {
+      console.log(`   (pexels failed: ${e.message}, using placeholder)`);
+    }
+  }
+  return sampleImage(draft.scene);
+}
+
 async function main() {
   for (const layout of LAYOUTS) {
     const draft = samples[layout];
@@ -165,7 +185,7 @@ async function main() {
     const r = await renderCard(draft, {
       id: `sample-${layout}`,
       data: layout === 'whenToGo' ? climateData : null,
-      image: isPhotoLayout(layout) ? sampleImage(draft.scene) : null,
+      image: isPhotoLayout(layout) ? await imageFor(draft) : null,
       outDir: OUT,
     });
     console.log(`${layout.padEnd(11)} -> ${path.basename(r.file)} (${(r.bytes / 1024).toFixed(0)} KB)`);

@@ -180,6 +180,7 @@ function photoBandCard(d, accent, image) {
       <div class="foot">
         <div class="src">מקור: <span class="ltr">${e(sourceLabel(srcUrl(d)))}</span></div>
       </div>
+      ${image.credit ? `<div class="credit"><span class="ltr">${e(image.credit)}</span></div>` : ''}
     </div>
   </div>`;
 }
@@ -205,6 +206,7 @@ function photoFrameCard(d, accent, image) {
     <div class="foot">
       <div class="src">מקור: <span class="ltr">${e(sourceLabel(srcUrl(d)))}</span></div>
     </div>
+      ${image.credit ? `<div class="credit"><span class="ltr">${e(image.credit)}</span></div>` : ''}
   </div>`;
 }
 

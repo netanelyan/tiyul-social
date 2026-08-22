@@ -288,6 +288,17 @@ ok(
   renderHtml({ ...draft, sourceUrl: undefined, url: 'https://whc.unesco.org/en/news/x' }).includes('unesco.org')
 );
 
+// Pexels does not require attribution; we credit the photographer anyway, and
+// it should be on every photo layout rather than whichever one got it first.
+for (const l of PHOTO_LAYOUTS) {
+  ok(
+    `${l} credits the photographer`,
+    renderHtml({ ...draft, layout: l }, {
+      image: { src: 'data:image/png;base64,AA', provenance: 'stock', credit: 'Pexels / Ada L' },
+    }).includes('Ada L')
+  );
+}
+
 eq('ten layouts registered', LAYOUTS.length, 10);
 ok('the photo family is identified as such', PHOTO_LAYOUTS.every(isPhotoLayout) && !isPhotoLayout('fact'));
 
