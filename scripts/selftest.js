@@ -239,7 +239,21 @@ const fcdo = { ...base, authority: 'government', title: 'Norway', summary: 'x'.r
 const trade = { ...base, authority: 'official-dmo', title: '「第29回JNTOインバウンド旅行振興フォーラム」取材のご案内', summary: 'y'.repeat(400) };
 
 ok('a short title with a real summary is not penalised as thin', scoreItem(fcdo) > scoreItem({ ...fcdo, summary: '' }));
-ok('B2B trade notices rank below traveller content', scoreItem(trade) < scoreItem({ ...trade, title: '箸作り体験を渋谷で開始' }));
+// An eruption at Etna is news; ten-year rainfall normals are not. The climate
+// source stamped itself with the current time, took maximum recency every day,
+// and led the queue with "4 rain days in Bangkok".
+ok(
+  'a real event outranks an evergreen dataset item',
+  scoreItem({ title: 'Etna (Italy) - New Eruptive Activity', summary: 'x'.repeat(300), authority: 'government', publishedAt: new Date().toISOString(), pillarHints: ['fact'] }) >
+    scoreItem({ title: 'Bangkok — monthly climate normals 2016–2025 (ERA5)', summary: 'x'.repeat(300), authority: 'dataset', publishedAt: null, evergreen: true, pillarHints: ['timing'] })
+);
+ok(
+  'the evergreen flag is what does it, not the source name',
+  scoreItem({ title: 'T', summary: 'x'.repeat(300), authority: 'dataset', evergreen: false }) >
+    scoreItem({ title: 'T', summary: 'x'.repeat(300), authority: 'dataset', evergreen: true })
+);
+
+ok('B2B trade notices rank below traveller content',scoreItem(trade) < scoreItem({ ...trade, title: '箸作り体験を渋谷で開始' }));
 
 /* -------------------------------------------------------------------------- */
 group('dedupe identity');
@@ -252,6 +266,37 @@ eq(
 eq('a fragment does not either', candidateId({ url: 'https://www.gov.uk/a#top' }), candidateId({ url: 'https://www.gov.uk/a' }));
 ok('different pages stay distinct', candidateId({ url: 'https://www.gov.uk/a' }) !== candidateId({ url: 'https://www.gov.uk/b' }));
 ok('a real query parameter is significant', candidateId({ url: 'https://www.gov.uk/a?id=1' }) !== candidateId({ url: 'https://www.gov.uk/a' }));
+
+/* -------------------------------------------------------------------------- */
+group('feeds that are themselves the publication');
+
+// The Smithsonian weekly volcano report puts each volcano's full report in its
+// own item and links all 21 of them to the same landing page — which returns
+// 403 to anything that is not a browser.
+const volcanoFeed = `<?xml version="1.0"?><rss version="2.0"><channel>
+  <item><title>Etna (Italy) - Report for 13 August-19 August 2026</title>
+    <link>https://volcano.si.edu/reports_weekly.cfm</link><description>Explosive activity at Voragine Crater persisted.</description></item>
+  <item><title>Karangetang (Indonesia) - Report for 13 August-19 August 2026</title>
+    <link>https://volcano.si.edu/reports_weekly.cfm</link><description>Lava advanced about 700 m south.</description></item>
+</channel></rss>`;
+
+const volSrc = { id: 'v', name: 'V', authority: 'research-institution', lang: 'en', pillars: ['fact'], dedupeBy: 'title', contentInFeed: true };
+const volItems = parseFeed(volcanoFeed, volSrc);
+eq('both items survive parsing', volItems.length, 2);
+ok('a shared link does not collapse them into one candidate', candidateId(volItems[0]) !== candidateId(volItems[1]));
+ok('identity comes from the title', Boolean(volItems[0].dedupeId));
+ok('the feed-content flag is carried onto the item', volItems[0].contentInFeed === true);
+
+const plainItems = parseFeed(volcanoFeed, { ...volSrc, dedupeBy: undefined, contentInFeed: undefined });
+eq('without the flag, a shared link still collapses them', candidateId(plainItems[0]), candidateId(plainItems[1]));
+ok('and no feed-content flag is set', plainItems[0].contentInFeed === undefined);
+
+// A feed item carries no menus or breadcrumbs, so the same character count buys
+// more substance than it does on a page. The real Smithsonian report that was
+// being thrown away came to 779 characters.
+ok('the feed floor is lower than the page floor', minSourceChars('english text', { fromFeed: true }) < minSourceChars('english text'));
+ok('779 characters of clean report clears the feed floor', 779 > minSourceChars('english text', { fromFeed: true }));
+ok('but 779 would not clear the page floor', 779 < minSourceChars('english text'));
 
 /* -------------------------------------------------------------------------- */
 group('rounding — a decimal on a card means it was generated, not written');

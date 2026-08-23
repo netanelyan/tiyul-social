@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { XMLParser } from 'fast-xml-parser';
 import { fetchText } from '../fetchPage.js';
 import { decodeEntities, htmlToText } from '../fetchPage.js';
@@ -101,6 +102,20 @@ export function parseFeed(body, source) {
         summary: summaryOf(entry),
         url,
         publishedAt: dateOf(entry),
+        // Some feeds carry the whole story in each item and then link every one
+        // of them to the same landing page. The Smithsonian's weekly volcano
+        // report does exactly this: twenty-one volcanoes, twenty-one substantial
+        // descriptions, and one shared `reports_weekly.cfm` link. Identity
+        // derived from the URL would collapse all of them into one candidate
+        // and silently discard the other twenty.
+        //
+        // `dedupeBy: "title"` in the registry says so explicitly, per source,
+        // rather than guessing — a feed with genuinely duplicate titles should
+        // still collapse.
+        ...(source.contentInFeed ? { contentInFeed: true } : {}),
+        ...(source.dedupeBy === 'title'
+          ? { dedupeId: createHash('sha1').update(`${source.id}\n${title}`).digest('hex').slice(0, 12) }
+          : {}),
       };
     })
     .filter(Boolean);

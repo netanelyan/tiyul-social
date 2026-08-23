@@ -11,35 +11,112 @@
     "",
     "Probed 2026-08-22."
   ],
-
   "allowlist": [
-    { "suffix": ".gov", "why": "US federal agencies — NPS, State, CBP, CDC" },
-    { "suffix": ".gov.uk", "why": "UK government, incl. FCDO travel advice" },
-    { "suffix": ".gov.il", "why": "Israeli government — MFA, NSC, Airports Authority" },
-    { "suffix": ".europa.eu", "why": "EU institutions — EES, ETIAS, Schengen" },
-    { "suffix": ".gc.ca", "why": "Government of Canada" },
-    { "suffix": ".gov.au", "why": "Australian government — Smartraveller" },
-    { "suffix": ".govt.nz", "why": "New Zealand government" },
-    { "suffix": "unesco.org", "why": "UNESCO, incl. the World Heritage Centre" },
-    { "suffix": "who.int", "why": "World Health Organization — health entry requirements" },
-    { "suffix": "icao.int", "why": "ICAO" },
-    { "suffix": "iata.org", "why": "IATA" },
-    { "suffix": "jnto.go.jp", "why": "Japan National Tourism Organization (official DMO)" },
-    { "suffix": "go.jp", "why": "Japanese government" },
-    { "suffix": "open-meteo.com", "why": "ERA5 reanalysis climate data — quantitative, citable" },
-    { "suffix": "elal.com", "why": "El Al — primary for its own routes" },
-    { "suffix": "arkia.com", "why": "Arkia — primary for its own routes" },
-    { "suffix": "israir.co.il", "why": "Israir — primary for its own routes" },
-    { "suffix": "ryanair.com", "why": "Ryanair newsroom — primary for its own routes" },
-    { "suffix": "wizzair.com", "why": "Wizz Air — primary for its own routes" },
-    { "suffix": "easyjet.com", "why": "easyJet — primary for its own routes" },
-    { "suffix": "aegeanair.com", "why": "Aegean — primary for its own routes" },
-    { "suffix": "turkishairlines.com", "why": "Turkish Airlines — primary for its own routes" },
-    { "suffix": "lufthansagroup.com", "why": "Lufthansa Group newsroom" },
-    { "suffix": "airfrance.com", "why": "Air France newsroom" },
-    { "suffix": "britishairways.com", "why": "British Airways newsroom" }
+    {
+      "suffix": ".gov",
+      "why": "US federal agencies — NPS, State, CBP, CDC"
+    },
+    {
+      "suffix": ".gov.uk",
+      "why": "UK government, incl. FCDO travel advice"
+    },
+    {
+      "suffix": ".gov.il",
+      "why": "Israeli government — MFA, NSC, Airports Authority"
+    },
+    {
+      "suffix": ".europa.eu",
+      "why": "EU institutions — EES, ETIAS, Schengen"
+    },
+    {
+      "suffix": ".gc.ca",
+      "why": "Government of Canada"
+    },
+    {
+      "suffix": ".gov.au",
+      "why": "Australian government — Smartraveller"
+    },
+    {
+      "suffix": ".govt.nz",
+      "why": "New Zealand government"
+    },
+    {
+      "suffix": "unesco.org",
+      "why": "UNESCO, incl. the World Heritage Centre"
+    },
+    {
+      "suffix": "who.int",
+      "why": "World Health Organization — health entry requirements"
+    },
+    {
+      "suffix": "icao.int",
+      "why": "ICAO"
+    },
+    {
+      "suffix": "iata.org",
+      "why": "IATA"
+    },
+    {
+      "suffix": "jnto.go.jp",
+      "why": "Japan National Tourism Organization (official DMO)"
+    },
+    {
+      "suffix": "go.jp",
+      "why": "Japanese government"
+    },
+    {
+      "suffix": "open-meteo.com",
+      "why": "ERA5 reanalysis climate data — quantitative, citable"
+    },
+    {
+      "suffix": "elal.com",
+      "why": "El Al — primary for its own routes"
+    },
+    {
+      "suffix": "arkia.com",
+      "why": "Arkia — primary for its own routes"
+    },
+    {
+      "suffix": "israir.co.il",
+      "why": "Israir — primary for its own routes"
+    },
+    {
+      "suffix": "ryanair.com",
+      "why": "Ryanair newsroom — primary for its own routes"
+    },
+    {
+      "suffix": "wizzair.com",
+      "why": "Wizz Air — primary for its own routes"
+    },
+    {
+      "suffix": "easyjet.com",
+      "why": "easyJet — primary for its own routes"
+    },
+    {
+      "suffix": "aegeanair.com",
+      "why": "Aegean — primary for its own routes"
+    },
+    {
+      "suffix": "turkishairlines.com",
+      "why": "Turkish Airlines — primary for its own routes"
+    },
+    {
+      "suffix": "lufthansagroup.com",
+      "why": "Lufthansa Group newsroom"
+    },
+    {
+      "suffix": "airfrance.com",
+      "why": "Air France newsroom"
+    },
+    {
+      "suffix": "britishairways.com",
+      "why": "British Airways newsroom"
+    },
+    {
+      "suffix": "si.edu",
+      "why": "Smithsonian Institution — incl. the Global Volcanism Program, the standing authority on volcanic activity"
+    }
   ],
-
   "sources": [
     {
       "id": "fcdo-travel-advice",
@@ -47,7 +124,10 @@
       "kind": "rss",
       "url": "https://www.gov.uk/foreign-travel-advice.atom",
       "authority": "government",
-      "pillars": ["entry", "timing"],
+      "pillars": [
+        "entry",
+        "timing"
+      ],
       "lang": "en",
       "enabled": true,
       "note": "Probed 2026-08-22: 200, 13KB, items present. Each entry is a country page whose 'latest update' line states what changed — the best single feed for entry and visa changes."
@@ -58,7 +138,11 @@
       "kind": "rss",
       "url": "https://whc.unesco.org/en/news/rss",
       "authority": "intergovernmental",
-      "pillars": ["place", "fact", "hidden"],
+      "pillars": [
+        "place",
+        "fact",
+        "hidden"
+      ],
       "lang": "en",
       "enabled": true,
       "note": "Probed 2026-08-22: 200, 9KB, items present. New inscriptions and site decisions — strong for place and hidden-spot posts."
@@ -69,10 +153,46 @@
       "kind": "rss",
       "url": "https://www.jnto.go.jp/news/rss.xml",
       "authority": "official-dmo",
-      "pillars": ["place", "tip", "timing"],
+      "pillars": [
+        "place",
+        "tip",
+        "timing"
+      ],
       "lang": "ja",
       "enabled": true,
       "note": "Probed 2026-08-22: 200, 17KB, items present. Japanese-language titles; the drafting step translates, and verify.js still requires the claim to trace to this page."
+    },
+    {
+      "id": "nasa-earth-observatory",
+      "name": "NASA Earth Observatory",
+      "kind": "rss",
+      "url": "https://earthobservatory.nasa.gov/feeds/image-of-the-day.rss",
+      "authority": "government",
+      "pillars": [
+        "fact",
+        "place",
+        "hidden"
+      ],
+      "lang": "en",
+      "enabled": true,
+      "note": "Probed 2026-08-23: 200, 10 items, article pages ~10k chars. NASA writing about one specific place on Earth per day, from orbit - the closest thing to a surprising-fact source that is still primary."
+    },
+    {
+      "id": "smithsonian-volcano",
+      "name": "Smithsonian Global Volcanism Program — weekly report",
+      "kind": "rss",
+      "url": "https://volcano.si.edu/news/WeeklyVolcanoRSS.xml",
+      "authority": "research-institution",
+      "pillars": [
+        "timing",
+        "fact",
+        "entry"
+      ],
+      "lang": "en",
+      "enabled": true,
+      "note": "Probed 2026-08-23: 200, 29KB. Weekly eruption and unrest reports - Etna, Asosan and the rest. Travel-relevant and inherently interesting, and the standing global authority on the question. Every item links to the same weekly landing page, so identity is taken from the title.",
+      "dedupeBy": "title",
+      "contentInFeed": true
     },
     {
       "id": "open-meteo-climate",
@@ -80,19 +200,22 @@
       "kind": "climate",
       "url": "https://climate-api.open-meteo.com/v1/climate",
       "authority": "dataset",
-      "pillars": ["timing"],
+      "pillars": [
+        "timing"
+      ],
       "lang": "data",
       "enabled": true,
       "note": "Probed 2026-08-22: 200, valid JSON. Not a feed — a queryable dataset. The adapter asks it about destinations in data/destinations.json and proposes when-to-go candidates from real monthly normals."
     },
-
     {
       "id": "us-state-advisories",
       "name": "US Dept of State — Travel Advisories",
       "kind": "rss",
       "url": "https://travel.state.gov/_res/rss/TAs.xml",
       "authority": "government",
-      "pillars": ["entry"],
+      "pillars": [
+        "entry"
+      ],
       "lang": "en",
       "enabled": false,
       "note": "Probed 2026-08-22: 200 and well-formed, but the channel contains ZERO items — it is an empty shell. Left off until a feed with actual entries is found."
@@ -103,7 +226,9 @@
       "kind": "html",
       "url": "https://www.gov.il/he/departments/topics/travel_warnings",
       "authority": "government",
-      "pillars": ["entry"],
+      "pillars": [
+        "entry"
+      ],
       "lang": "he",
       "enabled": false,
       "note": "Probed 2026-08-22: gov.il sits behind Imperva and returns 403 to any non-browser client. Needs a real browser fetch (we already ship Playwright) before it can be enabled."
@@ -114,7 +239,9 @@
       "kind": "html",
       "url": "https://www.iaa.gov.il/",
       "authority": "government",
-      "pillars": ["route"],
+      "pillars": [
+        "route"
+      ],
       "lang": "he",
       "enabled": false,
       "note": "Probed 2026-08-22: 404 at every obvious RSS path, and the site is behind the same Imperva stack as gov.il. Primary source for TLV routes, so worth the scraper eventually."
@@ -125,7 +252,9 @@
       "kind": "html",
       "url": "https://travel-europe.europa.eu/ees_en",
       "authority": "intergovernmental",
-      "pillars": ["entry"],
+      "pillars": [
+        "entry"
+      ],
       "lang": "en",
       "enabled": false,
       "note": "Probed 2026-08-22: 200 but client-rendered HTML with no feed. Directly relevant to Israeli travellers to Schengen; needs a Playwright-backed extractor."
@@ -136,7 +265,9 @@
       "kind": "rss",
       "url": "https://news.ryanair.com/rss/",
       "authority": "airline",
-      "pillars": ["route"],
+      "pillars": [
+        "route"
+      ],
       "lang": "en",
       "enabled": false,
       "note": "Probed 2026-08-22: connection refused to non-browser clients (curl got 000)."
@@ -147,7 +278,9 @@
       "kind": "html",
       "url": "https://corporate.wizzair.com/en-GB/media_and_news",
       "authority": "airline",
-      "pillars": ["route"],
+      "pillars": [
+        "route"
+      ],
       "lang": "en",
       "enabled": false,
       "note": "Probed 2026-08-22: 404 at the documented path. Needs the current URL confirmed."
@@ -158,7 +291,9 @@
       "kind": "html",
       "url": "https://en.about.aegeanair.com/press-office/press-releases/",
       "authority": "airline",
-      "pillars": ["route"],
+      "pillars": [
+        "route"
+      ],
       "lang": "en",
       "enabled": false,
       "note": "Probed 2026-08-22: 403 Access Denied to non-browser clients."

@@ -174,7 +174,14 @@ export async function fetchClimate(source, dest, now = new Date()) {
       `\nBest months: ${good.join(', ') || 'none by these thresholds'}.` +
       `\nMonths to avoid: ${avoid.join(', ') || 'none by these thresholds'}.`,
     url,
-    publishedAt: new Date().toISOString(),
+    // NOT "now". A ten-year climate normal is not news, and stamping it with
+    // the current timestamp gave it the maximum recency score every single day
+    // — which is how a card reading "4 rain days in Bangkok" outranked an
+    // eruption at Etna and a NASA piece on the Denmark Strait.
+    publishedAt: null,
+    // Always available, never urgent. The scorer uses this to keep the source
+    // in its proper role: the answer on a genuinely quiet day, not the lead.
+    evergreen: true,
     // Carried through to the renderer — the whenToGo template draws this strip
     // directly from the data rather than from anything the model wrote.
     data: {

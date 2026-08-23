@@ -70,11 +70,18 @@ export function scoreItem(item, { deficits = pillarDeficits(), now = Date.now() 
   const summaryLen = item.summary?.length || 0;
   const thin = item.title.length < 25 && summaryLen < 200 ? -0.25 : 0;
 
+  // An evergreen item is one that will be just as available tomorrow. It should
+  // lose to anything that actually happened, and win only when nothing did.
+  // Without this the climate source led every run — it is generated on demand,
+  // so it never ages out and never runs dry, which is precisely why it must not
+  // be allowed to compete on equal terms.
+  const evergreen = item.evergreen ? -0.25 : 0;
+
   // Enough text to work with. Past a couple of paragraphs more length stops
   // meaning more substance, so this saturates rather than growing.
   const body = Math.min(0.15, summaryLen / 4000);
 
-  return authority * 0.35 + recency * 0.3 + deficit * 0.8 + specific + body + thin + trade;
+  return authority * 0.35 + recency * 0.3 + deficit * 0.8 + specific + body + thin + trade + evergreen;
 }
 
 /**

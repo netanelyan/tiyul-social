@@ -6,8 +6,17 @@
 // If a page can't be fetched, the candidate dies here rather than being drafted
 // from the model's own recollection of the place.
 
-const UA =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36';
+// Identify honestly rather than impersonating a browser.
+//
+// This started as a pinned Chrome string, which is both untrue and ages badly:
+// a bot claiming to be Chrome 120 forever eventually looks like exactly the
+// thing operators block. A named agent with a contact URL is what a scheduled
+// fetcher is supposed to send, and it is what lets an operator ask us to stop
+// rather than silently blocking us.
+//
+// Verified equal on all six enabled sources before switching — both strings
+// returned 200 everywhere.
+const UA = 'tiyul-plus/0.1 (+https://tiyulplus.com)';
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 

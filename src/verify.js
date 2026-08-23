@@ -45,8 +45,22 @@ export class RejectedError extends Error {
 const THIN_FLOOR = Number(process.env.MIN_SOURCE_CHARS ?? 1200);
 const THIN_FLOOR_SPACELESS = Number(process.env.MIN_SOURCE_CHARS_CJK ?? 700);
 
-export function minSourceChars(text) {
-  return SPACELESS_SCRIPT.test(text) ? THIN_FLOOR_SPACELESS : THIN_FLOOR;
+// A third floor, for content that arrived in a feed rather than on a page.
+//
+// The 1,200 figure was measured against fetched web pages, and a web page pays
+// for its own furniture: menus, breadcrumbs, related links, the parts of a page
+// that survive boilerplate stripping without saying anything. A feed item has
+// none of that, so the same character count buys considerably more substance.
+//
+// Measured on the Smithsonian weekly report: a complete account of one
+// volcano's activity — which agency observed it, what erupted, how far the lava
+// travelled, over which dates — came to 779 characters. Judging that against a
+// floor built for pages threw away the best item in the feed.
+const THIN_FLOOR_FEED = Number(process.env.MIN_SOURCE_CHARS_FEED ?? 450);
+
+export function minSourceChars(text, { fromFeed = false } = {}) {
+  if (SPACELESS_SCRIPT.test(text)) return THIN_FLOOR_SPACELESS;
+  return fromFeed ? THIN_FLOOR_FEED : THIN_FLOOR;
 }
 const thinFloor = minSourceChars;
 
@@ -58,6 +72,29 @@ export async function verifySource(item) {
   const authority = primaryAuthority(item.url);
   if (!authority) {
     throw new RejectedError('not_primary_source', new URL(item.url).hostname);
+  }
+
+  // Some publications ARE the feed. The Smithsonian's weekly volcano report
+  // puts each volcano's full report in its own feed item and links them all to
+  // one landing page — and that landing page returns 403 to anything that is
+  // not a browser, while the feed itself serves fine.
+  //
+  // Insisting on the page there would reject every item from the standing
+  // global authority on volcanic activity, on the grounds that a *different*
+  // document was unreachable. So a source may declare that its feed carries the
+  // content, and then the feed text is what claims are grounded in.
+  //
+  // What this does NOT relax: the URL must still be on an allowlisted primary
+  // domain (checked above), the text must still clear the thin-source floor
+  // (below), and every quote is still checked verbatim against it. The live
+  // fetch that proves the source is up already happened — it is how we got the
+  // item. This drops one check, the reachability of a page we never quote.
+  if (item.contentInFeed) {
+    const combined = [item.title, item.summary].filter(Boolean).join('\n');
+    const chars = combined.replace(/\s/g, '').length;
+    const floor = minSourceChars(combined, { fromFeed: true });
+    if (chars < floor) throw new RejectedError('source_too_thin', `${chars} chars, need ${floor}`);
+    return { sourceText: combined, finalUrl: item.url, authority };
   }
 
   let page;
