@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url';
+import { rmSync } from 'node:fs';
 
 // Launcher. The tests themselves are in selftest.run.js.
 //
@@ -14,5 +15,15 @@ import { fileURLToPath } from 'node:url';
 //
 // A dynamic import is the fix. It runs after this line, not before it.
 process.env.STORE_PATH ||= fileURLToPath(new URL('../data/.selftest-store.json', import.meta.url));
+
+// Start from empty every time.
+//
+// The suite writes to this file — it records a published id to prove /redo
+// cannot resurrect it. Left in place, that id is still there on the next run,
+// so the test that asserts the item ranks *before* publishing fails. It also
+// shifts the pillar deficits, which feed the scorer, which broke an unrelated
+// ranking test. A test that passes only on a clean checkout is worse than no
+// test.
+rmSync(process.env.STORE_PATH, { force: true });
 
 await import('./selftest.run.js');

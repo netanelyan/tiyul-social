@@ -273,6 +273,36 @@ ok('different pages stay distinct', candidateId({ url: 'https://www.gov.uk/a' })
 ok('a real query parameter is significant', candidateId({ url: 'https://www.gov.uk/a?id=1' }) !== candidateId({ url: 'https://www.gov.uk/a' }));
 
 /* -------------------------------------------------------------------------- */
+group('the daily cap survives repeated gathers and restarts');
+
+// The gather now runs through the day instead of once, so "the best two or
+// three a day" has to be counted rather than being a property of running once.
+{
+  eq('a fresh day starts at zero', store.stagedToday('2026-08-24'), 0);
+  store.noteStaged('2026-08-24');
+  store.noteStaged('2026-08-24');
+  eq('counts up', store.stagedToday('2026-08-24'), 2);
+  eq('yesterday is not today', store.stagedToday('2026-08-23'), 0);
+  store.noteStaged('2026-08-25');
+  eq('a new day resets', store.stagedToday('2026-08-25'), 1);
+  eq('and the old day is gone rather than accumulating', store.stagedToday('2026-08-24'), 0);
+}
+
+// The scheduling decision itself, as a pure function of the clock and the count.
+{
+  const RUN_HOUR = 8, UNTIL = 22, EVERY_MS = 2 * 3_600_000, TARGET = 3;
+  const wouldGather = (hour, stagedSoFar, sinceLastMs) =>
+    hour >= RUN_HOUR && hour < UNTIL && TARGET - stagedSoFar > 0 && sinceLastMs >= EVERY_MS;
+
+  ok('gathers at the start of the window', wouldGather(8, 0, Infinity));
+  ok('gathers again later in the day — this is the whole point', wouldGather(14, 1, EVERY_MS));
+  ok('does not gather before the window opens', !wouldGather(6, 0, Infinity));
+  ok('does not gather overnight', !wouldGather(23, 0, Infinity));
+  ok('stops once the daily cap is met', !wouldGather(14, 3, Infinity));
+  ok('does not gather twice inside one interval', !wouldGather(14, 0, EVERY_MS - 1));
+}
+
+/* -------------------------------------------------------------------------- */
 group('/redo must not resurrect something already published');
 
 // The exact sequence that happened: an iceberg post was approved, published to

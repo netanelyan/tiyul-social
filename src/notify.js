@@ -132,6 +132,9 @@ export function humanDuration(ms) {
 
 /** /status — a fixed last-24h window, so it answers "why nothing today". */
 export function statusReport({
+  stagedToday,
+  dailyTarget: target,
+  nextGatherInMin,
   sourceCount,
   stagingSize,
   queueSize,
@@ -161,6 +164,10 @@ export function statusReport({
     ...breakdown,
     '',
     `⏱️ סבב אחרון: ${lastRunAgoMs == null ? 'עדיין לא רץ' : `לפני ${humanDuration(lastRunAgoMs)}`}`,
+    // The two questions "why is it quiet" actually splits into: have we already
+    // filled today's quota, and when does it next look? Both, in one line.
+    `🎯 עלו היום: ${stagedToday ?? 0}/${target ?? '?'}` +
+      (stagedToday >= target ? ' (הושלמה המכסה היומית)' : ` · סבב הבא בעוד ${nextGatherInMin ?? '?'} דק'`),
     `⚙️ דריפ כל ${postIntervalMinutes} דק' · מפרסם ל${targetsHe(targets)}`,
   ].join('\n');
 }

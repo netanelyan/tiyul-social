@@ -42,6 +42,8 @@ const empty = {
   // guarding the case that actually happened: an item published to Instagram,
   // then staged again by the next /redo as though it were new.
   publishedIds: {},
+  // { date: 'YYYY-MM-DD', count: n } — the daily staging cap, survives restart.
+  stagedDay: null,
   igToken: null,
 };
 
@@ -183,6 +185,26 @@ export function forgetPublished(id) {
   save();
 }
 export const publishedCount = () => Object.keys(state.publishedIds).length;
+
+// --- how many were staged today --------------------------------------------
+//
+// The gather used to run once a day, so "the best two or three a day" was a
+// property of running once. Now it runs through the day, which is what you want
+// when a source publishes at 14:00 and the morning pass has already been and
+// gone — but it means the daily cap has to be counted rather than assumed.
+//
+// Persisted, so a restart cannot reset the count and hand you a second full
+// day's worth. `day` is the local date string the caller computes; the store
+// does not decide what "today" means.
+export function stagedToday(day) {
+  return state.stagedDay?.date === day ? state.stagedDay.count : 0;
+}
+export function noteStaged(day) {
+  if (state.stagedDay?.date !== day) state.stagedDay = { date: day, count: 0 };
+  state.stagedDay.count++;
+  save();
+  return state.stagedDay.count;
+}
 
 // --- staging (awaiting your approve/reject tap) ------------------------------
 export function addStaging(item) {

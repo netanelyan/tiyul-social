@@ -35,6 +35,11 @@ const {
   OWNER_ID,
   POST_INTERVAL_MINUTES = '240',
   RUN_HOUR = '8',
+  // Gather repeatedly through the day, not once. Cards should arrive when the
+  // news does; the daily cap is what keeps that honest.
+  GATHER_EVERY_HOURS = '2',
+  // Last hour a gather may start. Nothing should arrive overnight.
+  GATHER_UNTIL_HOUR = '22',
   REJECT_DIGEST_HOURS = '6',
   REJECT_NOTIFY = 'digest', // off | each | digest
   QUIET_ALERT_HOURS = '30',
@@ -70,6 +75,7 @@ if (!STAGING_CHAT_ID) {
 const bot = new Telegraf(TG_BOT_TOKEN);
 const staging = STAGING_CHAT_ID;
 const intervalMs = Math.max(1, Number(POST_INTERVAL_MINUTES)) * 60_000;
+const gatherIntervalMs = Math.max(0.25, Number(GATHER_EVERY_HOURS)) * 3_600_000;
 
 // String comparison sidesteps float-precision edge cases with large Telegram ids.
 const isOwner = (ctx) => String(ctx.from?.id) === String(OWNER_ID);
@@ -333,6 +339,10 @@ let running = false;
 let lastRunAt = null;
 let lastStagedAt = null;
 let lastRunDay = null;
+let lastAnnouncedDay = null;
+// Epoch 0, so the first tick after a start gathers immediately rather than
+// waiting out a full interval.
+let lastGatherAt = 0;
 let quietAlertSent = false;
 
 // Rolling record of what the filters rejected, so /why and the digest can show
@@ -376,13 +386,18 @@ async function maybeRefreshIgToken() {
   }
 }
 
-async function doRun({ announce = true } = {}) {
+async function doRun({ announce = true, target } = {}) {
   if (running) return null;
   running = true;
   try {
     const summary = await runOnce({
+      ...(target ? { target } : {}),
       onStaged: async (cand) => {
         await stage(cand);
+        // Counted here rather than from the summary, so a card that reached
+        // Telegram is what counts against the day — not one that was built and
+        // then failed to send.
+        store.noteStaged(localDay(new Date()));
         activity.push({ ts: Date.now(), type: 'staged' });
       },
       onRejected: async (r) => {
@@ -477,6 +492,9 @@ bot.command('status', async (ctx) => {
       publishedToday: store.publishedToday(),
       lastRunAgoMs: lastRunAt ? Date.now() - lastRunAt : null,
       postIntervalMinutes: POST_INTERVAL_MINUTES,
+      stagedToday: store.stagedToday(localDay(new Date())),
+      dailyTarget: dailyTarget(),
+      nextGatherInMin: Math.max(0, Math.round((gatherIntervalMs - (Date.now() - lastGatherAt)) / 60000)),
       targets: publishTargets(),
     })
   );
@@ -520,16 +538,43 @@ bot.command('help', (ctx) =>
 // Timers
 // ---------------------------------------------------------------------------
 
+// The local date, not the UTC one. `toISOString()` would roll the day over at
+// 03:00 Israel time and hand you a fresh daily quota in the middle of the night.
+const localDay = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 function tick() {
   const now = new Date();
-  const day = now.toISOString().slice(0, 10);
+  const day = localDay(now);
+  const hour = now.getHours();
 
-  // One gather a day, at RUN_HOUR local. Guarded by the date rather than by a
-  // timer so a restart mid-day doesn't trigger a second run.
-  if (day !== lastRunDay && now.getHours() >= Number(RUN_HOUR)) {
-    lastRunDay = day;
-    maybeRefreshIgToken().catch(() => {});
-    doRun().catch((e) => console.error('daily run failed:', e.message));
+  // Gather through the day rather than once at RUN_HOUR.
+  //
+  // One pass a day meant a source publishing at 14:00 waited until 11:00 the
+  // next morning, and the only way to see it sooner was to type /run. Cards
+  // should arrive when the news does; you approve them when you have time.
+  //
+  // Three things keep that from becoming a firehose:
+  //   - a daily cap, counted in the store, so "the best two or three a day"
+  //     stays true no matter how many times it looks;
+  //   - quiet hours, so nothing arrives overnight;
+  //   - the gather itself is free, and it costs a drafting call only when
+  //     something genuinely new survives ranking.
+  const inHours = hour >= Number(RUN_HOUR) && hour < Number(GATHER_UNTIL_HOUR);
+  const remaining = dailyTarget() - store.stagedToday(day);
+  const due = Date.now() - lastGatherAt >= gatherIntervalMs;
+
+  if (inHours && remaining > 0 && due) {
+    lastGatherAt = Date.now();
+    if (day !== lastRunDay) {
+      lastRunDay = day;
+      maybeRefreshIgToken().catch(() => {});
+    }
+    // Announce only the first pass of the day. The later ones are routine and a
+    // "0 staged" report every few hours is noise you would learn to ignore.
+    doRun({ target: remaining, announce: day !== lastAnnouncedDay }).then(() => {
+      lastAnnouncedDay = day;
+    }).catch((e) => console.error('gather failed:', e.message));
   }
 
   if (lastStagedAt) {
