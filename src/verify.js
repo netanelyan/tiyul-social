@@ -197,6 +197,28 @@ export function flightPriceGuard(text) {
   return null;
 }
 
+// A decimal on the front of a card is the tell that the copy was generated from
+// a table rather than written. Two real cards read "16.7 מעלות ורק 8.6 ימי גשם"
+// and "2.6 ימי גשם בממוצע" — both accurate, both instrument readings, neither a
+// sentence a person would say. The prompt asks for rounding; this makes it
+// binding, because a style rule that only lives in a prompt holds until the
+// model is under pressure from a source that is nothing but decimals.
+//
+// Times (08:30) and dates use a colon or a slash, so only a dot between digits
+// counts. The caption is exempt: there, precision is occasionally the point.
+const DECIMAL_IN_COPY = /\d+\.\d/;
+
+export function noDecimalsUpFront(draft) {
+  for (const [field, text] of [
+    ['headline', draft?.headline],
+    ['subhead', draft?.subhead],
+  ]) {
+    const m = DECIMAL_IN_COPY.exec(String(text || ''));
+    if (m) return `${field}: "${m[0]}" — round it`;
+  }
+  return null;
+}
+
 /** Stage 3 — run over the finished Hebrew copy, right before staging. */
 export function verifyDraftText(draft) {
   const blob = [draft?.headline, draft?.subhead, draft?.caption, ...(draft?.bullets || [])]
@@ -205,6 +227,9 @@ export function verifyDraftText(draft) {
 
   const fare = flightPriceGuard(blob);
   if (fare) throw new RejectedError('flight_price_out_of_scope', fare);
+
+  const decimal = noDecimalsUpFront(draft);
+  if (decimal) throw new RejectedError('unrounded_number', decimal);
 
   if (!draft?.headline || String(draft.headline).trim().length < 4) {
     throw new RejectedError('empty_headline');
@@ -225,6 +250,7 @@ const REASON_HE = {
   no_evidence: 'הטיוטה לא ציטטה שום מקור',
   unsupported_claim: 'ציטוט שלא נמצא בדף המקור',
   flight_price_out_of_scope: 'מחיר טיסה — מחוץ לתחום בגרסה הזו',
+  unrounded_number: 'מספר עשרוני בכותרת - צריך לעגל',
   empty_headline: 'כותרת ריקה',
   empty_caption: 'טקסט ריק',
   draft_failed: 'שלב הכתיבה נכשל',

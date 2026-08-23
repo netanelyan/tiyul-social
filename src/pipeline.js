@@ -114,6 +114,9 @@ const RETRYABLE = new Set([
   'source_too_thin',
   'draft_failed',
   'render_failed',
+  // A style slip, not a verdict on the source — a fresh draft usually gets it
+  // right, so the item should come back rather than being lost for 45 days.
+  'unrounded_number',
   'quota',
   'error',
 ]);

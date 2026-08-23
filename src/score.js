@@ -86,6 +86,15 @@ export function scoreItem(item, { deficits = pillarDeficits(), now = Date.now() 
  *   - at most `perSource` items from any one source survive, so the single most
  *     prolific feed doesn't become the whole day's output.
  */
+// The climate source is the only one that always has something to say — it
+// interrogates a dataset rather than waiting for someone to publish. That makes
+// it the right answer on a quiet day and the wrong answer on a busy one: with
+// the general cap it contributed two of three cards in a run, and two weather
+// cards in a row reads like a forecast feed, not a travel channel.
+//
+// One a day, maximum. On a day when a real story exists it should lose to it.
+const PER_SOURCE_CAP = { 'open-meteo-climate': 1 };
+
 export function rank(items, { perSource = 2, limit = 12, now = Date.now() } = {}) {
   const deficits = pillarDeficits();
 
@@ -98,7 +107,7 @@ export function rank(items, { perSource = 2, limit = 12, now = Date.now() } = {}
   const out = [];
   for (const { item, score } of scored) {
     const n = perSourceCount[item.sourceId] || 0;
-    if (n >= perSource) continue;
+    if (n >= (PER_SOURCE_CAP[item.sourceId] ?? perSource)) continue;
     perSourceCount[item.sourceId] = n + 1;
     out.push({ item, score });
     if (out.length >= limit) break;

@@ -184,7 +184,10 @@ Text-led (no photograph needed — these are the default):
   a is the wrong belief, b is what the source actually says. Only when the
   source really does contradict something, never as a rhetorical frame.
 - tips: exactly three short practical tips. Use only when you have three distinct ones.
-- whenToGo: seasonal timing. Only for climate/timing sources that carry month data.
+- whenToGo: the twelve-month strip. Use this ONLY when the shape of the year is
+  itself the story - a place with one sharp window, or two seasons that swap.
+  If the answer is "go in October", that is a sentence, not a chart: use
+  photoFull and put the month in the headline. Default to photoFull for timing.
 - alert: an entry, visa, permit or border change. Lead with what changed and from when.
 - route: a new or returning route out of Tel Aviv. Fill "route" with origin,
   destination, operator and start date. Never a fare, in any field.
@@ -198,9 +201,22 @@ place - "Lisbon old town alley", "Kyoto wooden bridge", "Faroe Islands cliffs".
 Describe the scene you want, not the abstract idea: "Tokyo metro platform"
 finds something; "Japanese efficiency" does not.
 
-Prefer a text-led layout when the story is a number, a rule or a comparison. A
-photograph behind an arrivals statistic is decoration; behind a hidden village
-it is the content. If the picture would only be wallpaper, do not ask for one.
+PHOTO-LED IS THE DEFAULT. If the post is about somewhere you could stand, it
+gets a picture of that place. This is a travel channel: a wall of typography is
+what a spreadsheet looks like, and people stop for photographs.
+
+Go text-led only when there is no single place to photograph - a rule that
+changes across many countries, a comparison, a number with no address. Those
+are real cases and the text layouts are good. They are the exception.
+
+If a post names a country or a city, you can almost always name a scene there.
+"Three countries joined the list" is about Comoros, Sao Tome, South Sudan -
+pick one and photograph it, rather than setting three names in large type.
+
+A WHEN-TO-GO POST IS ABOUT A PLACE, NOT ABOUT WEATHER. "When should I go to
+Tokyo" is answered by a picture of Tokyo and a month. The temperature is the
+reason, not the subject - it belongs in the supporting line, and the picture
+carries the rest. Ask for the place by name in image_query.
 - photoFull: full-bleed picture, headline and one supporting line over the
   bottom of it. The strongest choice when the place itself is the story.
 - photoBand: picture on top, a solid band of type beneath. Best when the
@@ -238,7 +254,27 @@ WRITING THE CARD
   also about a site removed from a list in Vienna, the global total, and where
   next year's meeting is. Those facts are true and sourced and still do not
   belong. One subject per post; the rest is somebody else's post.
+
+  NEVER explain where the data came from. "הנתונים הם ממוצעים של ERA5 לעשר
+  השנים 2016-2025" is a footnote in a paper. Nobody scrolling a phone reads a
+  caption to audit a methodology, and the source is already in the approval
+  message where it belongs.
+
+  The caption is not a second card. If the headline carried the number, the
+  caption carries the reason, the feel, or what it means for someone booking -
+  not three more numbers. "4 ימי גשם בדצמבר, כ-5 בינואר, מקסימום 31-32, לילות
+  סביב 22, בספטמבר 27, באוקטובר 23" is a table with commas in it. Two figures
+  at most, and only where they change what somebody would actually do.
 - Numbers, dates and prices go in digits. Dates as they'd be read in Israel.
+- ROUND. No decimal point anywhere in a headline or subhead. "16.7 מעלות" is an
+  instrument reading; a person says "17 מעלות". "2.6 ימי גשם" is not a thing
+  anyone has ever said out loud - it is "כמעט בלי גשם". A decimal on a card is
+  the clearest sign the copy was generated from a table instead of written.
+  In the caption a decimal is allowed only if the precision is the point.
+- Do not recite a dataset. If the source is a table of twelve months, the post
+  is about the one or two months worth going in, and why. Listing the maximum,
+  the minimum, the wet-day count and the annual range is a weather report. The
+  reader wants to know when to book.
 
 TONE
 Useful over impressive. If the interesting part is a caveat, lead with the caveat.

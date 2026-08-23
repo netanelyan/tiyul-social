@@ -2,7 +2,7 @@ import { loadEnv } from '../src/env.js';
 loadEnv();
 
 import { primaryAuthority, registry } from '../src/sources/index.js';
-import { flightPriceGuard, verifyEvidence, verifyDraftText, minSourceChars, RejectedError } from '../src/verify.js';
+import { flightPriceGuard, verifyEvidence, verifyDraftText, minSourceChars, noDecimalsUpFront, RejectedError } from '../src/verify.js';
 import { safeStem } from '../src/render/index.js';
 import { htmlToText, stripBoilerplate, decodeEntities } from '../src/fetchPage.js';
 import { parseFeed } from '../src/sources/rss.js';
@@ -252,6 +252,20 @@ eq(
 eq('a fragment does not either', candidateId({ url: 'https://www.gov.uk/a#top' }), candidateId({ url: 'https://www.gov.uk/a' }));
 ok('different pages stay distinct', candidateId({ url: 'https://www.gov.uk/a' }) !== candidateId({ url: 'https://www.gov.uk/b' }));
 ok('a real query parameter is significant', candidateId({ url: 'https://www.gov.uk/a?id=1' }) !== candidateId({ url: 'https://www.gov.uk/a' }));
+
+/* -------------------------------------------------------------------------- */
+group('rounding — a decimal on a card means it was generated, not written');
+
+// Both of these shipped to the approval queue before the guard existed.
+ok('rejects the live "16.7 מעלות" headline', noDecimalsUpFront({ headline: 'נובמבר בטוקיו: 16.7 מעלות ורק 8.6 ימי גשם' }));
+ok('rejects the live "2.6 ימי גשם" headline', noDecimalsUpFront({ headline: 'בנובמבר בקטמנדו יורדים 2.6 ימי גשם בממוצע' }));
+ok('rejects a decimal in the subhead too', noDecimalsUpFront({ headline: 'ok', subhead: 'ממוצע 30.9 ימים' }));
+eq('a rounded headline passes', noDecimalsUpFront({ headline: 'נובמבר בטוקיו: 17 מעלות וכמעט בלי גשם' }), null);
+eq('a time of day is not a decimal', noDecimalsUpFront({ headline: 'הטיסה נוחתת ב-06:30' }), null);
+eq('a date is not a decimal', noDecimalsUpFront({ headline: 'נכנס לתוקף ב-1/10' }), null);
+throws('verifyDraftText refuses a draft carrying one', () =>
+  verifyDraftText({ headline: 'טוקיו ב-16.7 מעלות', caption: 'a caption long enough to pass the length check' })
+);
 
 /* -------------------------------------------------------------------------- */
 group('card filenames — a dedupeId is not automatically a safe filename');

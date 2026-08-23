@@ -140,10 +140,21 @@ export async function fetchClimate(source, dest, now = new Date()) {
   const good = months.filter((m) => m.verdict === 'good').map((m) => HE_MONTHS[m.month]);
   const avoid = months.filter((m) => m.verdict === 'avoid').map((m) => HE_MONTHS[m.month]);
 
+  // Rounded on the way into the prompt, not after the copy comes back.
+  //
+  // The raw normals are decimals, and a model told to ground every claim in the
+  // source will faithfully copy them: two live cards led with "16.7 מעלות ורק
+  // 8.6 ימי גשם" and "2.6 ימי גשם בממוצע". Accurate, and nothing a person would
+  // say out loud. Rounding here means there is no decimal to reach for, which is
+  // a better fix than rounding the finished Hebrew — that would be editing a
+  // claim after it was made, and this pipeline does not do that.
+  //
+  // `data` keeps the precise values; the month strip is drawn from those.
+  const round = (n) => (n === null || n === undefined ? n : Math.round(n));
   const lines = months.map(
     (m) =>
-      `${String(m.month + 1).padStart(2, '0')} — mean daily high ${m.meanMax}C, mean low ${m.meanMin}C, ` +
-      `${m.wetDaysPerMonth} wet days/month (>=1mm), verdict ${m.verdict}`
+      `${String(m.month + 1).padStart(2, '0')} — mean daily high ${round(m.meanMax)}C, mean low ${round(m.meanMin)}C, ` +
+      `about ${round(m.wetDaysPerMonth)} wet days/month (>=1mm), verdict ${m.verdict}`
   );
 
   return {
