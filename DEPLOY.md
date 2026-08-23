@@ -13,12 +13,26 @@ Host: `129.121.89.58`, same box as BrickDeal. Caddy is already serving
 
 ## 1. Clone and install
 
+Every command in sections 1, 2, 4 and 5 runs **on the VPS**. Section 3 is the
+one exception and it runs **on your laptop** — it is called out again there.
+
 ```bash
 cd /opt
 sudo git clone https://github.com/netanelyan/tiyul-social
 sudo chown -R $USER:$USER /opt/tiyul-social
-cd /opt/tiyul-social
-npm install
+cd /opt/tiyul-social && npm install
+```
+
+Chained with `&&` deliberately. If the `cd` fails, `npm install` must not run:
+it would install into `/opt` instead, leaving the project with no
+`node_modules` while looking like it succeeded. The next step then warns about
+missing dependencies and it is easy to read that as noise.
+
+Confirm before continuing — the prompt should show the project directory, and
+the module tree should exist:
+
+```bash
+pwd && ls node_modules/playwright/package.json
 ```
 
 ## 2. Chromium
@@ -38,9 +52,14 @@ anything that mentions fonts or browsers.
 ## 3. Environment
 
 Copy your local `.env` across (it is gitignored, so it is not in the clone).
-From your laptop:
 
-```
+**This one runs on your laptop, not on the VPS.** Run it on the server and it
+looks for a local `.env` that isn't there, reports
+`scp: stat local ".env": No such file or directory`, and would be copying the
+box to itself anyway.
+
+```powershell
+cd C:\Users\Cyber_Magshimim\Desktop\tiyul\tiyul-social
 scp .env root@129.121.89.58:/opt/tiyul-social/.env
 ```
 
@@ -64,10 +83,16 @@ The bot writes cards as the user it runs as, into a directory owned by
 ## 4. Verify before starting anything
 
 ```bash
-npm test            # 109 offline checks, no credentials needed
+npm test            # 122 offline checks, no credentials needed
 npm run check-sources
 npm run check-cards
+date                # see below
 ```
+
+`date` is there because `RUN_HOUR` is **server** local time, not Israel time.
+The box is in Amsterdam; if it is on UTC then `RUN_HOUR=8` fires the daily
+gather at 11:00 in Israel. Nothing breaks either way — but pick the hour
+knowing which clock it is on, or set `TZ=Asia/Jerusalem` in `.env`.
 
 `check-cards` is the one that matters here. It renders a real card, confirms it
 hit disk, then **fetches it back over the public URL exactly as Instagram
