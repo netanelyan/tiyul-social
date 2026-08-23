@@ -47,13 +47,23 @@ export function channelCaption(cand) {
  * every time. That rule is about what YOU see before tapping, not about what
  * gets published.
  */
+// The one line that appears under every post. No source URL, no photographer,
+// no library — just this. Written out rather than assembled from SITE_URL so
+// the wording is fixed and reviewable in one place.
+const SIGNATURE = ['לסוכן הטיולים החכם שלנו:', 'www.tiyulplus.com'].join('\n');
+
 export function instagramCaption(cand) {
-  const parts = [String(cand.caption || '').trim()];
+  // The subhead is deliberately absent from the rendered card, so this is the
+  // only place it appears. Putting it first means the description opens by
+  // answering the headline rather than repeating it.
+  const parts = [];
+  const sub = String(cand.subhead || '').trim();
+  const body = String(cand.caption || '').trim();
 
-  const site = (process.env.SITE_URL || '').trim();
-  if (site) parts.push('', `עוד כאלה: ${site}`);
+  if (sub) parts.push(sub);
+  if (body) parts.push(body);
 
-  return parts.join('\n').trim().slice(0, 2200); // IG caption limit
+  return [parts.join('\n\n'), '', SIGNATURE].join('\n').trim().slice(0, 2200); // IG caption limit
 }
 
 /**
@@ -72,20 +82,18 @@ export function approvalMessage(cand) {
   if (cand.tags?.length) lines.push(`תגיות: ${cand.tags.join(', ')}`);
   lines.push('');
 
-  lines.push(clean(cand.headline));
-  if (cand.subhead) lines.push(clean(cand.subhead));
+  // Shown the way it will actually appear: the card carries the headline alone,
+  // and the subhead opens the description. Splitting them here is what lets you
+  // see the hook and the payoff as two separate things before approving.
+  lines.push(`🖼️ על הכרטיס: ${clean(cand.headline)}`);
   lines.push('');
 
-  if (cand.caption) {
-    lines.push(String(cand.caption).trim());
+  const desc = instagramCaption(cand);
+  if (desc) {
+    lines.push('📝 התיאור:');
+    lines.push(desc);
     lines.push('');
   }
-
-  // The rule is "the source URL is always in the approval message" — so it is
-  // pushed unconditionally, on its own line, never truncated and never folded
-  // into a link label that would hide where it actually points.
-  lines.push(`🔗 מקור: ${cand.sourceUrl}`);
-  lines.push(`   (${cand.sourceName})`);
 
   // Which of the three permitted origins this image came from — or that there
   // is no image at all, which for a text-led card is the expected answer.
@@ -103,6 +111,17 @@ export function approvalMessage(cand) {
   // publish time, so what you were shown is what was true when you decided.
   const targets = cand.publishTargets?.length ? cand.publishTargets : [];
   lines.push(targets.length ? `📤 יפורסם ל${targetsHe(targets)}` : '⛔ אין יעד פרסום מוגדר');
+
+  // The rule is "the source URL is always in the approval message", so it is
+  // pushed unconditionally, in full, never truncated and never folded into a
+  // link label that would hide where it actually points. It sits last rather
+  // than in the middle of the copy: an API URL 200 characters long was cutting
+  // the draft in half and making the whole message hard to read.
+  //
+  // It appears here and nowhere else. Nothing published carries a URL.
+  lines.push('');
+  lines.push(`🔗 מקור (${cand.sourceName}):`);
+  lines.push(cand.sourceUrl);
 
   return lines.join('\n');
 }

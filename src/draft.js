@@ -201,6 +201,18 @@ place - "Lisbon old town alley", "Kyoto wooden bridge", "Faroe Islands cliffs".
 Describe the scene you want, not the abstract idea: "Tokyo metro platform"
 finds something; "Japanese efficiency" does not.
 
+ASK FOR THE PICTURE SOMEONE WOULD STOP ON. A stock library will happily answer
+"Reykjavik house" with a red house on an ordinary street, and that card is dead
+on arrival. Reach for what the place is known for and what looks extraordinary:
+the landscape, the landmark, the light, the weather, the view from above.
+  weak                      ->  strong
+  "Reykjavik house"         ->  "Iceland waterfall dramatic landscape"
+  "Bangkok building"        ->  "Bangkok temple golden sunset"
+  "Nauru island"            ->  "Pacific atoll turquoise aerial"
+Scale, colour and drama beat literal accuracy. The photograph is licensed stock
+of the region, not documentation of the exact building in the story - so choose
+the one that makes someone stop scrolling.
+
 PHOTO-LED IS THE DEFAULT. If the post is about somewhere you could stand, it
 gets a picture of that place. This is a travel channel: a wall of typography is
 what a spreadsheet looks like, and people stop for photographs.
@@ -226,26 +238,40 @@ carries the rest. Ask for the place by name in image_query.
 
 WHAT THE CARD IS FOR
 The card is a hook, not the post. Someone scrolling gives it under a second.
-It carries the headline and, at most, one short line. Everything else - the
-context, the caveat, the practical detail - goes in the caption underneath.
 
-The failure mode to avoid is a card that reads like a paragraph: a headline,
-then a supporting line, then another line restating the same fact in different
-words. If your subhead is saying what the headline already said, leave it empty.
-Empty is a good answer. A card with four lines of type on it is a card nobody
-finishes reading.
+It carries THE HEADLINE AND NOTHING ELSE. Not a supporting line, not a caveat,
+not a detail - the picture and one line of type, and that is the whole card.
+Everything else lives in the description underneath.
+
+So the headline has one job: make someone want to tap "more". A card that
+already told you everything is a card nobody taps. "בשיא הקיץ ברייקיאוויק: 13
+מעלות ביום" works because it raises a question. Adding "אוגוסט הוא החודש הכי
+יבש - וגם בו יורד גשם ב-14 ימים" underneath answers it for free, on the card,
+and the description is then reading itself out to an audience that has already
+left.
+
+Hold the payoff back. Put it in the subhead, which is where the description
+starts.
 
 WRITING THE CARD
 - headline: 4-9 Hebrew words. Concrete and specific. A number, a name, a place.
   Never clickbait, never "אתם לא תאמינו", never a question you don't answer.
-- subhead: ONE short line, under about twelve words, adding something the
-  headline did not say. Often the right answer is an empty string. Never a
-  second sentence, never a restatement.
+- subhead: ONE short line, under about twelve words. THIS DOES NOT APPEAR ON
+  THE CARD. The card shows the headline alone; the subhead is the first line of
+  the description, under the picture. So write it as the line that pays off the
+  headline for someone who tapped "more" - the answer, the catch, the detail
+  that makes the headline land. Never a restatement of the headline, and never
+  a second sentence. An empty string is still a fine answer.
+  Because the card is headline-only, the HEADLINE must stand completely alone:
+  it cannot lean on the subhead for context. If it does not make sense by
+  itself, it is the wrong headline.
 - bullets (tips only): three items, each a 1-3 word title and one short sentence.
 - caption: SHORT. Two or three sentences, and stop. It is read under a picture
   on a phone, not as an article. Say the useful thing plainly, then why it
   matters to someone actually going. Do not restate the headline - it is
-  already the largest thing on the card. At most three hashtags, at the end.
+  already the largest thing on the card - and do not restate the subhead, which
+  is printed immediately above the caption as the description's first line.
+  At most three hashtags, at the end.
 
   The caption expands the HEADLINE'S subject. It is not a summary of the page.
   A source often mentions several unrelated things; picking up each one in turn

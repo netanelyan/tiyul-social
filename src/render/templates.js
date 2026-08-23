@@ -9,6 +9,15 @@ import { baseCss, escapeHtml as e, palette, pillarAccent, CARD_W, CARD_H } from 
 // by type than by a stock photo of somewhere the post isn't even about.
 //
 // Every layout is 1080x1350 (4:5), the tallest ratio Instagram accepts.
+//
+// THE CARD CARRIES THE HEADLINE AND NOTHING ELSE.
+//
+// The draft still has a `subhead` and it is still worth writing — it just does
+// not belong here. It opens the description instead, so the card poses and the
+// caption answers. A card that already says everything gives nobody a reason to
+// tap "more", and on Instagram the tap is the whole game.
+//
+// This is why you will not find `d.subhead` rendered in any layout below.
 
 export const PHOTO_LAYOUTS = ['photoFull', 'photoBand', 'photoFrame'];
 export const TEXT_LAYOUTS = ['fact', 'numbers', 'compare', 'tips', 'whenToGo', 'alert', 'route'];
@@ -124,7 +133,7 @@ function photoFullCard(d, accent, image) {
       <div class="pf-text">
         <div class="rule"></div>
         <div class="headline ${headlineSize(d.headline, { max: 'md' })}">${e(d.headline)}</div>
-        ${d.subhead ? `<div class="subhead">${e(d.subhead)}</div>` : ''}
+        
       </div>
     </div>
   </div>`;
@@ -158,7 +167,7 @@ function photoBandCard(d, accent, image) {
     </div>
     <div class="pb-body">
       <div class="headline ${headlineSize(d.headline, { max: 'md' })}">${e(d.headline)}</div>
-      ${d.subhead ? `<div class="subhead">${e(d.subhead)}</div>` : ''}
+      
     </div>
   </div>`;
 }
@@ -179,7 +188,7 @@ function photoFrameCard(d, accent, image) {
     <div class="pfr-img"><img class="bg" src="${e(image.src)}" alt=""></div>
     <div class="pfr-body">
       <div class="headline ${headlineSize(d.headline, { max: 'md' })}">${e(d.headline)}</div>
-      ${d.subhead ? `<div class="subhead">${e(d.subhead)}</div>` : ''}
+      
     </div>
   </div>`;
 }
@@ -195,7 +204,7 @@ function factCard(d, accent) {
     body: `
       <div class="rule"></div>
       <div class="headline ${headlineSize(d.headline)}">${e(d.headline)}</div>
-      ${d.subhead ? `<div class="subhead">${e(d.subhead)}</div>` : ''}`,
+      `,
   });
 }
 
@@ -337,7 +346,7 @@ function whenToGoCard(d, accent, data) {
       .lg i { width: 22px; height: 22px; border-radius: 6px; display: inline-block; }`,
     body: `
       <div class="headline ${headlineSize(d.headline, { max: 'lg' })}">${e(d.headline)}</div>
-      ${d.subhead ? `<div class="subhead">${e(d.subhead)}</div>` : ''}
+      
       <div class="strip">${cells}</div>
       <div class="legend">${legend}</div>`,
   });
@@ -357,7 +366,7 @@ function alertCard(d, accent) {
     body: `
       <div class="badge">שינוי בכללי הכניסה</div>
       <div class="headline ${headlineSize(d.headline, { max: 'lg' })}">${e(d.headline)}</div>
-      ${d.subhead ? `<div class="subhead">${e(d.subhead)}</div>` : ''}`,
+      `,
   });
 }
 
@@ -401,7 +410,7 @@ function routeCard(d, accent) {
       </div>
       <div class="headline ${headlineSize(d.headline, { max: 'md' })}">${e(d.headline)}</div>
       ${meta.length ? `<div class="meta">${meta.map(([k, v]) => `<div class="row"><div class="k">${k}</div><div class="v">${e(v)}</div></div>`).join('')}</div>` : ''}
-      ${d.subhead ? `<div class="subhead">${e(d.subhead)}</div>` : ''}`,
+      `,
   });
 }
 

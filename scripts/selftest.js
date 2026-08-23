@@ -312,8 +312,8 @@ group('rendering — escaping and layout selection');
 const draft = {
   layout: 'fact',
   pillar: 'fact',
-  headline: 'כותרת <script>alert(1)</script>',
-  subhead: 'a & b',
+  headline: 'כותרת <script>alert(1)</script> a & b',
+  subhead: 'זו שורת המשך שלא אמורה להופיע על הכרטיס',
   place: 'תל אביב',
   country: '',
   url: 'https://www.gov.uk/x',
@@ -322,6 +322,14 @@ const draft = {
 const html = renderHtml(draft);
 ok('interpolated content is escaped', !html.includes('<script>alert(1)</script>') && html.includes('&lt;script&gt;'));
 ok('ampersand escaped', html.includes('a &amp; b'));
+
+// The card is the hook. If the subhead is printed on it too, the description
+// has nothing left to offer and nobody taps "more".
+ok('the subhead is NOT printed on the card', !html.includes('שלא אמורה להופיע'));
+for (const layout of LAYOUTS) {
+  const h = renderHtml({ ...draft, layout, stat: { value: '1', label: 'x' }, compare: { a: 'a', b: 'b' }, route: {} });
+  ok(`${layout} keeps the subhead off the card`, !h.includes('שלא אמורה להופיע'));
+}
 ok('document declares Hebrew and RTL', html.includes('lang="he"') && html.includes('dir="rtl"'));
 ok('the font is inlined, not linked', html.includes('data:font/ttf;base64,') && !html.includes('fonts.googleapis'));
 // The card is a hook, not a citation: no source line, no credit line. The
@@ -460,32 +468,30 @@ group('instagram caption - short, no source URL, site line');
 
 const capCand = {
   headline: 'העמק שנפתח רק 60 יום בשנה',
+  subhead: 'ההרשמה נסגרת חודש מראש',
   // String.fromCharCode(10) rather than an escape: this file is edited by
   // scripts often enough that a literal backslash-n keeps getting mangled.
   caption: ['שאר השנה הדרך סגורה.', 'ההרשמה נפתחת בינואר.'].join(String.fromCharCode(10)),
   sourceUrl: 'https://www.govt.nz/some/very/long/path/that/nobody/can/tap',
 };
 
-const withSite = (v, fn) => {
-  const prev = process.env.SITE_URL;
-  if (v === undefined) delete process.env.SITE_URL;
-  else process.env.SITE_URL = v;
-  try { return fn(); } finally {
-    if (prev === undefined) delete process.env.SITE_URL; else process.env.SITE_URL = prev;
-  }
-};
+const cap = instagramCaption(capCand);
+ok('omits the source URL - nothing published carries one', !cap.includes('govt.nz'));
+ok('omits the headline rather than repeating what the image already shows', !cap.includes(capCand.headline));
+ok('keeps the caption body', cap.includes('ההרשמה נפתחת בינואר'));
+ok('stays short', cap.length < 400, `${cap.length} chars`);
 
-withSite('https://tiyulplus.com', () => {
-  const cap = instagramCaption(capCand);
-  ok('omits the source URL - unclickable on Instagram, and the card footer carries it', !cap.includes('govt.nz'));
-  ok('omits the headline rather than repeating what the image already shows', !cap.includes(capCand.headline));
-  ok('carries the site line', cap.includes('tiyulplus.com'));
-  ok('keeps the caption body', cap.includes('ההרשמה נפתחת בינואר'));
-  ok('stays short', cap.length < 300, `${cap.length} chars`);
-});
-withSite(undefined, () => {
-  ok('no site line when SITE_URL is unset', !instagramCaption(capCand).includes('עוד כאלה'));
-});
+// The subhead is deliberately not on the card, so the description is the only
+// place it can appear — and it opens it.
+ok('carries the subhead, which the card no longer shows', cap.includes(capCand.subhead));
+ok('the subhead comes first', cap.indexOf(capCand.subhead) < cap.indexOf('שאר השנה'));
+
+// One fixed sign-off under every post, and no other link anywhere.
+ok('carries the sign-off line', cap.includes('לסוכן הטיולים החכם שלנו'));
+ok('carries the site', cap.includes('www.tiyulplus.com'));
+ok('the sign-off is last', cap.trim().endsWith('www.tiyulplus.com'));
+eq('exactly one link in the whole caption', (cap.match(/tiyulplus\.com/g) || []).length, 1);
+ok('no scheme-prefixed URL anywhere', !/https?:\/\//.test(cap));
 
 /* -------------------------------------------------------------------------- */
 group('pexels stock provider');
