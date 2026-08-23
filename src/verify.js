@@ -154,7 +154,12 @@ const MIN_QUOTE_WORDS = 4;
 // enabled sources, so this quietly disabled a quarter of the registry.
 const SPACELESS_SCRIPT =
   /[぀-ヿ㐀-䶿一-鿿豈-﫿฀-๿]/u;
-const MIN_QUOTE_CHARS_SPACELESS = 10;
+// 8, not 10. Measured against real quotes rather than picked: 前年同月比0.1%増
+// ("+0.1% year on year") normalises to 8 characters and is genuinely the
+// evidence for a claim about visitor numbers, while 2026年7月 is 7 and is a bare
+// date that proves nothing. The boundary sits exactly between them. 渋谷で, the
+// case this guard exists for, is 3.
+const MIN_QUOTE_CHARS_SPACELESS = 8;
 
 /** Is this quote long enough to be evidence of anything? */
 function longEnough(normalised) {
@@ -256,6 +261,44 @@ export function noDecimalsUpFront(draft) {
   return null;
 }
 
+// Hebrew function words. These repeat perfectly naturally — "מ...ל...", "של",
+// "את" — and flagging them would reject good headlines. Only content words are
+// checked. Hebrew prefixes are attached to the word rather than separate, so
+// this is a short list by design.
+const FUNCTION_WORDS = new Set([
+  'של', 'את', 'עם', 'על', 'אל', 'מן', 'זה', 'זו', 'הוא', 'היא', 'הם', 'הן',
+  'יש', 'אין', 'כל', 'גם', 'רק', 'אבל', 'או', 'כי', 'אם', 'לא', 'כך', 'כמו',
+  'בין', 'עד', 'לפי', 'אחרי', 'לפני', 'ללא', 'בלי', 'יותר', 'הכי', 'מאוד',
+]);
+
+/**
+ * A word used twice in a headline of eight words.
+ *
+ * "יולי היה החודש הכי עמוס ביפן אי פעם ליולי" — accurate, and it sounds
+ * assembled rather than written, which is exactly the tell that separates copy
+ * from output. Cheap to detect and worth a re-draft.
+ *
+ * Only the headline: a caption is several sentences and may legitimately repeat
+ * its own subject.
+ */
+export function noRepeatedWord(draft) {
+  const words = String(draft?.headline || '')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    // Hebrew attaches ו/ב/ל/כ/מ/ה as prefixes, so "ליולי" and "יולי" are the
+    // same word wearing a hat. Strip one leading particle before comparing.
+    .map((w) => (w.length > 3 ? w.replace(/^[ובלכמה]/u, '') : w))
+    .filter((w) => w.length >= 3 && !FUNCTION_WORDS.has(w));
+
+  const seen = new Set();
+  for (const w of words) {
+    if (seen.has(w)) return `"${w}" appears twice`;
+    seen.add(w);
+  }
+  return null;
+}
+
 /** Stage 3 — run over the finished Hebrew copy, right before staging. */
 export function verifyDraftText(draft) {
   const blob = [draft?.headline, draft?.subhead, draft?.caption, ...(draft?.bullets || [])]
@@ -267,6 +310,9 @@ export function verifyDraftText(draft) {
 
   const decimal = noDecimalsUpFront(draft);
   if (decimal) throw new RejectedError('unrounded_number', decimal);
+
+  const repeat = noRepeatedWord(draft);
+  if (repeat) throw new RejectedError('repeated_word', repeat);
 
   if (!draft?.headline || String(draft.headline).trim().length < 4) {
     throw new RejectedError('empty_headline');
@@ -288,6 +334,7 @@ const REASON_HE = {
   unsupported_claim: 'ציטוט שלא נמצא בדף המקור',
   flight_price_out_of_scope: 'מחיר טיסה — מחוץ לתחום בגרסה הזו',
   unrounded_number: 'מספר עשרוני בכותרת - צריך לעגל',
+  repeated_word: 'מילה חוזרת בכותרת',
   empty_headline: 'כותרת ריקה',
   empty_caption: 'טקסט ריק',
   draft_failed: 'שלב הכתיבה נכשל',

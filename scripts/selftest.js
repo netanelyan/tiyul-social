@@ -2,7 +2,7 @@ import { loadEnv } from '../src/env.js';
 loadEnv();
 
 import { primaryAuthority, registry } from '../src/sources/index.js';
-import { flightPriceGuard, verifyEvidence, verifyDraftText, minSourceChars, noDecimalsUpFront, RejectedError } from '../src/verify.js';
+import { flightPriceGuard, verifyEvidence, verifyDraftText, minSourceChars, noDecimalsUpFront, noRepeatedWord, RejectedError } from '../src/verify.js';
 import { safeStem } from '../src/render/index.js';
 import { htmlToText, stripBoilerplate, decodeEntities } from '../src/fetchPage.js';
 import { parseFeed } from '../src/sources/rss.js';
@@ -136,6 +136,10 @@ ok(
     }
   })()
 );
+ok(
+  'accepts a dense 8-character Japanese quote as evidence',
+  (() => { try { return verifyEvidence({ evidence: [{ claim: 'x', quote: '前年同月比0.1%増' }] }, '訪日外客数は前年同月比0.1%増となった。'); } catch { return false; } })()
+);
 throws(
   'still rejects a Japanese quote that is genuinely too short',
   () => verifyEvidence({ evidence: [{ claim: 'x', quote: '渋谷で' }] }, JA_SRC),
@@ -266,6 +270,21 @@ eq(
 eq('a fragment does not either', candidateId({ url: 'https://www.gov.uk/a#top' }), candidateId({ url: 'https://www.gov.uk/a' }));
 ok('different pages stay distinct', candidateId({ url: 'https://www.gov.uk/a' }) !== candidateId({ url: 'https://www.gov.uk/b' }));
 ok('a real query parameter is significant', candidateId({ url: 'https://www.gov.uk/a?id=1' }) !== candidateId({ url: 'https://www.gov.uk/a' }));
+
+/* -------------------------------------------------------------------------- */
+group('no word twice in a headline');
+
+// "יולי" appeared at both ends of a real staged card. Accurate, and it reads
+// assembled rather than written.
+ok('flags the live repeat', noRepeatedWord({ headline: 'יולי היה החודש הכי עמוס ביפן אי פעם ליולי' }));
+ok('sees through an attached Hebrew prefix — ליולי is יולי', noRepeatedWord({ headline: 'יולי עמוס ליולי' }));
+eq('the rewrite passes', noRepeatedWord({ headline: 'יולי השיא של התיירות ביפן' }), null);
+eq('a real headline passes', noRepeatedWord({ headline: 'הקרחון הענק במיצר שבין גרינלנד לאיסלנד' }), null);
+eq('an alert headline passes', noRepeatedWord({ headline: 'בריטניה ביטלה את האזהרה מנסיעה לבחריין' }), null);
+eq('function words may repeat', noRepeatedWord({ headline: 'בין הים בין ההרים של הצפון' }), null);
+throws('verifyDraftText refuses one', () =>
+  verifyDraftText({ headline: 'יפן פתחה מסלול חדש ליפן', caption: 'a caption long enough to pass the length check' })
+);
 
 /* -------------------------------------------------------------------------- */
 group('feeds that are themselves the publication');

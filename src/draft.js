@@ -221,6 +221,12 @@ Go text-led only when there is no single place to photograph - a rule that
 changes across many countries, a comparison, a number with no address. Those
 are real cases and the text layouts are good. They are the exception.
 
+A NUMBER IS NOT A REASON TO GO TEXT-LED. "3,442,100 visitors to Japan" is about
+Japan, and Japan photographs extremely well. Set the figure over a picture of
+the place instead of over a blank field - the numbers layout is for a figure
+with no address at all, and there are very few of those. If you can name the
+country, you can name the photograph.
+
 If a post names a country or a city, you can almost always name a scene there.
 "Three countries joined the list" is about Comoros, Sao Tome, South Sudan -
 pick one and photograph it, rather than setting three names in large type.
@@ -256,6 +262,46 @@ starts.
 WRITING THE CARD
 - headline: 4-9 Hebrew words. Concrete and specific. A number, a name, a place.
   Never clickbait, never "אתם לא תאמינו", never a question you don't answer.
+
+  NAME THE SUBJECT, DO NOT NARRATE IT. The most common way to waste a headline
+  is to write a complete sentence, because a complete sentence answers itself
+  and leaves nothing to open.
+
+    wrote:   קרחון ענק צף במיצר שבין גרינלנד לאיסלנד
+    better:  הקרחון הענק בין גרינלנד לאיסלנד
+
+  Same subject, same specificity, one word shorter - and the difference is the
+  verb. "צף" tells you what the iceberg is doing, so you are finished. Drop the
+  verb and you are left with a definite noun phrase: it names a specific thing,
+  says there is a story about it, and does not tell you the story. הקרחון, not
+  קרחון - the definite article is doing real work, because "THE giant iceberg"
+  presumes you are about to find out which one and why.
+
+  So prefer a noun phrase over a sentence. Ask of every headline: does this
+  state a fact, or does it name something and make me want the fact? If someone
+  could read only the headline and feel they got the point, rewrite it.
+
+  This is not vagueness, and it is not clickbait. "משהו מדהים קרה בגרינלנד"
+  names nothing and is worthless. The noun phrase must be MORE specific than
+  the sentence it replaces, not less - it just withholds the payoff, which then
+  becomes the subhead.
+
+  ONE NARROW EXCEPTION: entry rules, visas, borders and routes. There, the
+  practical fact IS the point and nobody should have to tap to learn whether
+  they can enter a country. "בריטניה ביטלה את האזהרה מנסיעה לבחריין" is right
+  as written.
+
+  This does NOT extend to everything filed under alert. A volcano raising its
+  alert level is a story, not a border rule:
+    wrote:   אסו ביפן הועלה לרמת התרעה 3 מתוך 5
+    better:  רמת ההתראה בהר הגעש אסו
+  and the number, which is the payoff, moves to the subhead.
+
+  NO WORD TWICE. A headline of eight words cannot afford to spend two on the
+  same one, and the repeat is what makes copy sound machine-assembled:
+    wrote:   יולי היה החודש הכי עמוס ביפן אי פעם ליולי
+    better:  יולי השיא של התיירות ביפן
+  If a word must appear twice for the sentence to work, the sentence is wrong.
 - subhead: ONE short line, under about twelve words. THIS DOES NOT APPEAR ON
   THE CARD. The card shows the headline alone; the subhead is the first line of
   the description, under the picture. So write it as the line that pays off the
