@@ -15,5 +15,11 @@ data/
 out/
 
 # Sample cards from `npm run render-samples` — a local eyeballing aid, not an
-# artifact worth versioning.
-samples/
+# artifact worth versioning. Anchored with a leading slash: unanchored, it also
+# matched assets/samples/, which is checked in on purpose for the README.
+/samples/
+
+# Reference only. BrickDeal is a separate project, read while building this one
+# and never imported from at runtime. It was committed here by accident; it
+# stays on disk as a local reference and out of this repository.
+brickdeal-automation-main/

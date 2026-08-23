@@ -1,369 +1,217 @@
-# tiyul+ content pipeline
+# tiyul+ · טיול+
 
 A Hebrew travel-content pipeline for Israeli travellers. It reads primary
-sources, picks the best two or three items a day, writes the Hebrew, renders a
-card, and sends it to me on Telegram with the source URL and approve/reject
-buttons. Nothing publishes without a tap.
+sources, drafts a post, renders a card, sends it to one person on Telegram for
+approval, and publishes to Instagram only when that person taps approve.
 
-**Telegram is the approval surface; Instagram is where posts go.** There is no
-Telegram channel by default — setting `CHANNEL_ID` adds one as a second
-destination if you want it, and the two publish independently.
+Nothing publishes without a human tap. No claim is made without a source that
+was fetched, right then, from a domain on an allowlist.
 
-It's the same shape as my [BrickDeal bot](./brickdeal-automation-main) — same
-approval gate, same single-JSON-file store, same owner lock, same
-report-what-you-filtered discipline — pointed at a different problem. The
-difference is what sits between ingestion and staging: BrickDeal resolves a
-product ID and asks AliExpress for a price. This one has to establish that a
-claim is true before it will write it down.
+<p align="center">
+  <img src="assets/samples/card-volcano.jpg" width="270" alt="Card: the alert level at Mount Aso">
+  <img src="assets/samples/card-europe-heat.jpg" width="270" alt="Card: the air conditioning missing from most homes in Europe">
+  <img src="assets/samples/card-phuket.jpg" width="270" alt="Card: Phuket, 7 rain days in February">
+</p>
+
+<p align="center"><em>Real output. Left to right: a Smithsonian volcano report, a NASA
+Earth Observatory piece, and ten years of ERA5 climate normals.</em></p>
+
+---
+
+## The loop
 
 ```
-sources (RSS / dataset / a URL I paste)
-        │
-        ▼
-   rank cheaply ──────────────────── titles only, before anything costs money
-        │
-        ▼
-   verify source ────────────────── allowlisted primary domain? page reachable?
-        │
-        ▼
-   draft (Claude) ───────────────── Hebrew headline + caption + layout + quotes
-        │
-        ▼
-   verify claims ────────────────── every quote must appear verbatim in the page
-   fare guard ───────────────────── no flight prices, at all, in v1
-   topic quota ──────────────────── no thread takes over the feed
-        │
-        ▼
-   render card ──────────────────── HTML → Chromium → 1080×1350 JPEG
-        │
-        ▼
-   Telegram staging card: ✅ אשר ופרסם  ❌ דחה  ✏️ ערוך  📎 ציטוטים
-        │
-   approved ──▶ publish queue ──▶ drip ──▶ Instagram (+ Telegram channel,
-                                                       if CHANNEL_ID is set)
+sources → rank → draft (Claude) → verify → render → Telegram → you tap ✅ → Instagram
+                                    ↑                              ↓
+                              reject with a reason            queue, drip out
 ```
 
-## The rules, and where each one lives in the code
+1. **Gather.** Six enabled feeds and one dataset, fetched live.
+2. **Rank.** A cheap sort on titles and summaries, because the next step costs
+   money. Authority, recency, specificity, topic balance.
+3. **Draft.** One Claude call returns Hebrew copy, a layout choice, an image
+   query, and a verbatim quote for every claim it makes.
+4. **Verify.** The quotes must literally appear in the page that was fetched.
+   No fares, no decimals on a card, no word used twice in a headline.
+5. **Render.** Headless Chromium, because Hebrew needs real bidirectional text
+   layout. 1080×1350 JPEG.
+6. **Approve.** A Telegram DM with the card, the source URL, where the image
+   came from, and how many quotes were checked.
+7. **Publish.** Instagram Graph API. One post drips out every four hours.
 
-The brief had hard rules. None of them are prompt instructions — a prompt is a
-request, and these needed to be guarantees.
+## What makes it different from "an AI wrote a post"
 
-| Rule | Enforced by |
-|---|---|
-| The source URL is always in the approval message | `src/format.js` — pushed unconditionally, never truncated, never hidden behind a link label. The published card and caption carry no source; the rule is about what you see before tapping |
-| Nothing publishes without approval | `bot.js` — the only path to `enqueue()` is the `ok:` button handler |
-| No claim without a primary source | `src/verify.js` + the `allowlist` in `sources.json` — suffix-matched on a domain-label boundary, re-checked after redirects |
-| Claims must come from the source, not from memory | `src/verify.js` — the draft returns verbatim quotes and every one is checked against the fetched page. A paraphrased quote fails the whole draft |
-| Images: stock / our catalogue / AI only, never scraped | `src/images.js` — three named providers, provenance tag required, shown in the approval message *and* printed on the card. Pexels is wired (`src/images/pexels.js`); the other two refuse rather than publish an image they cannot label |
-| AI images generic only, never the specific place | `src/images.js` — `assertGenericAiPrompt()` rejects a prompt containing the post's own place or country |
-| Instagram via the official Graph API only | `src/publish/instagram.js` — the documented two-step `/media` → `/media_publish` handshake |
-| Hebrew and RTL correct in the rendered card | `src/render/` — real browser bidi, bundled font, and a hard check that the font loaded before screenshotting |
-| No flight prices in v1 | `src/verify.js` — `flightPriceGuard()`, which rejects a fare but allows an entry fee |
-| Kosher/Shabbat is a thread, not the theme | `src/pillars.js` — a rolling-window cap on the tag's share of what published |
+**A claim without a quote does not ship.** The drafting step returns
+`evidence: [{ claim, quote }]`, and every `quote` is checked to appear
+character-for-character in the text that was actually fetched. A model asked for
+a quote will occasionally paraphrase one — and a paraphrased quote is precisely
+the case where the claim came from the model's memory rather than the source.
+
+**The rules are code, not prompt text.** A style rule that lives only in a
+prompt holds until the model meets a source that pushes against it. The fare
+ban, the rounding rule, the repeated-word check, the allowlist and the quote
+check are all enforced after the model has spoken, and each returns a reason you
+can read in Hebrew.
+
+**Every filter is visible.** Rejections arrive as a digest with the reason and
+the URL. A filter you cannot see is a filter you cannot disagree with.
 
 ## Sources
 
-`sources.json` is a registry, not a hardcoded list — adding a source is an edit
-to one JSON file. Each entry records whether its adapter actually works, because
-a source that 404s silently is worse than one that's honestly switched off.
+Primary sources only — the publisher of the fact, not someone reporting it.
 
-Enabled, and verified live against the real endpoints:
-
-| Source | Kind | Good for |
-|---|---|---|
-| UK FCDO foreign travel advice | Atom | entry, visa and border changes, per country |
-| UNESCO World Heritage Centre | RSS | places, new inscriptions, hidden spots |
-| JNTO (Japan) | RSS | DMO announcements, openings, timing |
-| Open-Meteo Climate (ERA5) | JSON dataset | when to go, and when not to |
-
-Declared but disabled, each with the probe result recorded in its `note`: the US
-State Department advisories feed (well-formed but contains zero items), gov.il
-and the Israel Airports Authority (both behind Imperva, 403 to any non-browser
-client), the EU EES/ETIAS pages (client-rendered, no feed), and the Ryanair,
-Wizz Air and Aegean newsrooms (no working feed at the documented paths). Turning
-one on means writing its adapter first.
-
-The climate source is the one that behaves differently, and deliberately: it
-isn't a feed waiting for someone to publish, it's a question asked of a dataset.
-It rotates through `destinations.json`, computes monthly normals from ten years
-of ERA5 daily values, and classifies each month against stated thresholds. So it
-always has something to say on a quiet day, and its "source URL" is the exact
-API request — anyone can re-run it and get the same numbers.
-
-You can also just paste a URL to the bot. It goes through the identical gates,
-allowlist included.
-
-## Templates
-
-Ten layouts, all 1080×1350 (4:5 — the tallest ratio Instagram accepts). Two
-families.
-
-**Photo-led** — the picture is the point and the words sit under it. All three
-need an image and degrade to `fact` without one. Set `PEXELS_API_KEY` and they
-become available: the drafting step is told images can be fetched, picks a photo
-layout when the story warrants one, and supplies an English search term (stock
-libraries index in English; the draft's place name is Hebrew).
-
-- **photoFull** — full-bleed picture, headline and one line over its bottom
-  third. The headline is capped one size smaller than on the text cards on
-  purpose: an 86px headline wrapping to three lines pushes the scrim halfway up
-  the frame and buries the photograph.
-- **photoBand** — picture on top, a solid band of type beneath it. Best when the
-  supporting line needs more room than a scrim can carry legibly.
-- **photoFrame** — inset picture with a gallery caption under it. Quieter; suits
-  a single object or detail rather than a landscape.
-
-**Text-led** — no photograph at all, which is what actually sidesteps image
-licensing rather than managing it.
-
-- **fact** — one surprising, specific claim, set large. The headline *is* the fact.
-- **numbers** — a single figure carrying the card. The numeral is bidi-isolated,
-  because a Hebrew unit sitting beside a Latin figure is exactly where the
-  reordering goes wrong.
-- **compare** — a widely held belief against what the source actually says.
-- **tips** — three numbered practical tips.
-- **whenToGo** — a twelve-month strip, good / shoulder / avoid, drawn straight from
-  the climate data rather than from anything the model wrote, so the card and the
-  source cannot drift apart.
-- **alert** — an entry or visa change: what changed, from when, who it affects.
-- **route** — a new or returning line out of TLV, with the connector pointing
-  origin→destination. The arrowhead is drawn rather than typed, because the ✈
-  glyph's own direction varies by font and would silently point the wrong way.
-
-**The card is a hook, not the post.** It carries the headline and at most one
-short line; the context, the caveat and the practical detail go in the caption.
-The first version of the numbers card rendered a stat label, a headline *and* a
-subhead, so the same fact appeared three times in three registers and the card
-read like a paragraph with a big number on top. The drafting prompt now says an
-empty subhead is a good answer.
-
-The header label is the **place**, not the pillar. It used to print the category
-— "מתי ללכת", "עובדה מפתיעה" — which is a fact about our filing system rather
-than about the place, and reads like one. The place orients the reader just as
-well and is actually information.
-
-The drafting step picks the layout from the content and fills that layout's
-payload. A layout whose payload comes back incomplete — a tips card with two
-bullets, a numbers card with no figure — falls back to `fact` rather than
-rendering a hole, on the same principle as the photo layouts degrading without
-an image. The photo family is forbidden to the model unless an image was
-actually supplied.
-
-`npm run render-samples` writes one of each to `samples/`, with the photo family
-rendered against a procedurally generated placeholder (`scripts/sample-image.js`)
-— without one they'd all degrade to text cards and the whole photo family would
-be invisible. That generator is a preview aid and lives in `scripts/` rather than
-`src/` precisely so it can't become a content source: the provenance rules in
-`src/images.js` still allow only licensed stock, our own catalogue, or generic
-AI, and a procedural placeholder is none of them.
-
-**Look at the JPEGs.**
-Whether the Hebrew is right is not a question you can answer by reading the
-HTML — bidi resolution, glyph shaping and line breaking all happen at render
-time. That's also why Chromium is in the dependency list: it's doing real
-bidirectional text layout, which is the one job a canvas library would get
-subtly and unfixably wrong.
-
-## Stack
-
-Node 18+, plain ESM, no bundler, no build step. Deliberately boring, same as
-BrickDeal.
-
-- **telegraf** — the bot, staging UI, publishing
-- **playwright** — headless Chromium, for card rendering only
-- **fast-xml-parser** — RSS and Atom
-- **@anthropic-ai/sdk** — the drafting step
-- Storage is one JSON file (`data/store.json`), written atomically. No database.
-- Heebo (OFL) is bundled in `assets/fonts/` and inlined into the page as a data
-  URI. A linked webfont that fails doesn't error, it falls back — and the
-  fallback for Hebrew on a bare Linux box is tofu boxes.
-
-## File map
-
-| File | What it does |
+| Source | What it gives |
 |---|---|
-| `bot.js` | Telegraf bot: owner lock, staging cards and their buttons, the edit flow, the daily-run and drip timers, `/run` `/status` `/why` `/mix` `/sources` `/pending` `/queue` `/next` `/igquota` `/usage` `/redo` |
-| `sources.json` | The source registry and the primary-authority allowlist |
-| `destinations.json` | Places the climate adapter rotates through, with their Hebrew names |
-| `src/sources/` | `index.js` (registry + allowlist matching + gather), `rss.js` (RSS *and* Atom), `climate.js` (ERA5 normals → a when-to-go item) |
-| `src/fetchPage.js` | Fetch + HTML→text, including the boilerplate stripping that keeps cookie notices out of the evidence pool |
-| `src/verify.js` | The gate: primary source, verbatim-quote checking, the fare guard |
-| `src/draft.js` | The Anthropic call — Hebrew copy, layout choice, and the quotes backing every claim |
-| `src/pillars.js` | Content pillars and the rolling-window topic quotas |
-| `src/score.js` | Cheap ranking of raw items, before anything expensive happens to them |
-| `src/candidate.js` | One item → one staged candidate, gates in cost order |
-| `src/pipeline.js` | The daily pass: gather → rank → build until the target is met |
-| `src/render/` | `theme.js` (tokens + CSS), `templates.js` (the five layouts), `index.js` (Chromium → JPEG) |
-| `src/images.js` | Image provenance policy. Three permitted origins, tag required |
-| `src/images/pexels.js` | The stock provider. Portrait crops, bytes inlined rather than hotlinked |
-| `src/publish/` | `telegram.js`, `instagram.js` (Graph API two-step) |
-| `src/format.js` | The approval message and the published captions — kept deliberately separate |
-| `src/store.js` | Dedupe, staging, pending edits, publish queue, and the published log the quotas are computed from |
-| `src/notify.js` | The Hebrew status DMs |
-| `src/env.js` | The ~10-line `.env` loader, so there's no `dotenv` dependency |
-| `scripts/check-sources.js` | Probe every enabled source live. No drafting, no Telegram |
-| `scripts/run-once.js` | A full pass printed to the terminal instead of sent to Telegram |
-| `scripts/render-samples.js` | One sample card per layout, into `samples/` |
-| `scripts/ig-token.js` | Walks the Instagram token exchange and verifies the result is the non-expiring Page token |
-| `test.js` | Run one URL through verification (and, with a key, the whole pipeline) |
+| FCDO travel advice (`gov.uk`) | entry rules, safety changes, per country |
+| UNESCO World Heritage Centre | new inscriptions, site decisions |
+| NASA Earth Observatory | one specific place on Earth per day, from orbit |
+| Smithsonian Global Volcanism Program | eruptions and unrest, weekly |
+| JNTO (Japan) | Japanese-language travel news |
+| Open-Meteo ERA5 | ten years of daily values → monthly climate normals |
 
-## Getting it running
+Seven more are declared and switched off, each with the probe result recorded in
+`sources.json` rather than quietly omitted. `npm run check-sources` re-probes
+every one.
 
-```
+The allowlist matches on a domain-label boundary, so `evil-gov.uk` and
+`gov.uk.attacker.com` do not pass as `gov.uk`.
+
+## Cards
+
+Ten layouts in two families. Photo-led is the default — this is a travel
+channel, and a wall of typography is what a spreadsheet looks like. Text-led is
+for the cases with no single place to photograph: a rule spanning many
+countries, a comparison, a figure with no address.
+
+**The card carries the headline and nothing else.** The subhead is written, and
+it opens the description instead. A card that answers its own headline gives
+nobody a reason to tap "more".
+
+Headlines name a subject rather than narrating it. `קרחון ענק צף במיצר` is a
+complete sentence, so it answers itself; `הקרחון הענק בין גרינלנד לאיסלנד` is a
+definite noun phrase that names a specific thing and withholds the story. The
+verb is what gives it away.
+
+Images are commercial-license stock, our own catalogue, or AI-generated — never
+lifted from a news article or a business's page. Which one it was is printed in
+the approval message. AI imagery may only ever be generic; a prompt naming the
+post's own place is rejected in code.
+
+## Running it
+
+Requires Node 18+ (developed on 24) and no build step.
+
+```bash
 npm install
-npx playwright install chromium
+npx playwright install --with-deps chromium
 cp .env.example .env      # then fill it in
-npm run check-sources     # do the feeds work? no key needed
-npm run render-samples    # then LOOK at samples/*.jpg
-npm run run-once          # a full pass, printed, nothing published
+npm test                  # 164 offline checks, no credentials needed
+npm run check-sources     # probe every feed
+npm run run-once          # a full pass, printed to the terminal, publishes nothing
 npm start
 ```
 
-Minimum to boot: `TG_BOT_TOKEN`, `CHANNEL_ID`, `STAGING_CHAT_ID`, `OWNER_ID`,
-`ANTHROPIC_API_KEY`. The bot refuses to start without the owner id or the
-staging chat — the first because it can publish, the second because an approval
-gate with nowhere to send approvals isn't a gate.
+You need a Telegram bot token, your own Telegram user id, an Anthropic API key,
+a Pexels key for photos, and an Instagram Business account with the Graph API.
+[`SETUP.md`](SETUP.md) walks through each one, including the parts of Meta's
+dashboard that are genuinely confusing.
 
-**[SETUP.md](./SETUP.md) is the step-by-step** for credentials, and
-**[DEPLOY.md](./DEPLOY.md)** for putting it on the VPS — for getting the Telegram bot and
-the Instagram Graph API credentials in place, including the token exchange that
-otherwise leaves you with a pipeline that dies after 60 days.
+[`DEPLOY.md`](DEPLOY.md) covers the VPS: it has to run there, because Instagram
+fetches the card image from a public URL rather than receiving bytes.
 
-Instagram additionally needs `IG_USER_ID`, `IG_ACCESS_TOKEN` and
-`CARD_PUBLIC_BASE_URL` — that last one because the Graph API hands Instagram a
-URL its own servers fetch, so a card on local disk cannot publish. Every
-approval card states where it will go before you tap.
+### Commands in the bot
 
-The bot refuses to start with no publish destination at all (no `CHANNEL_ID`
-and no Instagram): approving would send the post nowhere, so it fails closed
-rather than quietly eating approvals. `npm run run-once` exercises the whole
-pipeline without needing either.
+`/run` gather now · `/redo` forget what was seen and re-run, for testing a change
+· `/status` · `/usage` tokens and cost · `/igquota` · `/mix` topic balance ·
+`/why` last run's rejections · `/queue` `/next` `/pending`
 
-### Deployment (pm2)
+## Layout of the code
 
-```
-pm2 start bot.js --name tiyul
-pm2 save && pm2 startup
-```
+| Path | What it does |
+|---|---|
+| `bot.js` | Telegraf bot: owner lock, staging, approve/reject, timers |
+| `src/pipeline.js` | the daily loop, with a ceiling on drafting calls |
+| `src/draft.js` | the Claude call and the whole editorial brief |
+| `src/verify.js` | **the gate** — allowlist, quotes, fares, rounding, repeats |
+| `src/score.js` | ranking before anything expensive happens |
+| `src/render/` | templates, theme, Chromium |
+| `src/sources/` | feed adapters and the climate dataset |
+| `src/publish/` | Instagram Graph API, publish targets |
+| `src/images.js` | image provenance policy |
+| `src/usage.js` | token accounting, exposed as `/usage` |
+| `scripts/` | selftest, source probe, card-hosting check, one-off runs |
 
-Run exactly one instance — `data/store.json` isn't safe for concurrent writers.
-`.env` is read once at process start, so `pm2 restart tiyul` after changing it.
-Point `CARD_OUTPUT_DIR` at a directory the web server already serves and set
-`CARD_PUBLIC_BASE_URL` to match; that pairing is what makes Instagram publishing
-possible at all.
-
-## Monitoring
-
-`/status` gives a fixed last-24h window — gathered, staged, rejected, and the
-rejections broken down by reason — plus queue depth and when the last run was.
-`/why [n]` shows the actual rejected items with their reason and URL, not just
-counts. `/mix` prints the pillar balance the quotas are computed from, with the
-kosher share against its cap.
-
-The rejection reporting is the part I care most about. BrickDeal's README is
-blunt about what its silent quality filter cost: it dropped things without
-telling me, so I had no way to know whether it was saving me from junk or
-quietly throwing away good deals. The filters here are considerably more
-opinionated — a primary-source allowlist, a verbatim-quote check, topic quotas —
-so every rejection carries a reason code and a URL, and `REJECT_NOTIFY`
-(`off` / `each` / `digest`) controls how loudly. A filter you can't see is a
-filter you can't disagree with.
-
-## Honest notes and caveats
+## Honest caveats
 
 **The evidence check proves sourcing, not truth.** It proves a claim appears in
-the page we fetched from an allowlisted authority. If FCDO is wrong, we'll
-faithfully repeat FCDO being wrong. That's the intended bar — attribution, not
-omniscience — but it's worth being clear that "verified" here means "traceable".
+a page fetched from an allowlisted authority. If FCDO is wrong, this will
+faithfully repeat FCDO being wrong. "Verified" here means *traceable*.
 
-**The quote check is strict on purpose, and it will produce false rejections.**
-Normalisation handles whitespace and punctuation drift, but a model that
-summarises two sentences into one loses the whole draft. I'd rather re-run than
-loosen it — a fuzzy quote match is indistinguishable from no check at all.
+**The quote check is strict and will produce false rejections.** A model that
+summarises two sentences into one loses the whole draft. Better to re-run than
+to loosen it: a fuzzy quote match is indistinguishable from no check at all.
 
-**Four of the eleven declared sources work.** The rest are honestly switched off
-with the probe result recorded. The two I most want are `gov.il` and the Israel
-Airports Authority, both behind Imperva; we already ship Playwright, so a real
-browser fetch is the obvious way in, but I haven't written it.
+**Six of thirteen declared sources work.** The rest are off with the probe result
+recorded. The two most wanted are `gov.il` and the Israel Airports Authority,
+both behind Imperva. Playwright already ships here, so a real browser fetch is
+the obvious way in — unwritten.
 
-**Image licensing is sidestepped, not solved.** v1 publishes text-led cards
-because that's genuinely the right call for facts, tips, timing and entry rules —
-but it does mean the photo template, the provenance machinery and
-`assertGenericAiPrompt()` ship untested against a live provider.
+**Some content thresholds are tuned on small samples.** The thin-source floors
+were measured against one day of items. They are env-overridable and every
+rejection reports the count it measured against the floor it used, so if they
+start eating good sources the digest says so in numbers.
 
-**Topic quotas only bind once there's a sample.** Below `QUOTA_MIN_SAMPLE`
-published posts the shares are noise, so nothing is capped — on a fresh install
-the first several posts could in principle all be kosher-tagged. It converges
-quickly, but it isn't instant.
-
-**One gather a day, guarded by the date.** A restart mid-day won't re-run, but
-a process that's down at `RUN_HOUR` and comes back later that day will run then.
-If it's down all day, that day is simply skipped.
+**Topic quotas only bind once there is a sample.** Below `QUOTA_MIN_SAMPLE`
+published posts the shares are noise and nothing is capped.
 
 **The publish retry rule is about double-posting, not importance.** If nothing
-published, the item goes back on the queue (up to 3 attempts, then it is dropped
-loudly rather than silently). If *something* published, it is not retried,
-because retrying would duplicate whichever destination succeeded — you get told
-which one failed and decide. An earlier version treated Telegram as primary and
-swallowed Instagram failures, which silently discarded approved posts for anyone
-running Instagram-only.
+published, the item goes back on the queue, up to three attempts, then it is
+dropped loudly. If *something* published, it is not retried, because retrying
+would duplicate whichever destination succeeded.
 
-## Things I learned building this
+## Three things that were only findable by running it
 
 **`document.fonts.check()` does not check what it sounds like it checks.** The
-tofu guard was originally `document.fonts.check('900 100px Heebo')`, which reads
-exactly like "is Heebo available". It isn't — it returns true whenever the text
-can be rendered by *something*, fallback included. On a page with no `@font-face`
-rule at all it still returns `true`. So the guard I wrote specifically to catch
-the silent-fallback failure was itself silently passing. It now checks that a
-`FontFace` with family `Heebo` exists in `document.fonts` with `status ===
-'loaded'`, *and* that Hebrew set in Heebo measures differently from Hebrew set in
-a deliberately nonexistent family — if the font failed, both fall back to the
-same face and measure identically. Both halves are tested, in both directions.
+guard against Hebrew rendering as tofu boxes was `document.fonts.check('900
+100px Heebo')`, which reads exactly like "is Heebo available". It returns true
+whenever the text can be rendered by *anything*, fallback included — on a page
+with no `@font-face` rule at all it still returns `true`. The guard written to
+catch a silent failure was itself silently passing. It now checks that a
+`FontFace` for Heebo exists with `status === 'loaded'` **and** that Hebrew set in
+Heebo measures differently from Hebrew set in a family that cannot exist.
 
-I only found this because the brief said to check the output image rather than
-the HTML. The rendered cards were fine, so nothing looked wrong; the bug was in
-the thing that was supposed to notice when they weren't.
-
-**Cookie banners are an evidence-integrity problem, not a tidiness one.** The
-extracted text for a gov.uk page opened with ~500 characters of consent boilerplate.
-The obvious cost is wasted prompt. The real cost is that `verify.js` proves a claim
-by checking the quote appears verbatim in that text — so anything left in the pool
-is something a claim can legally be grounded in. A quote lifted from a cookie
-notice would have passed verification and published.
+**Cookie banners are an evidence-integrity problem, not a tidiness one.** A
+gov.uk page's extracted text opened with ~500 characters of consent boilerplate.
+The obvious cost is wasted prompt. The real cost is that a quote lifted from a
+cookie notice would have passed verification and published.
 
 **A word count silently disabled a quarter of the source registry.** The
-evidence check required a quote of at least four words, splitting on spaces.
-Japanese does not put spaces between words, so every Japanese quote counted as
-one word and was rejected as "too short to be evidence of anything" — meaning
-JNTO could never produce a candidate, and the rejection blamed the drafting
-step for something it had done correctly. The check now measures characters for
-scripts that don't separate words, and words for the ones that do. Only visible
-by running a real Japanese item through; no fixture would have caught it,
-because I'd have written the fixture in English.
-
-**The scorer's first draft ranked the single best source last.** FCDO publishes
-one entry per country, titled just "Norway", with the actual change in the summary
-— so a thin-title penalty sent the best entry-change feed to the bottom while
-JNTO's B2B trade notices (operator recruitment, press briefings) sat at the top on
-authority alone. Both were only visible by running the ranker against the live
-feeds and reading the output. Neither would have shown up in a unit test, because
-both were about what the real data looks like.
+evidence check required four words, splitting on spaces. Japanese does not put
+spaces between words, so every Japanese quote counted as one word and was
+rejected as "too short to be evidence" — meaning JNTO could never produce a
+candidate, and the rejection blamed the drafting step for something it had done
+correctly. No fixture would have caught it, because the fixture would have been
+in English.
 
 ## Security
 
-- Every credential lives in `.env`, which is gitignored. Nothing else reads one.
-- `data/` is gitignored too, so cloning this doesn't leak what's been posted.
-- The bot checks `ctx.from.id` against `OWNER_ID` in a middleware registered
-  before every other handler, and refuses to start without it — a missing config
+- Every credential lives in `.env`, which is gitignored along with every
+  `.env.*` variant. Nothing else reads one.
+- `data/` is gitignored, so cloning this does not leak what has been posted.
+- The bot checks `ctx.from.id` against `OWNER_ID` in middleware registered
+  before every other handler, and refuses to start without it. A missing config
   value fails closed rather than opening the bot to whoever finds the username.
-- Scraped page content is only ever fetched, regex-matched, and shown to the
-  drafting model. It is never rendered as HTML, never evaluated, never shelled
-  out to. The one place we *do* render HTML is our own templates, and every
-  interpolated value goes through `escapeHtml()`.
-- The allowlist matches on a domain-label boundary, so `evil-gov.uk` and
-  `gov.uk.attacker.com` don't pass as `gov.uk`, and non-http schemes are
-  rejected outright. Verified.
+- The bot also refuses to start with no publish destination configured — an
+  approval queue with nowhere to publish silently eats what you approve.
+- Fetched page content is only ever regex-matched and shown to the model. It is
+  never rendered as HTML, never evaluated, never shelled out to. The one place
+  HTML *is* rendered is our own templates, where every interpolated value goes
+  through `escapeHtml()`.
 - Telegram messages are sent without `parse_mode`. A scraped title containing a
-  stray `*` or `_` would otherwise break Markdown parsing and drop the message —
-  which, for an approval card, means silently not asking.
+  stray `*` would otherwise break Markdown parsing and drop the message — which,
+  for an approval card, means silently not asking.
+
+## Licence
+
+Not currently licensed for reuse. The bundled Heebo font is under the SIL Open
+Font License; photographs come from Pexels under its own licence.
