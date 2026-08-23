@@ -409,6 +409,23 @@ bot.command('run', async (ctx) => {
   await doRun();
 });
 
+// Re-run the same sources from scratch.
+//
+// /run alone will not do this: every item the previous run touched is marked
+// seen, so a change to the layout or the copy rules stays invisible until
+// tomorrow's news arrives. This forgets the claims first, which is what you
+// want while iterating on how the cards look — and nothing else, so the
+// Instagram token and the published log both survive.
+bot.command('redo', async (ctx) => {
+  if (running) return ctx.reply('⏳ כבר רץ סבב איסוף');
+  const cleared = store.clearStaging();
+  const forgotten = store.forgetAllSeen();
+  await ctx.reply(
+    `🔄 שכחתי ${forgotten} פריטים שכבר נראו${cleared ? ` וניקיתי ${cleared} ממתינים` : ''} — מריץ מחדש`
+  );
+  await doRun();
+});
+
 bot.command('pending', (ctx) => ctx.reply(`⏳ ${store.stagingSize()} ממתינים לאישור`));
 bot.command('queue', (ctx) => ctx.reply(`📦 ${store.queueSize()} בתור לפרסום`));
 
@@ -484,6 +501,7 @@ bot.command('help', (ctx) =>
     [
       'פקודות:',
       '/run — סבב איסוף עכשיו',
+      '/redo — שכח מה כבר נראה והרץ שוב (לבדיקת שינויים בעיצוב/נוסח)',
       '/status — סטטוס מלא',
       '/pending /queue /next',
       '/why [n] — מה נפסל ולמה',

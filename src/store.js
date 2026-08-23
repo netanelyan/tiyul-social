@@ -85,6 +85,27 @@ export function forgetSeen(id) {
   save();
 }
 
+/**
+ * Forget every claimed item, so the next run rebuilds today's candidates from
+ * scratch. Returns how many were dropped.
+ *
+ * This is for iterating on how the cards look and read: a change to the layout
+ * or the copy rules is invisible until the same sources are drafted again, and
+ * they are all marked seen the moment the first run claims them. Without this
+ * the only way to see the effect of a change was to wait for tomorrow's news.
+ *
+ * Deliberately touches `seen` and nothing else. The published log stays (the
+ * topic quotas are computed from it) and so does the Instagram token, which
+ * lives in the same file and is expensive to replace — deleting store.json to
+ * get the same effect would take both with it.
+ */
+export function forgetAllSeen() {
+  const n = Object.keys(state.seen).length;
+  state.seen = {};
+  save();
+  return n;
+}
+
 // --- staging (awaiting your approve/reject tap) ------------------------------
 export function addStaging(item) {
   const key = Math.random().toString(36).slice(2, 9);

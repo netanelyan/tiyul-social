@@ -110,7 +110,7 @@ says **where it will publish** before you tap. Approve one and it goes out on th
 next drip tick (`POST_INTERVAL_MINUTES`), or `/next` to publish immediately.
 
 Useful once running: `/status`, `/why`, `/mix`, `/sources`, `/pending`,
-`/queue`, `/igquota`, `/usage`, `/help`.
+`/queue`, `/igquota`, `/usage`, `/redo`, `/help`.
 
 ---
 
