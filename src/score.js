@@ -106,7 +106,14 @@ export function rank(items, { perSource = 2, limit = 12, now = Date.now() } = {}
   const deficits = pillarDeficits();
 
   const scored = items
-    .filter((it) => !store.hasSeen(candidateId(it)))
+    // Dropped before ranking, both of them: an item already tried today, and an
+    // item already published. The second is the one /redo cannot be allowed to
+    // undo — clearing `seen` is exactly what /redo is for, and it must not also
+    // resurrect something real followers have already received.
+    .filter((it) => {
+      const id = candidateId(it);
+      return !store.hasSeen(id) && !store.hasPublished(id);
+    })
     .map((it) => ({ item: it, score: scoreItem(it, { deficits, now }) }))
     .sort((a, b) => b.score - a.score);
 

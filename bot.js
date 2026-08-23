@@ -421,7 +421,8 @@ bot.command('redo', async (ctx) => {
   const cleared = store.clearStaging();
   const forgotten = store.forgetAllSeen();
   await ctx.reply(
-    `🔄 שכחתי ${forgotten} פריטים שכבר נראו${cleared ? ` וניקיתי ${cleared} ממתינים` : ''} — מריץ מחדש`
+    `🔄 שכחתי ${forgotten} פריטים שכבר נראו${cleared ? ` וניקיתי ${cleared} ממתינים` : ''} — מריץ מחדש` +
+      `\n(${store.publishedCount()} פוסטים שכבר פורסמו לא יחזרו)`
   );
   await doRun();
 });

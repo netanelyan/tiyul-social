@@ -76,6 +76,17 @@ export async function runOnce({ onStaged, onRejected, target = dailyTarget(), no
 
     const id = candidateId(item);
 
+    // Backstop. rank() already drops published items, so reaching this means
+    // something bypassed the ranker — a direct caller, or a future change. It
+    // costs one map lookup and it is the difference between a quiet skip and
+    // posting the same thing to real followers twice.
+    if (store.hasPublished(id)) {
+      summary.rejected++;
+      summary.rejectedByReason.duplicate = (summary.rejectedByReason.duplicate || 0) + 1;
+      await onRejected?.({ reason: 'duplicate', detail: 'כבר פורסם', title: item.title, url: item.url, sourceId: item.sourceId });
+      continue;
+    }
+
     // Claimed before the slow work, not after. Two feeds carrying the same
     // story minutes apart would otherwise both survive the pre-rank dedupe
     // check and both get drafted — BrickDeal's lesson, in a new pipeline.

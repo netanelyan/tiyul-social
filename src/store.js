@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, mkdirSync, renameSync, existsSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // Same tiny persistent store as BrickDeal: one JSON file, written atomically
@@ -9,7 +9,16 @@ import { fileURLToPath } from 'node:url';
 // are computed over a rolling window of what actually went out, so "kosher and
 // Shabbat is an occasional thread, not the theme" is a number the code can
 // check rather than a hope about the drafting prompt.
-const FILE = fileURLToPath(new URL('../data/store.json', import.meta.url));
+// Overridable so the test suite can point at a scratch file.
+//
+// This is not a convenience. On the VPS this file holds the refreshed Instagram
+// token, the dedupe history and the published log — and merely importing this
+// module prunes and rewrites it. `npm test` on the server would therefore touch
+// live state, and the new dedupe test writes to it outright. Tests get their
+// own file; nothing else sets this.
+const FILE = process.env.STORE_PATH
+  ? resolve(process.env.STORE_PATH)
+  : fileURLToPath(new URL('../data/store.json', import.meta.url));
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 // Read lazily rather than at module load — store.js can be evaluated before
@@ -18,7 +27,28 @@ const ttlMs = () => Math.max(0, Number(process.env.SEEN_TTL_DAYS ?? '45')) * DAY
 const publishedWindowMs = () =>
   Math.max(1, Number(process.env.QUOTA_WINDOW_DAYS ?? '30')) * DAY_MS;
 
-const empty = { seen: {}, queue: [], staging: {}, pendingEdit: {}, published: [], igToken: null };
+const empty = {
+  seen: {},
+  queue: [],
+  staging: {},
+  pendingEdit: {},
+  published: [],
+  // Ids of everything ever published, kept separately from `published`.
+  //
+  // `published` is a 30-day quota window and gets pruned, so it cannot answer
+  // "have we posted this before?" — after a month it says no. And `seen` cannot
+  // answer it either, because /redo deliberately clears `seen` so a change to
+  // the copy rules can be tested against the same sources. That left nothing
+  // guarding the case that actually happened: an item published to Instagram,
+  // then staged again by the next /redo as though it were new.
+  publishedIds: {},
+  igToken: null,
+};
+
+// How long a published id is remembered. Long, because the cost of forgetting
+// is posting the same thing twice to real followers, and the cost of
+// remembering is a few hundred bytes a year.
+const PUBLISHED_ID_TTL_MS = Math.max(1, Number(process.env.PUBLISHED_TTL_DAYS ?? '730')) * 86_400_000;
 let state = load();
 
 function pruneSeen(s) {
@@ -42,6 +72,18 @@ function prunePublished(s) {
   return s.published.length !== before;
 }
 
+function prunePublishedIds(s) {
+  const cutoff = Date.now() - PUBLISHED_ID_TTL_MS;
+  let changed = false;
+  for (const [id, ts] of Object.entries(s.publishedIds || {})) {
+    if (ts < cutoff) {
+      delete s.publishedIds[id];
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 function load() {
   let s;
   try {
@@ -50,7 +92,23 @@ function load() {
     s = structuredClone(empty);
   }
   if (!Array.isArray(s.published)) s.published = [];
-  const changed = pruneSeen(s) || prunePublished(s);
+
+  // Migration for stores written before publishedIds existed. Backfill from the
+  // quota window — it is the only record of what went out, and recovering the
+  // last 30 days is strictly better than starting empty and re-posting them.
+  let migrated = false;
+  if (!s.publishedIds || typeof s.publishedIds !== 'object') {
+    s.publishedIds = {};
+    migrated = true;
+  }
+  for (const p of s.published) {
+    if (p?.id && !s.publishedIds[p.id]) {
+      s.publishedIds[p.id] = p.ts || Date.now();
+      migrated = true;
+    }
+  }
+
+  const changed = pruneSeen(s) || prunePublished(s) || prunePublishedIds(s) || migrated;
   if (changed) save(s);
   return s;
 }
@@ -105,6 +163,26 @@ export function forgetAllSeen() {
   save();
   return n;
 }
+
+/**
+ * Has this exact item already gone out?
+ *
+ * Checked independently of `seen`, and never cleared by /redo. The two answer
+ * different questions: `seen` is "have we already tried this today", which is
+ * the thing you WANT to reset when testing a change to the copy rules;
+ * this is "did real followers already receive this", which you never do.
+ *
+ * Missing this distinction put an iceberg post that had already published to
+ * Instagram straight back into the approval queue with a different photograph.
+ */
+export const hasPublished = (id) => Boolean(id && state.publishedIds[id]);
+
+/** Deliberately allow a published item to be built again. */
+export function forgetPublished(id) {
+  delete state.publishedIds[id];
+  save();
+}
+export const publishedCount = () => Object.keys(state.publishedIds).length;
 
 // --- staging (awaiting your approve/reject tap) ------------------------------
 export function addStaging(item) {
@@ -172,6 +250,7 @@ export const peekQueue = () => state.queue.slice(0, 10);
 
 // --- published log (drives the pillar quotas) -------------------------------
 export function recordPublished({ id, pillar, tags = [], layout, telegram, instagram }) {
+  if (id) state.publishedIds[id] = Date.now();
   state.published.push({
     ts: Date.now(),
     id,
