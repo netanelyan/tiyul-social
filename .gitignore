@@ -1,5 +1,9 @@
 node_modules/
 .env
+# Any variant. A .env.bak from a one-line edit is the same secrets with a
+# different extension, and it would not have been ignored.
+.env.*
+!.env.example
 
 # Runtime state: dedupe history, publish queue, staging, the published log the
 # pillar quotas are computed from. Same reasoning as BrickDeal's — cloning this
