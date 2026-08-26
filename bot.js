@@ -617,20 +617,34 @@ bot.command('status', async (ctx) => {
 bot.command('igquota', async (ctx) => {
   if (!instagramConfigured()) return ctx.reply('אינסטגרם לא מוגדר');
   const health = store.targetHealth('instagram');
+  const days = tokenDaysLeft();
+
+  // Everything knowable without asking Instagram anything. Reported first and
+  // unconditionally, because the moment the API refuses is exactly the moment
+  // you want to know whether the token is the reason — and an earlier version
+  // put the token line after the call that throws, so it never printed then.
+  const local = [];
+  if (days != null) {
+    local.push(
+      days > 0
+        ? `🔑 הטוקן תקף עוד ${days} ימים (מתחדש אוטומטית)`
+        : `🔑 הטוקן פג לפני ${Math.abs(days)} ימים — npm run ig-token`
+    );
+  }
+  if (health.lastOkAt) local.push(`✅ פורסם לאחרונה לפני ${notify.humanDuration(Date.now() - health.lastOkAt)}`);
+  else local.push('⚪ עוד לא פורסם לאינסטגרם מהמכונה הזו');
+  if (health.failures) local.push(`⚠️ ${health.failures} כשלונות ברצף`);
+
   try {
     const left = await remainingQuota();
-    const days = tokenDaysLeft();
-    const lines = [left == null ? 'לא התקבלה מכסה מ-Graph API' : `📸 נותרו ${left} פרסומים ב-24 השעות הקרובות`];
-    // The token's remaining life is the thing that silently kills this
-    // integration, so it is reported next to the quota rather than hidden.
-    if (days != null) lines.push(`🔑 הטוקן תקף עוד ${days} ימים (מתחדש אוטומטית)`);
-    if (health.lastOkAt) lines.push(`✅ פורסם לאחרונה לפני ${notify.humanDuration(Date.now() - health.lastOkAt)}`);
-    if (health.failures) lines.push(`⚠️ ${health.failures} כשלונות ברצף · ${health.lastError || ''}`.trim());
-    ctx.reply(lines.join('\n'));
+    ctx.reply(
+      [left == null ? 'לא התקבלה מכסה מ-Graph API' : `📸 נותרו ${left} פרסומים ב-24 השעות הקרובות`, ...local].join('\n')
+    );
   } catch (e) {
     // The full diagnostic, not just Graph's sentence. "API access blocked" on
-    // its own names a symptom; the code and subcode are what identify it.
-    ctx.reply(`🔴 ${describeError(e)}`);
+    // its own names a symptom; the code and subcode are what identify it — and
+    // a live token printed next to it rules out the first thing you would guess.
+    ctx.reply([`🔴 ${describeError(e)}`, '', ...local].join('\n'));
   }
 });
 
