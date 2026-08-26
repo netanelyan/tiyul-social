@@ -4,6 +4,7 @@ loadEnv();
 import * as store from '../src/store.js';
 import { primaryAuthority } from '../src/sources/index.js';
 import { toCandidate, candidateId, RejectedError } from '../src/candidate.js';
+import { gather } from '../src/sources/index.js';
 import { publishInstagram, instagramConfigured, describeError } from '../src/publish/instagram.js';
 import { closeBrowser } from '../src/render/index.js';
 import { reasonHe } from '../src/verify.js';
@@ -25,15 +26,21 @@ import { hasApiKey } from '../src/draft.js';
 // Telegram too, and posting the same card to the channel twice to fix a gap on
 // the other network is a worse outcome than the gap.
 //
+// Takes either a source URL or an id straight from the gap report. Prefer the
+// id: it is the same identity the pipeline used, so it addresses feed sources
+// whose items all share one landing page, which a URL cannot.
+//
 //   node scripts/backfill-instagram.js                    # what is missing
-//   node scripts/backfill-instagram.js --check URL [...]  # does this URL match a gap?
-//   node scripts/backfill-instagram.js URL [URL...]       # rebuild, do not publish
-//   node scripts/backfill-instagram.js --yes URL [...]    # rebuild and publish
+//   node scripts/backfill-instagram.js --check URL [...]  # does this match a gap?
+//   node scripts/backfill-instagram.js ID|URL [...]       # rebuild, do not publish
+//   node scripts/backfill-instagram.js --yes ID|URL [...] # rebuild and publish
 
 const args = process.argv.slice(2);
 const confirmed = args.includes('--yes');
 const checkOnly = args.includes('--check');
 const urls = args.filter((a) => !a.startsWith('--'));
+// A candidate id as the gap report prints it.
+const ID_RE = /^[0-9a-f]{12}$/;
 
 /** Posts in the quota window that Telegram carried and Instagram never did. */
 function gap() {
@@ -81,14 +88,8 @@ function reportGap() {
  * first: a URL copied from the wrong message costs a drafting call and then
  * publishes the wrong story to real followers, and neither is undoable.
  */
-function check(url) {
-  let id;
-  try {
-    id = candidateId({ url });
-  } catch {
-    console.log(`   ✗ not a URL`);
-    return false;
-  }
+function check(ref) {
+  const id = ID_RE.test(ref) ? ref : candidateId({ url: ref });
   const row = gap().find((p) => p.id === id);
   if (row) {
     console.log(`   ✓ ${id} — missing since ${new Date(row.ts).toISOString().slice(0, 16).replace('T', ' ')}`);
@@ -99,27 +100,42 @@ function check(url) {
     return false;
   }
   console.log(`   ✗ ${id} — not in the gap. Wrong URL, or it never published at all.`);
+  // The trap this exists to name. A source whose identity comes from the item
+  // title cannot be addressed by URL at all: every entry shares one landing
+  // page, so the hash of that page matches nothing.
+  console.log('     If the post came from a feed where many items share one link');
+  console.log('     (the Smithsonian volcano report), use its id from the gap list instead.');
   return false;
 }
 
-async function backfill(url) {
-  if (!primaryAuthority(url)) {
-    console.log(`   ✗ ${new URL(url).hostname} is not on the primary-source allowlist`);
-    return false;
+/**
+ * Find the live source item behind a gap id.
+ *
+ * A URL is not a usable address for every post. Sources with `dedupeBy: title`
+ * take identity from the item title because every entry links to the same
+ * landing page — the Smithsonian weekly volcano report is twenty-one eruptions
+ * behind one `reports_weekly.cfm` link. Rebuilding one of those from its URL
+ * would fetch whatever that page says today and publish a different eruption
+ * under the belief it was the missing one.
+ *
+ * Re-gathering and matching on the id sidesteps that: it is the same identity
+ * function the pipeline used the first time, so it addresses both kinds of
+ * source correctly.
+ */
+let gathered = null;
+async function itemForId(id) {
+  if (!gathered) {
+    process.stdout.write('   re-gathering sources...');
+    const { items } = await gather({ now: new Date() });
+    gathered = items;
+    console.log(` ${items.length} items`);
   }
+  return gathered.find((it) => candidateId(it) === id) || null;
+}
 
-  // Refuses by default when the URL does not correspond to a post that is
-  // actually missing. This script publishes to real followers and there is no
-  // undo; a URL copied from the wrong message should cost nothing.
-  if (!check(url) && !args.includes('--force')) {
-    console.log('   skipped — pass --force to publish it anyway');
-    return false;
-  }
-
-  // The same shape ingestUrl() builds in bot.js. The card is drafted and
-  // rendered fresh; the original JPEG may still be on disk, but its caption is
-  // not, and publishing an old image with a new caption is worse than either.
-  const item = {
+function manualItem(url) {
+  // The same shape ingestUrl() builds in bot.js.
+  return {
     sourceId: 'backfill',
     sourceName: 'השלמה ידנית',
     authority: 'government',
@@ -130,6 +146,46 @@ async function backfill(url) {
     url,
     publishedAt: null,
   };
+}
+
+/**
+ * Rebuild and republish one post, addressed either by source URL or by the id
+ * from the gap report.
+ *
+ * The card is drafted and rendered fresh. The original JPEG may still be on
+ * disk, but its caption is not, and an old image beside a new caption is worse
+ * than either — so the copy will not be word-for-word what the channel got.
+ */
+async function backfill(ref) {
+  const byId = ID_RE.test(ref);
+  let item;
+
+  if (byId) {
+    if (!gap().some((p) => p.id === ref)) {
+      console.log(`   ✗ ${ref} is not in the gap`);
+      return false;
+    }
+    item = await itemForId(ref);
+    if (!item) {
+      console.log(`   ✗ ${ref} is no longer in any source feed — it has rolled off, and`);
+      console.log('     the published log kept no copy of it. This one cannot be rebuilt.');
+      return false;
+    }
+    console.log(`   ${item.sourceId}: ${item.title.slice(0, 70)}`);
+  } else {
+    if (!primaryAuthority(ref)) {
+      console.log(`   ✗ ${new URL(ref).hostname} is not on the primary-source allowlist`);
+      return false;
+    }
+    // Refuses by default when the URL does not correspond to a post that is
+    // actually missing. This script publishes to real followers and there is no
+    // undo; a URL copied from the wrong message should cost nothing.
+    if (!check(ref) && !args.includes('--force')) {
+      console.log('   skipped — pass --force to publish it anyway');
+      return false;
+    }
+    item = manualItem(ref);
+  }
 
   let cand;
   try {
