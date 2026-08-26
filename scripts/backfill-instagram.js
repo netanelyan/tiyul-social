@@ -3,7 +3,7 @@ loadEnv();
 
 import * as store from '../src/store.js';
 import { primaryAuthority } from '../src/sources/index.js';
-import { toCandidate, RejectedError } from '../src/candidate.js';
+import { toCandidate, candidateId, RejectedError } from '../src/candidate.js';
 import { publishInstagram, instagramConfigured, describeError } from '../src/publish/instagram.js';
 import { closeBrowser } from '../src/render/index.js';
 import { reasonHe } from '../src/verify.js';
@@ -25,12 +25,14 @@ import { hasApiKey } from '../src/draft.js';
 // Telegram too, and posting the same card to the channel twice to fix a gap on
 // the other network is a worse outcome than the gap.
 //
-//   node scripts/backfill-instagram.js                 # what is missing
-//   node scripts/backfill-instagram.js URL [URL...]    # rebuild, do not publish
-//   node scripts/backfill-instagram.js --yes URL [...] # rebuild and publish
+//   node scripts/backfill-instagram.js                    # what is missing
+//   node scripts/backfill-instagram.js --check URL [...]  # does this URL match a gap?
+//   node scripts/backfill-instagram.js URL [URL...]       # rebuild, do not publish
+//   node scripts/backfill-instagram.js --yes URL [...]    # rebuild and publish
 
 const args = process.argv.slice(2);
 const confirmed = args.includes('--yes');
+const checkOnly = args.includes('--check');
 const urls = args.filter((a) => !a.startsWith('--'));
 
 /** Posts in the quota window that Telegram carried and Instagram never did. */
@@ -71,9 +73,46 @@ function reportGap() {
   }
 }
 
+/**
+ * Does this URL rebuild the post you think it does?
+ *
+ * A candidate's id is a hash of its canonical source URL, so the id in the gap
+ * report is checkable against a URL without drafting anything. Worth doing
+ * first: a URL copied from the wrong message costs a drafting call and then
+ * publishes the wrong story to real followers, and neither is undoable.
+ */
+function check(url) {
+  let id;
+  try {
+    id = candidateId({ url });
+  } catch {
+    console.log(`   ✗ not a URL`);
+    return false;
+  }
+  const row = gap().find((p) => p.id === id);
+  if (row) {
+    console.log(`   ✓ ${id} — missing since ${new Date(row.ts).toISOString().slice(0, 16).replace('T', ' ')}`);
+    return true;
+  }
+  if (store.hasPublished(id)) {
+    console.log(`   • ${id} — already published to both. Nothing to backfill.`);
+    return false;
+  }
+  console.log(`   ✗ ${id} — not in the gap. Wrong URL, or it never published at all.`);
+  return false;
+}
+
 async function backfill(url) {
   if (!primaryAuthority(url)) {
     console.log(`   ✗ ${new URL(url).hostname} is not on the primary-source allowlist`);
+    return false;
+  }
+
+  // Refuses by default when the URL does not correspond to a post that is
+  // actually missing. This script publishes to real followers and there is no
+  // undo; a URL copied from the wrong message should cost nothing.
+  if (!check(url) && !args.includes('--force')) {
+    console.log('   skipped — pass --force to publish it anyway');
     return false;
   }
 
@@ -132,6 +171,19 @@ async function backfill(url) {
 
 async function main() {
   if (!urls.length) return reportGap();
+
+  // Costs nothing and needs no credentials, so it can run against a blocked
+  // Instagram — collect the URLs now, publish when the block clears.
+  if (checkOnly) {
+    let matched = 0;
+    for (const url of urls) {
+      console.log(url);
+      if (check(url)) matched++;
+      console.log('');
+    }
+    console.log(`--- ${matched}/${urls.length} match a missing post ---`);
+    return;
+  }
 
   if (!instagramConfigured()) {
     console.error('Instagram is not configured — needs IG_ACCESS_TOKEN, IG_USER_ID and CARD_PUBLIC_BASE_URL.');
