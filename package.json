@@ -14,6 +14,7 @@
     "check-sources": "node scripts/check-sources.js",
     "check-cards": "node scripts/check-cards.js",
     "ig-token": "node scripts/ig-token.js",
+    "backfill-ig": "node scripts/backfill-instagram.js",
     "render-samples": "node scripts/render-samples.js",
     "test-url": "node test.js"
   },
