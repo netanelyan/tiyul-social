@@ -57,6 +57,38 @@ export class InstagramError extends Error {
   }
 }
 
+// Graph error codes worth naming, because the message alone does not say what to
+// do. Deliberately short: a wrong guess about what an unknown code means is
+// worse than printing the code and letting you look it up.
+const CODE_HINTS = {
+  190: 'הטוקן פג או נפסל — npm run ig-token',
+  102: 'הסשן נפסל — npm run ig-token',
+  4: 'חריגה ממכסת הקריאות — יתפנה מעצמו',
+  17: 'חריגה ממכסת הקריאות — יתפנה מעצמו',
+  32: 'חריגה ממכסת הקריאות — יתפנה מעצמו',
+  613: 'חריגה ממכסת הקריאות — יתפנה מעצמו',
+  9: 'חריגה ממכסת הפרסום היומית (25 ב-24 שעות)',
+};
+
+/**
+ * A failure line you can act on.
+ *
+ * Graph's `message` on its own is often a sentence like "API access blocked"
+ * that names a symptom and no cause. The code, the subcode and the step are what
+ * separate a dead token from a throttle from an app-level restriction, and they
+ * were being dropped on the floor before this existed.
+ */
+export function describeError(e) {
+  if (!(e instanceof InstagramError)) return e?.message || String(e);
+  const bits = [];
+  if (e.code != null) bits.push(`code ${e.code}`);
+  if (e.subcode != null) bits.push(`subcode ${e.subcode}`);
+  if (e.step) bits.push(`step ${e.step}`);
+  const detail = bits.length ? `${e.message} [${bits.join(', ')}]` : e.message;
+  const hint = CODE_HINTS[e.code];
+  return hint ? `${detail}\n   ${hint}` : detail;
+}
+
 async function graph(path, { method = 'GET', params = {}, step, token = currentToken() } = {}) {
   const url = new URL(`${graphHost()}/${VERSION}/${path}`);
   const body = new URLSearchParams({ ...params, access_token: token });

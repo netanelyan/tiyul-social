@@ -50,6 +50,14 @@ const empty = {
   // accumulate enough silence to notice it is silent.
   lastStagedAt: null,
   lastPublishedAt: null,
+  // Per destination: consecutive failures, the last error, and when it last
+  // actually worked. A global "something published" is not enough — Telegram
+  // succeeding while Instagram is blocked looks identical to a healthy day.
+  // { instagram: { failures, lastError, lastFailAt, lastOkAt, degraded } }
+  targetHealth: {},
+  // Approved cards that could not reach a destination and are waiting for it to
+  // come back, rather than being dropped. /retry replays them.
+  held: [],
   igToken: null,
 };
 
@@ -100,6 +108,8 @@ function load() {
     s = structuredClone(empty);
   }
   if (!Array.isArray(s.published)) s.published = [];
+  if (!Array.isArray(s.held)) s.held = [];
+  if (!s.targetHealth || typeof s.targetHealth !== 'object') s.targetHealth = {};
 
   // Migration for stores written before publishedIds existed. Backfill from the
   // quota window — it is the only record of what went out, and recovering the
@@ -341,18 +351,34 @@ export const queueSize = () => state.queue.length;
 export const peekQueue = () => state.queue.slice(0, 10);
 
 // --- published log (drives the pillar quotas) -------------------------------
+/**
+ * Record that a card went out, or that it reached one more destination.
+ *
+ * Upserts by id rather than always pushing. A card can now reach Telegram on one
+ * attempt and Instagram on a later one; two rows for one post would double-count
+ * it in the quota window and skew the pillar mix the scorer reads back.
+ */
 export function recordPublished({ id, pillar, tags = [], layout, telegram, instagram }) {
   if (id) state.publishedIds[id] = Date.now();
   state.lastPublishedAt = Date.now();
-  state.published.push({
-    ts: Date.now(),
-    id,
-    pillar,
-    tags,
-    layout,
-    telegram: Boolean(telegram),
-    instagram: Boolean(instagram),
-  });
+
+  const existing = id ? state.published.find((p) => p.id === id) : null;
+  if (existing) {
+    // Sticky: a destination that has already published must never be recorded
+    // as un-published by a later attempt that only covered the other one.
+    existing.telegram = existing.telegram || Boolean(telegram);
+    existing.instagram = existing.instagram || Boolean(instagram);
+  } else {
+    state.published.push({
+      ts: Date.now(),
+      id,
+      pillar,
+      tags,
+      layout,
+      telegram: Boolean(telegram),
+      instagram: Boolean(instagram),
+    });
+  }
   prunePublished(state);
   save();
 }
@@ -366,6 +392,94 @@ export const publishedToday = () => {
   start.setHours(0, 0, 0, 0);
   return state.published.filter((p) => p.ts >= start.getTime()).length;
 };
+
+// --- per-destination health --------------------------------------------------
+//
+// A post that reaches Telegram and fails on Instagram used to be recorded as
+// published and forgotten: `succeeded.length` was non-zero, so it was not
+// retried, and the only trace was one warning line in a chat full of them. With
+// Instagram blocked at the API, that repeated for every post — the Instagram
+// account went dark for days while every individual message read as a handled
+// edge case, and the global "when did we last publish" stayed fresh because
+// Telegram kept working.
+//
+// So health is tracked per destination. `failures` counts CONSECUTIVE failures
+// and resets on any success, which is what separates a blip from a block.
+
+const DEGRADE_AFTER = () => Math.max(1, Number(process.env.TARGET_DEGRADE_AFTER ?? '3'));
+
+const healthOf = (target) =>
+  state.targetHealth[target] || { failures: 0, lastError: null, lastFailAt: null, lastOkAt: null, degraded: false };
+
+export const targetHealth = (target) => ({ ...healthOf(target) });
+
+export function noteTargetOk(target) {
+  state.targetHealth[target] = {
+    ...healthOf(target),
+    failures: 0,
+    lastError: null,
+    lastOkAt: Date.now(),
+    degraded: false,
+  };
+  save();
+}
+
+/**
+ * Record a failed publish to one destination.
+ *
+ * Returns the updated record, including whether this failure is the one that
+ * tipped the destination into `degraded` — the caller escalates on that edge so
+ * the alert fires once per outage rather than once per card.
+ */
+export function noteTargetFailed(target, error) {
+  const prev = healthOf(target);
+  const failures = prev.failures + 1;
+  const degraded = failures >= DEGRADE_AFTER();
+  state.targetHealth[target] = {
+    ...prev,
+    failures,
+    lastError: error ? String(error).slice(0, 300) : null,
+    lastFailAt: Date.now(),
+    degraded,
+  };
+  save();
+  return { ...state.targetHealth[target], justDegraded: degraded && !prev.degraded };
+}
+
+/** A destination that has failed enough times running to stop hammering it. */
+export const isDegraded = (target) => Boolean(healthOf(target).degraded);
+
+/** When this destination last actually published, or null if it never has. */
+export const lastOkAt = (target) => healthOf(target).lastOkAt || null;
+
+/** Clear the degraded flag so the next attempt goes through. Used by /retry. */
+export function clearDegraded(target) {
+  const prev = healthOf(target);
+  state.targetHealth[target] = { ...prev, failures: 0, degraded: false };
+  save();
+}
+
+// --- held posts --------------------------------------------------------------
+//
+// An approved card that a destination refused is kept here instead of being
+// dropped. Losing an approved post is the one outcome worth avoiding, and while
+// a destination is blocked for days there is nothing useful to retry against —
+// but there will be, and then the backlog should still exist.
+
+export function hold(cand, targets, error) {
+  state.held.push({ ts: Date.now(), targets, error: error ? String(error).slice(0, 300) : null, cand });
+  save();
+}
+export const heldCount = () => state.held.length;
+export const heldItems = () => state.held.map((h) => ({ ...h }));
+
+/** Take everything held back out, for requeueing. Returns the rows. */
+export function releaseHeld() {
+  const rows = state.held;
+  state.held = [];
+  save();
+  return rows;
+}
 
 // --- Instagram token ---------------------------------------------------------
 // The Instagram Login path issues 60-day tokens that must be refreshed. The

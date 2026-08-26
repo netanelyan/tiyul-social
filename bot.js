@@ -11,7 +11,7 @@ import { primaryAuthority, enabledSources, registry } from './src/sources/index.
 import { approvalMessage, decidedMessage, evidenceReport, channelCaption, instagramCaption } from './src/format.js';
 import { renderCard, closeBrowser } from './src/render/index.js';
 import { publishTelegram, sendForApproval } from './src/publish/telegram.js';
-import { publishInstagram, instagramConfigured, remainingQuota, refreshToken, tokenDaysLeft, authMode } from './src/publish/instagram.js';
+import { publishInstagram, instagramConfigured, remainingQuota, refreshToken, tokenDaysLeft, authMode, describeError } from './src/publish/instagram.js';
 import { publishTargets, targetsHe } from './src/publish/targets.js';
 import { imagesEnabled } from './src/images.js';
 import { reasonHe } from './src/verify.js';
@@ -273,70 +273,114 @@ bot.on('message', async (ctx, next) => {
 // Publishing
 // ---------------------------------------------------------------------------
 
-// How many times a post that failed to publish anywhere goes back on the queue
-// before we stop and hand it to you. Without a cap, a destination that is down
-// for a day turns into an endless retry loop with an alert every drip tick.
+// How many times a card retries a destination that keeps refusing it before it
+// is set aside. Without a cap, a destination down for a day is an endless retry
+// loop with an alert every drip tick.
 const MAX_PUBLISH_ATTEMPTS = 3;
 
 /**
- * Publish one approved item to every configured destination.
+ * Publish one approved item to every destination it still owes.
  *
- * The retry rule is about double-posting, not about which destination is more
- * important — an earlier version treated Telegram as primary and swallowed
- * Instagram failures, which silently discarded approved posts for anyone
- * running Instagram-only:
+ * The old rule was "if anything published, do not retry" — retrying the whole
+ * item would duplicate the destination that had already succeeded. True, and it
+ * threw away the other half of the post. With Instagram returning "API access
+ * blocked", every card reached Telegram, was recorded as published, and the
+ * Instagram account went dark for days behind one warning line per post that
+ * read as a handled edge case.
  *
- *   - nothing published  -> safe to retry, so it goes back on the queue
- *   - something published -> retrying would duplicate the destination that
- *                            succeeded, so it does not go back; you get told
- *                            which one failed and decide
+ * The unit of retry is the destination, not the item. `pendingTargets` is what
+ * this card still owes; a destination that has already published is never in it,
+ * so retrying cannot duplicate anything, and a destination that failed is not
+ * abandoned just because its neighbour worked.
  */
 async function publishNext() {
   const cand = store.dequeue();
   if (!cand) return false;
 
-  const targets = publishTargets();
+  const configured = publishTargets();
+  // On a first attempt this is everything; on a retry it is only what failed.
+  const owed = (cand.pendingTargets?.length ? cand.pendingTargets : configured).filter((t) =>
+    configured.includes(t)
+  );
+
+  // Nothing to do — the destination was reconfigured away while this sat in the
+  // queue. Recording it stops it looping forever as a card that owes nothing.
+  if (!owed.length) {
+    store.recordPublished({ id: cand.id, pillar: cand.pillar, tags: cand.tags, layout: cand.layout });
+    return false;
+  }
+
+  // A destination that has failed enough times running is not worth another
+  // call per card: it fails, costs quota, and buries the one alert that matters
+  // under a copy of itself. Cards that owe only degraded destinations are held.
+  const live = owed.filter((t) => !store.isDegraded(t));
+  const skipped = owed.filter((t) => store.isDegraded(t));
+
   const done = {};
   const failed = [];
 
-  for (const target of targets) {
+  for (const target of live) {
     try {
       done[target] =
         target === 'telegram'
           ? await publishTelegram(bot.telegram, CHANNEL_ID, cand)
           : await publishInstagram(cand);
+      store.noteTargetOk(target);
     } catch (e) {
-      console.error(`publish: ${target} failed:`, e.message);
-      failed.push({ target, message: e.message });
+      const detail = target === 'instagram' ? describeError(e) : e.message;
+      console.error(`publish: ${target} failed:`, detail);
+      const health = store.noteTargetFailed(target, detail);
+      failed.push({ target, message: detail });
+      // The edge, not the state: one escalation per outage rather than one per
+      // card. This is the alert that should have arrived on day one.
+      if (health.justDegraded) {
+        await notify.send(bot.telegram, staging, notify.targetDegraded(target, health, detail));
+      }
     }
   }
 
-  const succeeded = targets.filter((t) => done[t]);
+  const succeeded = live.filter((t) => done[t]);
 
-  if (!succeeded.length) {
-    const attempts = (cand.publishAttempts || 0) + 1;
-    if (attempts < MAX_PUBLISH_ATTEMPTS) {
-      store.enqueue({ ...cand, publishAttempts: attempts });
-      await notify.send(bot.telegram, staging, notify.publishRetrying(cand.headline, failed, attempts, MAX_PUBLISH_ATTEMPTS));
-    } else {
-      // Dropped from the queue, but loudly. An approved post vanishing without
-      // a word is the one outcome worth avoiding here.
-      await notify.send(bot.telegram, staging, notify.publishGaveUp(cand.headline, failed, attempts));
-    }
-    return false;
+  if (succeeded.length) {
+    store.recordPublished({
+      id: cand.id,
+      pillar: cand.pillar,
+      tags: cand.tags,
+      layout: cand.layout,
+      telegram: Boolean(done.telegram),
+      instagram: Boolean(done.instagram),
+    });
   }
 
-  store.recordPublished({
-    id: cand.id,
-    pillar: cand.pillar,
-    tags: cand.tags,
-    layout: cand.layout,
-    telegram: Boolean(done.telegram),
-    instagram: Boolean(done.instagram),
-  });
+  // What this card still owes after this pass.
+  const stillOwed = [...skipped, ...failed.map((f) => f.target)];
+  if (!stillOwed.length) {
+    await notify.send(bot.telegram, staging, notify.published({ headline: cand.headline, succeeded, failed: [] }));
+    return true;
+  }
 
-  await notify.send(bot.telegram, staging, notify.published({ headline: cand.headline, succeeded, failed }));
-  return true;
+  const attempts = (cand.publishAttempts || 0) + 1;
+  const retryable = skipped.length === 0 && attempts < MAX_PUBLISH_ATTEMPTS;
+
+  if (retryable) {
+    store.enqueue({ ...cand, publishAttempts: attempts, pendingTargets: stillOwed });
+    await notify.send(
+      bot.telegram,
+      staging,
+      notify.publishRetrying(cand.headline, failed, attempts, MAX_PUBLISH_ATTEMPTS, succeeded)
+    );
+  } else {
+    // Held, not dropped. While a destination is blocked there is nothing useful
+    // to retry against — but there will be, and the backlog should still exist
+    // when it comes back. /retry replays it.
+    store.hold(cand, stillOwed, failed[0]?.message || 'destination unavailable');
+    await notify.send(
+      bot.telegram,
+      staging,
+      notify.publishHeld(cand.headline, stillOwed, succeeded, store.heldCount())
+    );
+  }
+  return succeeded.length > 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -394,6 +438,26 @@ async function maybeRefreshIgToken() {
       `🔴 חידוש טוקן אינסטגרם נכשל: ${e.message}
 אם לא יחודש, הפרסום יפסיק לעבוד. הרץ npm run ig-token.`
     );
+  }
+}
+
+/**
+ * Ask Instagram whether it is actually reachable, at boot.
+ *
+ * A read-only quota call, which hits the same Graph endpoint publishing does and
+ * fails the same way. Without it the first news of an app-level block arrives at
+ * the first publish attempt — which, on a drip of one post every four hours, can
+ * be most of a day after the bot came up believing it was fine.
+ */
+async function probeInstagram() {
+  if (!instagramConfigured()) return;
+  try {
+    await remainingQuota();
+    console.log('   instagram: reachable');
+  } catch (e) {
+    const detail = describeError(e);
+    console.error('instagram: unreachable:', detail);
+    await notify.send(bot.telegram, staging, notify.targetUnreachableAtBoot('instagram', detail));
   }
 }
 
@@ -461,6 +525,40 @@ bot.command('next', async (ctx) => {
   await ctx.reply(ok ? '📤 פורסם הפריט הבא' : 'התור ריק');
 });
 
+bot.command('held', (ctx) => {
+  const rows = store.heldItems();
+  if (!rows.length) return ctx.reply('✅ אין פוסטים מוחזקים');
+  const lines = rows.map(
+    (h, i) => `${i + 1}. ${h.cand.headline}\n   חסר: ${targetsHe(h.targets)}${h.error ? `\n   ${h.error}` : ''}`
+  );
+  ctx.reply([`⏸️ ${rows.length} פוסטים מוחזקים:`, '', ...lines, '', '/retry כדי לנסות שוב'].join('\n'));
+});
+
+/**
+ * Put every held post back on the queue and un-degrade the destinations that
+ * were refusing them.
+ *
+ * This is the deliberate "I have fixed it" signal. Nothing here retries by
+ * itself once a destination is marked degraded, because while Instagram is
+ * blocked at the API a retry is a wasted call and a repeated alert — so
+ * something has to say the block is gone, and it should be you.
+ */
+bot.command('retry', async (ctx) => {
+  const rows = store.releaseHeld();
+  const targets = new Set();
+  for (const h of rows) for (const t of h.targets) targets.add(t);
+  // Also clear anything degraded but with nothing held behind it.
+  for (const t of publishTargets()) targets.add(t);
+  for (const t of targets) store.clearDegraded(t);
+
+  for (const h of rows) store.enqueue({ ...h.cand, publishAttempts: 0, pendingTargets: h.targets });
+
+  if (!rows.length) return ctx.reply('אין מה להחזיר לתור. סימנתי את כל היעדים כתקינים — הפרסום הבא ינסה שוב.');
+  await ctx.reply(`🔁 ${rows.length} פוסטים חזרו לתור. מפרסם את הראשון...`);
+  const ok = await publishNext();
+  await ctx.reply(ok ? '📤 עבד' : 'עדיין נכשל — /held לפרטים');
+});
+
 bot.command('clear_pending', (ctx) => {
   const n = store.clearStaging();
   ctx.reply(`🧹 נוקו ${n} פריטים ממתינים`);
@@ -509,6 +607,8 @@ bot.command('status', async (ctx) => {
       remainingToday: remainingToday(day),
       dailyTarget: dailyTarget(),
       nextGatherInMin: Math.max(0, Math.round((gatherIntervalMs - (Date.now() - lastGatherAt)) / 60000)),
+      heldCount: store.heldCount(),
+      targetHealth: Object.fromEntries(publishTargets().map((t) => [t, store.targetHealth(t)])),
       targets: publishTargets(),
     })
   );
@@ -516,6 +616,7 @@ bot.command('status', async (ctx) => {
 
 bot.command('igquota', async (ctx) => {
   if (!instagramConfigured()) return ctx.reply('אינסטגרם לא מוגדר');
+  const health = store.targetHealth('instagram');
   try {
     const left = await remainingQuota();
     const days = tokenDaysLeft();
@@ -523,9 +624,13 @@ bot.command('igquota', async (ctx) => {
     // The token's remaining life is the thing that silently kills this
     // integration, so it is reported next to the quota rather than hidden.
     if (days != null) lines.push(`🔑 הטוקן תקף עוד ${days} ימים (מתחדש אוטומטית)`);
+    if (health.lastOkAt) lines.push(`✅ פורסם לאחרונה לפני ${notify.humanDuration(Date.now() - health.lastOkAt)}`);
+    if (health.failures) lines.push(`⚠️ ${health.failures} כשלונות ברצף · ${health.lastError || ''}`.trim());
     ctx.reply(lines.join('\n'));
   } catch (e) {
-    ctx.reply(`שגיאה: ${e.message}`);
+    // The full diagnostic, not just Graph's sentence. "API access blocked" on
+    // its own names a symptom; the code and subcode are what identify it.
+    ctx.reply(`🔴 ${describeError(e)}`);
   }
 });
 
@@ -537,6 +642,8 @@ bot.command('help', (ctx) =>
       '/redo — שכח מה כבר נראה והרץ שוב (לבדיקת שינויים בעיצוב/נוסח)',
       '/status — סטטוס מלא',
       '/pending /queue /next',
+      '/held — פוסטים מאושרים שממתינים ליעד שנפל',
+      '/retry — אחרי שתיקנת: מחזיר אותם לתור',
       '/why [n] — מה נפסל ולמה',
       '/mix — תמהיל הנושאים שפורסמו',
       '/sources — רשימת המקורות',
@@ -586,23 +693,35 @@ function remainingToday(day) {
 /**
  * The alarm that should have caught this and did not.
  *
- * Two things were wrong. It measured from an in-memory `lastStagedAt` that
- * started as null and was only ever set by a successful staging, behind an
- * `if (lastStagedAt)` guard — so a bot that staged nothing, which is the whole
- * point of the alarm, skipped the check forever, and any restart reset it. And
- * it watched staging only, so a day where cards arrived and none was ever
- * approved published nothing and said nothing.
+ * It measured from an in-memory `lastStagedAt` that started as null and was only
+ * ever set by a successful staging, behind an `if (lastStagedAt)` guard — so a
+ * bot that staged nothing, which is the whole point of the alarm, skipped the
+ * check forever, and any restart reset it.
+ *
+ * It also asked whether anything published, globally. That is the wrong
+ * question when there is more than one destination: Telegram publishing every
+ * day kept the answer yes while Instagram was blocked at the API and had not
+ * published in days. The question is per destination.
  */
 function quietCheck() {
   const hours = Math.max(1, Number(QUIET_ALERT_HOURS));
   const limitMs = hours * 3_600_000;
 
   const stagedAt = store.lastStagedAt();
-  const publishedAt = store.lastPublishedAt();
   const stagedAgo = Date.now() - (stagedAt ?? bootedAt);
-  const publishedAgo = Date.now() - (publishedAt ?? bootedAt);
 
-  if (stagedAgo < limitMs && publishedAgo < limitMs) {
+  // A destination with no success on record has never worked on this install, so
+  // it measures from boot rather than opting out — never-worked is the loudest
+  // case, not an exemption.
+  const darkTargets = publishTargets()
+    .map((target) => {
+      const okAt = store.lastOkAt(target);
+      return { target, ago: Date.now() - (okAt ?? bootedAt), ever: okAt != null };
+    })
+    .filter((t) => t.ago >= limitMs)
+    .map((t) => ({ target: t.target, hoursAgo: Math.floor(t.ago / 3_600_000), ever: t.ever }));
+
+  if (stagedAgo < limitMs && !darkTargets.length) {
     quietAlertSent = false;
     return;
   }
@@ -616,11 +735,11 @@ function quietCheck() {
       notify.quietAlert({
         hours,
         stagedHoursAgo: Math.floor(stagedAgo / 3_600_000),
-        publishedHoursAgo: Math.floor(publishedAgo / 3_600_000),
         everStaged: stagedAt != null,
-        everPublished: publishedAt != null,
+        darkTargets,
         stagingSize: store.stagingSize(),
         queueSize: store.queueSize(),
+        heldCount: store.heldCount(),
       })
     )
     .catch(() => {});
@@ -697,6 +816,7 @@ async function main() {
   console.log(`   daily run at ${RUN_HOUR}:00 · target ${dailyTarget()} · drip every ${POST_INTERVAL_MINUTES} min`);
 
   await maybeRefreshIgToken();
+  await probeInstagram();
 
   setInterval(() => {
     publishNext().catch((e) => console.error('publish error:', e.message));

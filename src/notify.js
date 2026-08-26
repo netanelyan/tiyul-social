@@ -90,30 +90,69 @@ export function rejectSingle(item) {
   return `🗑️ נפסל [${reasonHe(item.reason)}] ${item.title}${detail}\n${item.url}`;
 }
 
+/** Everything this card owed has now gone out. */
 export function published({ headline, succeeded, failed = [] }) {
   const lines = [`📤 פורסם ל${targetsHe(succeeded)}`, headline];
-  // A partial publish is NOT retried — retrying would duplicate whichever
-  // destination succeeded — so this line is the whole record of it. It has to
-  // be unmissable, and it has to say what to do.
   for (const f of failed) {
     lines.push(`⚠️ ${TARGET_HE[f.target] || f.target} נכשל: ${f.message}`);
   }
-  if (failed.length) lines.push('לא ינוסה שוב אוטומטית — פרסום חוזר היה משכפל את מה שכבר עלה.');
   return lines.join('\n');
 }
 
-/** Nothing published at all — safe to retry, so it went back on the queue. */
-export function publishRetrying(headline, failed, attempt, max) {
-  const lines = [`🔁 שום דבר לא פורסם — חזר לתור (ניסיון ${attempt}/${max})`, headline];
+/**
+ * A destination still owes this card, and it is going back on the queue for that
+ * destination only.
+ *
+ * `succeeded` is listed explicitly so a partial publish reads as partial. The
+ * old message said "nothing published" whenever it retried, which was true then
+ * and is not now: the retry is per destination, so half of it may well be live.
+ */
+export function publishRetrying(headline, failed, attempt, max, succeeded = []) {
+  const lines = [
+    succeeded.length
+      ? `🔁 פורסם ל${targetsHe(succeeded)} · חוזר לתור עבור השאר (ניסיון ${attempt}/${max})`
+      : `🔁 שום דבר לא פורסם — חזר לתור (ניסיון ${attempt}/${max})`,
+    headline,
+  ];
   for (const f of failed) lines.push(`   ${TARGET_HE[f.target] || f.target}: ${f.message}`);
+  lines.push('ינוסה שוב רק ליעד שנכשל — מה שכבר עלה לא ישוכפל.');
   return lines.join('\n');
 }
 
-/** Out of retries. Dropped from the queue, but never silently. */
-export function publishGaveUp(headline, failed, attempts) {
-  const lines = [`🔴 פרסום נכשל ${attempts} פעמים — הפריט יורד מהתור`, headline];
-  for (const f of failed) lines.push(`   ${TARGET_HE[f.target] || f.target}: ${f.message}`);
-  lines.push('הכרטיס נשמר. אפשר לפרסם ידנית, או לשלוח שוב את הקישור אחרי שהתקלה נפתרה.');
+/**
+ * Set aside rather than dropped.
+ *
+ * The version this replaces dropped the card and told you to resend the link by
+ * hand. With a destination blocked for days that is a backlog thrown away one
+ * post at a time.
+ */
+export function publishHeld(headline, owed, succeeded = [], heldCount = 1) {
+  const lines = [`⏸️ מוחזק עד שי${targetsHe(owed)} יחזור לעבוד`, headline];
+  if (succeeded.length) lines.push(`✅ כבר פורסם ל${targetsHe(succeeded)} — לא ישוכפל`);
+  lines.push(`📥 ${heldCount} מוחזקים בסך הכל · /held לרשימה · /retry לנסות שוב`);
+  return lines.join('\n');
+}
+
+/**
+ * A destination has failed enough times running to be called broken.
+ *
+ * Fired on the edge — the failure that tips it over — not on every card, because
+ * the whole failure this comes from is an alert that repeated until it read as
+ * routine. This one names the destination, how long it has been down, and the
+ * diagnostic the Graph message on its own does not carry.
+ */
+export function targetDegraded(target, health, detail) {
+  const name = TARGET_HE[target] || target;
+  const lines = [
+    `🔴 ${name} נכשל ${health.failures} פעמים ברצף — מפסיק לנסות`,
+    detail ? `   ${detail}` : '',
+    health.lastOkAt
+      ? `📆 פורסם שם לאחרונה לפני ${humanDuration(Date.now() - health.lastOkAt)}`
+      : '📆 מעולם לא פורסם שם בהצלחה',
+    '',
+    'פוסטים מאושרים יוחזקו ולא יאבדו.',
+    'אחרי שהתקלה נפתרת: /retry',
+  ].filter(Boolean);
   return lines.join('\n');
 }
 
@@ -129,14 +168,25 @@ export function publishGaveUp(headline, failed, attempts) {
  * line says which one this is. A quiet stream with cards waiting is a tap that
  * never came; a quiet stream with an empty queue is the pipeline going dry.
  */
+/** The boot probe found a destination already broken. */
+export function targetUnreachableAtBoot(target, detail) {
+  const name = TARGET_HE[target] || target;
+  return [
+    `🔴 ${name} לא זמין כרגע`,
+    `   ${detail}`,
+    '',
+    'פוסטים מאושרים יוחזקו ולא יאבדו. אחרי שהתקלה נפתרת: /retry',
+  ].join('\n');
+}
+
 export function quietAlert({
   hours,
   stagedHoursAgo,
-  publishedHoursAgo,
   everStaged,
-  everPublished,
+  darkTargets = [],
   stagingSize = 0,
   queueSize = 0,
+  heldCount = 0,
 }) {
   const lines = [`⚠️ שקט כבר יותר מ-${hours} שעות`];
 
@@ -147,15 +197,22 @@ export function quietAlert({
         : '🗂️ שום מועמד לא עלה לאישור מאז שהבוט עלה'
     );
   }
-  if (publishedHoursAgo >= hours) {
+
+  // Per destination, because they fail independently. Watching a single global
+  // "did anything publish" meant Telegram succeeding every day kept this quiet
+  // while the Instagram account was dark — which is exactly the outage that
+  // prompted this alarm to be rewritten in the first place.
+  for (const t of darkTargets) {
+    const name = TARGET_HE[t.target] || t.target;
     lines.push(
-      everPublished
-        ? `📤 שום דבר לא פורסם כבר ${publishedHoursAgo} שעות`
-        : '📤 שום דבר לא פורסם מאז שהבוט עלה'
+      t.ever
+        ? `📤 שום דבר לא פורסם ל${name} כבר ${t.hoursAgo} שעות`
+        : `📤 מעולם לא פורסם ל${name}`
     );
   }
 
-  if (stagingSize) lines.push(`👉 ${stagingSize} כרטיסים ממתינים לאישור שלך — אשר או דחה`);
+  if (heldCount) lines.push(`👉 ${heldCount} פוסטים מאושרים מוחזקים — /held, ואחרי תיקון /retry`);
+  else if (stagingSize) lines.push(`👉 ${stagingSize} כרטיסים ממתינים לאישור שלך — אשר או דחה`);
   else if (queueSize) lines.push(`👉 ${queueSize} מאושרים בתור אבל לא יוצאים — בדוק את הפרסום`);
   else lines.push('👉 אין כלום ממתין ואין כלום בתור — /status או /run');
 
@@ -189,6 +246,8 @@ export function statusReport({
   lastRunAgoMs,
   postIntervalMinutes,
   targets,
+  heldCount = 0,
+  targetHealth = {},
 }) {
   const breakdown = Object.entries(rejectedByReason || {})
     .sort((a, b) => b[1] - a[1])
@@ -213,6 +272,16 @@ export function statusReport({
       (rejectedToday ? ` (${rejectedToday} נדחו והוחזרו למכסה)` : '') +
       (remainingToday <= 0 ? ' (הושלמה המכסה היומית)' : ` · סבב הבא בעוד ${nextGatherInMin ?? '?'} דק'`),
     `⚙️ דריפ כל ${postIntervalMinutes} דק' · מפרסם ל${targetsHe(targets)}`,
+    // Per destination, because "published today" hides the case that matters:
+    // one destination working and another blocked.
+    ...targets.map((t) => {
+      const h = targetHealth[t] || {};
+      const name = TARGET_HE[t] || t;
+      if (h.degraded) return `   🔴 ${name}: מושבת אחרי ${h.failures} כשלונות · ${h.lastError || ''}`.trim();
+      if (h.lastOkAt) return `   ✅ ${name}: לפני ${humanDuration(Date.now() - h.lastOkAt)}`;
+      return `   ⚪ ${name}: עוד לא פורסם`;
+    }),
+    ...(heldCount ? [`⏸️ ${heldCount} מוחזקים — /held`] : []),
   ].join('\n');
 }
 

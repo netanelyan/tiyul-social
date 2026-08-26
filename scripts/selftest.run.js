@@ -15,6 +15,7 @@ import { renderHtml, LAYOUTS, PHOTO_LAYOUTS, isPhotoLayout } from '../src/render
 import { assertGenericAiPrompt, ImagePolicyError } from '../src/images.js';
 import { approvalMessage, instagramCaption } from '../src/format.js';
 import { quietAlert } from '../src/notify.js';
+import { describeError, InstagramError } from '../src/publish/instagram.js';
 import { publishTargets } from '../src/publish/targets.js';
 import { hyphensOnly } from '../src/draft.js';
 
@@ -380,7 +381,8 @@ group('the quiet alarm — the check that could not fire');
 // The message has to say which half is quiet and what to do about it, or it is
 // just a nudge to go and type /status.
 {
-  const base = { hours: 30, stagedHoursAgo: 31, publishedHoursAgo: 31, everStaged: true, everPublished: true };
+  const dark = [{ target: 'instagram', hoursAgo: 31, ever: true }];
+  const base = { hours: 30, stagedHoursAgo: 31, everStaged: true, darkTargets: dark };
 
   const waiting = quietAlert({ ...base, stagingSize: 2, queueSize: 0 });
   ok('names the approval tap when cards are waiting', waiting.includes('ממתינים לאישור שלך'));
@@ -391,12 +393,124 @@ group('the quiet alarm — the check that could not fire');
   const dry = quietAlert({ ...base, stagingSize: 0, queueSize: 0 });
   ok('names the pipeline when there is nothing anywhere', dry.includes('/run'));
 
-  const never = quietAlert({ ...base, everStaged: false, everPublished: false, stagingSize: 0, queueSize: 0 });
-  ok('says "never" rather than an hour count it cannot know', never.includes('מאז שהבוט עלה'));
+  const held = quietAlert({ ...base, stagingSize: 2, queueSize: 1, heldCount: 4 });
+  ok('held posts outrank everything else as the thing to act on', held.includes('/retry'));
 
-  const onlyPublish = quietAlert({ ...base, stagedHoursAgo: 1, stagingSize: 1, queueSize: 0 });
+  const never = quietAlert({
+    ...base,
+    everStaged: false,
+    darkTargets: [{ target: 'instagram', hoursAgo: 40, ever: false }],
+  });
+  ok('says "never staged" rather than an hour count it cannot know', never.includes('מאז שהבוט עלה'));
+  ok('says "never published there" too', never.includes('מעולם לא פורסם'));
+
+  const onlyPublish = quietAlert({ ...base, stagedHoursAgo: 1, stagingSize: 1 });
   ok('reports only the half that is actually quiet', !onlyPublish.includes('לא עלה מועמד חדש'));
   ok('and still reports the other half', onlyPublish.includes('שום דבר לא פורסם'));
+
+  // The failure this was rewritten for: one destination up, one down.
+  const oneDark = quietAlert({ ...base, stagedHoursAgo: 1, stagingSize: 0, queueSize: 0 });
+  ok('names WHICH destination is dark', oneDark.includes('אינסטגרם'));
+  ok('and does not blame the one that is working', !oneDark.includes('טלגרם'));
+}
+
+/* -------------------------------------------------------------------------- */
+group('a blocked destination must not be silently abandoned');
+
+// The actual outage: Instagram returned "API access blocked" on every post.
+// Telegram succeeded, so `succeeded.length` was non-zero, so the item was
+// recorded as published and never retried — one warning line per post, and the
+// Instagram account dark for days behind it.
+{
+  const TARGET = 'instagram';
+  store.clearDegraded(TARGET);
+
+  // The retry unit is the destination, not the item. This is the arithmetic
+  // from publishNext(): what a card still owes after a pass.
+  const owedAfter = (owed, succeeded) => owed.filter((t) => !succeeded.includes(t));
+  eq(
+    'a card that reached Telegram still owes Instagram',
+    owedAfter(['telegram', 'instagram'], ['telegram']).join(),
+    'instagram'
+  );
+  eq(
+    'and retrying it cannot duplicate Telegram',
+    owedAfter(['telegram', 'instagram'], ['telegram']).includes('telegram'),
+    false
+  );
+  eq('a card that reached both owes nothing', owedAfter(['telegram', 'instagram'], ['telegram', 'instagram']).length, 0);
+
+  // Consecutive failures, reset by any success — a blip must not look like a
+  // block, and a block must not stay invisible.
+  const first = store.noteTargetFailed(TARGET, 'API access blocked [code 200]');
+  eq('one failure is not yet a block', first.degraded, false);
+  eq('and it does not escalate', first.justDegraded, false);
+
+  store.noteTargetFailed(TARGET, 'API access blocked [code 200]');
+  const third = store.noteTargetFailed(TARGET, 'API access blocked [code 200]');
+  eq('three in a row is a block', third.degraded, true);
+  ok('which escalates exactly once', third.justDegraded);
+
+  const fourth = store.noteTargetFailed(TARGET, 'API access blocked [code 200]');
+  ok('and does not escalate again on every later card', !fourth.justDegraded);
+  ok('the error is kept for the report', store.targetHealth(TARGET).lastError.includes('code 200'));
+  ok('the destination is skipped while degraded', store.isDegraded(TARGET));
+
+  store.noteTargetOk(TARGET);
+  eq('a success clears the streak', store.targetHealth(TARGET).failures, 0);
+  eq('and un-degrades it', store.isDegraded(TARGET), false);
+  ok('and stamps when it last worked', store.lastOkAt(TARGET) != null);
+
+  // Telegram working must not vouch for Instagram — the whole reason the old
+  // global "did anything publish" check never fired.
+  ok('health is per destination', store.lastOkAt('telegram') == null);
+}
+
+// An approved post that a destination refused is set aside, not dropped.
+{
+  const cand = { id: 'held-probe', headline: 'כותרת', pillar: 'fact', tags: [], layout: 'numbers' };
+  eq('nothing held to start', store.heldCount(), 0);
+
+  store.hold(cand, ['instagram'], 'API access blocked');
+  eq('the post is kept', store.heldCount(), 1);
+  eq('with the destination it still owes', store.heldItems()[0].targets.join(), 'instagram');
+
+  const released = store.releaseHeld();
+  eq('/retry gets them all back', released.length, 1);
+  eq('and the hold list empties', store.heldCount(), 0);
+  eq('the card itself survives intact', released[0].cand.headline, 'כותרת');
+}
+
+// Reaching the second destination later must not count the post twice.
+{
+  const id = 'partial-publish-probe';
+  store.recordPublished({ id, pillar: 'fact', tags: [], layout: 'numbers', telegram: true, instagram: false });
+  const afterFirst = store.recentPublished().filter((p) => p.id === id);
+  eq('one row after the first destination', afterFirst.length, 1);
+
+  store.recordPublished({ id, pillar: 'fact', tags: [], layout: 'numbers', telegram: false, instagram: true });
+  const afterSecond = store.recentPublished().filter((p) => p.id === id);
+  eq('still one row after the second', afterSecond.length, 1);
+  eq('and it now records both', `${afterSecond[0].telegram}/${afterSecond[0].instagram}`, 'true/true');
+  store.forgetPublished(id);
+}
+
+// "API access blocked" names a symptom and no cause. The code, subcode and step
+// are what tell a dead token from a throttle from an app-level restriction, and
+// they were being dropped before the message ever reached Telegram.
+{
+  const blocked = new InstagramError('API access blocked', { step: 'create_container', code: 200, subcode: 2207051 });
+  const text = describeError(blocked);
+  ok('keeps Graph\'s own message', text.includes('API access blocked'));
+  ok('adds the code', text.includes('code 200'));
+  ok('adds the subcode', text.includes('subcode 2207051'));
+  ok('and says which step failed', text.includes('create_container'));
+
+  const expired = describeError(new InstagramError('Session has expired', { step: 'publish', code: 190 }));
+  ok('a token code carries the fix with it', expired.includes('ig-token'));
+
+  const plain = describeError(new Error('socket hang up'));
+  eq('a non-Graph error is passed through unchanged', plain, 'socket hang up');
 }
 
 /* -------------------------------------------------------------------------- */
