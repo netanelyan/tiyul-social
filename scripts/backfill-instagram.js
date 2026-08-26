@@ -34,6 +34,7 @@ import { hasApiKey } from '../src/draft.js';
 //   node scripts/backfill-instagram.js --check URL [...]  # does this match a gap?
 //   node scripts/backfill-instagram.js ID|URL [...]       # rebuild, do not publish
 //   node scripts/backfill-instagram.js --yes ID|URL [...] # rebuild and publish
+//   --attempts=N   drafting tries per post before giving up (default 3)
 
 const args = process.argv.slice(2);
 const confirmed = args.includes('--yes');
@@ -41,6 +42,9 @@ const checkOnly = args.includes('--check');
 const urls = args.filter((a) => !a.startsWith('--'));
 // A candidate id as the gap report prints it.
 const ID_RE = /^[0-9a-f]{12}$/;
+// Drafting attempts per post. Each one is a paid call, so it is small and
+// visible rather than an invisible loop.
+const attempts = Math.max(1, Number(args.find((a) => a.startsWith('--attempts='))?.split('=')[1] || 3));
 
 /** Posts in the quota window that Telegram carried and Instagram never did. */
 function gap() {
@@ -167,8 +171,13 @@ async function backfill(ref) {
     }
     item = await itemForId(ref);
     if (!item) {
-      console.log(`   ✗ ${ref} is no longer in any source feed — it has rolled off, and`);
-      console.log('     the published log kept no copy of it. This one cannot be rebuilt.');
+      // Not necessarily unrecoverable. An id only resolves while the item is
+      // still in a feed, but a post whose source is an ordinary permalink can
+      // be addressed by that URL for as long as the page exists — the id route
+      // is only *required* for sources where many items share one link.
+      console.log(`   ✗ ${ref} has rolled off every feed, so the id no longer resolves.`);
+      console.log('     If you have its source URL, pass that instead — it works after the');
+      console.log('     feed has moved on. Only feed-identity sources need the id.');
       return false;
     }
     console.log(`   ${item.sourceId}: ${item.title.slice(0, 70)}`);
@@ -187,13 +196,23 @@ async function backfill(ref) {
     item = manualItem(ref);
   }
 
+  // Retried, unlike the pipeline, and for a reason specific to backfilling:
+  // every post here ALREADY passed every gate once and published. So a
+  // rejection now is far more likely to be a bad drafting call than a verdict
+  // on the source — the volcano report came back quoting its own title,
+  // "Klyuchevskoy (Russia)", which is two words and fails the evidence check.
+  // The pipeline is right to treat that as final: it has other stories to
+  // spend the call on. This has exactly one, and it is known good.
   let cand;
-  try {
-    cand = await toCandidate(item);
-  } catch (e) {
-    const reason = e instanceof RejectedError ? e.reason : 'error';
-    console.log(`   ✗ rejected [${reasonHe(reason)}] ${e.detail || e.message}`);
-    return false;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      cand = await toCandidate(item);
+      break;
+    } catch (e) {
+      const reason = e instanceof RejectedError ? e.reason : 'error';
+      console.log(`   ✗ attempt ${attempt}/${attempts} rejected [${reasonHe(reason)}] ${e.detail || e.message}`);
+      if (attempt === attempts) return false;
+    }
   }
 
   console.log(`   ${cand.headline}`);
