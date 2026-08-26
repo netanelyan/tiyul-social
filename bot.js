@@ -107,7 +107,9 @@ function stagingButtons(key) {
 async function stage(cand) {
   const key = store.addStaging(cand);
   await sendForApproval(bot.telegram, staging, cand, approvalMessage(cand), stagingButtons(key));
-  lastStagedAt = Date.now();
+  // Stamped after the send, so the quiet alarm measures cards that actually
+  // arrived — not ones that were built and then failed to reach you.
+  store.noteStagedAt();
   return key;
 }
 
@@ -140,6 +142,12 @@ bot.action(/^no:(.+)$/, async (ctx) => {
   const cand = store.takeStaging(key);
   if (!cand) return ctx.answerCbQuery('כבר טופל');
   store.clearPendingEdit(key);
+  // Give the day's quota slot back. A rejected card is not one of "the best two
+  // or three a day", and charging the day for it meant rejecting the morning's
+  // three ended the day: remaining hit zero, the gather stopped looking, and
+  // nothing could publish until tomorrow. offerCeiling() is what stops the
+  // refund turning into an endless supply — see tick().
+  store.noteRejected(localDay(new Date()));
   await ctx.answerCbQuery('❌ נדחה');
   await markDecided(ctx, '❌ נדחה', cand);
 });
@@ -337,13 +345,16 @@ async function publishNext() {
 
 let running = false;
 let lastRunAt = null;
-let lastStagedAt = null;
 let lastRunDay = null;
 let lastAnnouncedDay = null;
 // Epoch 0, so the first tick after a start gathers immediately rather than
 // waiting out a full interval.
 let lastGatherAt = 0;
 let quietAlertSent = false;
+// The fallback anchor for the quiet alarm. An install that has never staged or
+// published anything has no timestamp to measure from, and "no timestamp" must
+// not read as "not quiet" — that is the state a brand new silence starts in.
+const bootedAt = Date.now();
 
 // Rolling record of what the filters rejected, so /why and the digest can show
 // the actual items rather than a count.
@@ -476,6 +487,7 @@ bot.command('why', (ctx) => {
 bot.command('status', async (ctx) => {
   const dayAgo = Date.now() - 24 * 3_600_000;
   const recent = activity.filter((a) => a.ts >= dayAgo);
+  const day = localDay(new Date());
   const rejectedByReason = {};
   for (const r of rejectLog.filter((r) => r.ts >= dayAgo)) {
     rejectedByReason[r.reason] = (rejectedByReason[r.reason] || 0) + 1;
@@ -492,7 +504,9 @@ bot.command('status', async (ctx) => {
       publishedToday: store.publishedToday(),
       lastRunAgoMs: lastRunAt ? Date.now() - lastRunAt : null,
       postIntervalMinutes: POST_INTERVAL_MINUTES,
-      stagedToday: store.stagedToday(localDay(new Date())),
+      stagedToday: store.stagedToday(day) - store.rejectedToday(day),
+      rejectedToday: store.rejectedToday(day),
+      remainingToday: remainingToday(day),
       dailyTarget: dailyTarget(),
       nextGatherInMin: Math.max(0, Math.round((gatherIntervalMs - (Date.now() - lastGatherAt)) / 60000)),
       targets: publishTargets(),
@@ -543,6 +557,75 @@ bot.command('help', (ctx) =>
 const localDay = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
+/**
+ * Hard ceiling on how many cards a day may put in front of you, whatever you do
+ * with them.
+ *
+ * Rejecting a card gives its quota slot back, which is right — a card you turned
+ * down is not one of "the best two or three a day", and without the refund three
+ * rejections at breakfast guaranteed a day with no posts. But a refund with no
+ * ceiling is its own failure: on a day you reject everything, every gather tops
+ * the queue back up, and twenty cards a day is exactly how a human gate quietly
+ * turns into a rubber stamp.
+ */
+const offerCeiling = () =>
+  Math.max(dailyTarget(), Number(process.env.DAILY_OFFER_CEILING || dailyTarget() * 3));
+
+/**
+ * How many more cards today may stage — the smaller of the two limits above.
+ *
+ * `live` is what is still standing: staged-and-awaiting-you, or approved. Those
+ * are the ones that count as today's two or three.
+ */
+function remainingToday(day) {
+  const offered = store.stagedToday(day);
+  const live = offered - store.rejectedToday(day);
+  return Math.min(dailyTarget() - live, offerCeiling() - offered);
+}
+
+/**
+ * The alarm that should have caught this and did not.
+ *
+ * Two things were wrong. It measured from an in-memory `lastStagedAt` that
+ * started as null and was only ever set by a successful staging, behind an
+ * `if (lastStagedAt)` guard — so a bot that staged nothing, which is the whole
+ * point of the alarm, skipped the check forever, and any restart reset it. And
+ * it watched staging only, so a day where cards arrived and none was ever
+ * approved published nothing and said nothing.
+ */
+function quietCheck() {
+  const hours = Math.max(1, Number(QUIET_ALERT_HOURS));
+  const limitMs = hours * 3_600_000;
+
+  const stagedAt = store.lastStagedAt();
+  const publishedAt = store.lastPublishedAt();
+  const stagedAgo = Date.now() - (stagedAt ?? bootedAt);
+  const publishedAgo = Date.now() - (publishedAt ?? bootedAt);
+
+  if (stagedAgo < limitMs && publishedAgo < limitMs) {
+    quietAlertSent = false;
+    return;
+  }
+  if (quietAlertSent) return;
+  quietAlertSent = true;
+
+  notify
+    .send(
+      bot.telegram,
+      staging,
+      notify.quietAlert({
+        hours,
+        stagedHoursAgo: Math.floor(stagedAgo / 3_600_000),
+        publishedHoursAgo: Math.floor(publishedAgo / 3_600_000),
+        everStaged: stagedAt != null,
+        everPublished: publishedAt != null,
+        stagingSize: store.stagingSize(),
+        queueSize: store.queueSize(),
+      })
+    )
+    .catch(() => {});
+}
+
 function tick() {
   const now = new Date();
   const day = localDay(now);
@@ -555,13 +638,15 @@ function tick() {
   // should arrive when the news does; you approve them when you have time.
   //
   // Three things keep that from becoming a firehose:
-  //   - a daily cap, counted in the store, so "the best two or three a day"
-  //     stays true no matter how many times it looks;
+  //   - a daily cap on what is standing plus a hard ceiling on what is offered
+  //     (see remainingToday), so "the best two or three a day" stays true no
+  //     matter how many times it looks, and rejecting the morning's three does
+  //     not end the day;
   //   - quiet hours, so nothing arrives overnight;
   //   - the gather itself is free, and it costs a drafting call only when
   //     something genuinely new survives ranking.
   const inHours = hour >= Number(RUN_HOUR) && hour < Number(GATHER_UNTIL_HOUR);
-  const remaining = dailyTarget() - store.stagedToday(day);
+  const remaining = remainingToday(day);
   const due = Date.now() - lastGatherAt >= gatherIntervalMs;
 
   if (inHours && remaining > 0 && due) {
@@ -577,15 +662,7 @@ function tick() {
     }).catch((e) => console.error('gather failed:', e.message));
   }
 
-  if (lastStagedAt) {
-    const quiet = (Date.now() - lastStagedAt) / 3_600_000;
-    if (quiet > Math.max(1, Number(QUIET_ALERT_HOURS)) && !quietAlertSent) {
-      quietAlertSent = true;
-      notify.send(bot.telegram, staging, notify.quietAlert(Math.floor(quiet))).catch(() => {});
-    } else if (quiet <= Number(QUIET_ALERT_HOURS)) {
-      quietAlertSent = false;
-    }
-  }
+  quietCheck();
 }
 
 function sendRejectDigest() {

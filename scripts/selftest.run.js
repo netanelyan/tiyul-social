@@ -14,6 +14,7 @@ import { candidateId } from '../src/candidate.js';
 import { renderHtml, LAYOUTS, PHOTO_LAYOUTS, isPhotoLayout } from '../src/render/templates.js';
 import { assertGenericAiPrompt, ImagePolicyError } from '../src/images.js';
 import { approvalMessage, instagramCaption } from '../src/format.js';
+import { quietAlert } from '../src/notify.js';
 import { publishTargets } from '../src/publish/targets.js';
 import { hyphensOnly } from '../src/draft.js';
 
@@ -288,11 +289,42 @@ group('the daily cap survives repeated gathers and restarts');
   eq('and the old day is gone rather than accumulating', store.stagedToday('2026-08-24'), 0);
 }
 
-// The scheduling decision itself, as a pure function of the clock and the count.
+// Rejecting a card gives its slot back.
+//
+// The day this was written: three cards staged in the morning, all three
+// rejected, remaining quota zero, the gather stopped looking, and the day
+// produced no posts at all. A card you turned down is not one of "the best two
+// or three a day".
 {
-  const RUN_HOUR = 8, UNTIL = 22, EVERY_MS = 2 * 3_600_000, TARGET = 3;
-  const wouldGather = (hour, stagedSoFar, sinceLastMs) =>
-    hour >= RUN_HOUR && hour < UNTIL && TARGET - stagedSoFar > 0 && sinceLastMs >= EVERY_MS;
+  const DAY = '2026-08-26';
+  store.noteStaged(DAY);
+  store.noteStaged(DAY);
+  store.noteStaged(DAY);
+  eq('three offered', store.stagedToday(DAY), 3);
+  eq('none rejected yet', store.rejectedToday(DAY), 0);
+
+  store.noteRejected(DAY);
+  eq('a rejection is counted', store.rejectedToday(DAY), 1);
+  eq('but the offer count stands — the ceiling is computed from it', store.stagedToday(DAY), 3);
+
+  store.noteRejected(DAY);
+  store.noteRejected(DAY);
+  eq('all three refunded', store.rejectedToday(DAY), 3);
+
+  // Bounded by what was actually offered, so a card staged yesterday and
+  // rejected today cannot mint a slot today never spent.
+  store.noteRejected(DAY);
+  eq('a fourth rejection cannot refund what was never offered', store.rejectedToday(DAY), 3);
+  eq('and rejections do not leak into another day', store.rejectedToday('2026-08-27'), 0);
+}
+
+// The scheduling decision itself, as a pure function of the clock and the counts.
+{
+  const RUN_HOUR = 8, UNTIL = 22, EVERY_MS = 2 * 3_600_000, TARGET = 3, CEILING = 9;
+  const remaining = (offered, rejected) =>
+    Math.min(TARGET - (offered - rejected), CEILING - offered);
+  const wouldGather = (hour, offered, sinceLastMs, rejected = 0) =>
+    hour >= RUN_HOUR && hour < UNTIL && remaining(offered, rejected) > 0 && sinceLastMs >= EVERY_MS;
 
   ok('gathers at the start of the window', wouldGather(8, 0, Infinity));
   ok('gathers again later in the day — this is the whole point', wouldGather(14, 1, EVERY_MS));
@@ -300,6 +332,71 @@ group('the daily cap survives repeated gathers and restarts');
   ok('does not gather overnight', !wouldGather(23, 0, Infinity));
   ok('stops once the daily cap is met', !wouldGather(14, 3, Infinity));
   ok('does not gather twice inside one interval', !wouldGather(14, 0, EVERY_MS - 1));
+
+  // The bug: rejecting the morning's three used to end the day.
+  ok('a rejected card frees its slot, so the day is not over', wouldGather(14, 3, Infinity, 3));
+  ok('rejecting one of three frees exactly one', remaining(3, 1) === 1);
+
+  // ...but not without limit, or a day of rejections becomes a firehose and the
+  // human gate becomes a rubber stamp.
+  ok('the offer ceiling still ends the day', !wouldGather(14, 9, Infinity, 9));
+  eq('and it binds before the target does', remaining(8, 8), 1);
+}
+
+/* -------------------------------------------------------------------------- */
+group('the quiet alarm — the check that could not fire');
+
+// It watched an in-memory `lastStagedAt` that started null, behind a truthiness
+// guard, and was only ever set by a successful staging. So a bot that staged
+// nothing — the exact thing the alarm exists to report — skipped the check
+// forever, and a restart reset it. It also watched staging only, so a day where
+// cards arrived and none was approved published nothing and said nothing.
+{
+  const HOURS = 30;
+  const LIMIT = HOURS * 3_600_000;
+  const now = 1_800_000_000_000;
+  const bootedAt = now - 40 * 3_600_000;
+  // Exactly the two lines from bot.js quietCheck().
+  const isQuiet = (stagedAt, publishedAt) =>
+    now - (stagedAt ?? bootedAt) >= LIMIT || now - (publishedAt ?? bootedAt) >= LIMIT;
+
+  const fresh = now - 1 * 3_600_000;
+  const stale = now - 31 * 3_600_000;
+
+  ok('a bot that has never staged anything is quiet, not exempt', isQuiet(null, null));
+  ok('nothing staged for 31 hours is quiet', isQuiet(stale, fresh));
+  ok('staged all day but never published is quiet too', isQuiet(fresh, stale));
+  ok('both moving recently is not quiet', !isQuiet(fresh, fresh));
+
+  // The anchors have to survive a restart or 30 hours can never accumulate on a
+  // bot that is restarted daily.
+  store.noteStagedAt();
+  ok('the staging anchor is persisted', store.lastStagedAt() != null);
+  store.recordPublished({ id: 'quiet-alarm-probe', pillar: 'fact', tags: [], layout: 'numbers', instagram: true });
+  ok('the publish anchor is persisted', store.lastPublishedAt() != null);
+  store.forgetPublished('quiet-alarm-probe');
+}
+
+// The message has to say which half is quiet and what to do about it, or it is
+// just a nudge to go and type /status.
+{
+  const base = { hours: 30, stagedHoursAgo: 31, publishedHoursAgo: 31, everStaged: true, everPublished: true };
+
+  const waiting = quietAlert({ ...base, stagingSize: 2, queueSize: 0 });
+  ok('names the approval tap when cards are waiting', waiting.includes('ממתינים לאישור שלך'));
+
+  const stuck = quietAlert({ ...base, stagingSize: 0, queueSize: 3 });
+  ok('names publishing when the queue is full but nothing goes out', stuck.includes('בדוק את הפרסום'));
+
+  const dry = quietAlert({ ...base, stagingSize: 0, queueSize: 0 });
+  ok('names the pipeline when there is nothing anywhere', dry.includes('/run'));
+
+  const never = quietAlert({ ...base, everStaged: false, everPublished: false, stagingSize: 0, queueSize: 0 });
+  ok('says "never" rather than an hour count it cannot know', never.includes('מאז שהבוט עלה'));
+
+  const onlyPublish = quietAlert({ ...base, stagedHoursAgo: 1, stagingSize: 1, queueSize: 0 });
+  ok('reports only the half that is actually quiet', !onlyPublish.includes('לא עלה מועמד חדש'));
+  ok('and still reports the other half', onlyPublish.includes('שום דבר לא פורסם'));
 }
 
 /* -------------------------------------------------------------------------- */

@@ -42,8 +42,14 @@ const empty = {
   // guarding the case that actually happened: an item published to Instagram,
   // then staged again by the next /redo as though it were new.
   publishedIds: {},
-  // { date: 'YYYY-MM-DD', count: n } — the daily staging cap, survives restart.
+  // { date: 'YYYY-MM-DD', count: n, rejected: n } — the daily cap, survives restart.
   stagedDay: null,
+  // When a card last reached the approval chat, and when something last went
+  // out. Both are what the quiet alarm measures from, and both have to outlive
+  // the process: held only in memory, a bot that restarts once a day can never
+  // accumulate enough silence to notice it is silent.
+  lastStagedAt: null,
+  lastPublishedAt: null,
   igToken: null,
 };
 
@@ -108,6 +114,14 @@ function load() {
       s.publishedIds[p.id] = p.ts || Date.now();
       migrated = true;
     }
+  }
+
+  // Same idea for the quiet alarm's anchor: the published log already knows when
+  // the last post went out, so a store written before this field existed starts
+  // with the real answer rather than looking like it has never published.
+  if (!s.lastPublishedAt && s.published.length) {
+    s.lastPublishedAt = Math.max(...s.published.map((p) => p.ts || 0)) || null;
+    migrated = Boolean(s.lastPublishedAt) || migrated;
   }
 
   const changed = pruneSeen(s) || prunePublished(s) || prunePublishedIds(s) || migrated;
@@ -196,14 +210,70 @@ export const publishedCount = () => Object.keys(state.publishedIds).length;
 // Persisted, so a restart cannot reset the count and hand you a second full
 // day's worth. `day` is the local date string the caller computes; the store
 // does not decide what "today" means.
+//
+// Two numbers, not one. `count` is how many cards were put in front of you
+// today; `rejected` is how many of those you turned down. They answer different
+// questions and the caller needs both: a card you rejected is not one of "the
+// best two or three a day" and should not spend the day's quota, but it was
+// still something the bot asked you to look at, and the ceiling on *that* is
+// what keeps the approval queue from becoming a rubber stamp.
+//
+// Counting only `count` meant three rejections at breakfast ended the day: the
+// remaining quota hit zero, the gather stopped looking, and nothing could
+// possibly publish until tomorrow.
 export function stagedToday(day) {
   return state.stagedDay?.date === day ? state.stagedDay.count : 0;
 }
+export function rejectedToday(day) {
+  return state.stagedDay?.date === day ? state.stagedDay.rejected || 0 : 0;
+}
+
+function dayRecord(day) {
+  if (state.stagedDay?.date !== day) state.stagedDay = { date: day, count: 0, rejected: 0 };
+  // Stores written before rejections were counted.
+  if (typeof state.stagedDay.rejected !== 'number') state.stagedDay.rejected = 0;
+  return state.stagedDay;
+}
+
 export function noteStaged(day) {
-  if (state.stagedDay?.date !== day) state.stagedDay = { date: day, count: 0 };
-  state.stagedDay.count++;
+  const rec = dayRecord(day);
+  rec.count++;
   save();
-  return state.stagedDay.count;
+  return rec.count;
+}
+
+/**
+ * Give back the quota slot a rejected card was holding.
+ *
+ * Bounded by what was actually offered that day, so rejecting a card that was
+ * staged yesterday cannot mint today a slot it never spent.
+ */
+export function noteRejected(day) {
+  const rec = dayRecord(day);
+  if (rec.rejected >= rec.count) return rec.rejected;
+  rec.rejected++;
+  save();
+  return rec.rejected;
+}
+
+// --- the quiet alarm's anchors ----------------------------------------------
+// Stamped rather than derived. `published` is pruned to the quota window and
+// `staging` empties on every decision, so neither can answer "when did this bot
+// last actually do something" once enough time has passed — which is precisely
+// the moment the question is worth asking.
+export const lastStagedAt = () => state.lastStagedAt || null;
+export const lastPublishedAt = () => state.lastPublishedAt || null;
+
+/**
+ * A card reached the approval chat.
+ *
+ * Separate from noteStaged() because the two have different scopes: only the
+ * pipeline's cards count against the daily quota, but a manual submission is
+ * still a card, and a day full of them is not a quiet day.
+ */
+export function noteStagedAt() {
+  state.lastStagedAt = Date.now();
+  save();
 }
 
 // --- staging (awaiting your approve/reject tap) ------------------------------
@@ -273,6 +343,7 @@ export const peekQueue = () => state.queue.slice(0, 10);
 // --- published log (drives the pillar quotas) -------------------------------
 export function recordPublished({ id, pillar, tags = [], layout, telegram, instagram }) {
   if (id) state.publishedIds[id] = Date.now();
+  state.lastPublishedAt = Date.now();
   state.published.push({
     ts: Date.now(),
     id,

@@ -117,8 +117,49 @@ export function publishGaveUp(headline, failed, attempts) {
   return lines.join('\n');
 }
 
-export function quietAlert(hours) {
-  return `⚠️ שקט: לא עלה שום מועמד חדש לאישור כבר ${hours} שעות`;
+/**
+ * The alarm for "a day has gone by and nothing came out".
+ *
+ * It watches two streams, not one. The old version watched only staging, which
+ * left the failure people actually notice — no posts — with no alarm at all:
+ * cards can arrive on schedule every day and still publish nothing, because
+ * nothing publishes without an approval tap.
+ *
+ * They are reported separately because they have different fixes, and the last
+ * line says which one this is. A quiet stream with cards waiting is a tap that
+ * never came; a quiet stream with an empty queue is the pipeline going dry.
+ */
+export function quietAlert({
+  hours,
+  stagedHoursAgo,
+  publishedHoursAgo,
+  everStaged,
+  everPublished,
+  stagingSize = 0,
+  queueSize = 0,
+}) {
+  const lines = [`⚠️ שקט כבר יותר מ-${hours} שעות`];
+
+  if (stagedHoursAgo >= hours) {
+    lines.push(
+      everStaged
+        ? `🗂️ לא עלה מועמד חדש לאישור כבר ${stagedHoursAgo} שעות`
+        : '🗂️ שום מועמד לא עלה לאישור מאז שהבוט עלה'
+    );
+  }
+  if (publishedHoursAgo >= hours) {
+    lines.push(
+      everPublished
+        ? `📤 שום דבר לא פורסם כבר ${publishedHoursAgo} שעות`
+        : '📤 שום דבר לא פורסם מאז שהבוט עלה'
+    );
+  }
+
+  if (stagingSize) lines.push(`👉 ${stagingSize} כרטיסים ממתינים לאישור שלך — אשר או דחה`);
+  else if (queueSize) lines.push(`👉 ${queueSize} מאושרים בתור אבל לא יוצאים — בדוק את הפרסום`);
+  else lines.push('👉 אין כלום ממתין ואין כלום בתור — /status או /run');
+
+  return lines.join('\n');
 }
 
 // "3 שעות ו-14 דק'" / "14 דק'" — enough precision for a status readout.
@@ -133,6 +174,8 @@ export function humanDuration(ms) {
 /** /status — a fixed last-24h window, so it answers "why nothing today". */
 export function statusReport({
   stagedToday,
+  rejectedToday = 0,
+  remainingToday,
   dailyTarget: target,
   nextGatherInMin,
   sourceCount,
@@ -167,7 +210,8 @@ export function statusReport({
     // The two questions "why is it quiet" actually splits into: have we already
     // filled today's quota, and when does it next look? Both, in one line.
     `🎯 עלו היום: ${stagedToday ?? 0}/${target ?? '?'}` +
-      (stagedToday >= target ? ' (הושלמה המכסה היומית)' : ` · סבב הבא בעוד ${nextGatherInMin ?? '?'} דק'`),
+      (rejectedToday ? ` (${rejectedToday} נדחו והוחזרו למכסה)` : '') +
+      (remainingToday <= 0 ? ' (הושלמה המכסה היומית)' : ` · סבב הבא בעוד ${nextGatherInMin ?? '?'} דק'`),
     `⚙️ דריפ כל ${postIntervalMinutes} דק' · מפרסם ל${targetsHe(targets)}`,
   ].join('\n');
 }
