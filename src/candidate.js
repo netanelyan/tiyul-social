@@ -42,6 +42,26 @@ export function candidateId(item) {
 }
 
 /**
+ * Why this draft is not a trip — or null when it is one.
+ *
+ * Split out and exported so the rule is testable on its own, without a drafting
+ * call standing between the test and the thing being tested.
+ *
+ * The three checks are the three ways the answer comes back no: nowhere to
+ * stand, no way to get there, and — the one that matters most, because it is
+ * the one a striking photograph talks you out of — somewhere you are not
+ * currently allowed to be.
+ */
+export function tripGap(trip) {
+  const where = String(trip?.where || '').trim();
+  const how = String(trip?.how || '').trim();
+  if (!where) return 'no place a reader could go';
+  if (!how) return `no way to get to or use "${where}"`;
+  if (!trip?.open) return `"${where}" is not open to a visitor now`;
+  return null;
+}
+
+/**
  * Build a candidate, or throw RejectedError with a reason you can read.
  *
  * Nothing here is silent: every throw carries a reason code that src/notify.js
@@ -85,6 +105,20 @@ async function build(item, { render = true } = {}) {
 
   async function afterDraft() {
   if (!d.usable) throw new RejectedError('not_usable', d.rejectReason || 'the model declined this source');
+
+  // 2b. THE HARD RULE: a post that cannot be connected to a trip someone could
+  //     actually take never reaches the approval queue.
+  //
+  //     The drafting prompt asks the same two questions, and a prompt is where
+  //     this belongs first — but a prompt is a request. This is the guarantee,
+  //     and it is here rather than in verify.js because it is a rule about what
+  //     we choose to publish, not about whether the source says what we claim.
+  //
+  //     Deliberately not retryable in pipeline.js: unlike a style slip, a second
+  //     draft of the same page reaches the same verdict, and paying for that
+  //     twice is how a filter turns into a tax.
+  const gap = tripGap(d.trip);
+  if (gap) throw new RejectedError('no_trip', gap);
 
   // 3. Every quote must literally appear in the page we fetched, and no fares.
   verifyEvidence(d, sourceText);

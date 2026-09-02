@@ -1,4 +1,4 @@
-import { baseCss, escapeHtml as e, palette, pillarAccent, CARD_W, CARD_H } from './theme.js';
+import { baseCss, escapeHtml as e, palette, pillarAccent, siteMark, CARD_W, CARD_H } from './theme.js';
 
 // The layout set.
 //
@@ -67,7 +67,10 @@ const placeLine = (d) => {
   return [...new Set(parts)].join(' · ');
 };
 
-const brandMark = `<div class="brand">טיול<span>+</span></div>`;
+// The wordmark carries the address under it. Evaluated per render rather than
+// frozen at import, so a change to SITE_URL takes effect without a restart.
+const brandMark = () =>
+  `<div class="brand"><div class="word">טיול<span>+</span></div><div class="site">${e(siteMark())}</div></div>`;
 
 /* -------------------------------------------------------------------------- */
 /* Text-led shell                                                             */
@@ -83,7 +86,7 @@ function shell({ accent, kicker, body, extraCss = '' }) {
   return `<style>${baseCss()}${extraCss}</style>
 <div class="card" style="--accent:${accent}">
   <div class="head">
-    ${brandMark}
+    ${brandMark()}
     <div class="kicker">${e(kicker || '')}</div>
   </div>
   <div class="body">${body}</div>
@@ -129,7 +132,7 @@ function photoFullCard(d, accent, image) {
     <img class="bg" src="${e(image.src)}" alt="">
     <div class="scrim-top"></div><div class="scrim-bottom"></div>
     <div class="layer">
-      <div class="head">${brandMark}<div class="kicker">${e(placeLine(d))}</div></div>
+      <div class="head">${brandMark()}<div class="kicker">${e(placeLine(d))}</div></div>
       <div class="pf-text">
         <div class="rule"></div>
         <div class="headline ${headlineSize(d.headline, { max: 'md' })}">${e(d.headline)}</div>
@@ -151,7 +154,10 @@ function photoBandCard(d, accent, image) {
       background: rgba(16,32,31,0.82); backdrop-filter: blur(2px);
       padding: 14px 26px; border-radius: 999px;
     }
-    .pb-chip .brand { font-size: 32px; }
+    /* The chip is a pill, so the stacked brand is scaled down rather than
+       allowed to set the chip's height from the header's 44px wordmark. */
+    .pb-chip .brand .word { font-size: 32px; }
+    .pb-chip .brand .site { font-size: 15px; margin-top: 5px; letter-spacing: 0.5px; }
     .pb-chip .kicker { font-size: 22px; }
     .pb-body {
       flex: 1; min-height: 0; display: flex; flex-direction: column;
@@ -163,7 +169,7 @@ function photoBandCard(d, accent, image) {
     <div class="pb-img">
       <img class="bg" src="${e(image.src)}" alt="">
       <div class="scrim-top"></div>
-      <div class="pb-chip">${brandMark}<div class="kicker">${e(placeLine(d))}</div></div>
+      <div class="pb-chip">${brandMark()}<div class="kicker">${e(placeLine(d))}</div></div>
     </div>
     <div class="pb-body">
       <div class="headline ${headlineSize(d.headline, { max: 'md' })}">${e(d.headline)}</div>
@@ -184,7 +190,7 @@ function photoFrameCard(d, accent, image) {
     .head { border-bottom: none; padding-bottom: 0; }
   </style>
   <div class="card photo-card" style="--accent:${accent}">
-    <div class="head">${brandMark}<div class="kicker">${e(placeLine(d))}</div></div>
+    <div class="head">${brandMark()}<div class="kicker">${e(placeLine(d))}</div></div>
     <div class="pfr-img"><img class="bg" src="${e(image.src)}" alt=""></div>
     <div class="pfr-body">
       <div class="headline ${headlineSize(d.headline, { max: 'md' })}">${e(d.headline)}</div>

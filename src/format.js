@@ -95,6 +95,15 @@ export function approvalMessage(cand) {
     lines.push('');
   }
 
+  // The trip this post connects to. Nothing reaches this message without one —
+  // src/candidate.js refuses to stage a candidate that cannot answer it — so
+  // this line is not a check for you to perform, it is the answer that got the
+  // post here, shown so you can disagree with it before it publishes.
+  if (cand.trip?.where) {
+    lines.push(`🧭 הטיול: ${cand.trip.where} · ${cand.trip.how}`);
+    if (cand.trip.want) lines.push(`   למה שירצו: ${cand.trip.want}`);
+  }
+
   // Which of the three permitted origins this image came from — or that there
   // is no image at all, which for a text-led card is the expected answer.
   lines.push(

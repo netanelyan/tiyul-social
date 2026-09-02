@@ -8,8 +8,8 @@ import { candidateId } from './candidate.js';
 // is a drafting call per item. Scoring after drafting would mean paying for
 // twenty drafts to publish three. So this is a cheap sort whose only job is to
 // put the two or three most promising items at the front of the queue; the real
-// quality gate is the drafting step's own "usable: false" and the verification
-// that follows it.
+// quality gate is the drafting step's own "usable: false", the trip rule in
+// src/candidate.js, and the verification that follows both.
 
 const AUTHORITY_WEIGHT = {
   government: 1.0,
@@ -35,6 +35,28 @@ const SPECIFIC = /\d{2,}|\d+\s*(?:%|km|℃|°C|€|\$|£)|\b(?:20\d\d|from \d|un
 // travellers can still surface, and the drafting step gets the final say.
 const TRADE_NOISE =
   /商談会|募集|フォーラム|取材|セミナー|説明会|出展|受賞|\b(?:trade (?:show|fair|mission)|b2b|webinar|roadshow|press (?:conference|briefing)|call for (?:applications|entries|papers)|now open for registration|appointment of|has been awarded)\b/i;
+
+// The two conditions, as far as a title and a summary can carry them.
+//
+// The real gate is the drafting step — it has read the page and it answers both
+// questions properly. But the drafting step costs money and runs at most a
+// dozen times a day, so if the ranking still puts eruptions and calving glaciers
+// at the front, the whole budget is spent producing rejections and the good item
+// eight places down never gets drafted at all. That is what happened: half the
+// enabled registry is a natural-phenomena wire, and it won on recency every day.
+//
+// So the same question is asked cheaply here, in the only vocabulary a headline
+// offers. Both are nudges rather than filters: a closure at a volcano is a
+// perfectly good "conditions" post, and it will match both lists and net out
+// roughly neutral, which is the correct treatment for an item that could go
+// either way.
+const SPECTACLE =
+  /\b(?:erupt\w*|eruption|lava|ash (?:plume|cloud)|volcan\w*|earthquake|magnitude \d|tsunami|waterspout|tornado|hurricane|cyclone|typhoon|wildfire|flood(?:s|ing|ed)?|landslide|mudslide|iceberg|calving|glacier|avalanche|sinkhole|shipwreck|meteor|aurora|solar flare|penguin\w*|whale\w*|migration of)\b/i;
+
+// The other half: vocabulary that only appears when something is actually
+// reachable, bookable, open, shut, or about to be.
+const ACTIONABLE =
+  /\b(?:open(?:s|ed|ing)? (?:to (?:the )?(?:public|visitors)|its doors)|reopen\w*|closed? (?:for|until|to)|closure|shut(?:s|ting)? |visitor cent\w+|opening hours|ticket(?:s|ing)?|book(?:ing|able)|reservation|timed entry|permit|entry (?:requirement|fee|rule)|visa|border|timetable|new (?:route|service|line|flight)|direct flight|non-stop|season|peak|off-peak|shoulder|crowd\w*|queue|free (?:entry|admission)|discount|city pass|day pass|itinerar\w+|walking route|neighbo?urhood|district|quarter|market|museum|opens? in \w+)\b/i;
 
 const DAY_MS = 86_400_000;
 
@@ -63,6 +85,13 @@ export function scoreItem(item, { deficits = pillarDeficits(), now = Date.now() 
   const specific = SPECIFIC.test(text) ? 0.2 : 0;
   const trade = TRADE_NOISE.test(text) ? -0.5 : 0;
 
+  // Sized against the rest of the formula deliberately. Authority contributes at
+  // most 0.35 and recency at most 0.3, so -0.6 is enough that a fresh eruption
+  // from a government source no longer outranks a mundane item about a museum
+  // reopening — which is the exact swap this whole change is for.
+  const spectacle = SPECTACLE.test(text) ? -0.6 : 0;
+  const actionable = ACTIONABLE.test(text) ? 0.3 : 0;
+
   // A thin *item* rarely drafts well — but a thin title alone doesn't mean
   // that. FCDO publishes one entry per country, titled just "Norway", with the
   // actual change described in the summary; penalising on title length alone
@@ -81,7 +110,18 @@ export function scoreItem(item, { deficits = pillarDeficits(), now = Date.now() 
   // meaning more substance, so this saturates rather than growing.
   const body = Math.min(0.15, summaryLen / 4000);
 
-  return authority * 0.35 + recency * 0.3 + deficit * 0.8 + specific + body + thin + trade + evergreen;
+  return (
+    authority * 0.35 +
+    recency * 0.3 +
+    deficit * 0.8 +
+    specific +
+    body +
+    thin +
+    trade +
+    evergreen +
+    spectacle +
+    actionable
+  );
 }
 
 /**

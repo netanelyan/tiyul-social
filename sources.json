@@ -126,7 +126,7 @@
       "authority": "government",
       "pillars": [
         "entry",
-        "timing"
+        "conditions"
       ],
       "lang": "en",
       "enabled": true,
@@ -139,9 +139,9 @@
       "url": "https://whc.unesco.org/en/news/rss",
       "authority": "intergovernmental",
       "pillars": [
-        "place",
-        "fact",
-        "hidden"
+        "inCity",
+        "day",
+        "conditions"
       ],
       "lang": "en",
       "enabled": true,
@@ -154,7 +154,7 @@
       "url": "https://www.jnto.go.jp/news/rss.xml",
       "authority": "official-dmo",
       "pillars": [
-        "place",
+        "inCity",
         "tip",
         "timing"
       ],
@@ -169,9 +169,8 @@
       "url": "https://earthobservatory.nasa.gov/feeds/image-of-the-day.rss",
       "authority": "government",
       "pillars": [
-        "fact",
-        "place",
-        "hidden"
+        "conditions",
+        "timing"
       ],
       "lang": "en",
       "enabled": true,
@@ -184,8 +183,7 @@
       "url": "https://volcano.si.edu/news/WeeklyVolcanoRSS.xml",
       "authority": "research-institution",
       "pillars": [
-        "timing",
-        "fact",
+        "conditions",
         "entry"
       ],
       "lang": "en",

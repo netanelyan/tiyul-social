@@ -23,13 +23,13 @@ export const palette = {
 // Per-pillar accent, so a run of cards reads as one system while still being
 // distinguishable at a glance in the channel.
 export const pillarAccent = {
-  place: palette.amber,
-  fact: palette.amber,
-  hidden: palette.sage,
-  tip: palette.sage,
-  entry: palette.clay,
+  inCity: palette.amber,
+  day: palette.amber,
   route: palette.amber,
+  tip: palette.sage,
   timing: palette.sage,
+  conditions: palette.clay,
+  entry: palette.clay,
 };
 
 // The font is bundled and inlined as a data URI rather than linked, for one
@@ -43,6 +43,23 @@ export function heeboDataUri() {
   const buf = readFileSync(new URL('../../assets/fonts/Heebo.ttf', import.meta.url));
   fontDataUri = `data:font/ttf;base64,${buf.toString('base64')}`;
   return fontDataUri;
+}
+
+/**
+ * The site, as it should read on the card.
+ *
+ * A screenshot travels further than the post it came from and arrives with no
+ * caption attached, so the card has to carry the address on its own. Derived
+ * from SITE_URL rather than written out again, and stripped back to the bare
+ * host — the protocol and the www are noise at 20px.
+ */
+export function siteMark() {
+  const raw = process.env.SITE_URL || 'https://tiyulplus.com';
+  try {
+    return new URL(raw).hostname.replace(/^www\./, '');
+  } catch {
+    return String(raw).replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '');
+  }
 }
 
 export const escapeHtml = (s) =>
@@ -112,13 +129,33 @@ body {
   padding-bottom: 30px;
   border-bottom: 2px solid var(--accent);
 }
+/* The wordmark and the address, stacked. In an RTL column flex-start is the
+   right edge, which is where the header already puts the brand. */
 .brand {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1;
+  color: ${palette.paper};
+}
+.brand .word {
   font-size: 44px;
   font-weight: 900;
   letter-spacing: -0.5px;
-  color: ${palette.paper};
 }
-.brand span { color: var(--accent); }
+.brand .word span { color: var(--accent); }
+/* Quiet on purpose: legible in a screenshot, invisible while you're reading the
+   headline. Latin inside an RTL card, so it is isolated like every other latin
+   run — without this the dot in the hostname can jump to the wrong end. */
+.brand .site {
+  margin-top: 9px;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0.7px;
+  color: rgba(242, 236, 224, 0.45);
+  direction: ltr;
+  unicode-bidi: isolate;
+}
 .kicker {
   font-size: 29px;
   font-weight: 700;

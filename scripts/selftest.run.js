@@ -10,7 +10,7 @@ import { monthlyNormals, verdictFor } from '../src/sources/climate.js';
 import { quotaBlock } from '../src/pillars.js';
 import { scoreItem, rank } from '../src/score.js';
 import * as store from '../src/store.js';
-import { candidateId } from '../src/candidate.js';
+import { candidateId, tripGap } from '../src/candidate.js';
 import { renderHtml, LAYOUTS, PHOTO_LAYOUTS, isPhotoLayout } from '../src/render/templates.js';
 import { assertGenericAiPrompt, ImagePolicyError } from '../src/images.js';
 import { approvalMessage, instagramCaption } from '../src/format.js';
@@ -230,12 +230,12 @@ eq('no data is "unknown"', verdictFor({ meanMax: null }), 'unknown');
 group('topic quotas — kosher is a thread, not the theme');
 
 const hist = (n, tagged) =>
-  Array.from({ length: n }, (_, i) => ({ pillar: 'place', tags: i < tagged ? ['kosher'] : [] }));
+  Array.from({ length: n }, (_, i) => ({ pillar: 'inCity', tags: i < tagged ? ['kosher'] : [] }));
 
-ok('below the sample floor nothing is capped', quotaBlock({ pillar: 'place', tags: ['kosher'] }, hist(4, 4)) === null);
-ok('kosher blocked once it is over its share', quotaBlock({ pillar: 'fact', tags: ['kosher'] }, hist(20, 5)) !== null);
-ok('kosher allowed while under its share', quotaBlock({ pillar: 'fact', tags: ['kosher'] }, hist(20, 1)) === null);
-ok('a single pillar cannot take over', quotaBlock({ pillar: 'place', tags: [] }, hist(20, 0)) !== null);
+ok('below the sample floor nothing is capped', quotaBlock({ pillar: 'inCity', tags: ['kosher'] }, hist(4, 4)) === null);
+ok('kosher blocked once it is over its share', quotaBlock({ pillar: 'timing', tags: ['kosher'] }, hist(20, 5)) !== null);
+ok('kosher allowed while under its share', quotaBlock({ pillar: 'timing', tags: ['kosher'] }, hist(20, 1)) === null);
+ok('a single pillar cannot take over', quotaBlock({ pillar: 'inCity', tags: [] }, hist(20, 0)) !== null);
 ok('an untagged post in a fresh pillar passes', quotaBlock({ pillar: 'route', tags: [] }, hist(20, 0)) === null);
 
 /* -------------------------------------------------------------------------- */
@@ -246,12 +246,17 @@ const fcdo = { ...base, authority: 'government', title: 'Norway', summary: 'x'.r
 const trade = { ...base, authority: 'official-dmo', title: '「第29回JNTOインバウンド旅行振興フォーラム」取材のご案内', summary: 'y'.repeat(400) };
 
 ok('a short title with a real summary is not penalised as thin', scoreItem(fcdo) > scoreItem({ ...fcdo, summary: '' }));
-// An eruption at Etna is news; ten-year rainfall normals are not. The climate
-// source stamped itself with the current time, took maximum recency every day,
-// and led the queue with "4 rain days in Bangkok".
+// Something that happened outranks ten-year rainfall normals. The climate source
+// stamped itself with the current time, took maximum recency every day, and led
+// the queue with "4 rain days in Bangkok".
+//
+// This used to be asserted with an eruption at Etna on the winning side, which
+// is now precisely the wrong example: the spectacle penalty exists to stop that
+// item leading the queue. The evergreen rule is orthogonal to the trip rule, so
+// it is tested with an item that is news AND somewhere a reader could go.
 ok(
   'a real event outranks an evergreen dataset item',
-  scoreItem({ title: 'Etna (Italy) - New Eruptive Activity', summary: 'x'.repeat(300), authority: 'government', publishedAt: new Date().toISOString(), pillarHints: ['fact'] }) >
+  scoreItem({ title: 'Louvre reopens the Denon wing after two years', summary: 'x'.repeat(300), authority: 'government', publishedAt: new Date().toISOString(), pillarHints: ['inCity'] }) >
     scoreItem({ title: 'Bangkok — monthly climate normals 2016–2025 (ERA5)', summary: 'x'.repeat(300), authority: 'dataset', publishedAt: null, evergreen: true, pillarHints: ['timing'] })
 );
 ok(
@@ -259,6 +264,45 @@ ok(
   scoreItem({ title: 'T', summary: 'x'.repeat(300), authority: 'dataset', evergreen: false }) >
     scoreItem({ title: 'T', summary: 'x'.repeat(300), authority: 'dataset', evergreen: true })
 );
+
+/* -------------------------------------------------------------------------- */
+group('the trip rule — could they go, and does it make them want to');
+
+// The six posts that made this a natural-phenomena account rather than a travel
+// one. Each is checked against a mundane item from an equally authoritative
+// source, published at the same moment, so the only thing that can separate them
+// is the new question.
+const sameDay = { sourceId: 's', authority: 'government', publishedAt: new Date().toISOString(), pillarHints: [], summary: 'x'.repeat(300) };
+const ordinary = scoreItem({ ...sameDay, title: 'Alhambra opens timed-entry tickets for the Nasrid Palaces' });
+
+for (const title of [
+  'Waterspout observed off the coast of Puerto Rico',
+  'Lava flows continue at Kilauea summit',
+  'Icebergs calving into the strait off east Greenland',
+  'Eruption at Fuego sends ash plume over Guatemala',
+  'Emperor penguin colony surveyed from orbit, Antarctica',
+]) {
+  ok(`spectacle loses to an ordinary reachable item: ${title.slice(0, 34)}`, scoreItem({ ...sameDay, title }) < ordinary);
+}
+
+// The item that is both — a volcano the reader is being told they cannot visit.
+// It matches both lists and lands between the two, which is the correct outcome
+// for something that genuinely could go either way: it stays in the running and
+// the drafting step, which has read the page, gets to make the actual call.
+const both = scoreItem({ ...sameDay, title: 'Etna: summit craters closed to visitors until further notice' });
+ok('a closure at a volcano is not treated as pure spectacle', both > scoreItem({ ...sameDay, title: 'Lava flows continue at Kilauea summit' }));
+
+// The hard rule itself. Three ways the answer comes back no, and the case the
+// brief was explicit about: a volcano you can stand near is a post, the same
+// volcano closed to visitors is not.
+ok('no place to stand is not a trip', tripGap({ where: '', how: 'fly to X', open: true, want: 'w' }) !== null);
+ok('no way to get there is not a trip', tripGap({ where: 'איסלנד', how: '', open: true, want: 'w' }) !== null);
+ok('closed to visitors is not a trip', tripGap({ where: 'הר הגעש פואגו', how: 'tours from Antigua', open: false, want: 'w' }) !== null);
+ok(
+  'a volcano someone can stand near is a trip',
+  tripGap({ where: 'הר הגעש פואגו', how: 'overnight hike from Antigua, 2 hours from Guatemala City', open: true, want: 'you watch it erupt from the next ridge' }) === null
+);
+ok('a missing trip object is not a trip', tripGap(undefined) !== null);
 
 ok('B2B trade notices rank below traveller content',scoreItem(trade) < scoreItem({ ...trade, title: '箸作り体験を渋谷で開始' }));
 

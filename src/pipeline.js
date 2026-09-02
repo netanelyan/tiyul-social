@@ -36,8 +36,21 @@ export const draftBudget = (target = dailyTarget()) =>
  *
  * Returns a summary the caller can report; it never throws for a single bad
  * item, only for a failure that makes the whole run meaningless.
+ *
+ * `markSeen: false` is for looking without consuming. The normal run claims each
+ * id before the slow work so two runs can't race, but that also means a preview
+ * burns the very candidates it was showing you — you would inspect five posts
+ * and then never receive them. With this off nothing is written to the store, so
+ * a preview and the real run that follows it see the same day.
  */
-export async function runOnce({ onStaged, onRejected, target = dailyTarget(), now = new Date() } = {}) {
+export async function runOnce({
+  onStaged,
+  onRejected,
+  target = dailyTarget(),
+  now = new Date(),
+  markSeen = true,
+  rankOptions = null,
+} = {}) {
   const summary = {
     gathered: 0,
     ranked: 0,
@@ -56,7 +69,14 @@ export async function runOnce({ onStaged, onRejected, target = dailyTarget(), no
   summary.sourceErrors = errors;
   summary.perSource = perSource;
 
-  const candidates = rank(items, { now: now.getTime() });
+  // The daily run wants a narrow window — two items per source, twelve in all —
+  // because its job is to find three good posts, not to survey the day. A
+  // preview wants the opposite: the whole point is to see far enough down the
+  // list to judge the direction, and with the trip rule rejecting most of a
+  // natural-phenomena wire, twelve ranked items no longer reliably contain five
+  // survivors. So the window is a parameter rather than a constant, and the
+  // daily run's default is unchanged.
+  const candidates = rank(items, { now: now.getTime(), ...(rankOptions || {}) });
   summary.ranked = candidates.length;
 
   // Counted from the usage recorder rather than from loop iterations, because
@@ -91,7 +111,7 @@ export async function runOnce({ onStaged, onRejected, target = dailyTarget(), no
     // story minutes apart would otherwise both survive the pre-rank dedupe
     // check and both get drafted — BrickDeal's lesson, in a new pipeline.
     if (store.hasSeen(id)) continue;
-    store.markSeen(id);
+    if (markSeen) store.markSeen(id);
 
     try {
       const cand = await toCandidate(item);
@@ -105,7 +125,7 @@ export async function runOnce({ onStaged, onRejected, target = dailyTarget(), no
       // unreachable may well be up tomorrow; a source that is not on the
       // allowlist will never be, and a quota breach should be re-evaluated
       // against a different published window rather than blocked forever.
-      if (RETRYABLE.has(reason)) store.forgetSeen(id);
+      if (markSeen && RETRYABLE.has(reason)) store.forgetSeen(id);
 
       summary.rejected++;
       summary.rejectedByReason[reason] = (summary.rejectedByReason[reason] || 0) + 1;
@@ -117,9 +137,12 @@ export async function runOnce({ onStaged, onRejected, target = dailyTarget(), no
   return summary;
 }
 
-// `not_primary_source`, `redirected_off_allowlist` and `flight_price_out_of_scope`
-// are deliberately absent: re-running them tomorrow re-reaches the same verdict,
-// and forgetting them just means paying for the same rejection again.
+// `not_primary_source`, `redirected_off_allowlist`, `flight_price_out_of_scope`,
+// `not_usable` and `no_trip` are deliberately absent: re-running them tomorrow
+// re-reaches the same verdict, and forgetting them just means paying for the
+// same rejection again. The last two are the new selection rule, and they are
+// the ones this matters most for — a wire of eruptions and icebergs would
+// otherwise be re-drafted and re-rejected every single day, for money.
 const RETRYABLE = new Set([
   'source_unreachable',
   'source_too_thin',

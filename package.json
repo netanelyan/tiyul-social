@@ -11,6 +11,7 @@
     "start": "node bot.js",
     "test": "node scripts/selftest.js",
     "run-once": "node scripts/run-once.js",
+    "preview": "node scripts/preview.js",
     "check-sources": "node scripts/check-sources.js",
     "check-cards": "node scripts/check-cards.js",
     "ig-token": "node scripts/ig-token.js",

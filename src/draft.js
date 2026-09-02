@@ -34,11 +34,44 @@ const DRAFT_SCHEMA = {
   properties: {
     usable: {
       type: 'boolean',
-      description: 'false if this source cannot support an honest, interesting post',
+      description:
+        'false unless BOTH hold: a reader could plausibly go here or use this, AND it makes them want to',
     },
     reject_reason: {
       type: 'string',
       description: 'Short English explanation when usable is false, otherwise an empty string',
+    },
+    // The two conditions, written down rather than assumed. src/candidate.js
+    // re-checks this in code and refuses to stage a post that cannot answer it,
+    // so it is a gate and not a note — see FILLING IN "trip" in the system prompt.
+    trip: {
+      type: 'object',
+      description: 'How this post connects to a trip someone could actually take.',
+      properties: {
+        where: {
+          type: 'string',
+          description: 'The specific place a reader would stand, in Hebrew. Empty if there is none.',
+        },
+        how: {
+          type: 'string',
+          description:
+            'ENGLISH, one short line: how they would actually get there or use this. ' +
+            'Empty if you cannot say without inventing it.',
+        },
+        open: {
+          type: 'boolean',
+          description:
+            'true only if a visitor could be there now or in the coming months. ' +
+            'false for closed, evacuated, permit-only, under warning, or expedition-only.',
+        },
+        want: {
+          type: 'string',
+          description:
+            'ENGLISH, one short line: why they would want to. Not "it is beautiful" - the reason.',
+        },
+      },
+      required: ['where', 'how', 'open', 'want'],
+      additionalProperties: false,
     },
     layout: { type: 'string', enum: LAYOUTS },
     pillar: { type: 'string', enum: PILLAR_KEYS },
@@ -127,6 +160,7 @@ const DRAFT_SCHEMA = {
   required: [
     'usable',
     'reject_reason',
+    'trip',
     'layout',
     'pillar',
     'tags',
@@ -157,6 +191,43 @@ Israelis who travel — couples, families, backpackers, people planning a week a
 Write the way an Israeli travel writer writes: natural, specific, unpretentious Hebrew.
 Never a machine translation of English. Never tourist-brochure register.
 
+THE TEST — BOTH CONDITIONS HAVE TO HOLD
+Before anything else, ask two questions about the source in front of you:
+
+  1. Could a reader plausibly go here, or use this?
+  2. Does it make them want to?
+
+Both, or usable is false. Question 2 alone is the failure this channel has
+already had: a water spout in Puerto Rico, lava at Kilauea, a shipwreck,
+icebergs colliding off Greenland, an eruption at Fuego, penguins in Antarctica.
+Every one of those is a striking photograph and every one fails question 1, and
+the audience they collect is people who like dramatic pictures rather than
+people planning a trip.
+
+Spectacle qualifies ONLY when it arrives with a reason to go and a realistic way
+to get there. A volcano someone can stand near is a post. A volcano that erupted
+last week and is closed to visitors is not — however good the picture.
+
+"Plausibly go" means an Israeli traveller, on an ordinary trip, within about a
+year. A scheduled flight, a train, a bus, a hired car, a walk from somewhere
+they were already going to be. It does NOT mean an icebreaker, a research
+permit, a helicopter charter, a closed area, an evacuation zone, or a place
+under an active warning.
+
+"Or use this" is the other half, and it is worth just as much: a booking rule,
+an opening time, a pass, a queue, a border procedure, a month to avoid. Those
+are not places, but they are things a reader does on a trip, and they count.
+
+WHAT THIS CHANNEL IS FOR
+In rough order of how much of the feed each should be:
+  - Places inside cities Israelis already visit and tend to walk past.
+  - Why a specific month is the right or the wrong time for a destination.
+  - A neighbourhood or a short route worth a day.
+  - Practical things that save money or a wasted morning.
+  - Things that change what a trip feels like: closures, seasons, crowds.
+A source that does not land somewhere in that list is usually a source for
+somebody else's channel, and usable: false is the right answer.
+
 THE ONE RULE THAT MATTERS
 Every factual claim you write must come from the SOURCE TEXT you are given. Not from
 your own knowledge of the place, not from what is probably true, not from what the
@@ -164,8 +235,32 @@ place is famous for. If the source text does not say it, you do not write it.
 For each claim, return the exact span of the source text that supports it, copied
 character for character. Paraphrased quotes are treated as fabrication and the whole
 draft is discarded — so copy, do not summarise.
-If the source cannot support one genuinely interesting, specific post, set usable to
-false and say why. That is a perfectly good outcome; a thin post is not.
+If the source cannot support one specific post that passes both conditions of THE
+TEST, set usable to false and say why. That is a perfectly good outcome, and on
+most days it is the commonest one; a thin post is not, and neither is a beautiful
+one about somewhere nobody can go.
+
+FILLING IN "trip"
+This is THE TEST, written down. It is re-checked in code before the post reaches
+approval, so filling it in optimistically does not get a post published — it gets
+it rejected one step later with your own words attached to the reason.
+
+- where: the specific place a reader would stand, in Hebrew. A city, a district,
+  a street, a site. When the post is a rule rather than a place ("use this"
+  rather than "go here"), name what the rule applies to: "שדות התעופה באיחוד
+  האירופי" is a perfectly good answer.
+- how: ENGLISH, one short line, how they would actually get there or use it.
+  "Direct flights TLV-Athens, then 40 minutes on the metro." "Applies at every
+  Schengen border from 12 October." If you cannot write that line without
+  inventing it, the answer to question 1 is no.
+- open: true only if a visitor could be there now or in the coming months. False
+  for anything closed, evacuated, permit-only, under an active warning, or
+  reachable only by expedition. A false here stops the post, so answer it
+  honestly rather than generously — that is the whole point of the field.
+- want: ENGLISH, one short line, why they would want to. Not "it is beautiful" —
+  the actual reason. "Free, and the one view over the old town with no queue."
+  If the only honest answer is "it looks incredible in a photograph", then
+  question 2 is carrying the post on its own and usable is false.
 
 CONTENT PILLARS
 ${pillarList}
@@ -483,7 +578,18 @@ function normalise(d, item) {
     usable: Boolean(d.usable),
     rejectReason: s(d.reject_reason),
     layout: LAYOUTS.includes(d.layout) ? d.layout : 'fact',
-    pillar: PILLAR_KEYS.includes(d.pillar) ? d.pillar : item.pillarHints?.[0] || 'place',
+    // The final fallback has to be a live pillar key, not a plausible-looking
+    // string: an unknown key scores a deficit of 0 forever and silently opts the
+    // post out of the mix machinery it was supposed to be balanced by.
+    pillar: PILLAR_KEYS.includes(d.pillar)
+      ? d.pillar
+      : item.pillarHints?.find((p) => PILLAR_KEYS.includes(p)) || 'inCity',
+    trip: {
+      where: s(d.trip?.where),
+      how: s(d.trip?.how),
+      open: Boolean(d.trip?.open),
+      want: s(d.trip?.want),
+    },
     tags: Array.isArray(d.tags) ? d.tags.filter((t) => TAGS.includes(t)) : [],
     imageQuery: s(d.image_query),
     place: s(d.place),

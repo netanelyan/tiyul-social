@@ -11,22 +11,49 @@
 
 import { recentPublished } from './store.js';
 
+// The pillars are the mix, so they are written as the five things this channel
+// is for plus the two practical categories the source registry already feeds.
+//
+// The set they replaced — place / fact / hidden — was the spectacle problem in
+// its purest form. "A genuinely surprising, verifiable fact about a place" is a
+// brief that a colliding iceberg answers better than a market in Lisbon ever
+// will, so the feed filled up with natural phenomena: a water spout, lava at
+// Kilauea, a shipwreck, penguins. Every one of those cleared the old bar.
+//
+// None of them survives the new one, because none of them is somewhere a reader
+// could go this year. That is the point: the buckets now name trips rather than
+// subjects, and pillarDeficits() actively pushes the daily pick toward whichever
+// of them has been quiet.
 export const PILLARS = {
-  place: {
-    he: 'מקום מעניין',
-    hint: 'A place worth knowing about — a town, a district, a site, a landscape.',
+  inCity: {
+    he: 'בעיר שכבר נוסעים אליה',
+    hint:
+      'Somewhere inside a city Israelis already fly to, that most visitors walk straight past. ' +
+      'The value is that they are already going to be standing nearby.',
   },
-  fact: {
-    he: 'עובדה מפתיעה',
-    hint: 'A genuinely surprising, verifiable fact about a place. Not trivia padding.',
+  timing: {
+    he: 'מתי ללכת',
+    hint:
+      'Why a specific month is the right or the wrong time for a specific destination. ' +
+      'Name the month and name the reason.',
   },
-  hidden: {
-    he: 'פינה נסתרת',
-    hint: 'Somewhere real but under-visited, and why it stayed that way.',
+  day: {
+    he: 'יום אחד',
+    hint:
+      'A neighbourhood or a short route worth one day, with where it starts, where it ends ' +
+      'and roughly how long it takes.',
   },
   tip: {
     he: 'טיפ מעשי',
-    hint: 'Something that changes what a traveller actually does — booking, timing, transport, money.',
+    hint:
+      'Something practical that saves money or saves a wasted morning — booking, transport, ' +
+      'opening hours, a pass, a queue.',
+  },
+  conditions: {
+    he: 'מה השתנה בשטח',
+    hint:
+      'Something that changes what a trip feels like on the ground: a closure, a reopening, ' +
+      'a season, a crowd, a restriction. What a visitor would actually run into.',
   },
   entry: {
     he: 'שינוי כניסה/ויזה',
@@ -35,10 +62,6 @@ export const PILLARS = {
   route: {
     he: 'קו חדש מתל אביב',
     hint: 'A new or returning route from TLV, or a schedule change that matters. Never fares.',
-  },
-  timing: {
-    he: 'מתי ללכת',
-    hint: 'When to go somewhere and when not to — season, crowds, closures, weather.',
   },
 };
 

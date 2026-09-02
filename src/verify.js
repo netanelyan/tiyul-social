@@ -341,5 +341,10 @@ const REASON_HE = {
   render_failed: 'רינדור הכרטיס נכשל',
   quota: 'חריגה ממכסת נושא',
   duplicate: 'כבר פורסם',
+  not_usable: 'המקור לא עומד בשני התנאים',
+  // The hard rule, in the digest. Named so it is obvious in the skip list which
+  // items died on the new test rather than on a technical failure — over a week
+  // that count is the measurement of whether the direction actually changed.
+  no_trip: 'אי אפשר לקשור את זה לטיול שמישהו יכול לעשות',
 };
 export const reasonHe = (r) => REASON_HE[r] || r || 'סיבה לא ידועה';
