@@ -60,8 +60,20 @@ const SCHEMA = {
       type: 'integer',
       description: '0-10 certainty in `place`. Below the configured floor the name is discarded.',
     },
+    site: {
+      type: 'string',
+      description:
+        'The specific place and NOTHING ELSE — "Lago di Braies", "Cinque Torri", "Lauterbrunnen". No region, no country, no comma: the country is a separate field and gets added separately. ONLY when the frame is unmistakably that place; a generic mountain valley has no site name and gets an empty string.',
+    },
+    siteConfidence: {
+      type: 'integer',
+      description: '0-10 certainty in `site`. Below the configured floor the name is discarded.',
+    },
   },
-  required: ['destination', 'pov', 'aerial', 'staged', 'urban', 'subject', 'place', 'placeConfidence'],
+  required: [
+    'destination', 'pov', 'aerial', 'staged', 'urban', 'subject',
+    'place', 'placeConfidence', 'site', 'siteConfidence',
+  ],
 };
 
 const PROMPT =
@@ -69,8 +81,9 @@ const PROMPT =
   'The single most important field is `destination`: would somebody watching this want to go there? ' +
   'An iconic landmark, a dramatic landscape or a beautiful town scores high. An empty road, a car park, ' +
   'a generic path through trees or anything that could be anywhere scores 0-3, however pretty the light is.\n\n' +
-  'Name `place` only if you are certain. It is printed on a published post, and a confident guess that is ' +
-  'wrong is worse than saying nothing — leave it empty and set placeConfidence low whenever there is doubt.';
+  'Name `place` and `site` only if you are certain. Both are printed on a published post, and a confident ' +
+  'guess that is wrong is worse than saying nothing — leave them empty and set the confidence low whenever ' +
+  'there is doubt. `site` is the harder one: most footage is a generic valley or coastline with no name.';
 
 /**
  * Judge one clip from its thumbnail.
@@ -109,7 +122,18 @@ export async function judgeThumb(url, { timeoutMs = 20_000 } = {}) {
     // only decides whether a clip is used; this one gets PRINTED, so the bar is
     // higher — an unverifiable claim about where footage was shot is the exact
     // thing the rest of this pipeline refuses to publish.
-    if ((v.placeConfidence ?? 0) < postConfig().clips.search.placeMinConfidence) v.place = '';
+    // Both names are dropped unless the judge is sure. Everything else here
+    // only decides whether a clip is used; these get PRINTED, so the bar is
+    // higher — an unverifiable claim about where footage was shot is the exact
+    // thing the rest of this pipeline refuses to publish.
+    const floor = postConfig().clips.search.placeMinConfidence;
+    if ((v.placeConfidence ?? 0) < floor) v.place = '';
+    if ((v.siteConfidence ?? 0) < floor) v.site = '';
+    // A site without its country is a name nobody can place. Naming the
+    // country is strictly easier than naming the landmark in it, so if the
+    // country did not survive the floor, the site has not really been
+    // identified either.
+    if (!v.place) v.site = '';
     return v;
   } catch {
     return null;

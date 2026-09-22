@@ -133,4 +133,49 @@ export function clipHashtags(cand, { rand = Math.random } = {}) {
   return [...broad, ...niche];
 }
 
-export const clipCaption = (cand, opts) => clipHashtags(cand, opts).join(' ');
+/**
+ * Where the clip is, for the first line of the description.
+ *
+ * Place then country, which is the order the deck slides already use
+ * ("סקוגאפוס, איסלנד") and the order every map label in the world uses:
+ * specific first, general second.
+ *
+ * The site stays in Latin rather than being transliterated. It is a proper
+ * noun, it is what a viewer would type into a search box, and transliterating
+ * it would cost a model call per clip to produce a spelling nobody has agreed
+ * on — "לאוטרברונן" is one of several defensible answers and none of them is
+ * what the place calls itself. The country is Hebrew because that one HAS an
+ * agreed spelling, and it is the word an Israeli audience reads.
+ *
+ * Returns null when the country was not established. A pin with nothing after
+ * it is worse than no pin.
+ */
+export function clipPlaceLine(cand) {
+  const v = cand?.clip?.vision || cand?.vision || null;
+  if (!v?.place) return null;
+  const countryHe = postConfig().places[String(v.place).toLowerCase()];
+  if (!countryHe) return null;
+  // The first segment only. The schema asks for the bare name, and the judge
+  // still returns "Cinque Torri, Dolomites" often enough to matter — which
+  // renders as "📍 Cinque Torri, Dolomites, איטליה", a pin with two commas and
+  // a region nobody asked for. Trimming here rather than trusting the prompt,
+  // because a prompt is a request and this is the line that publishes.
+  const site = String(v.site || '').split(',')[0].trim();
+  return site ? `📍 ${site}, ${countryHe}` : `📍 ${countryHe}`;
+}
+
+/**
+ * The whole TikTok description for a clip.
+ *
+ * A pin line and the tags. The HOOK is not repeated here — it is burned into
+ * the video, and printing it again spends the description on something the
+ * viewer read two seconds ago. What the description adds is the one thing the
+ * video cannot say: where this is.
+ */
+export function clipCaption(cand, opts) {
+  const place = clipPlaceLine(cand);
+  const tags = clipHashtags(cand, opts).join(' ');
+  return place ? `${place}
+
+${tags}` : tags;
+}

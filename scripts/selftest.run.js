@@ -3679,6 +3679,32 @@ group('clip description — a published post with an empty caption is invisible'
   // only present when it cleared placeMinConfidence. Tagging #יוון on footage
   // that might be Croatia is the fabrication this pipeline exists to refuse.
   eq('a country with no Hebrew spelling is dropped', clipDestinationTag({ clip: { vision: { place: 'Narnia' } } }), null);
+
+  // The pin line: 📍 site, country — or the country alone, or nothing.
+  const { clipPlaceLine, clipCaption } = await import('../src/hashtags.js');
+  const pin = (v) => clipPlaceLine({ clip: { vision: v } });
+
+  eq('site and country', pin({ place: 'Switzerland', site: 'Lauterbrunnen' }), '📍 Lauterbrunnen, שווייץ');
+  eq('country alone when the site is unknown', pin({ place: 'Italy', site: '' }), '📍 איטליה');
+  eq('nothing at all when the country is unknown', pin({ place: '', site: 'Somewhere' }), null);
+
+  // The judge returns "Cinque Torri, Dolomites" often enough to matter, and
+  // that renders as a pin with two commas and a region nobody asked for. The
+  // schema asks for the bare name; this trims it anyway, because a prompt is a
+  // request and this is the line that publishes.
+  eq(
+    'a site carrying its own region is trimmed',
+    pin({ place: 'Italy', site: 'Cinque Torri, Dolomites' }),
+    '📍 Cinque Torri, איטליה'
+  );
+
+  // The description is the pin line and the tags, and NOT the hook — that is
+  // burned into the video, and repeating it spends the description on something
+  // the viewer read two seconds ago.
+  const desc = clipCaption({ hook: 'אני, אתה, טיסה לאיטליה?', clip: { vision: { place: 'Italy', site: 'Lago di Braies' } } });
+  ok('the description opens with the pin', desc.startsWith('📍 Lago di Braies, איטליה'));
+  ok('and ends with the tags', /#\S+( #\S+){4}$/.test(desc.trim()), desc);
+  ok('the hook is not repeated in it', !desc.includes('אני, אתה'));
 }
 
 /* -------------------------------------------------------------------------- */
