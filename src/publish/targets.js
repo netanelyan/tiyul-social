@@ -39,6 +39,11 @@ const ALLOWED_BY_KIND = {
   // Same words, same photographs, two designs. Instagram first, because it is
   // the one that has worked for months.
   deck: ['instagram', 'tiktok'],
+  // A clip is eight seconds of vertical video. TikTok only: there is no
+  // Instagram artefact for it the way a deck has a carousel, and posting the
+  // same eight seconds to two places is how every account becomes a copy of
+  // the others — the rule stated at the top of this file.
+  clip: ['tiktok'],
 };
 
 /**

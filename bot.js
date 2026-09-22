@@ -191,6 +191,9 @@ bot.use(async (ctx, next) => {
 // Staging
 // ---------------------------------------------------------------------------
 
+/** One glyph per kind, used everywhere a list of pending items is printed. */
+const kindIcon = (kind) => (kind === 'deck' ? '🎞️' : kind === 'clip' ? '🎬' : '📰');
+
 function stagingButtons(key, cand) {
   const rows = [
     [Markup.button.callback('✅ אשר ופרסם', `ok:${key}`), Markup.button.callback('❌ דחה', `no:${key}`)],
@@ -198,11 +201,17 @@ function stagingButtons(key, cand) {
   // Editing a headline re-renders one card. On a deck it would re-render every
   // slide at both sizes, and the title lives on the cover alone — so a deck is
   // approved or rejected as a whole, and a wrong title is a re-run.
-  rows.push(
-    cand?.kind === 'deck'
-      ? [Markup.button.callback('📎 ציטוטים', `ev:${key}`)]
-      : [Markup.button.callback('✏️ ערוך כותרת', `edit:${key}`), Markup.button.callback('📎 ציטוטים', `ev:${key}`)]
-  );
+  // A clip carries no quotes — its only claim is the country, and that is
+  // printed on the approval message with the confidence it was named at. So
+  // there is nothing to show behind an evidence button and nothing to edit: the
+  // line is one field and a wrong one is a re-run, exactly like a deck's title.
+  if (cand?.kind !== 'clip') {
+    rows.push(
+      cand?.kind === 'deck'
+        ? [Markup.button.callback('📎 ציטוטים', `ev:${key}`)]
+        : [Markup.button.callback('✏️ ערוך כותרת', `edit:${key}`), Markup.button.callback('📎 ציטוטים', `ev:${key}`)]
+    );
+  }
   // Only when there is a real choice to make. With one privacy level available
   // — the unaudited case, where TikTok offers SELF_ONLY and nothing else — a
   // button that cycles back to the same value is a button that lies about
@@ -1171,7 +1180,7 @@ bot.command('pending', (ctx) => {
   // Listed, not counted. The count and the number of cards in the chat can
   // disagree — a send that failed leaves a staged post with nothing to tap —
   // and a count is the one shape that cannot show you which.
-  const lines = rows.map(({ cand }, i) => `${i + 1}. ${cand.kind === 'deck' ? '🎞️' : '📰'} ${cand.headline}`);
+  const lines = rows.map(({ cand }, i) => `${i + 1}. ${kindIcon(cand.kind)} ${cand.headline}`);
   ctx.reply(
     [
       `⏳ ${rows.length} ממתינים לאישור:`,
@@ -1241,7 +1250,7 @@ bot.command('queue', (ctx) => {
       allowedForKind(c.kind).includes(t)
     );
     const where = targetsHe(owed);
-    const kind = c.kind === 'deck' ? '🎞️' : '📰';
+    const kind = kindIcon(c.kind);
     // Only when TikTok is still owed. Approval sends the draft immediately and
     // queues the rest, so the remainder is Instagram-only — and calling that
     // "draft" describes a handoff that already happened.
@@ -1607,6 +1616,57 @@ bot.command('igquota', async (ctx) => {
  * (a thin region, an exhausted search budget) are ones you want to read about
  * while you are sitting there, not discover in a digest.
  */
+/**
+ * `/clip` — build short vertical videos and stage them for approval.
+ *
+ * `/clip` builds one, `/clip 3` builds three. Each arrives as a playable video
+ * in the chat with approve and reject under it, and an approved clip goes to
+ * the account's TikTok inbox as a DRAFT rather than as a post: the API has no
+ * field for choosing a sound, and sound is the one thing that cannot be changed
+ * after publishing. The same bargain decks make, for the same reason.
+ *
+ * On demand rather than on the timer, like /deck. A batch costs a vision call
+ * per candidate, a writing call per clip, and an ffmpeg encode per clip — and
+ * the interesting failures (nothing scored above the destination gate, a source
+ * that would not decode) are ones to read while sitting here.
+ */
+bot.command('clip', async (ctx) => {
+  const arg = (ctx.message.text || '').replace(/^\/clip(@\S+)?\s*/, '').trim();
+  const count = Math.min(5, Math.max(1, Number(arg) || 1));
+
+  await ctx.reply(`⏳ בונה ${count} קליפ${count === 1 ? '' : 'ים'}...`);
+  detach(
+    'קליפים',
+    async () => {
+      const { buildClips } = await import('./src/video/clip.js');
+      const { clips, considered, nowhere, failed, written } = await buildClips({
+        count,
+        seen: new Set(store.recentPublished().map((p) => String(p.pexelsId || '')).filter(Boolean)),
+      });
+
+      if (!clips.length) {
+        // The reason matters and is not guessable from an empty result: "the
+        // queries returned nothing" and "everything returned was an anonymous
+        // road" are different problems with different fixes.
+        const why = nowhere?.length
+          ? [`${considered} נבדקו, אף אחד לא עבר את סף היעד:`, ...nowhere.slice(0, 5).map((n) => `   ✗ ${n}`)].join('\n')
+          : 'לא נמצאו קליפים מתאימים';
+        await notify.send(bot.telegram, ctx.chat.id, `🎬 אין קליפ להציג.
+${why}`).catch(() => {});
+        return;
+      }
+
+      for (const clip of clips) await stage(clip);
+
+      const notes = [];
+      if (written < clips.length) notes.push(`⚠️ ${clips.length - written} שורות מהמאגר ולא נכתבו`);
+      if (failed?.length) notes.push(`⚠️ ${failed.length} נכשלו בבנייה`);
+      if (notes.length) await notify.send(bot.telegram, ctx.chat.id, notes.join('\n')).catch(() => {});
+    },
+    ctx.chat.id
+  );
+});
+
 bot.command('deck', async (ctx) => {
   const arg = (ctx.message.text || '').replace(/^\/deck(@\S+)?\s*/, '').trim();
 

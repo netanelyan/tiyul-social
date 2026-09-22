@@ -3,6 +3,7 @@ import { buildClip } from '../src/video/clip.js';
 import { pickFile, titleOf } from '../src/video/pexels.js';
 import { judgeThumb } from '../src/video/vision.js';
 import { closeBrowser } from '../src/render/index.js';
+import { publishTikTok, tiktokConfigured, describeError } from '../src/publish/tiktok.js';
 
 // Re-render specific clips, with their lines pinned.
 //
@@ -19,7 +20,12 @@ import { closeBrowser } from '../src/render/index.js';
 
 loadEnv();
 
-const pairs = process.argv.slice(2).map((a) => {
+// `draft` pushes each rebuilt clip to the account's TikTok inbox after it is
+// written. Draft mode rather than a direct post, for the reason decks use it:
+// the API has no field for choosing a sound, and sound is the one thing that
+// cannot be changed after publishing.
+const toDraft = process.argv.includes('draft');
+const pairs = process.argv.slice(2).filter((a) => a !== 'draft').map((a) => {
   const at = a.indexOf('=');
   return at === -1 ? { id: a, hook: null } : { id: a.slice(0, at), hook: a.slice(at + 1) };
 });
@@ -80,6 +86,19 @@ for (const { id, hook } of pairs) {
     if (clip.clip.spot) {
       const s = clip.clip.spot;
       console.log(`   x=${s.x ?? '?'} y=${s.y} · ${s.onDark ? 'light' : 'dark'} · contrast ${s.worstContrast} · on sky ${Math.round((s.onBackground ?? 0) * 100)}%`);
+    }
+
+    if (toDraft) {
+      if (!tiktokConfigured()) {
+        console.error('   ✗ TikTok is not configured here — run this on the box that holds the token');
+        continue;
+      }
+      try {
+        const out = await publishTikTok({ ...clip, publishTargets: ['tiktok'], tiktokDraft: true }, { draft: true });
+        console.log(`   → TikTok drafts (publish_id ${out.publishId || 'unknown'})`);
+      } catch (e) {
+        console.error(`   ✗ draft failed: ${describeError(e)}`);
+      }
     }
   } catch (e) {
     console.error(`${id}: ${e.message}`);

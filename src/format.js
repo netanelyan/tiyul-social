@@ -4,6 +4,7 @@ import { provenanceHe } from './images.js';
 import { targetsHe } from './publish/targets.js';
 import { privacyHe } from './publish/tiktok.js';
 import { KINDS } from './sources/places.js';
+import { clipApprovalMessage } from './video/clip.js';
 import { postConfig } from './postConfig.js';
 import { hashtagLine } from './hashtags.js';
 
@@ -348,6 +349,9 @@ export function deckApprovalMessage(cand) {
 export function approvalMessage(cand) {
   // A deck has a different failure surface and therefore a different message.
   if (cand.kind === 'deck') return deckApprovalMessage(cand);
+  // A clip has a third one: no quotes to check, no slides to drop, and the one
+  // thing that cannot be seen in the video is why this footage was chosen.
+  if (cand.kind === 'clip') return clipApprovalMessage(cand);
 
   const lines = [];
 

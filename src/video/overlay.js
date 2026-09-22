@@ -3,7 +3,7 @@ import { promisify } from 'node:util';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { getBrowser } from '../render/index.js';
+import { getBrowser, cardOutputDir } from '../render/index.js';
 import { analyseSlides } from '../render/photo.js';
 import { postConfig } from '../postConfig.js';
 import { heeboDataUri, assistantDataUri, arimoDataUri, tiktokSansDataUri, escapeHtml } from '../render/theme.js';
@@ -479,8 +479,20 @@ export async function download(url, file, { timeoutMs = 60_000 } = {}) {
   return file;
 }
 
+/**
+ * Where a finished clip is written — the SAME directory cards are written to.
+ *
+ * Not a tidiness choice. TikTok fetches video by URL exactly as Instagram
+ * fetches a card image, from a base URL on a domain verified in the developer
+ * console, and `cardPublicUrl()` builds that address from a bare filename. A
+ * clip sitting in out/clips is a clip whose public URL resolves to nothing, so
+ * the publish would fail at TikTok's end having looked fine at ours.
+ *
+ * CLIP_OUT_DIR overrides it for local experiments, which is what clip-lab is
+ * for; leaving it unset puts clips where the existing host rule already serves.
+ */
 export function clipOutputDir() {
-  const dir = process.env.CLIP_OUT_DIR || join(process.cwd(), 'out', 'clips');
+  const dir = process.env.CLIP_OUT_DIR || cardOutputDir();
   mkdirSync(dir, { recursive: true });
   return dir;
 }
