@@ -1934,8 +1934,15 @@ let lastDeckSuggestAt = 0;
  * Capped the same two ways. CLIPS_PER_DAY is the day's budget, and a ceiling on
  * what is already waiting stops a week away from returning fourteen videos —
  * an approval queue you cannot face is a queue you stop reading.
+ *
+ * THREE A DAY, and the number came from measuring the supply rather than from
+ * caution. The 26 destination queries return 1479 unique vertical clips in the
+ * allowed duration range; even assuming only half clear the destination gate,
+ * that is well over a year of unique footage at three a day. The catalogue is
+ * not the constraint — how many you are willing to look at is, which is what
+ * CLIP_BACKLOG_MAX is for.
  */
-const CLIPS_PER_DAY = Math.max(0, Number(process.env.CLIPS_PER_DAY ?? '1'));
+const CLIPS_PER_DAY = Math.max(0, Number(process.env.CLIPS_PER_DAY ?? '3'));
 const CLIP_BACKLOG_MAX = Math.max(1, Number(process.env.CLIP_BACKLOG_MAX ?? '3'));
 let clipDay = null;
 let clipsToday = 0;
@@ -2506,6 +2513,24 @@ async function main() {
   console.log(`   daily run at ${RUN_HOUR}:00 · target ${dailyTarget()} · drip every ${POST_INTERVAL_MINUTES} min`);
   console.log(`   suggestions per day: ${dailyTarget()} cards · ${DECKS_PER_DAY} decks · ${CLIPS_PER_DAY} clips`);
   console.log(`   clips to: ${targetsForKind('clip').join(' + ') || 'NOWHERE (TikTok not connected)'}`);
+
+  // Checked at boot rather than discovered at the first clip of the day.
+  // Without an encoder the clip half of this bot cannot work at all, and the
+  // failure otherwise surfaces hours later as one line in a log nobody is
+  // reading — on a box where clips have never run, which is exactly when it
+  // happens.
+  if (CLIPS_PER_DAY > 0) {
+    const { ffmpegReady } = await import('./src/video/overlay.js');
+    const ff = await ffmpegReady();
+    if (ff.ok) {
+      console.log(`   ffmpeg: ${ff.version.replace(/^ffmpeg version /, '').split(' ')[0]} (${ff.path})`);
+    } else {
+      console.error(`   ⚠️ ffmpeg: ${ff.error}`);
+      await notify
+        .send(bot.telegram, staging, `⚠️ קליפים מושבתים — ${ff.error}`)
+        .catch(() => {});
+    }
+  }
 
   await maybeRefreshIgToken();
   await maybeRefreshTikTokToken();

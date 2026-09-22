@@ -84,7 +84,7 @@ so it is built and the finished video arrives with approve and reject under it.
 |---|---|---|---|
 | card | `DAILY_TARGET` (3) | the rendered card | Instagram |
 | deck | `DECKS_PER_DAY` (2) | a line of text | TikTok + Instagram |
-| clip | `CLIPS_PER_DAY` (1) | the finished video | TikTok drafts |
+| clip | `CLIPS_PER_DAY` (3) | the finished video | TikTok drafts |
 
 Each is capped twice: a daily budget, and a ceiling on how many may be waiting
 for a decision. A week away returns a handful to answer, not forty — an approval
@@ -468,8 +468,8 @@ TikTok, and its caption is read somewhere a URL is worth printing.
 
 ### Clips — a stock video with one Hebrew line on it
 
-One arrives a day by default (`CLIPS_PER_DAY`), built and sent as a playable
-video with approve and reject under it; `/clip` builds one on demand and
+Three arrive a day by default (`CLIPS_PER_DAY`), built and sent as playable
+videos with approve and reject under them; `/clip` builds one on demand and
 `/clip 3` builds three. An approved clip goes to the account's **TikTok
 drafts** rather than straight out: the API has no field for choosing a sound,
 and sound is the one thing that cannot be changed after publishing.
@@ -478,6 +478,17 @@ For working on the format rather than posting: `npm run clip-lab -- 4` builds a
 batch to look at, and `npm run clip-redo -- <pexelsId>="the line"` re-renders
 specific ones with the footage and the words pinned — the only way to judge a
 styling change without three variables moving at once.
+
+Three a day is measured rather than cautious: the 26 destination queries return
+**1479 unique vertical clips** in the allowed duration range, so even assuming
+only half clear the destination gate that is over eight months of unique
+footage. The catalogue is not the constraint — how many you are willing to look
+at is, which is what `CLIP_BACKLOG_MAX` is for.
+
+**Clips need ffmpeg.** `sudo apt install -y ffmpeg` on the VPS. The bot checks
+at boot and warns once rather than failing at the first clip of the day; cards
+and decks are unaffected. The text is composited as an image rather than drawn
+by ffmpeg, because `drawtext` has no bidi support and renders Hebrew reversed.
 
 **The description is a pin, where it is, and five tags.**
 

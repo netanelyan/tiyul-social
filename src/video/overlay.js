@@ -41,6 +41,13 @@ export function ffmpegPath() {
 
   const local = process.env.LOCALAPPDATA;
   const guesses = [
+    // Linux and macOS package managers, which is where a VPS will have it.
+    '/usr/bin/ffmpeg',
+    '/usr/local/bin/ffmpeg',
+    '/snap/bin/ffmpeg',
+    '/opt/homebrew/bin/ffmpeg',
+    // Windows, where WinGet edits the USER path and existing shells do not see
+    // it until they restart.
     local && join(local, 'Microsoft/WinGet/Links/ffmpeg.exe'),
     local && join(local, 'Microsoft/WinGet/Packages/Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe/ffmpeg-9.0.2-full_build/bin/ffmpeg.exe'),
   ].filter(Boolean);
@@ -52,13 +59,38 @@ export function ffmpegPath() {
   return (resolved = 'ffmpeg');
 }
 
-/** Is there actually an encoder? Answered by asking it, not by looking for a file. */
+/** What to type, on the platform this is actually running on. */
+export const ffmpegInstallHint = () =>
+  process.platform === 'win32'
+    ? 'winget install --id Gyan.FFmpeg -e'
+    : process.platform === 'darwin'
+      ? 'brew install ffmpeg'
+      : 'sudo apt update && sudo apt install -y ffmpeg';
+
+/**
+ * Is there actually an encoder? Answered by asking it, not by looking for a
+ * file — a path that exists and will not execute is the same failure.
+ *
+ * The message matters more than it looks. "spawn ffmpeg ENOENT" is what Node
+ * says, and it names no binary, no search path and no remedy; on a box where
+ * clips have never run it is the first thing you see and it reads like a bug in
+ * this project rather than a missing system package.
+ */
 export async function ffmpegReady() {
   try {
     const { stdout } = await run(ffmpegPath(), ['-hide_banner', '-version']);
     return { ok: true, version: stdout.split('\n')[0].trim(), path: ffmpegPath() };
   } catch (e) {
-    return { ok: false, error: e.message, path: ffmpegPath() };
+    const missing = /ENOENT/.test(e.message);
+    return {
+      ok: false,
+      path: ffmpegPath(),
+      missing,
+      error: missing
+        ? `ffmpeg is not installed, or not on PATH for this process. Install it with:  ${ffmpegInstallHint()}` +
+          (process.env.FFMPEG_PATH ? '' : '   (or set FFMPEG_PATH to the binary)')
+        : e.message,
+    };
   }
 }
 

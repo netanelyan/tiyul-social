@@ -15,6 +15,32 @@ The target here is Debian/Ubuntu with Caddy, because that is what
 
 ---
 
+## ffmpeg (required for clips)
+
+Clips are encoded with ffmpeg, and the text on them is composited as an image —
+ffmpeg's own `drawtext` has no bidi support, so Hebrew comes out reversed and
+unshaped with no flag to fix it. The line is rendered in Chromium, which this
+project already runs, and ffmpeg overlays the result.
+
+```bash
+sudo apt update && sudo apt install -y ffmpeg
+ffmpeg -version          # expect 6.x or newer
+```
+
+Without it the bot still starts and cards and decks still work; the clip half
+says so at boot and sends one Telegram warning rather than failing quietly at
+the first clip of the day. `spawn ffmpeg ENOENT` in a log means exactly this.
+
+`FFMPEG_PATH` overrides the lookup if the binary lives somewhere unusual. The
+resolver checks `/usr/bin`, `/usr/local/bin`, `/snap/bin` and the Homebrew path
+before falling back to PATH.
+
+**Clips are served from the card directory.** `CLIP_OUT_DIR` defaults to
+`CARD_OUTPUT_DIR`, which is what Caddy already serves at `CARD_PUBLIC_BASE_URL`.
+TikTok fetches video by URL exactly as Instagram fetches a card image, so a clip
+written anywhere else has a public address that resolves to nothing — it would
+look fine here and 404 at TikTok. No extra Caddy rule is needed.
+
 ## What is actually being deployed
 
 One long-running Node process. It is **not** a cron job — `bot.js` schedules
