@@ -123,7 +123,7 @@ export async function measureClip(source, { frames = 5, startAt = null } = {}) {
         topSafe: 300,
         bottomSafe: 400,
         height: 1920,
-        confine: { x: ov.x, width: ov.width, bands: [ov.bands.upper, ov.bands.mid] },
+        confine: { xs: ov.xs, x: ov.x, width: ov.width, bands: [ov.bands.upper, ov.bands.mid] },
         // Avoid horizons. A clip's line is centred and wide, so it crosses a
         // treeline far more readily than a deck's narrow left-hand caption.
         seam: ov.seamPenalty,
@@ -144,7 +144,8 @@ export async function measureClip(source, { frames = 5, startAt = null } = {}) {
     const worst = chosen.reduce((a, b) => (b.contrast < a.contrast ? b : a));
     return {
       ...worst,
-      x: ov.x,
+      // x comes from the MEASUREMENT now, not from config — the whole point of
+      // offering three columns is that the search gets to choose one.
       width: ov.width,
       shadow: Math.max(...chosen.map((s) => s.shadow)),
       assist: Math.max(...chosen.map((s) => s.assist)),
@@ -282,21 +283,50 @@ export function overlayHtml(text, { width, height, spot = null, id = '' } = {}) 
   // The measured decision decides light-or-dark; the palette decides WHICH
   // light. Over a pale frame the measurement wins outright and the line goes
   // near-black, because no cream survives a bright sky.
-  const ink = inkFor(id, onDark);
-  const fill = onDark ? ink.fill : '#14110E';
-  const stroke = onDark ? ink.stroke : 'rgba(255,255,255,0.6)';
-  const strokeW = Math.max(1, Math.round(size * ov.strokePct));
+  // The palette wins unless the frame is genuinely pale.
+  //
+  // A deck slide flips to near-black the moment the measurement says the
+  // background is bright, because its type is small, light and unstroked and
+  // has nothing else to survive on. A clip's line is 56px at weight 700 with a
+  // stroke behind it — cream over a bright blue sky is perfectly readable, and
+  // it is what the account is supposed to look like. Flipping it to near-black
+  // produced a dark line on Lauterbrunnen's sky that the owner immediately
+  // called wrong.
+  //
+  // So the flip is reserved for a frame bright enough that a stroked cream
+  // would genuinely disappear, and `darkAbove` is where that line sits. The
+  // stroke does the rest.
+  const darkAbove = ov.flipToDarkAbove;
+  const reallyPale = !onDark && (place.lum ?? 0) >= darkAbove;
+  const ink = inkFor(id, true);
+  const fill = reallyPale ? '#14110E' : ink.fill;
+  const stroke = reallyPale ? 'rgba(255,255,255,0.65)' : ink.stroke;
+  // Thickened by the measured shortfall, exactly as the shadow is. This is
+  // what lets the line stay yellow over a bright sky instead of flipping to
+  // near-black: the fill is the account's colour and the stroke is what makes
+  // it survive. Without it, cream on a white cloud is a smudge.
+  const strokeW = Math.max(1, Math.round(size * (ov.strokePct + force * ov.strokeBoost)));
 
   const boost =
     adapt.shadowBoost && force > 0.02
       ? `, 0 2px ${Math.round(10 + force * 16)}px rgba(0,0,0,${(force * 0.6).toFixed(2)})`
       : '';
-  const shadow = onDark
+  const shadow = !reallyPale
     ? `${ov.shadow}${boost}`
     : `0 1px 3px rgba(255,255,255,0.55), 0 2px ${14 + Math.round(force * 12)}px rgba(255,255,255,${(0.4 + force * 0.34).toFixed(2)})`;
 
-  const blockW = Math.round(place.width * width);
-  const left = Math.round(place.x * width - blockW / 2);
+  // A guaranteed margin, applied after the search rather than trusted from it —
+  // the same guarantee render/deckTemplates.js makes, and the one this file was
+  // missing. The placement search may return any of the configured columns, and
+  // an off-centre column with a wide block runs straight off the frame: at
+  // x=0.72 with width 0.72 the right edge lands at 1166px on a 1080px frame,
+  // and the first words of the line are simply not in the video.
+  //
+  // The block is narrowed first and then pushed inside, so a line that cannot
+  // fit where it was placed wraps instead of being cropped.
+  const margin = Math.round(width * 0.05);
+  const blockW = Math.min(Math.round(place.width * width), width - margin * 2);
+  const left = Math.max(margin, Math.min(width - margin - blockW, Math.round(place.x * width - blockW / 2)));
   const top = Math.round(place.y * height);
 
   // The same soft elliptical wash the slides get, and for the same reason:
@@ -305,7 +335,7 @@ export function overlayHtml(text, { width, height, spot = null, id = '' } = {}) 
   const strength = place.assist || 0;
   const washed = strength >= 0.06;
   const alpha = Math.min(0.5, 0.18 + strength * 0.34).toFixed(3);
-  const tint = onDark ? '0,0,0' : '255,255,255';
+  const tint = reallyPale ? '255,255,255' : '0,0,0';
   const cw = Math.round(blockW * 1.25);
   const ch = Math.round(height * 0.13 * 2.4);
 

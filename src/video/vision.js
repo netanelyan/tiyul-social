@@ -51,15 +51,26 @@ const SCHEMA = {
       description:
         'Up to 12 words naming what is in frame, for the caption writer. Describe what is SEEN. Do not guess a country if it is not obvious.',
     },
+    place: {
+      type: 'string',
+      description:
+        'The country, in English, ONLY if the frame is unmistakably identifiable — a famous landmark, or architecture and landscape that could not be anywhere else. Empty string when unsure. A guess here becomes a factual claim on a published post.',
+    },
+    placeConfidence: {
+      type: 'integer',
+      description: '0-10 certainty in `place`. Below the configured floor the name is discarded.',
+    },
   },
-  required: ['destination', 'pov', 'aerial', 'staged', 'urban', 'subject'],
+  required: ['destination', 'pov', 'aerial', 'staged', 'urban', 'subject', 'place', 'placeConfidence'],
 };
 
 const PROMPT =
   'Judge this frame from a short vertical travel video.\n\n' +
   'The single most important field is `destination`: would somebody watching this want to go there? ' +
   'An iconic landmark, a dramatic landscape or a beautiful town scores high. An empty road, a car park, ' +
-  'a generic path through trees or anything that could be anywhere scores 0-3, however pretty the light is.';
+  'a generic path through trees or anything that could be anywhere scores 0-3, however pretty the light is.\n\n' +
+  'Name `place` only if you are certain. It is printed on a published post, and a confident guess that is ' +
+  'wrong is worse than saying nothing — leave it empty and set placeConfidence low whenever there is doubt.';
 
 /**
  * Judge one clip from its thumbnail.
@@ -92,7 +103,14 @@ export async function judgeThumb(url, { timeoutMs = 20_000 } = {}) {
 
     recordUsage(out.usage, MODEL);
     const text = out.content.find((b) => b.type === 'text')?.text;
-    return text ? JSON.parse(text) : null;
+    if (!text) return null;
+    const v = JSON.parse(text);
+    // The place name is dropped unless the judge is sure. Everything else here
+    // only decides whether a clip is used; this one gets PRINTED, so the bar is
+    // higher — an unverifiable claim about where footage was shot is the exact
+    // thing the rest of this pipeline refuses to publish.
+    if ((v.placeConfidence ?? 0) < postConfig().clips.search.placeMinConfidence) v.place = '';
+    return v;
   } catch {
     return null;
   }

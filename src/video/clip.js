@@ -126,12 +126,17 @@ export async function buildClip(found, { outDir = clipOutputDir(), hook = null, 
       // with the numbers that put it there than from memory.
       spot: spot
         ? {
+            x: Number(spot.x.toFixed(3)),
             y: Number(spot.y.toFixed(3)),
             color: spot.color,
             onDark: spot.onDark,
             contrast: Number(spot.contrast.toFixed(2)),
             worstContrast: Number(spot.spread.worst.toFixed(2)),
             assist: Number(spot.assist.toFixed(2)),
+            // How much of the block landed on sky/water rather than on the
+            // subject. The number that says whether the line looks placed or
+            // dumped — a straddle reads as unprofessional however legible it is.
+            onBackground: Number((spot.onBackground ?? 0).toFixed(2)),
             frames: spot.frames,
             agreed: spot.agreed,
           }

@@ -3587,6 +3587,122 @@ group('clips — participant or spectator, judged from the title');
 }
 
 /* -------------------------------------------------------------------------- */
+group('clip look — the owner settled these by eye, one render at a time');
+
+// Every assertion here is a decision that cost a round of screenshots. They are
+// locked so the next change to this pipeline cannot quietly undo one, and so
+// nobody has to re-litigate them clip by clip.
+{
+  const ov = postConfig().clips.overlay;
+
+  // One colour, and it is the one that was asked for. The palette held white
+  // for a while and drew it on a third of posts; white was rejected on sight
+  // twice before anyone noticed it was still in the pool.
+  eq('exactly one ink colour', ov.colors.length, 1);
+  eq('and it is the chosen yellow', ov.colors[0].fill.toUpperCase(), '#FFF4B3');
+
+  // No stroke. It went in because TikTok's own text tool produces one and the
+  // Hebrew reference posts use it; at this size over these frames it read as an
+  // outline rather than as native text.
+  eq('no stroke', ov.strokePct, 0);
+  eq('and none is added back under pressure', ov.strokeBoost, 0);
+
+  // Narrow, so a line WRAPS. This is the one that matters most: at 0.72 a block
+  // is 777px on a 1080px frame, and on a picture whose subject stands in the
+  // middle no position fits it on clean sky — so the search picks the least-bad
+  // straddle and the line runs from sky onto rock. Two short rows on clean
+  // background beat one long row across the subject.
+  ok('the block is narrow enough to force a wrap', ov.width <= 0.5, `${ov.width}`);
+  eq('two rows, never three', ov.maxLines, 2);
+
+  // Not pinned to the centre. Pinning it there put text on a cliff while clear
+  // sky sat unused either side.
+  ok('several columns are offered', ov.xs.length >= 3, ov.xs.join(','));
+  ok('including a left and a right one', Math.min(...ov.xs) < 0.35 && Math.max(...ov.xs) > 0.65);
+
+  // Upper area only, and neither band sits where a horizon usually falls.
+  ok('both bands are in the upper half', ov.bands.upper[1] < 0.5 && ov.bands.mid[1] < 0.5);
+
+  // The flip to dark type is a deck rule — small, light, unstroked caption with
+  // nothing else to survive on. A 52px clip line has a shadow and a wash, so the
+  // threshold sits high and the yellow survives a blue sky.
+  ok('the ink does not flip to dark on an ordinary sky', ov.flipToDarkAbove >= 0.55);
+}
+
+// The frame clamp. A latent bug that only became reachable once the search was
+// allowed to pick an off-centre column: a 0.72-wide block centred at x=0.72
+// ends at 1166px on a 1080px frame, and the first words of the line are simply
+// not in the video. deckTemplates.js has clamped this since it was written.
+{
+  const { overlayHtml } = await import('../src/video/overlay.js');
+  const W = 1080;
+  const far = { x: 0.72, y: 0.27, width: 0.9, color: '#FFF4B3', onDark: true, assist: 0, shadow: 0, lum: 0.2 };
+  const html = overlayHtml('תזכורת שיש מסלולים כאלה בעולם', { width: W, height: 1920, spot: far, id: 'x' });
+  const left = Number(html.match(/\.hook \{[^}]*left:(-?\d+)px/s)?.[1]);
+  const wide = Number(html.match(/\.hook \{[^}]*width:(\d+)px/s)?.[1]);
+  ok('the block starts inside the frame', left >= 0, `left=${left}`);
+  ok('and ends inside it', left + wide <= W, `right=${left + wide} of ${W}`);
+  ok('it was narrowed rather than cropped', wide <= W, `width=${wide}`);
+}
+
+/* -------------------------------------------------------------------------- */
+group('clip lines — the owner-approved shapes must survive their own guards');
+
+// Three separate guards silently ate the owner's own approved lines, each time
+// looking like the writer had failed. Locked here so it cannot happen a fourth
+// time: a guard that rejects a canonical line is a broken guard.
+{
+  const { hasPerson, isLabel } = await import('../src/video/hooks.js');
+  const cfg = postConfig().clips;
+  const fmt = (id) => cfg.formats.find((f) => f.id === id);
+
+  // The two place formats are built out of pronouns. hasPerson bans אני, אתה
+  // and אחי — correctly, in general: it stops the account claiming to have
+  // stood somewhere it has not. A vocative and an invitation make no such
+  // claim, so they carry an explicit exemption rather than weakening the rule.
+  for (const id of ['vocative', 'invite']) {
+    ok(`${id} exists`, Boolean(fmt(id)));
+    ok(`${id} is exempt from the person guard`, fmt(id).allowsPerson === true);
+    ok(`${id} only fires when the country is known`, fmt(id).needsPlace === true);
+  }
+  ok('the guard still bans the on-location voice', hasPerson('אני נשבע שהאוויר פה אחר'));
+  ok('but not the viewer voice the owner approved', !hasPerson('למה אף אחד לא סיפר לי על השביל הזה'));
+
+  // Both place shapes are short by design — three and four words. A blanket
+  // five-word floor rejected both on every single run.
+  ok('the vocative may be three words', fmt('vocative').minWords <= 3);
+  ok('the invite may be four', fmt('invite').minWords <= 4);
+
+  // The label check has to let nature vocabulary through. Its first version
+  // rejected any line containing יער / הר / שביל, which would have thrown out
+  // the 229K reference post the whole format is modelled on.
+  ok('a bare noun phrase is still a label', isLabel('שביל יפה ביער'));
+  ok('but a statement about nature is not', !isLabel('יש רגע בהליכה שבו הראש מתרוקן'));
+
+  // Every line the owner approved verbatim must pass every check. If one of
+  // these fails, the guards have drifted away from the taste they encode.
+  const approved = [
+    'העובדה שהשביל הזה לא עולה כסף',
+    'חייב להיות בטופ 3 מסלולים שקיימים',
+    'יש אנשים שזה המסלול שלהם לעבודה',
+    'חייב להיות בטופ 3 דברים שעשיתי השבוע',
+    'למה אף אחד לא סיפר לי על השביל הזה',
+    'איך לא שמעתי על המסלול הזה עד היום',
+  ];
+  for (const line of approved) {
+    ok(`approved line survives: ${line}`, !hasPerson(line) && !isLabel(line));
+  }
+
+  // And the fallback pool is drawn from those approved lines, so a failed API
+  // call degrades to something already judged rather than to something invented.
+  ok(
+    'the fallback pool is owner-approved copy',
+    cfg.hooks.every((l) => approved.includes(l) || /אני, אתה/.test(l)),
+    cfg.hooks.find((l) => !approved.includes(l) && !/אני, אתה/.test(l))
+  );
+}
+
+/* -------------------------------------------------------------------------- */
 group('model tiering — the cheap tier has to be legal, not just cheaper');
 
 {

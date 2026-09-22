@@ -97,7 +97,9 @@ const SYSTEM = `אתה ממלא תבניות משפט מוכרות מטיקטו�
 - גוף ראשון מותר רק כשהוא חלק מהתבנית עצמה ("דברים שעשיתי השבוע").
   אסור "אני" מפורש, ואסור לטעון שהיית במקום הספציפי הזה.
 - מותר להגיד "השביל הזה" / "המסלול הזה" — הסרטון מראה שביל.
-- בלי אימוג׳י, האשטג, קריאה לפעולה, שם מותג, קישור, שם מדינה או אתר.
+- בלי אימוג׳י, האשטג, קריאה לפעולה, שם מותג, קישור.
+- שם מדינה מותר אך ורק בתבניות שמבקשות אותו במפורש, ורק את השם שניתן לך.
+  בכל תבנית אחרת אל תנחש מדינה — לא ידוע איפה צולם.
 
 החזר JSON בלבד: שורה אחת לכל תבנית שקיבלת.`;
 
@@ -162,7 +164,20 @@ export function isLabel(line) {
 }
 
 /** A line is unusable if it carries a link, runs long, or is a caption. */
-function reject(text, { maxWords }) {
+/**
+ * `allowsPerson` is the escape hatch for the two formats built out of pronouns.
+ *
+ * "אני, אתה, טיסה לפרו?" and "פרו אחי, פרו" are the owner's own words, and the
+ * person guard rejected both — אני, אתה and אחי are all on its list. They were
+ * produced correctly on every run and filtered out every time, which is why
+ * they only ever appeared as alternates.
+ *
+ * The guard is still right in general. What it is for is stopping the account
+ * claiming to have BEEN somewhere — "אני נשבע שהאוויר פה אחר" over footage
+ * nobody shot. A vocative and an invitation make no such claim: "me, you, a
+ * flight to Peru?" is addressed to the viewer from here, not from Peru.
+ */
+function reject(text, { maxWords, minWords = 5, allowsPerson = false }) {
   const s = String(text || '').trim();
   if (!s) return 'empty';
   if (URL_LIKE.test(s)) return 'carries a URL';
@@ -170,8 +185,12 @@ function reject(text, { maxWords }) {
   if (/\p{Extended_Pictographic}/u.test(s)) return 'carries an emoji';
   const words = s.split(/\s+/).length;
   if (words > maxWords) return `${words} words, over ${maxWords}`;
-  if (words < 5) return `${words} words, under 5 — too short to say anything`;
-  if (hasPerson(s)) return 'first or second person — the footage is not ours';
+  // Per format, because the two place shapes are short BY DESIGN — "פרו אחי,
+  // פרו" is three words and "אני, אתה, טיסה לפרו?" is four. A blanket floor of
+  // five rejected both on every run, which together with the person guard is
+  // why neither ever reached a post.
+  if (words < minWords) return `${words} words, under ${minWords} — too short to say anything`;
+  if (!allowsPerson && hasPerson(s)) return 'first or second person — the footage is not ours';
   if (isLabel(s)) return 'a label, not a statement — nothing is asserted';
   return null;
 }
@@ -206,13 +225,26 @@ function pickFormats(all, clipTitle, n) {
     const f = expanded[(h + i * 7) % expanded.length];
     if (!out.includes(f)) out.push(f);
   }
-  return out;
+
+  // Heaviest first, because the FIRST usable line is the one that ships — the
+  // rest are alternates nobody sees. Weighting only which formats get offered
+  // leaves the favoured ones sitting second on the list, which is where the
+  // two place formats landed on their first run: both produced exactly what
+  // was asked for, and neither was chosen.
+  return out.sort((a, b) => (b.weight || 1) - (a.weight || 1));
 }
 
 export async function writeHook(clip, { used = new Set(), candidates = 3 } = {}) {
   const cfg = postConfig().clips;
   const maxWords = cfg.hooksMaxWords;
-  const formats = pickFormats(cfg.formats, clip.title, candidates);
+
+  // The Hebrew country, when the judge was sure enough to name one. Two of the
+  // formats are built around it and must not be offered without it — a clip of
+  // an unidentifiable forest captioned "יוון אחי, יוון" states something the
+  // account cannot know, which is the one thing this pipeline refuses to do.
+  const placeHe = clip.vision?.place ? postConfig().places[clip.vision.place.toLowerCase()] || null : null;
+  const usable = cfg.formats.filter((f) => !f.needsPlace || placeHe);
+  const formats = pickFormats(usable, clip.title, candidates);
 
   if (!hasApiKey()) return { text: null, error: 'ANTHROPIC_API_KEY is not set', rejected: [] };
   if (!formats.length) return { text: null, error: 'no formats configured in post-config.json', rejected: [] };
@@ -227,6 +259,7 @@ export async function writeHook(clip, { used = new Set(), candidates = 3 } = {})
   const user = [
     'הסרטון: ' + `"${clip.title}"` + ` — צילום סטוק אנכי, ${clip.duration} שניות.`,
     seen,
+    placeHe ? `המדינה, מזוהה בוודאות: ${placeHe}. השתמש בשם הזה בדיוק בתבניות שדורשות מדינה.` : null,
     '',
     'התבניות למלא, אחת שורה לכל אחת:',
     ...formats.map(
@@ -255,14 +288,26 @@ export async function writeHook(clip, { used = new Set(), candidates = 3 } = {})
   const raw = res.content.find((b) => b.type === 'text')?.text;
   if (!raw) return { text: null, error: 'hook writing returned no text', rejected: [] };
 
-  const lines = (JSON.parse(raw).lines || []).map((l) => ({
-    format: String(l.format || ''),
-    text: String(l.text || '').trim(),
-  }));
+  // Ranked by the weight of the format each line fills, NOT by the order the
+  // model returned them in. Asking in weight order is not enough — the model
+  // reorders freely, and the first usable line is the one that ships, so a
+  // favoured format that comes back third is a favoured format that never
+  // publishes. That is exactly what happened to the two place formats: both
+  // produced the right line, both sat in `alternatives`.
+  const weightOf = new Map(formats.map((f) => [f.id, f.weight || 1]));
+  const allowsPersonBy = new Map(formats.map((f) => [f.id, f.allowsPerson === true]));
+  const minWordsBy = new Map(formats.map((f) => [f.id, f.minWords]));
+  const lines = (JSON.parse(raw).lines || [])
+    .map((l) => ({ format: String(l.format || ''), text: String(l.text || '').trim() }))
+    .sort((a, b) => (weightOf.get(b.format) || 1) - (weightOf.get(a.format) || 1));
 
   const rejected = [];
   for (const { format, text } of lines) {
-    const why = reject(text, { maxWords });
+    const why = reject(text, {
+      maxWords,
+      minWords: minWordsBy.get(format) ?? 5,
+      allowsPerson: allowsPersonBy.get(format) === true,
+    });
     if (why) {
       rejected.push(`${text} — ${why}`);
       continue;

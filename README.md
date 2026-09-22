@@ -400,6 +400,12 @@ message says when the slot frees.
 | `post-config.json` | the editorial dials: caption pool, hashtags, slide type, destination weights |
 | `src/postConfig.js` | reads and checks the above; the only module that knows the path |
 | `src/hashtags.js` | the five tags under a slideshow, one of them the deck's own country |
+| `src/video/vision.js` | judges a clip's thumbnail: is this somewhere worth going |
+| `src/video/hooks.js` | the Hebrew line, by filling one of the configured formats |
+| `src/video/overlay.js` | ffmpeg, and the text rendered through Chromium for bidi |
+| `src/models.js` | which model does which job, and the effort-parameter guard |
+| `scripts/clip-lab.js` | build a batch of clips to look at |
+| `scripts/clip-redo.js` | re-render specific clips with footage and line pinned |
 | `scripts/` | selftest, source probe, card-hosting check, one-off runs |
 
 ### What a slideshow says, and what it does not
@@ -435,6 +441,46 @@ live in `post-config.json`:
 
 The news **card** path is deliberately untouched. A card never publishes to
 TikTok, and its caption is read somewhere a URL is worth printing.
+
+### Clips — a stock video with one Hebrew line on it
+
+A third post format, alongside cards and decks. `npm run clip-lab -- 4` builds a
+batch to `out/clips`; `npm run clip-redo -- <pexelsId>="the line"` re-renders
+specific ones with the footage and the words pinned, which is the only way to
+judge a styling change without three variables moving at once.
+
+Everything below was settled by looking at rendered batches, and every one of
+them is a value in `post-config.json` with a test in the selftest. They are not
+meant to be re-argued per video.
+
+**The clip is chosen by looking at it, not by reading its title.** Searching for
+a camera technique — `pov walking mountain` — returns handlebars on a road that
+is nowhere; measured, every clip those queries returned scored 0-4 out of 10 on
+"would a viewer want to travel here". Searching the weighted destinations
+instead returns Gullfoss, Tre Cime, Oia. `src/video/vision.js` then judges the
+thumbnail, and `destination >= 7` is a **gate**, not a score term: a beautifully
+shot POV of nowhere is still nowhere, and folding it into a weighted sum would
+let the POV bonus buy a road back in.
+
+**The line fills a known format.** Every reference post that works is a
+recognisable template — "top 5 X oat", "Average X in Y" — filled with banal
+content. Free composition returns clever originals with metaphors, and clever is
+the wrong *type*. The nine formats in `clips.hooks.formats` are the account's
+voice; two of them name the country and only fire when the vision judge
+identified one with confidence ≥ 7.
+
+**The type is 52px, `#FFF4B3`, no stroke, two rows, and it moves.** The block is
+narrow (46% of the frame) *so that it wraps* — at 72% no position on a picture
+with a central subject fits on clean sky, so the search settles for a straddle
+and the line runs from sky onto rock. Two short rows on clean background beat
+one long row across the subject. Three columns are offered and the measurement
+picks whichever corner of the sky is actually empty.
+
+**Guards are per format, not blanket.** Three separate guards — a first/second
+person ban, a five-word floor, and a no-country rule — each silently rejected
+lines the owner had approved by hand, every time looking like the writer had
+failed. A guard that rejects a canonical line is a broken guard, and the
+selftest asserts every approved line survives every check.
 
 ## Honest caveats
 

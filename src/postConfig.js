@@ -83,6 +83,14 @@ export function postConfig() {
       weights: { ...(destinations.weights || {}) },
     },
     clips: clips(raw.clips || {}),
+    // English country name from the vision judge -> Hebrew, for the place
+    // formats. Keyed on free text a model produced, which is why it is separate
+    // from deck/flags.js and why a miss simply withdraws those formats.
+    places: Object.fromEntries(
+      Object.entries(raw.clips?.places || {})
+        .filter(([k]) => k !== '_comment')
+        .map(([k, v]) => [k.toLowerCase(), String(v)])
+    ),
   };
 
   return cached;
@@ -134,6 +142,16 @@ function clips(raw) {
       // How often this format is offered relative to the others. The owner
       // graded the shapes good/fine, and the grade is a weight, not a cut.
       weight: Math.max(1, Math.round(num(f.weight, 1))),
+      // Only offered when the vision judge named a country it was sure of.
+      // Without this a clip of an unidentifiable forest gets "יוון אחי, יוון"
+      // and the account states something it cannot know.
+      needsPlace: f.needsPlace === true,
+      // Exempt from the first/second-person guard. Only for shapes that are
+      // BUILT from pronouns — see the note at reject() in video/hooks.js.
+      allowsPerson: f.allowsPerson === true,
+      // Shortest acceptable line for this shape. The place formats are three
+      // and four words by design.
+      minWords: f.minWords === undefined ? undefined : Math.max(2, Math.round(num(f.minWords, 5))),
       examples: (Array.isArray(f.examples) ? f.examples : []).map((e) => String(e).trim()).filter(Boolean),
     }))
     .filter((f) => f.id && f.desc);
@@ -158,6 +176,10 @@ function clips(raw) {
       // The title words above survive as a free pre-filter that throws out the
       // obvious before anything is paid for.
       visionMinDestination: num(s.visionMinDestination, 7),
+      // How sure the judge must be before a place NAME is printed on a post.
+      // A separate, higher bar than the selection score: everything else only
+      // decides whether a clip is used, this one becomes a factual claim.
+      placeMinConfidence: num(s.placeMinConfidence, 7),
       visionMaxCandidates: Math.max(1, Math.round(num(s.visionMaxCandidates, 24))),
       preferPov: s.preferPov !== false,
       rejectStaged: s.rejectStaged !== false,
@@ -186,9 +208,22 @@ function clips(raw) {
       // look. Here it IS the native look: it is what TikTok's own text tool
       // produces and what every Hebrew reference post uses.
       strokePct: num(o.strokePct, 0.055),
+      // How much thicker the stroke gets when the frame will not carry the ink
+      // on its own. The palette is yellow by request, and yellow over a bright
+      // cloud is only legible because of what is behind the letterform — so
+      // the stroke adapts where a deck slide would have flipped to near-black.
+      strokeBoost: num(o.strokeBoost, 0.06),
       maxLines: Math.max(1, Math.round(num(o.maxLines, 3))),
       align: ['left', 'right', 'center'].includes(o.align) ? o.align : 'center',
       x: num(o.x, 0.5),
+      // The columns the placement search may choose between. Three, so the
+      // line can go in whichever corner of the sky is empty — see place() in
+      // render/photo.js.
+      xs: (Array.isArray(o.xs) ? o.xs : [0.28, 0.5, 0.72]).map(Number).filter(Number.isFinite),
+      // Above this measured luminance the line flips to near-black. High on
+      // purpose: stroked cream survives a blue sky, and flipping it early is
+      // what put dark type on Lauterbrunnen.
+      flipToDarkAbove: num(o.flipToDarkAbove, 0.62),
       width: num(o.width, 0.72),
       bands: {
         upper: band(o.bands?.upper, [0.2, 0.3]),

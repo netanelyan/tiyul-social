@@ -487,8 +487,14 @@ function place(grid, { topSafe, bottomSafe, blockH, blockW = 0.46, rail = true, 
   // one long one, ragged down the left. The width a block needs is a property
   // of the text, so it comes in as blockW and nothing below may go under it.
   const wide = (bw) => Math.max(blockW, bw);
+  // One column per allowed x. A clip offers three — left, centre, right — so
+  // the search can put the line in whichever corner of the sky is actually
+  // empty, which is what a person does by eye. Pinning it to the centre was a
+  // mistake: on a frame whose subject is a cliff down the middle, centred text
+  // lands on the cliff while clear sky sits unused either side of it.
+  const confineXs = confine ? (confine.xs?.length ? confine.xs : [confine.x]) : null;
   const columns = confine
-    ? // One column, where the design says the words go.
+    ? // Columns where the design says the words may go.
       //
       // The free sweep below is the right search for "put this wherever the
       // photograph is quietest" and the wrong one for "put this in the
@@ -500,7 +506,11 @@ function place(grid, { topSafe, bottomSafe, blockH, blockW = 0.46, rail = true, 
       // WHICH of the two allowed bands this particular photograph can carry,
       // what colour the type has to be there, and how much help it needs. That
       // is the part a person cannot do by eye for six slides a day.
-      [{ side: confine.x < 0.42 ? 'left' : confine.x > 0.58 ? 'right' : 'center', cx: confine.x, bw: wide(confine.width) }]
+      confineXs.map((cx) => ({
+        side: cx < 0.42 ? 'left' : cx > 0.58 ? 'right' : 'center',
+        cx,
+        bw: wide(confine.width),
+      }))
     : [
         { side: 'right', cx: 0.66, bw: wide(0.52) },
         { side: 'center', cx: 0.5, bw: wide(0.76) },
