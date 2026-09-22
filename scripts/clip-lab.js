@@ -21,15 +21,19 @@ const send = process.argv.includes('send');
 const t0 = Date.now();
 console.log(`building ${count} clip(s)…\n`);
 
-const { clips, considered, vetoed, failed, searchErrors, ffmpeg } = await buildClips({ count });
+const { clips, considered, vetoed, failed, searchErrors, ffmpeg, written } = await buildClips({ count });
 
 console.log(`ffmpeg: ${ffmpeg}`);
 console.log(`${considered} clip(s) passed the filter, ${clips.length} built\n`);
 
 for (const c of clips) {
   console.log(`  ${c.clip.file}`);
-  console.log(`     “${c.hook}”`);
+  console.log(`     “${c.hook}”${c.hookWritten ? '' : `   ⚠️ pool — ${c.hookNote || 'no line written'}`}`);
   console.log(`     ${c.clip.title}  ·  score ${c.clip.score}  ·  "${c.clip.query}"`);
+  if (c.clip.spot) {
+    const s = c.clip.spot;
+    console.log(`     text ${s.onDark ? 'light' : 'dark'} @ y=${s.y}  ·  worst contrast ${s.worstContrast}  ·  ${s.agreed}/${s.frames} frames agreed`);
+  }
   console.log(`     ${c.clip.page}\n`);
 }
 

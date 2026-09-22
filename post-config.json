@@ -175,61 +175,146 @@
     ],
     "hooks": {
       "_comment": [
-        "The line that goes on the clip. One per post, drawn at random.",
+        "Lines are written per clip by src/video/hooks.js by FILLING A KNOWN FORMAT,",
+        "not by free composition. That distinction took four rejected rounds to find.",
         "",
-        "SEED ONLY — the first is the owner's own example and the rest are",
-        "placeholders in the same shape, here so the pipeline runs end to end.",
-        "They are meant to be replaced wholesale with lines lifted from real",
-        "viral posts. This is the single highest-leverage thing in the file: the",
-        "footage is interchangeable and the line is not.",
+        "Every reference post the owner supplied is a recognizable meme template:",
+        "\"has to be top 5 X oat\" (284K), \"one of the coolest feelings...\" (229K, also",
+        "a ranking), \"Average X in Y\" (130K), \"Fuck X go to Y\" (1.5K). None is an",
+        "original sentence. The virality lives in the FORMAT - the viewer recognizes",
+        "it instantly, and the joke is applying it to this footage.",
         "",
-        "The test for a line is whether somebody would send it to a friend. If it",
-        "could appear in a travel brochure, it is wrong."
+        "Free composition produces the opposite type: clever observations with",
+        "metaphors and personification, which read as copywriting however casual the",
+        "wording is. The formats below are the menu; edit them, add new ones lifted",
+        "from real posts, delete ones that stop working. This list IS the voice of",
+        "the account."
       ],
       "lines": [
-        "על מה אני חושב בשיעור מתמטיקה",
-        "איפה שהראש שלי נמצא כל היום",
-        "במקום להיות בעבודה עכשיו",
-        "התחביב שלי זה לברוח מפה",
-        "כשאני עוצם עיניים בפקק",
-        "הטאב שאני פותח כל בוקר",
-        "אני בעוד חודשיים בע\"ה",
-        "המקום ששומר לי מקום"
+        "העובדה שהשביל הזה לא עולה כסף",
+        "חייב להיות בטופ 3 מסלולים שקיימים",
+        "יש אנשים שזה המסלול שלהם לעבודה",
+        "חייב להיות בטופ 3 דברים שעשיתי השבוע",
+        "למה אף אחד לא סיפר לי על השביל הזה",
+        "איך לא שמעתי על המסלול הזה עד היום"
+      ],
+      "maxWords": 9,
+      "formats": [
+        {
+          "id": "top",
+          "he": "דירוג מוגזם",
+          "weight": 1,
+          "desc": "טענת דירוג מוגזמת ובטוחה בעצמה. התוכן הכי בנאלי שאפשר — בלי הברקות.",
+          "examples": [
+            "חייב להיות בטופ 3 מסלולים שקיימים",
+            "חייב להיות בטופ 3 דברים שעשיתי השבוע"
+          ]
+        },
+        {
+          "id": "someones",
+          "he": "אצל מישהו זו שגרה",
+          "weight": 1,
+          "desc": "\"יש אנשים ש...\" — הקנאה היבשה במי שזה היומיום שלו. עוגן קונקרטי: עבודה, בוקר.",
+          "examples": [
+            "יש אנשים שזה המסלול שלהם לעבודה"
+          ]
+        },
+        {
+          "id": "fact",
+          "he": "העובדה ש",
+          "weight": 1,
+          "desc": "\"העובדה ש...\" — עובדה פשוטה שנגמרת בלי מסקנה. בלי רעיונות מומצאים.",
+          "examples": [
+            "העובדה שהשביל הזה לא עולה כסף"
+          ]
+        },
+        {
+          "id": "nobody",
+          "he": "אף אחד לא מדבר",
+          "weight": 1,
+          "desc": "\"אף אחד לא מדבר על...\" — רק כשה-X באמת שווה דיבור ולא מדובר. השקט עובד; צל, קול מים, כמה ריק — לא.",
+          "examples": [
+            "אף אחד לא מדבר על השקט הזה"
+          ]
+        },
+        {
+          "id": "reminder",
+          "he": "תזכורת",
+          "weight": 1,
+          "desc": "\"תזכורת ש...\" — עובדה פשוטה שקיימת. אסור להצליב עם מושגים ממוסדים (שעות פתיחה, שעות עבודה).",
+          "examples": [
+            "תזכורת שמקומות כאלה קיימים כל השנה"
+          ]
+        },
+        {
+          "id": "gt",
+          "he": "השוואה עם >",
+          "weight": 1,
+          "desc": "X > Y — קצר ופסקני. בלי חשבונאות (עשר דקות מול יום חופש) — השוואה ישירה בלבד.",
+          "examples": [
+            "מסלול כזה > כל יום בעיר"
+          ]
+        },
+        {
+          "id": "question",
+          "he": "שאלה רטורית",
+          "weight": 1,
+          "desc": "שאלה שהיא התפעלות. בלי מושגים מומצאים — רק פליאה ישירה.",
+          "examples": [
+            "למה אף אחד לא סיפר לי על השביל הזה",
+            "איך לא שמעתי על המסלול הזה עד היום"
+          ]
+        }
       ]
     },
     "search": {
       "_comment": [
-        "What to pull, and what never to pull.",
+        "DESTINATION-FIRST. This is the correction for the fault that produced four",
+        "bike videos on anonymous roads.",
         "",
-        "`queries` are the searches that produced the clips the owner picked by",
-        "eye — POV and trail work, not destinations. Destination searches were",
-        "tried and they return aerials and static scenics, which is the opposite",
-        "of what this format needs.",
+        "The queries used to ask for a camera technique - \"pov walking mountain\",",
+        "\"hiking pov\" - and a stock library answers that literally: handlebars on an",
+        "empty road, which matches every word and is nowhere. Measured with a vision",
+        "judge, every clip those queries returned scored 0-4 out of 10 on \"would a",
+        "viewer want to travel here\". Across 235 clips from POV queries, exactly 7",
+        "were both a real destination and a participant camera.",
         "",
-        "`prefer` and `reject` score the TITLE. They encode one rule, and it is",
-        "worth stating because it generalises further than the word lists do:",
-        "keep the clips where the camera is a PARTICIPANT, drop the ones where it",
-        "is a SPECTATOR watching a person. A POV bike ride, a hike behind a",
-        "waterfall, a dog in a creek — someone is doing the thing. 'Serene woman",
-        "walking along ocean shoreline' is a model being filmed, and no amount of",
-        "Hebrew on top of it stops it reading as a stock lifestyle shoot.",
+        "Searching the destinations instead returns Gullfoss, the Dolomites, Oia,",
+        "Vernazza, Lauterbrunnen - ~85% scoring 7+ - and a good share of those are",
+        "POV anyway. So POV is now a PREFERENCE applied inside destination-worthy",
+        "results rather than the axis everything is selected on.",
         "",
-        "`reject` is a hard veto, not a penalty. A bikini clip with the word",
-        "'trail' in its title must not score its way back in."
+        "The list leads with the countries in destinations.weights above, because",
+        "that is where this audience actually flies. Editing it is editing what the",
+        "account is about."
       ],
       "queries": [
-        "pov walking mountain",
-        "hiking pov",
-        "walking pov nature",
-        "first person walking",
-        "pov hiking trail",
-        "walking through forest pov",
-        "walking towards waterfall",
-        "pov bike ride forest",
-        "hiking adventure rocky mountain trail",
-        "walking through autumn leaves forest",
-        "dog exploring forest creek",
-        "forest walk at sunrise"
+        "santorini greece",
+        "greece island village",
+        "meteora greece",
+        "cyprus coast village",
+        "dolomites italy",
+        "cinque terre italy",
+        "lake como italy",
+        "amalfi coast italy",
+        "tuscany italy countryside",
+        "georgia caucasus mountains",
+        "tbilisi georgia old town",
+        "thailand island beach",
+        "thailand waterfall jungle",
+        "kyoto japan temple",
+        "japan mountain village",
+        "lisbon portugal street",
+        "madeira portugal cliffs",
+        "spain coast village",
+        "andalusia spain white village",
+        "vietnam halong bay",
+        "vietnam rice terraces",
+        "prague old town czech",
+        "czech countryside castle",
+        "swiss alps village",
+        "iceland waterfall",
+        "norway fjord village"
       ],
       "prefer": [
         "pov",
@@ -258,7 +343,13 @@
         "boardwalk",
         "canyon",
         "cliff",
-        "valley"
+        "valley",
+        "scenic",
+        "behind",
+        "through",
+        "climbing",
+        "crossing",
+        "wandering"
       ],
       "reject": [
         "bikini",
@@ -286,56 +377,165 @@
         "attractive",
         "sexy"
       ],
-      "minScore": 3,
+      "minScore": 0,
       "minHeight": 1600,
       "minDuration": 5,
-      "maxDuration": 30
+      "maxDuration": 30,
+      "_spectator_comment": [
+        "A person named in the title is a person in the FRAME, which means somebody is",
+        "standing back filming them — and that is a stock lifestyle shot however good",
+        "the scenery behind it is.",
+        "",
+        "This list is the correction for the filter's first version, which had only",
+        "prefer and reject and therefore ranked by SUBJECT. It scored \"woman walking in",
+        "autumn forest pathway\" at 5 and \"scenic hike behind a majestic waterfall\" at 2:",
+        "the first hits four forest words while being a shot of a model, the second hits",
+        "two while being exactly the format. Every clip the owner rejected by name",
+        "outscored every clip they wanted.",
+        "",
+        "Matched as WHOLE WORDS, which is load-bearing. \"hiker\" is a person being",
+        "filmed and \"hiking\" is the activity, and the prefix matching used for prefer",
+        "cannot tell them apart — that exact pair is what got through.",
+        "",
+        "A penalty rather than a veto, so an explicit POV marker can outrun it: \"pov",
+        "hiker on a ridge\" is a participant and should survive."
+      ],
+      "spectator": [
+        "woman",
+        "women",
+        "man",
+        "men",
+        "girl",
+        "boy",
+        "guy",
+        "lady",
+        "female",
+        "male",
+        "person",
+        "people",
+        "couple",
+        "couples",
+        "friends",
+        "family",
+        "hiker",
+        "hikers",
+        "tourist",
+        "tourists",
+        "traveler",
+        "traveller",
+        "backpacker",
+        "photographer",
+        "blonde",
+        "brunette",
+        "child",
+        "kid",
+        "teen"
+      ],
+      "spectatorPenalty": 5,
+      "povBonus": 5,
+      "denyIds": [
+        29142354
+      ],
+      "visionMinDestination": 7,
+      "visionMaxCandidates": 24,
+      "preferPov": true,
+      "rejectStaged": true,
+      "rejectAerialOnly": false,
+      "_vision_comment": [
+        "The judge runs on the Pexels thumbnail, which the API already returns - no",
+        "download, one cheap call per candidate.",
+        "",
+        "visionMinDestination is the whole filter. 7 keeps Santorini, the Dolomites",
+        "and Gullfoss; it rejects an empty road, which scores 0-3. The owner rejected",
+        "two clips by eye and the judge had independently scored them 0 and 3.",
+        "",
+        "rejectAerialOnly is false on purpose: a drone shot of Lauterbrunnen is still",
+        "somewhere worth going. Aerial is scored down as a preference, not vetoed,",
+        "because vetoing it would throw away most of the best destinations."
+      ]
     },
     "video": {
       "_comment": [
-        "The encode. 1080x1920 H.264, which is what TikTok wants and what every",
-        "phone plays without thinking about it.",
+        "The encode. 1080x1920 H.264, which is what TikTok wants and what every phone",
+        "plays without thinking about it.",
         "",
-        "`seconds` is the finished length. Stock clips run 5-25s and most of them",
-        "have one good moment; 8 seconds is long enough to read the line and see",
-        "the payoff and short enough to loop, and a loop is worth more than a",
-        "watch. Trimmed from `startAt` so the first second of camera-settling is",
-        "not what the viewer lands on.",
+        "CRF 23 rather than 21: from a 4K source 21 produced 40MB for 8 seconds,",
+        "which is over Telegram's upload limit and far more than 1080 needs. 23 is",
+        "about half that and the difference is not visible at this size.",
         "",
-        "`fadeIn` holds the line on screen from the start rather than fading it",
-        "in late: the hook has to be readable before the thumb decides."
+        "`seconds` is the finished length. 8 is long enough to read the line and see",
+        "the place, short enough to loop, and a loop is worth more than a watch.",
+        "",
+        "`startAt` is now a FALLBACK only - overlay.js picks the best window by",
+        "measuring frames, and uses this when measurement is unavailable."
       ],
       "width": 1080,
       "height": 1920,
       "seconds": 8,
       "startAt": 0.6,
       "fps": 30,
-      "crf": 21,
+      "crf": 23,
       "preset": "medium",
       "keepAudio": false
     },
     "overlay": {
       "_comment": [
-        "Deliberately NOT the slide overlay above, and the difference is the job.",
+        "Read off five real posts: centred, upper-middle, bold, with a stroke.",
         "",
-        "A slide's text labels a photograph, so it is small, light and off to one",
-        "side — the picture is the post. A clip's text IS the post: the footage is",
-        "the punchline to it. It has to be readable in the half second before a",
-        "thumb decides, so it is larger, centred, and set the way TikTok's own",
-        "text tool sets it, which is what the reference posts all use.",
+        "Width came down from 0.84 to 0.72 and maxLines from 3 to 2. At 84% a line",
+        "set at 56px fits on one row, so it stretched the full width of the frame and",
+        "crossed whatever was behind it - in one shipped clip, the tree/road seam,",
+        "which is the busiest edge in the picture. Narrower forces a wrap, and two",
+        "shorter rows sit inside a quiet area far more often than one long one.",
         "",
-        "Same pixel grammar as the slide config so both are edited the same way:",
-        "sizePct against sizeBasis, a weight, an opacity, a shadow, a line cap."
+        "The bands moved up and tightened for the same reason. The old mid band",
+        "(0.42-0.56) is where a horizon usually falls; this pair brackets it.",
+        "",
+        "seamPenalty makes the placement search avoid horizontal edges specifically,",
+        "rather than only preferring low average texture - a horizon can be locally",
+        "calm above and below and still be the worst place on the frame for a line."
       ],
-      "sizePct": 0.042,
+      "sizePct": 0.052,
       "sizeBasis": "width",
-      "weight": 600,
-      "opacity": 0.96,
-      "shadow": "0 2px 10px rgba(0,0,0,0.45)",
-      "maxLines": 3,
+      "weight": 700,
+      "opacity": 1,
+      "shadow": "0 2px 12px rgba(0,0,0,0.5)",
+      "strokePct": 0.055,
+      "maxLines": 2,
       "align": "center",
-      "y": 0.3,
-      "width": 0.82
+      "x": 0.5,
+      "width": 0.72,
+      "bands": {
+        "upper": [
+          0.2,
+          0.3
+        ],
+        "mid": [
+          0.36,
+          0.46
+        ]
+      },
+      "colors": [
+        {
+          "name": "white",
+          "fill": "#FFFFFF",
+          "stroke": "rgba(0,0,0,0.55)",
+          "onDarkOnly": false
+        },
+        {
+          "name": "cream",
+          "fill": "#F7E7A8",
+          "stroke": "rgba(60,40,0,0.55)",
+          "onDarkOnly": true
+        },
+        {
+          "name": "butter",
+          "fill": "#FFE9A3",
+          "stroke": "rgba(60,40,0,0.5)",
+          "onDarkOnly": true
+        }
+      ],
+      "seamPenalty": true
     }
   },
   "destinations": {

@@ -1,4 +1,5 @@
 import { postConfig } from '../postConfig.js';
+import { judgeThumb, rankVision } from './vision.js';
 
 // Pexels video search.
 //
@@ -45,17 +46,50 @@ export const titleOf = (v) =>
  * "trail" in its title would otherwise accumulate enough preferred words to
  * come back, which is exactly the failure the list was written to prevent.
  */
-export function tasteScore(title, { prefer, reject } = postConfig().clips.search) {
+const esc = (w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+export function tasteScore(title, cfg = postConfig().clips.search) {
+  const { prefer, reject, spectator, povBonus, spectatorPenalty } = cfg;
   const t = String(title || '').toLowerCase();
   if (!t) return null;
   for (const bad of reject) if (t.includes(bad)) return null;
 
-  let score = 0;
+  // Subject words, counted by POSITION rather than by term.
+  //
+  // The list has overlapping stems on purpose — "hike" and "hiking" both need
+  // to match something — and counting per term scored "hiking" twice for one
+  // word. Deduping on where the match STARTS collapses those back to one,
+  // which is what a human counting the words in the title would do.
+  const hits = new Set();
   for (const good of prefer) {
-    // Word-boundary, so "path" does not match "pathetic" and — the one that
-    // actually bit — "hike" does not match nothing while "hiking" matches.
-    if (new RegExp(`\\b${good.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i').test(t)) score++;
+    const m = new RegExp(`\\b${esc(good)}`, 'gi');
+    for (let r; (r = m.exec(t)); ) hits.add(r.index);
   }
+  let score = hits.size;
+
+  // A PERSON in the title means a person in the FRAME, which means somebody
+  // is standing back filming them.
+  //
+  // This is the correction that matters, and the old version did not have it at
+  // all: the subject words alone rank "woman walking in autumn forest pathway"
+  // ABOVE "scenic hike behind a majestic waterfall", because the first one hits
+  // four of them. Four words about a forest, describing a shot of a model.
+  //
+  // Whole words only. "hiker" is a person being filmed and "hiking" is the
+  // activity, and a prefix match cannot tell them apart — which is precisely
+  // the pair that got through.
+  for (const who of spectator) {
+    if (new RegExp(`\\b${esc(who)}\\b`, 'i').test(t)) {
+      score -= spectatorPenalty;
+      break;
+    }
+  }
+
+  // ...unless the title says the camera IS the person. "POV hiker" is a
+  // participant, and the bonus is large enough to outrun one penalty, because
+  // an explicit point-of-view marker is the strongest signal in the title.
+  if (/\b(pov|first[- ]person|point of view)\b/i.test(t)) score += povBonus;
+
   return score;
 }
 
@@ -96,7 +130,7 @@ async function search(query, page, { timeoutMs }) {
  * that Pexels rate-limits should not cost the other eleven, for the same reason
  * one unreachable destination does not stop the climate rotation.
  */
-export async function findClips({ limit = 12, seen = new Set(), pages = 2, timeoutMs = 20_000 } = {}) {
+export async function findClips({ limit = 12, seen = new Set(), pages = 2, timeoutMs = 20_000, judge = true } = {}) {
   if (!configured()) throw new Error('PEXELS_API_KEY is not set');
 
   const cfg = postConfig().clips.search;
@@ -116,6 +150,8 @@ export async function findClips({ limit = 12, seen = new Set(), pages = 2, timeo
 
       for (const v of videos) {
         if (out.has(v.id) || seen.has(String(v.id))) continue;
+        // Rejected by the owner by eye. Stronger than any score.
+        if (cfg.denyIds.includes(String(v.id))) continue;
         if (!(v.height > v.width)) continue;
         if (v.height < cfg.minHeight) continue;
         if (v.duration < cfg.minDuration || v.duration > cfg.maxDuration) continue;
@@ -152,6 +188,33 @@ export async function findClips({ limit = 12, seen = new Set(), pages = 2, timeo
     }
   }
 
-  const clips = [...out.values()].sort((a, b) => b.score - a.score || a.duration - b.duration);
-  return { clips: clips.slice(0, limit), total: clips.length, vetoed, errors };
+  // Title ranking orders the QUEUE for the judge; it no longer decides
+  // anything. Cheapest first: the free string checks above have already thrown
+  // out the vetoes, and what survives is offered to the picture.
+  const queue = [...out.values()].sort((a, b) => b.score - a.score || a.duration - b.duration);
+
+  if (!judge) {
+    return { clips: queue.slice(0, limit), total: queue.length, vetoed, errors, judged: 0, nowhere: [] };
+  }
+
+  const judged = [];
+  const nowhere = [];
+  let calls = 0;
+  for (const c of queue) {
+    if (judged.length >= limit || calls >= cfg.visionMaxCandidates) break;
+    calls++;
+    const vision = await judgeThumb(c.poster);
+    const rank = rankVision(vision, cfg);
+    if (rank === null) {
+      // Recorded rather than dropped silently. "destination 2" is the single
+      // most useful line in a run that came back empty, and it is the number
+      // that tells you a query is asking for the wrong thing.
+      nowhere.push(`${c.title} — ${vision ? `destination ${vision.destination}${vision.staged ? ', staged' : ''}` : 'not judged'}`);
+      continue;
+    }
+    judged.push({ ...c, vision, rank });
+  }
+
+  judged.sort((a, b) => b.rank - a.rank);
+  return { clips: judged, total: queue.length, vetoed, errors, judged: calls, nowhere };
 }

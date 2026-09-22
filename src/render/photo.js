@@ -192,6 +192,7 @@ function region(grid, x0, y0, x1, y1) {
   // strength of that average, and its last line vanishes into the mountain.
   let lo = 1;
   let hi = 0;
+  const rows = [];
   for (let y = cy0; y < cy1; y++) {
     let rowSum = 0;
     let rowN = 0;
@@ -200,6 +201,7 @@ function region(grid, x0, y0, x1, y1) {
       rowN++;
     }
     const rowMean = rowSum / rowN;
+    rows.push(rowMean);
     if (rowMean < lo) lo = rowMean;
     if (rowMean > hi) hi = rowMean;
   }
@@ -209,6 +211,10 @@ function region(grid, x0, y0, x1, y1) {
     mean,
     lo,
     hi,
+    // Per-row means, kept so the caller can find a horizon. See the seam
+    // penalty in place(): a block straddling one is legible on average and
+    // illegible in fact.
+    rows,
     sd: Math.sqrt(Math.max(0, sumSq / n - mean * mean)),
     sat: satSum / n,
     edge: edgeN ? edge / edgeN : 0,
@@ -466,7 +472,7 @@ function inkContrast(mean, inkLum) {
   return a > b ? a / b : b / a;
 }
 
-function place(grid, { topSafe, bottomSafe, blockH, blockW = 0.46, rail = true, inkLum = null, mask = null, hint = null, confine = null }) {
+function place(grid, { topSafe, bottomSafe, blockH, blockW = 0.46, rail = true, inkLum = null, mask = null, hint = null, confine = null, seam = false }) {
   const boxes = [];
   // Three columns, each already inside the frame's margin.
   //
@@ -603,7 +609,22 @@ function place(grid, { topSafe, bottomSafe, blockH, blockW = 0.46, rail = true, 
       // without forbidding it outright.
       const clear = onBackground * onBackground;
 
-      const penalty = rail ? railOverlap(col.cx, cy, col.bw, blockH) * 0.85 : 0;
+      let penalty = rail ? railOverlap(col.cx, cy, col.bw, blockH) * 0.85 : 0;
+
+      // A horizontal SEAM through the block — a horizon, a treeline, the edge
+      // of a road — is the worst place on a frame for a line of text, and
+      // neither `busy` nor `legible` can see it. Both are averages over the
+      // box: a block sitting half on bright sky and half on dark trees has
+      // modest texture and comfortable mean contrast, and every letter still
+      // straddles the join. This measures the biggest row-to-row jump inside
+      // the box and charges for it.
+      if (seam && stats.rows && stats.rows.length > 2) {
+        let worstStep = 0;
+        for (let r = 1; r < stats.rows.length; r++) {
+          worstStep = Math.max(worstStep, Math.abs(stats.rows[r] - stats.rows[r - 1]));
+        }
+        penalty += Math.min(0.5, worstStep * 2.2);
+      }
 
       // No centring prior any more. It was worth a tenth and it pulled text
       // toward the middle of the frame, which is precisely where the subject
@@ -729,7 +750,7 @@ function colourFor(stats, hue, inkLum = null) {
  * would not decode) or a placement the renderer can apply without interpreting
  * anything further.
  */
-export async function analyseSlides(items, { topSafe, bottomSafe, height, inkLum = null, regionHint = null, confine = null }) {
+export async function analyseSlides(items, { topSafe, bottomSafe, height, inkLum = null, regionHint = null, confine = null, seam = false }) {
   const grids = await sampleGrids(items.map((it) => it.src || null));
   const top = topSafe / height;
   const bottom = bottomSafe / height;
@@ -769,6 +790,7 @@ export async function analyseSlides(items, { topSafe, bottomSafe, height, inkLum
       mask,
       hint: hintBox,
       confine,
+      seam,
     });
     if (!spot) {
       out.push(null);

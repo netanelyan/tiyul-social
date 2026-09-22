@@ -1,5 +1,6 @@
 import * as store from '../store.js';
 import { cardHostConfigured, tiktokVerifiedDomains, unverifiedTikTokHosts } from './imageHosts.js';
+import { cardPublicUrl } from '../render/index.js';
 
 // TikTok publishing, through the official Content Posting API only.
 //
@@ -760,6 +761,22 @@ export function preflight(cand) {
 }
 
 /**
+ * The public URL of a finished clip.
+ *
+ * TikTok pulls video the same way it pulls photos, so this reuses the card
+ * host: the file has to sit under a base URL on a domain verified in the
+ * developer console. Returns null when nothing is configured, and the caller
+ * refuses rather than posting a broken pull.
+ */
+function clipUrl(cand) {
+  const file = cand.clip?.file;
+  if (!file) return null;
+  if (cand.clip?.url) return cand.clip.url;
+  const name = String(file).split(/[\/]/).pop();
+  return cardPublicUrl(name);
+}
+
+/**
  * Publish one approved card as a photo post.
  *
  * `dryRun` runs every check, refreshes the token and asks TikTok who we are —
@@ -795,7 +812,18 @@ export async function publishTikTok(cand, { dryRun = false, draft = false } = {}
     );
   }
 
-  const { images, notes } = preflight(cand);
+  // A clip is one video rather than a list of images, so it skips the photo
+  // preflight entirely — that function checks slide count, https and domain
+  // verification for every image URL, none of which describes a single mp4.
+  const isClip = cand.kind === 'clip';
+  const { images, notes } = isClip ? { images: [], notes: [] } : preflight(cand);
+  const videoUrl = isClip ? clipUrl(cand) : null;
+  if (isClip && !videoUrl) {
+    throw new TikTokError(
+      'the clip has no public URL — TikTok pulls video by URL, so CARD_PUBLIC_BASE_URL must be set and the file hosted under it',
+      { step: 'preflight', code: 'no_video_url' }
+    );
+  }
 
   // Checked here rather than discovered at init. TikTok's answer is correct and
   // unhelpful — it names "the scope required for completing this request"
@@ -864,7 +892,7 @@ export async function publishTikTok(cand, { dryRun = false, draft = false } = {}
     step: 'init',
     body: {
       post_mode: draft ? 'MEDIA_UPLOAD' : 'DIRECT_POST',
-      media_type: 'PHOTO',
+      media_type: isClip ? 'VIDEO' : 'PHOTO',
       post_info: draft
         ? {
             // Only what survives the handover. privacy_level, disable_comment
@@ -888,11 +916,13 @@ export async function publishTikTok(cand, { dryRun = false, draft = false } = {}
             // reaches fewer people. Use draft mode to choose.
             auto_add_music: true,
           },
-      source_info: {
-        source: 'PULL_FROM_URL',
-        photo_cover_index: 0,
-        photo_images: images,
-      },
+      // A video is pulled by one URL; a photo post is a list plus a cover
+      // index. Same endpoint, same PULL_FROM_URL, and the same verified-domain
+      // requirement — which is why hosting the mp4 under CARD_PUBLIC_BASE_URL
+      // reuses the whole delivery path the slides already use.
+      source_info: isClip
+        ? { source: 'PULL_FROM_URL', video_url: videoUrl }
+        : { source: 'PULL_FROM_URL', photo_cover_index: 0, photo_images: images },
     },
   });
 

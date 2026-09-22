@@ -97,6 +97,9 @@ export function postConfig() {
  * could publish.
  */
 function clips(raw) {
+  // The fallback pool. Lines are normally written per clip by video/hooks.js;
+  // this is what a failed API call degrades to, and it must not be empty,
+  // because a clip with no line on it is just a stock video.
   const hooks = ((raw.hooks || {}).lines || []).map((s) => String(s).trim()).filter(Boolean);
   if (!hooks.length) throw new Error('post-config.json: clips.hooks.lines is empty — a clip is its line');
 
@@ -109,13 +112,56 @@ function clips(raw) {
   const queries = (s.queries || []).map((q) => String(q).trim()).filter(Boolean);
   if (!queries.length) throw new Error('post-config.json: clips.search.queries is empty — nothing to pull');
 
+  const colours = (o.colors || [])
+    .map((c) => ({
+      name: String(c.name || 'ink'),
+      fill: String(c.fill || '#FFFFFF'),
+      stroke: String(c.stroke || 'rgba(0,0,0,0.55)'),
+      // Cream has almost the same luminance as a bright sky, so it is offered
+      // over a dark frame only — the same rule the deck applies to its accent.
+      onDarkOnly: c.onDarkOnly === true,
+    }))
+    .filter((c) => /^#|rgb/.test(c.fill));
+  if (!colours.length) colours.push({ name: 'white', fill: '#FFFFFF', stroke: 'rgba(0,0,0,0.55)', onDarkOnly: false });
+
+  // The sentence formats the hook writer fills. Each is a recognizable meme
+  // template — the writer's job is filling one, never free composition.
+  const formats = (Array.isArray((raw.hooks || {}).formats) ? raw.hooks.formats : [])
+    .map((f) => ({
+      id: String(f.id || '').trim(),
+      he: String(f.he || '').trim(),
+      desc: String(f.desc || '').trim(),
+      // How often this format is offered relative to the others. The owner
+      // graded the shapes good/fine, and the grade is a weight, not a cut.
+      weight: Math.max(1, Math.round(num(f.weight, 1))),
+      examples: (Array.isArray(f.examples) ? f.examples : []).map((e) => String(e).trim()).filter(Boolean),
+    }))
+    .filter((f) => f.id && f.desc);
+
   return {
     hooks,
+    hooksMaxWords: Math.max(3, Math.round(num((raw.hooks || {}).maxWords, 12))),
+    formats,
     search: {
       queries,
       prefer: words(s.prefer),
       reject: words(s.reject),
+      spectator: words(s.spectator),
+      spectatorPenalty: num(s.spectatorPenalty, 5),
+      povBonus: num(s.povBonus, 5),
+      // Specific Pexels ids the owner has rejected by eye. A veto, like the
+      // reject words — a clip that was already turned down must never come
+      // back however well it scores.
+      denyIds: (Array.isArray(s.denyIds) ? s.denyIds : []).map((n) => String(n)),
       minScore: num(s.minScore, 3),
+      // The vision judge, which is now the real filter — see src/video/vision.js.
+      // The title words above survive as a free pre-filter that throws out the
+      // obvious before anything is paid for.
+      visionMinDestination: num(s.visionMinDestination, 7),
+      visionMaxCandidates: Math.max(1, Math.round(num(s.visionMaxCandidates, 24))),
+      preferPov: s.preferPov !== false,
+      rejectStaged: s.rejectStaged !== false,
+      rejectAerialOnly: s.rejectAerialOnly === true,
       minHeight: num(s.minHeight, 1600),
       minDuration: num(s.minDuration, 5),
       maxDuration: num(s.maxDuration, 30),
@@ -131,15 +177,27 @@ function clips(raw) {
       keepAudio: v.keepAudio === true,
     },
     overlay: {
-      sizePct: num(o.sizePct, 0.042),
+      sizePct: num(o.sizePct, 0.052),
       sizeBasis: o.sizeBasis === 'height' ? 'height' : 'width',
-      weight: num(o.weight, 600),
-      opacity: num(o.opacity, 0.96),
-      shadow: String(o.shadow || '0 2px 10px rgba(0,0,0,0.45)'),
+      weight: num(o.weight, 700),
+      opacity: num(o.opacity, 1),
+      shadow: String(o.shadow || '0 2px 12px rgba(0,0,0,0.5)'),
+      // A stroke, unlike on a deck slide where it is banned as the burned-in
+      // look. Here it IS the native look: it is what TikTok's own text tool
+      // produces and what every Hebrew reference post uses.
+      strokePct: num(o.strokePct, 0.055),
       maxLines: Math.max(1, Math.round(num(o.maxLines, 3))),
       align: ['left', 'right', 'center'].includes(o.align) ? o.align : 'center',
-      y: num(o.y, 0.3),
-      width: num(o.width, 0.82),
+      x: num(o.x, 0.5),
+      width: num(o.width, 0.72),
+      bands: {
+        upper: band(o.bands?.upper, [0.2, 0.3]),
+        mid: band(o.bands?.mid, [0.36, 0.46]),
+      },
+      // Charge the placement search for crossing a horizon — see place() in
+      // render/photo.js.
+      seamPenalty: o.seamPenalty !== false,
+      colors: colours,
     },
   };
 }

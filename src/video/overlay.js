@@ -1,10 +1,12 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { getBrowser } from '../render/index.js';
+import { analyseSlides } from '../render/photo.js';
 import { postConfig } from '../postConfig.js';
-import { heeboDataUri, assistantDataUri, arimoDataUri, escapeHtml } from '../render/theme.js';
+import { heeboDataUri, assistantDataUri, arimoDataUri, tiktokSansDataUri, escapeHtml } from '../render/theme.js';
 
 const run = promisify(execFile);
 
@@ -61,55 +63,299 @@ export async function ffmpegReady() {
 }
 
 /**
+ * Where the line goes and what colour it is — measured, not assumed.
+ *
+ * The first version hardcoded white, centred, at a fixed height, and it showed:
+ * white type on a pale sky, and a line sitting wherever it happened to land
+ * regardless of what was behind it. The deck slides solved this a long time ago
+ * by measuring the photograph (render/photo.js) and this reuses that work
+ * unchanged — the placement geometry comes from the DECK's overlay config, so
+ * a clip and a slide put their text in the same place for the same reasons.
+ *
+ * The one thing a still does not have to deal with: the background MOVES. A
+ * spot that is clean sky at the start of the clip can be a bright roofline four
+ * seconds later, and measuring a single frame gets that wrong in the most
+ * visible way possible — the text is legible exactly until someone watches it.
+ *
+ * So several frames are measured and the answers are combined pessimistically:
+ * the band most frames agree on, the WORST contrast within it, the MAX shadow
+ * and wash any frame asked for. The type is therefore sized for the hardest
+ * moment in the clip rather than the first one.
+ */
+export async function measureClip(source, { frames = 5, startAt = null } = {}) {
+  const cfg = postConfig().clips.video;
+  const ov = postConfig().clips.overlay;
+  const { width: w, height: h, seconds, fps } = cfg;
+  const from = startAt ?? cfg.startAt;
+  const dir = mkdtempSync(join(tmpdir(), 'tiyul-clip-'));
+
+  try {
+    // Extracted with the SAME cover-crop the finished clip gets, then scaled
+    // down. That is what makes the measurement honest: analyseSlides crops to
+    // 9:16 itself, so handing it an uncropped 4:3 source would measure pixels
+    // that never reach the screen.
+    await run(ffmpegPath(), [
+      '-y', '-hide_banner', '-loglevel', 'error',
+      '-ss', String(from), '-t', String(seconds), '-i', source,
+      '-vf', `${coverFilter(w, h, fps)},fps=${(frames / seconds).toFixed(4)},scale=270:480`,
+      '-frames:v', String(frames),
+      join(dir, 'f-%02d.jpg'),
+    ]);
+
+    const items = [];
+    for (let i = 1; i <= frames; i++) {
+      const f = join(dir, `f-${String(i).padStart(2, '0')}.jpg`);
+      if (!existsSync(f)) continue;
+      items.push({
+        src: `data:image/jpeg;base64,${readFileSync(f).toString('base64')}`,
+        blockH: 0.14,
+        blockW: ov.width,
+        // The button rail is down the right of a TikTok frame, and a centred
+        // line at 84% width runs under it. Excluded anyway, because the rail
+        // is drawn over whatever we supply and text beneath it is unread.
+        rail: true,
+      });
+    }
+    if (!items.length) return null;
+
+    const spots = (
+      await analyseSlides(items, {
+        topSafe: 300,
+        bottomSafe: 400,
+        height: 1920,
+        confine: { x: ov.x, width: ov.width, bands: [ov.bands.upper, ov.bands.mid] },
+        // Avoid horizons. A clip's line is centred and wide, so it crosses a
+        // treeline far more readily than a deck's narrow left-hand caption.
+        seam: ov.seamPenalty,
+      })
+    ).filter(Boolean);
+    if (!spots.length) return null;
+
+    // Which band, by vote. A clip whose frames disagree is one where the
+    // camera moved across the thing being avoided, and the majority answer is
+    // the one that is right for most of the running time.
+    const mid = (ov.bands.upper[1] + ov.bands.mid[0]) / 2;
+    const upper = spots.filter((s) => s.y < mid);
+    const band = upper.length >= spots.length / 2 ? upper : spots.filter((s) => s.y >= mid);
+    const chosen = band.length ? band : spots;
+
+    // The worst frame in that band decides everything else. Averaging would
+    // produce a treatment that is correct on no single frame of the clip.
+    const worst = chosen.reduce((a, b) => (b.contrast < a.contrast ? b : a));
+    return {
+      ...worst,
+      x: ov.x,
+      width: ov.width,
+      shadow: Math.max(...chosen.map((s) => s.shadow)),
+      assist: Math.max(...chosen.map((s) => s.assist)),
+      frames: spots.length,
+      agreed: chosen.length,
+      spread: {
+        best: Math.max(...chosen.map((s) => s.contrast)),
+        worst: Math.min(...chosen.map((s) => s.contrast)),
+      },
+    };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Which seconds of the source to keep.
+ *
+ * Scored on frame-to-frame DIFFERENCE, using ffmpeg's own scene detection: a
+ * window whose frames barely change is a steady shot, and a window full of
+ * large changes is the camera swinging, a cut, or someone's hand over the lens.
+ * Steady wins, because a legible line needs a background that stays put for
+ * eight seconds — the same reason measureClip takes the worst frame rather
+ * than the first.
+ *
+ * The first second is never offered: on nearly every handheld stock clip it is
+ * the camera settling.
+ */
+export async function pickWindow(source, duration = null) {
+  const cfg = postConfig().clips.video;
+  const want = cfg.seconds;
+  const len = Number(duration) || 0;
+  // Nothing to choose between — the clip is barely longer than the cut.
+  if (!len || len <= want + 1.5) return cfg.startAt;
+
+  const starts = [];
+  for (let t = 1; t + want <= len - 0.2; t += 1.5) starts.push(Number(t.toFixed(2)));
+  if (!starts.length) return cfg.startAt;
+
+  let best = starts[0];
+  let bestScore = Infinity;
+  for (const t of starts) {
+    try {
+      // select='gt(scene,0.2)' emits a frame each time the picture changes
+      // sharply; counting them is a cheap proxy for how unstable the window is.
+      const { stderr } = await run(
+        ffmpegPath(),
+        ['-hide_banner', '-nostats', '-ss', String(t), '-t', String(want), '-i', source,
+         '-vf', "select='gt(scene,0.2)',showinfo", '-f', 'null', '-'],
+        { maxBuffer: 1 << 24 }
+      ).catch((e) => ({ stderr: e.stderr || '' }));
+      const cuts = (String(stderr).match(/Parsed_showinfo/g) || []).length;
+      if (cuts < bestScore) {
+        bestScore = cuts;
+        best = t;
+      }
+      if (cuts === 0) break;
+    } catch {
+      /* one unscorable window should not cost the choice */
+    }
+  }
+  return best;
+}
+
+/**
  * The hook line as a transparent PNG the size of the frame.
  *
- * Centred by default and set larger than a slide's text, because the two do
- * opposite jobs: a slide's caption labels a photograph that is already the
- * post, while a clip's line IS the post and the footage is its punchline. It
- * has to be legible in the half second before a thumb decides.
+ * Set larger than a slide's text, because the two do opposite jobs: a slide's
+ * caption labels a photograph that is already the post, while a clip's line IS
+ * the post and the footage is its punchline. It has to be legible in the half
+ * second before a thumb decides.
+ *
+ * Everything else — where it sits, what colour it is, how hard the shadow
+ * works, whether a wash comes in behind it — is the deck's logic applied to a
+ * measurement of this clip's own frames.
  */
-export function overlayHtml(text, { width, height } = {}) {
+/**
+ * Which ink this clip is set in.
+ *
+ * Varied per clip rather than fixed, because "the text is always white" was a
+ * real complaint and the highest-performing reference post of the five is
+ * cream, not white. Chosen by clip id so it is stable across re-renders of the
+ * same clip but different between clips in a batch.
+ *
+ * Filtered by what the frame can actually carry first. Cream sits at almost
+ * the same luminance as a bright sky, so it is offered over a dark frame only —
+ * the same rule render/photo.js applies to the deck's accent, and for the same
+ * reason: a pale ink on a pale frame is not a colour choice, it is an invisible
+ * line.
+ */
+export function inkFor(id, onDark) {
+  const all = postConfig().clips.overlay.colors;
+  const usable = all.filter((c) => !c.onDarkOnly || onDark);
+  const pool = usable.length ? usable : all.slice(0, 1);
+  let n = 0;
+  for (const ch of String(id || '')) n = (n * 31 + ch.charCodeAt(0)) >>> 0;
+  return pool[n % pool.length];
+}
+
+/**
+ * The hook line as a transparent PNG the size of the frame.
+ *
+ * Centred, bold, upper-middle — read off five real posts rather than inherited
+ * from the deck slides. A slide's caption labels a photograph that is already
+ * the post, so it is small, light and flush left. A clip's line IS the post and
+ * the footage is its punchline, so it is set the way the app's own text tool
+ * sets it: centred, heavy, with a stroke.
+ *
+ * What IS still the deck's is the measurement — which band survives, whether
+ * the ink goes light or dark, how hard the shadow works, whether a wash is
+ * needed. That logic was built for stills and applies to frames unchanged.
+ */
+export function overlayHtml(text, { width, height, spot = null, id = '' } = {}) {
   const ov = postConfig().clips.overlay;
+  const adapt = postConfig().overlay.adapt;
   const basis = ov.sizeBasis === 'height' ? height : width;
   const size = Math.max(12, Math.round(basis * ov.sizePct));
-  const align = ov.align;
-  // Under direction: rtl, flex-start is the RIGHT edge — the same inversion the
-  // slide templates document at alignment().
-  const items = align === 'center' ? 'center' : align === 'left' ? 'flex-end' : 'flex-start';
+
+  // Only reached when ffmpeg could not produce a frame to measure. The upper
+  // band, white, which is where four of the five reference posts put it.
+  const place = spot || {
+    x: ov.x,
+    y: (ov.bands.upper[0] + ov.bands.upper[1]) / 2,
+    width: ov.width,
+    color: '#FFFFFF',
+    onDark: true,
+    assist: 0,
+    shadow: 0,
+  };
+
+  const onDark = place.onDark !== false;
+  const force = Math.max(0, Math.min(1, place.shadow ?? 0));
+  const weight = Math.round(ov.weight + force * adapt.weightBoost);
+
+  // The measured decision decides light-or-dark; the palette decides WHICH
+  // light. Over a pale frame the measurement wins outright and the line goes
+  // near-black, because no cream survives a bright sky.
+  const ink = inkFor(id, onDark);
+  const fill = onDark ? ink.fill : '#14110E';
+  const stroke = onDark ? ink.stroke : 'rgba(255,255,255,0.6)';
+  const strokeW = Math.max(1, Math.round(size * ov.strokePct));
+
+  const boost =
+    adapt.shadowBoost && force > 0.02
+      ? `, 0 2px ${Math.round(10 + force * 16)}px rgba(0,0,0,${(force * 0.6).toFixed(2)})`
+      : '';
+  const shadow = onDark
+    ? `${ov.shadow}${boost}`
+    : `0 1px 3px rgba(255,255,255,0.55), 0 2px ${14 + Math.round(force * 12)}px rgba(255,255,255,${(0.4 + force * 0.34).toFixed(2)})`;
+
+  const blockW = Math.round(place.width * width);
+  const left = Math.round(place.x * width - blockW / 2);
+  const top = Math.round(place.y * height);
+
+  // The same soft elliptical wash the slides get, and for the same reason:
+  // below about 3.8:1 nothing else is enough. Baked into the PNG so ffmpeg
+  // composites text and wash in one pass.
+  const strength = place.assist || 0;
+  const washed = strength >= 0.06;
+  const alpha = Math.min(0.5, 0.18 + strength * 0.34).toFixed(3);
+  const tint = onDark ? '0,0,0' : '255,255,255';
+  const cw = Math.round(blockW * 1.25);
+  const ch = Math.round(height * 0.13 * 2.4);
 
   return `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><style>
-@font-face { font-family:'Heebo'; src:url('${heeboDataUri()}') format('truetype'); font-weight:100 900; font-display:block; }
-@font-face { font-family:'Assistant'; src:url('${assistantDataUri()}') format('truetype'); font-weight:100 900; font-display:block; }
+@font-face { font-family:'TikTok Sans'; src:url('${tiktokSansDataUri()}') format('truetype'); font-weight:100 900; font-display:block; }
 @font-face { font-family:'Arimo'; src:url('${arimoDataUri()}') format('truetype'); font-weight:100 900; font-display:block; }
+@font-face { font-family:'Assistant'; src:url('${assistantDataUri()}') format('truetype'); font-weight:100 900; font-display:block; }
+@font-face { font-family:'Heebo'; src:url('${heeboDataUri()}') format('truetype'); font-weight:100 900; font-display:block; }
 * { margin:0; padding:0; box-sizing:border-box; }
 /* Transparent all the way down. Playwright's omitBackground only removes the
    default white if nothing else paints over it, so neither html nor body may
    carry a background of its own. */
 html, body { width:${width}px; height:${height}px; background:transparent; overflow:hidden; }
-body { direction:rtl; font-family:'Arimo','Assistant','Heebo',sans-serif;
+/* EXACTLY the deck slides' stack — see the long note in render/deckTemplates.js.
+   TikTok Sans first, carrying the glyphs it actually has (digits, a stray Latin
+   word) and falling through per glyph for every Hebrew letter, which is what
+   the app itself does. Arimo carries the Hebrew. A clip and a slide from this
+   account have to be set in the same face or they read as two accounts. */
+body { direction:rtl; font-family:'TikTok Sans','Arimo','Assistant','Heebo',sans-serif;
        -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
+.assist { position:absolute; border-radius:50%; filter:blur(${Math.round(height * 0.03)}px);
+  left:${Math.round(place.x * width - cw / 2)}px; top:${Math.round(place.y * height - ch / 2)}px;
+  width:${cw}px; height:${ch}px;
+  background:radial-gradient(closest-side, rgba(${tint},${alpha}) 0%, rgba(${tint},${(alpha * 0.55).toFixed(3)}) 55%, rgba(${tint},0) 100%); }
 .hook {
   position:absolute;
-  top:${Math.round(ov.y * height)}px;
-  left:50%;
-  width:${Math.round(ov.width * width)}px;
-  transform:translate(-50%,-50%);
-  display:flex; flex-direction:column; align-items:${items};
-  text-align:${align};
+  top:${top}px;
+  left:${left}px;
+  width:${blockW}px;
+  transform:translateY(-50%);
+  text-align:${ov.align};
   font-size:${size}px;
-  font-weight:${ov.weight};
-  line-height:1.24;
-  color:#fff;
+  font-weight:${weight};
+  line-height:1.2;
+  color:${fill};
   opacity:${ov.opacity};
-  text-shadow:${ov.shadow};
+  /* paint-order puts the stroke BEHIND the fill, so the letterform keeps its
+     full weight instead of being eaten from both sides. Without it a 3px
+     stroke on a 56px face closes every counter. */
+  paint-order:stroke fill;
+  -webkit-text-stroke:${strokeW}px ${stroke};
+  text-shadow:${shadow};
   text-wrap:balance;
   display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:${ov.maxLines}; overflow:hidden;
 }
-</style></head><body><div class="hook">${escapeHtml(text)}</div></body></html>`;
+</style></head><body>${washed ? '<div class="assist"></div>' : ''}<div class="hook">${escapeHtml(text)}</div></body></html>`;
 }
 
 /** Render that HTML to a PNG with a real alpha channel. */
-export async function renderOverlayPng(text, { width, height, file }) {
+export async function renderOverlayPng(text, { width, height, file, spot = null, id = '' }) {
   const browser = await getBrowser();
   const context = await browser.newContext({
     viewport: { width, height },
@@ -118,7 +364,7 @@ export async function renderOverlayPng(text, { width, height, file }) {
   });
   const page = await context.newPage();
   try {
-    await page.setContent(overlayHtml(text, { width, height }), { waitUntil: 'load' });
+    await page.setContent(overlayHtml(text, { width, height, spot, id }), { waitUntil: 'load' });
     await page.evaluate(() => document.fonts.ready);
     const buf = await page.screenshot({ type: 'png', omitBackground: true });
     writeFileSync(file, buf);
@@ -149,11 +395,21 @@ const coverFilter = (w, h, fps) =>
  * and discarding — on a 25-second 4K source that is the difference between a
  * second and twenty.
  */
-export async function burnClip(source, { text, outFile, pngFile }) {
+export async function burnClip(source, { text, outFile, pngFile, id = '', duration = null }) {
   const cfg = postConfig().clips.video;
-  const { width: w, height: h, seconds, startAt, fps, crf, preset, keepAudio } = cfg;
+  const { width: w, height: h, seconds, fps, crf, preset, keepAudio } = cfg;
 
-  await renderOverlayPng(text, { width: w, height: h, file: pngFile });
+  // WHICH eight seconds. Previously always 0.6 → 8.6 regardless of what was in
+  // them, which on a twenty-second clip throws away two thirds of the material
+  // unseen and keeps whatever the camera happened to be doing at the start —
+  // usually settling. Now the windows are scored and the steadiest one wins.
+  const startAt = await pickWindow(source, duration).catch(() => cfg.startAt);
+
+  // Measured second — where the words go and what colour they are are
+  // properties of the footage, and both have to be measured on the window that
+  // will actually ship rather than on the whole clip.
+  const spot = await measureClip(source, { startAt }).catch(() => null);
+  await renderOverlayPng(text, { width: w, height: h, file: pngFile, spot, id });
 
   const args = [
     '-y',
@@ -182,7 +438,7 @@ export async function burnClip(source, { text, outFile, pngFile }) {
 
   await run(ffmpegPath(), args, { maxBuffer: 1 << 24 });
   if (!existsSync(outFile)) throw new Error('ffmpeg reported success but wrote no file');
-  return outFile;
+  return { file: outFile, spot, startAt };
 }
 
 /** Pull the source clip down to disk. Pexels serves these straight from its CDN. */

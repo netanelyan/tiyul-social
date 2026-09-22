@@ -3481,6 +3481,112 @@ eq('a clean caption passes through untouched', assertNoUrl('יעד לרשימה'
 }
 
 /* -------------------------------------------------------------------------- */
+group('clips — participant or spectator, judged from the title');
+
+// The owner's own verdicts, used as the fixture.
+//
+// These are not invented examples. They are the six clips picked by eye out of
+// a 959-clip gallery and the three rejected by name, and the first version of
+// this filter got EVERY ONE of them wrong way round: the rejects scored 5-6 and
+// the keeps scored 2-4, because `prefer` rewarded the subject (forest, trail,
+// mountain, dog) and could not see the camera. A filter is only worth having if
+// it agrees with the person it is standing in for, so that agreement is the
+// test.
+{
+  const { tasteScore } = await import('../src/video/pexels.js');
+  const min = postConfig().clips.search.minScore;
+  const keeps = (t) => tasteScore(t) !== null && tasteScore(t) >= min;
+
+  for (const t of [
+    'pov bike ride on forest trail in summer',
+    'scenic hike behind a majestic waterfall',
+    'hiking adventure on rocky mountain trail',
+    'walking through autumn leaves in a forest',
+    'dog exploring a tranquil forest creek',
+    'serene forest walk at sunrise',
+  ]) {
+    ok(`keeps: ${t}`, keeps(t), `scored ${tasteScore(t)}, needs ${min}`);
+  }
+
+  // The three rejected by name are vetoed outright rather than merely
+  // outscored — bikini, shoreline and "beach at sunset" are on the reject list,
+  // and a veto cannot be argued back by any number of forest words.
+  for (const t of [
+    'serene woman walking along ocean shoreline',
+    'a woman walking on the beach at sunset',
+    'young african american woman walking on the beach in bikini',
+  ]) {
+    eq(`vetoed outright: ${t.slice(0, 34)}…`, tasteScore(t), null);
+  }
+
+  // And the two that actually shipped in the first batch, which is how the
+  // fault was found. Both are third-person shots of somebody on a trail.
+  // Ranked BELOW the participant shots rather than dropped outright.
+  //
+  // Title scoring is a pre-filter now, not the decision — src/video/vision.js
+  // judges the actual thumbnail, because a title is a string an uploader typed
+  // and it turned out to be a poor proxy for anything. What the words still
+  // have to do is order the queue and enforce the vetoes, so a spectator shot
+  // must never outrank a participant one.
+  // Wrapped, not passed by reference: tasteScore's second parameter is the
+  // config, and .map hands a callback the index as its second argument.
+  const floor = Math.min(
+    ...['pov bike ride on forest trail in summer', 'scenic hike behind a majestic waterfall'].map((t) => tasteScore(t))
+  );
+  for (const t of [
+    'woman walking in autumn forest pathway',
+    'hiker walking mountain trail with dog',
+    'photographer walking on scenic boardwalk',
+    'couple walking in the mountains',
+  ]) {
+    ok(`ranks below every keeper: ${t}`, tasteScore(t) < floor, `scored ${tasteScore(t)}, keepers floor ${floor}`);
+  }
+
+  // Whole words for the spectator list, prefixes for prefer. "hiker" is a
+  // person being filmed, "hiking" is the activity, and the prefix matching that
+  // `prefer` needs cannot separate them — which is the pair that got through.
+  ok('"hiking" is an activity, not a person', tasteScore('hiking a forest trail') > 0);
+  ok('"hiker" is a person', tasteScore('hiker on a forest trail') < tasteScore('hiking a forest trail'));
+
+  // ...but an explicit point-of-view marker means the camera IS the person, so
+  // it has to be able to outrun one penalty.
+  ok('pov rescues a named person', keeps('pov hiker on a mountain ridge trail'));
+
+  // Overlapping stems counted once. "hiking" matches both the "hike" and
+  // "hiking" entries in prefer, and counting per term scored it twice for one
+  // word — which is why the threshold could not be tuned.
+  eq('one word scores once', tasteScore('hiking'), tasteScore('hike'));
+
+  // The vision gate, which is the actual filter.
+  //
+  // `destination` is a gate and not a term in a sum, and that is the whole
+  // lesson of the batch that shipped four bike videos on anonymous roads: a
+  // beautifully composed POV of nowhere is still nowhere. Folding it into a
+  // weighted score would let the POV bonus buy a road back in, which is
+  // precisely how the old title filter failed.
+  const { rankVision } = await import('../src/video/vision.js');
+  const vcfg = postConfig().clips.search;
+  const V = (o) => ({ destination: 8, pov: false, aerial: false, staged: false, urban: false, subject: '', ...o });
+
+  eq('nowhere is rejected however good the camera', rankVision(V({ destination: 3, pov: true }), vcfg), null);
+  eq('a staged shoot is rejected', rankVision(V({ staged: true }), vcfg), null);
+  ok('a real destination passes', rankVision(V({}), vcfg) > 0);
+  ok(
+    'POV breaks a tie between two real places',
+    rankVision(V({ pov: true }), vcfg) > rankVision(V({ pov: false }), vcfg)
+  );
+  ok(
+    'but POV cannot rescue nowhere',
+    rankVision(V({ destination: vcfg.visionMinDestination - 1, pov: true }), vcfg) === null
+  );
+  ok(
+    'an aerial of a real place still ranks, just lower',
+    rankVision(V({ aerial: true })) < rankVision(V({})) && rankVision(V({ aerial: true })) !== null
+  );
+  eq('an unjudged clip never publishes', rankVision(null, vcfg), null);
+}
+
+/* -------------------------------------------------------------------------- */
 group('font guard — the check that was silently passing');
 
 try {
