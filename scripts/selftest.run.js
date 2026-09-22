@@ -3646,6 +3646,27 @@ group('clip look — the owner settled these by eye, one render at a time');
 }
 
 /* -------------------------------------------------------------------------- */
+group('clip candidate — the fields the publish path reads');
+
+{
+  const { targetsForKind, allowedForKind } = await import('../src/publish/targets.js');
+
+  // A clip is a vertical scroll post: TikTok only. Not Instagram, because
+  // eight seconds of video has no carousel equivalent, and posting the same
+  // seconds to two places is how every account becomes a copy of the others.
+  eq('a clip goes to TikTok and nowhere else', allowedForKind('clip').join(','), 'tiktok');
+  ok('and never to Instagram', !allowedForKind('clip').includes('instagram'));
+
+  // targetsForKind filters by what is CONFIGURED, so this is empty on a box
+  // with no TikTok credentials. That is the correct answer and the publish
+  // path holds rather than failing — but the editorial rule above must hold
+  // regardless of what happens to be configured.
+  ok('the rule does not depend on configuration', allowedForKind('clip').length === 1);
+  ok('targetsForKind is a subset of what is allowed',
+    targetsForKind('clip').every((t) => allowedForKind('clip').includes(t)));
+}
+
+/* -------------------------------------------------------------------------- */
 group('clip description — a published post with an empty caption is invisible');
 
 {

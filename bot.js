@@ -1917,6 +1917,65 @@ let decksToday = 0;
 let lastDeckSuggestAt = 0;
 
 /**
+ * Clips, on the same daily rhythm as cards and decks.
+ *
+ * BUILT rather than proposed, which is the one way this differs from a deck. A
+ * deck suggestion is a line of text you approve before anything is made,
+ * because building one costs minutes and a search budget. A clip cannot be
+ * judged that way — "a POV of a mountain pass with a line about flying to
+ * Italy" tells you nothing about whether the footage is any good or whether
+ * the text landed somewhere legible. So it is built and the finished video
+ * arrives with approve and reject under it.
+ *
+ * The cost of building unasked is real but bounded: the vision judge is capped
+ * at visionMaxCandidates thumbnails, then one writing call and one encode per
+ * clip. It is a fraction of what a deck spends.
+ *
+ * Capped the same two ways. CLIPS_PER_DAY is the day's budget, and a ceiling on
+ * what is already waiting stops a week away from returning fourteen videos —
+ * an approval queue you cannot face is a queue you stop reading.
+ */
+const CLIPS_PER_DAY = Math.max(0, Number(process.env.CLIPS_PER_DAY ?? '1'));
+const CLIP_BACKLOG_MAX = Math.max(1, Number(process.env.CLIP_BACKLOG_MAX ?? '3'));
+let clipDay = null;
+let clipsToday = 0;
+let lastClipSuggestAt = 0;
+
+/** How many clips are already staged and waiting for a decision. */
+const clipsWaiting = () => store.stagingItems().filter(({ cand }) => cand?.kind === 'clip').length;
+
+/**
+ * One clip, built and staged.
+ *
+ * Failures are reported rather than thrown: this runs on a timer, and a day
+ * where every candidate scored below the destination gate is a normal outcome
+ * worth a sentence, not a crash. Which is also the sentence that tells you a
+ * query has gone stale.
+ */
+async function suggestClip() {
+  const { buildClips } = await import('./src/video/clip.js');
+  const seen = new Set(
+    store.recentPublished().map((p) => String(p.pexelsId || '')).filter(Boolean)
+  );
+  const { clips, considered, nowhere, written } = await buildClips({ count: 1, seen });
+
+  if (!clips.length) {
+    const why = nowhere?.length
+      ? `${considered} נבדקו, אף אחד לא עבר את סף היעד`
+      : 'לא נמצאו קליפים מתאימים';
+    console.log(`clip: nothing to suggest — ${why}`);
+    return;
+  }
+
+  for (const clip of clips) await stage(clip);
+  if (!written) {
+    await notify
+      .send(bot.telegram, staging, '⚠️ שורת הקליפ נלקחה מהמאגר ולא נכתבה — בדוק את ANTHROPIC_API_KEY')
+      .catch(() => {});
+  }
+}
+
+/**
  * N ideas at once, each its own proposal card.
  *
  * One model call for the lot rather than N calls, which is most of why asking
@@ -2371,6 +2430,25 @@ function tick() {
     suggestDeck().catch((e) => console.error('deck suggestion failed:', e.message));
   }
 
+  // Clips, same hours and same spacing. Built rather than proposed — see the
+  // note at CLIPS_PER_DAY — so the guard counts what is already staged and
+  // waiting rather than unanswered proposals.
+  if (clipDay !== day) {
+    clipDay = day;
+    clipsToday = 0;
+  }
+  if (
+    inHours &&
+    CLIPS_PER_DAY > 0 &&
+    clipsToday < CLIPS_PER_DAY &&
+    clipsWaiting() < CLIP_BACKLOG_MAX &&
+    Date.now() - lastClipSuggestAt >= gatherIntervalMs
+  ) {
+    lastClipSuggestAt = Date.now();
+    clipsToday += 1;
+    suggestClip().catch((e) => console.error('clip suggestion failed:', e.message));
+  }
+
   if (inHours && remaining > 0 && due) {
     lastGatherAt = Date.now();
     if (day !== lastRunDay) {
@@ -2426,6 +2504,8 @@ async function main() {
   // so the token it writes goes through the same store this process holds open.
   startOAuthServer();
   console.log(`   daily run at ${RUN_HOUR}:00 · target ${dailyTarget()} · drip every ${POST_INTERVAL_MINUTES} min`);
+  console.log(`   suggestions per day: ${dailyTarget()} cards · ${DECKS_PER_DAY} decks · ${CLIPS_PER_DAY} clips`);
+  console.log(`   clips to: ${targetsForKind('clip').join(' + ') || 'NOWHERE (TikTok not connected)'}`);
 
   await maybeRefreshIgToken();
   await maybeRefreshTikTokToken();

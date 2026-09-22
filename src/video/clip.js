@@ -7,6 +7,7 @@ import { clipHook, postConfig } from '../postConfig.js';
 import { writeHook, hasApiKey } from './hooks.js';
 import { assertNoUrl } from '../format.js';
 import { clipCaption } from '../hashtags.js';
+import { targetsForKind } from '../publish/targets.js';
 
 // A stock clip and a Hebrew line become something you can approve.
 //
@@ -105,6 +106,18 @@ export async function buildClip(found, { outDir = clipOutputDir(), hook = null, 
     pillar: 'day',
     tags: [],
     createdAt: new Date().toISOString(),
+    // Resolved at build time, exactly as a card and a deck resolve theirs, so
+    // what you were shown is what was true when you decided. Without these two
+    // a staged clip has nowhere to go: the publish step reads publishTargets
+    // and finds nothing, and the post is held forever without saying why.
+    publishTargets: targetsForKind('clip'),
+    // Always a draft. The API has no field for choosing a sound and sound
+    // cannot be changed after publishing, so an approved clip lands in the
+    // account's TikTok inbox and is finished by hand — the same bargain decks
+    // make, for the same reason.
+    tiktokDraft: true,
+    overrides: [],
+    notes: [],
     clip: {
       file,
       seconds: cfg.seconds,

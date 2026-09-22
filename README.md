@@ -25,9 +25,13 @@ Earth Observatory piece, and ten years of ERA5 climate normals.</em></p>
 ## The loop
 
 ```
-sources → rank → draft (Claude) → verify → render → Telegram → you tap ✅ → Instagram
-                                    ↑                              ↓
-                              reject with a reason            queue, drip out
+cards   sources → rank → draft (Claude) → verify → render → Telegram → ✅ → Instagram
+                                  ↑                            ↓
+                          reject with a reason            queue, drip out
+
+decks   idea (Claude) → you tap בנה → places → facts → photographs → render ×2 → ✅ → TikTok + Instagram
+
+clips   destinations → Pexels → vision judge → line → trim + burn in → ✅ → TikTok drafts
 ```
 
 1. **Gather.** Twenty enabled feeds and one dataset, fetched live.
@@ -46,7 +50,7 @@ sources → rank → draft (Claude) → verify → render → Telegram → you t
    for decks. One post drips out every four hours; a destination that fails is
    retried on its own, without re-posting to the one that worked.
 
-## Two kinds of post
+## Three kinds of post
 
 A **card** is one verified claim from one source, 1080×1350, and it goes to
 Instagram. That is the loop above.
@@ -64,9 +68,28 @@ same wordmark, the same accent rule, the same type scale as the news cards, so a
 slideshow in the grid looks like the account that posted it. Same words, same
 photographs, two designs — one deck published twice, never two decks.
 
-**Decks are suggested to you, a few a day.** Only the idea is produced on the
-timer — one model call, no sourcing, no renders — and it arrives as text you
-approve before anything is built. See below.
+A **clip** is eight seconds of vertical stock video with one Hebrew line burned
+into it, and it goes to TikTok only. There is no Instagram artefact for it the
+way a deck has a carousel, and posting the same eight seconds to two places is
+how every account becomes a copy of the others.
+
+**All three arrive on a timer, and the difference between them is when you get
+to say no.** A card and a deck are cheap to propose and expensive to build, so
+you see them before they are made. A clip cannot be judged that way — "a POV of
+a mountain pass with a line about flying to Italy" tells you nothing about
+whether the footage is any good or whether the text landed somewhere legible —
+so it is built and the finished video arrives with approve and reject under it.
+
+| | per day | arrives as | approve → |
+|---|---|---|---|
+| card | `DAILY_TARGET` (3) | the rendered card | Instagram |
+| deck | `DECKS_PER_DAY` (2) | a line of text | TikTok + Instagram |
+| clip | `CLIPS_PER_DAY` (1) | the finished video | TikTok drafts |
+
+Each is capped twice: a daily budget, and a ceiling on how many may be waiting
+for a decision. A week away returns a handful to answer, not forty — an approval
+queue you cannot face is a queue you stop reading. `/run`, `/deck` and `/clip`
+ignore both, because asking is not the same as being offered.
 
 **A slide carries a place name and nothing else, unless a number decides
 something.** That is copied from the posts this channel is modelled on, and it
@@ -349,7 +372,8 @@ separately, with its last error · `/usage` tokens and cost · `/igquota` ·
 `/tiktok_connect` which scopes a working connection needs and how to get one ·
 `/sources` every feed with its last success and error, `/sources off <id>` to
 stand one down · `/mix` topic balance · `/why` last run's rejections ·
-`/deck` build one now, `/deck Kyoto temple` name it · `/pending` ·
+`/deck` build one now, `/deck Kyoto temple` name it · `/clip` build a clip now,
+`/clip 3` build three · `/pending` ·
 `/queue` what is waiting, numbered, with destinations · `/next` publish the
 next · `/post 3` publish that one, out of turn · `/held` `/retry` `/clear_held`
 
@@ -444,10 +468,34 @@ TikTok, and its caption is read somewhere a URL is worth printing.
 
 ### Clips — a stock video with one Hebrew line on it
 
-A third post format, alongside cards and decks. `npm run clip-lab -- 4` builds a
-batch to `out/clips`; `npm run clip-redo -- <pexelsId>="the line"` re-renders
-specific ones with the footage and the words pinned, which is the only way to
-judge a styling change without three variables moving at once.
+One arrives a day by default (`CLIPS_PER_DAY`), built and sent as a playable
+video with approve and reject under it; `/clip` builds one on demand and
+`/clip 3` builds three. An approved clip goes to the account's **TikTok
+drafts** rather than straight out: the API has no field for choosing a sound,
+and sound is the one thing that cannot be changed after publishing.
+
+For working on the format rather than posting: `npm run clip-lab -- 4` builds a
+batch to look at, and `npm run clip-redo -- <pexelsId>="the line"` re-renders
+specific ones with the footage and the words pinned — the only way to judge a
+styling change without three variables moving at once.
+
+**The description is a pin, where it is, and five tags.**
+
+```
+📍 Cinque Torri, איטליה
+
+#ויראלי #פוריו #איטליה #מטיילים #טיפיםלטיול
+```
+
+The line is not repeated there — it is burned into the video, and printing it
+again spends the description on something the viewer read two seconds ago. What
+the description adds is the one thing the video cannot say. The site stays in
+Latin because it is a proper noun and what a viewer would type into a search
+box; the country is Hebrew because that one has an agreed spelling. Both are
+dropped unless the vision judge cleared `placeMinConfidence`, and a site is
+dropped when the country was not established — naming the country is strictly
+easier than naming a landmark inside it, so a confident site under an unknown
+country is the judge contradicting itself.
 
 Everything below was settled by looking at rendered batches, and every one of
 them is a value in `post-config.json` with a test in the selftest. They are not
