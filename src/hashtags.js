@@ -40,6 +40,29 @@ export function destinationTag(deck) {
   return word.length >= 2 ? `#${word}` : null;
 }
 
+/**
+ * A clip's country, as a hashtag.
+ *
+ * Different source from a deck's, same rule. A deck derives its country from
+ * the slides' own Wikidata P17 claims; a clip has no slides and no Wikidata —
+ * what it has is the vision judge's reading of the frame, already filtered to
+ * the cases it was sure of (see placeMinConfidence). The English name it
+ * returns is mapped to the Hebrew spelling Israelis use.
+ *
+ * Null when the country was not established, and the slot then falls back to
+ * the niche pool — exactly as it does for a deck spanning four countries.
+ * Tagging #יוון on footage that might be Croatia is the same fabrication the
+ * rest of this pipeline refuses to make.
+ */
+export function clipDestinationTag(cand) {
+  const place = cand?.clip?.vision?.place || cand?.vision?.place || null;
+  if (!place) return null;
+  const he = postConfig().places[String(place).toLowerCase()];
+  if (!he) return null;
+  const word = String(he).replace(/\s+/g, '').replace(/[^\p{L}\p{N}׳״'"]/gu, '');
+  return word.length >= 2 ? `#${word}` : null;
+}
+
 /** `n` distinct entries from a pool, chosen at random, in the order drawn. */
 function draw(pool, n, taken, rand) {
   const left = pool.filter((t) => !taken.has(t));
@@ -83,3 +106,31 @@ export function hashtagsFor(deck, { rand = Math.random } = {}) {
 
 /** The same thing as the line that goes under a caption. */
 export const hashtagLine = (deck, opts) => hashtagsFor(deck, opts).join(' ');
+
+/**
+ * The five tags under a clip, and the whole of its description.
+ *
+ * The line itself is BURNED INTO the video, so repeating it underneath spends
+ * the description on something the viewer has already read — the same argument
+ * that keeps a deck's title out of its TikTok description. What is left is the
+ * tags, which is also exactly what the reference post the owner supplied does:
+ * a flag and five hashtags, nothing else.
+ */
+export function clipHashtags(cand, { rand = Math.random } = {}) {
+  const cfg = postConfig().hashtags;
+  const taken = new Set();
+
+  const broad = draw(cfg.broad, cfg.broadCount, taken, rand);
+
+  const niche = [];
+  const dest = cfg.useDestination ? clipDestinationTag(cand) : null;
+  if (dest) {
+    taken.add(dest);
+    niche.push(dest);
+  }
+  niche.push(...draw(cfg.niche, cfg.nicheCount - niche.length, taken, rand));
+
+  return [...broad, ...niche];
+}
+
+export const clipCaption = (cand, opts) => clipHashtags(cand, opts).join(' ');

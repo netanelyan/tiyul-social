@@ -3646,6 +3646,42 @@ group('clip look — the owner settled these by eye, one render at a time');
 }
 
 /* -------------------------------------------------------------------------- */
+group('clip description — a published post with an empty caption is invisible');
+
+{
+  const { clipHashtags, clipDestinationTag } = await import('../src/hashtags.js');
+  const cfg = postConfig().hashtags;
+  const n = cfg.broadCount + cfg.nicheCount;
+
+  // buildClip never set tiktokCaption, and publishTikTok reads exactly that
+  // field for post_info.description — so every clip would have published with
+  // no description and no tags at all. Nothing would have failed; the post
+  // would simply have had no way of being found.
+  const known = { clip: { vision: { place: 'Italy' } } };
+  const unknown = { clip: { vision: { place: '' } } };
+
+  eq('five tags on a clip whose country is known', clipHashtags(known).length, n);
+  eq('and five when it is not', clipHashtags(unknown).length, n);
+  eq('the country tag is the Hebrew spelling', clipDestinationTag(known), '#איטליה');
+  eq('an unidentified frame gets no country tag', clipDestinationTag(unknown), null);
+  ok('the country tag is on the post', clipHashtags(known).includes('#איטליה'));
+
+  const tags = clipHashtags(known);
+  eq('no tag twice', new Set(tags).size, tags.length);
+  ok('every tag is a tag', tags.every((t) => /^#\S+$/.test(t)));
+  ok(
+    'broad tags lead',
+    tags.slice(0, cfg.broadCount).every((t) => cfg.broad.includes(t)),
+    tags.join(' ')
+  );
+
+  // A clip's country comes from the vision judge, not from Wikidata, and is
+  // only present when it cleared placeMinConfidence. Tagging #יוון on footage
+  // that might be Croatia is the fabrication this pipeline exists to refuse.
+  eq('a country with no Hebrew spelling is dropped', clipDestinationTag({ clip: { vision: { place: 'Narnia' } } }), null);
+}
+
+/* -------------------------------------------------------------------------- */
 group('clip lines — the owner-approved shapes must survive their own guards');
 
 // Three separate guards silently ate the owner's own approved lines, each time

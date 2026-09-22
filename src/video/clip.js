@@ -6,6 +6,7 @@ import { burnClip, download, clipOutputDir, ffmpegReady } from './overlay.js';
 import { clipHook, postConfig } from '../postConfig.js';
 import { writeHook, hasApiKey } from './hooks.js';
 import { assertNoUrl } from '../format.js';
+import { clipCaption } from '../hashtags.js';
 
 // A stock clip and a Hebrew line become something you can approve.
 //
@@ -86,7 +87,7 @@ export async function buildClip(found, { outDir = clipOutputDir(), hook = null, 
   }
 
   const cfg = postConfig().clips.video;
-  return {
+  const cand = {
     kind: 'clip',
     id,
     hook: line,
@@ -144,6 +145,15 @@ export async function buildClip(found, { outDir = clipOutputDir(), hook = null, 
     },
     card: { file },
   };
+
+  // The description TikTok publishes. Tags only: the line is already burned
+  // into the video, and repeating it underneath spends the description on
+  // something the viewer read two seconds ago. Checked for a URL like every
+  // other published string.
+  cand.tiktokCaption = assertNoUrl(clipCaption(cand), 'the clip description');
+  cand.channelCaption = cand.tiktokCaption;
+
+  return cand;
 }
 
 /**
@@ -209,6 +219,8 @@ export function clipApprovalMessage(cand) {
     '',
     `✍️ הטקסט: ${cand.hook}`,
     cand.hookWritten ? '   (נכתב לקליפ הזה)' : `   ⚠️ מהמאגר — ${cand.hookNote || 'לא נכתבה שורה'}`,
+    '',
+    `🏷️ ${cand.tiktokCaption || '(אין תיאור)'}`,
     '',
     `🎥 מקור: ${c.title}`,
     `   Pexels · ${c.credit || 'ללא שם'} · ציון ${c.score}`,
