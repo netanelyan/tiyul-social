@@ -13,7 +13,6 @@
     "quietly reverting to a default: a post that silently lost its hashtags looks",
     "identical to a post that never had any."
   ],
-
   "caption": {
     "_comment": [
       "One of these opens every published slideshow, picked at random per post.",
@@ -51,7 +50,6 @@
       "עולם אחר לגמרי"
     ]
   },
-
   "hashtags": {
     "_comment": [
       "Exactly `broadCount + nicheCount` tags under every post — five, by default.",
@@ -65,23 +63,43 @@
       "sixth tag. The count stays exactly five either way; when the deck's country",
       "cannot be resolved the slot falls back to the niche pool."
     ],
-    "broad": ["#fyp", "#foryou", "#פוריו", "#ויראלי"],
-    "niche": ["#טיולים", "#חופשה", "#טיפיםלטיול", "#יעדים", "#מטיילים"],
+    "broad": [
+      "#fyp",
+      "#foryou",
+      "#פוריו",
+      "#ויראלי"
+    ],
+    "niche": [
+      "#טיולים",
+      "#חופשה",
+      "#טיפיםלטיול",
+      "#יעדים",
+      "#מטיילים"
+    ],
     "broadCount": 2,
     "nicheCount": 3,
     "useDestination": true
   },
-
   "overlay": {
     "_comment": [
       "The type on a TikTok slide. Small, light, off to one side — a caption",
       "somebody typed on their own photograph, not a graphic laid over stock.",
       "",
       "`sizePct` is measured against `sizeBasis`, and the basis is the frame's",
-      "WIDTH rather than its height. Three percent of 1080 is 32px, which is the",
-      "size this was specified at; three percent of a 1920-tall frame would be",
-      "58px, which is very nearly what it already was. Set sizeBasis to \"height\"",
-      "if you want the other reading.",
+      "WIDTH. That makes 0.045 a 49px name on a 1080x1920 frame.",
+      "",
+      "The number was arrived at twice. The brief said '~3% of canvas height",
+      "(roughly 30px)', and those two do not agree: 3% of 1920 is 58px and 3% of",
+      "1080 is 32px. 32 was built first, on the reading that 'roughly 30px' was",
+      "the firmer half of the sentence — and it shipped slides whose names could",
+      "not be read on a busy street photograph. 49px is where it landed after",
+      "looking at four renders of the same hard frame side by side, and it is",
+      "also, independently, about what the reference accounts use: lucyysarchive",
+      "sets a place name at roughly 2.5% of frame height, which is 48px here.",
+      "",
+      "Two lessons are baked into that, and both are why `adapt` below exists:",
+      "type size is not a legibility mechanism on its own, and a percentage with",
+      "no stated basis is not a specification.",
       "",
       "`bands` are the vertical thirds the text is allowed into, as fractions of",
       "the frame, and `x` pins it to the left. The placement search still runs —",
@@ -92,9 +110,9 @@
       "contrast was not enough on its own. It is not a background box and cannot",
       "become one; turn it off and a slide over a busy frame ships illegible."
     ],
-    "sizePct": 0.03,
+    "sizePct": 0.045,
     "sizeBasis": "width",
-    "coverSizePct": 0.034,
+    "coverSizePct": 0.051,
     "weight": 400,
     "opacity": 0.9,
     "shadow": "0 1px 3px rgba(0,0,0,0.38)",
@@ -103,12 +121,223 @@
     "x": 0.3,
     "width": 0.44,
     "bands": {
-      "upper": [0.2, 0.36],
-      "lower": [0.6, 0.78]
+      "upper": [
+        0.2,
+        0.36
+      ],
+      "lower": [
+        0.6,
+        0.78
+      ]
     },
-    "assist": true
+    "assist": true,
+    "adapt": {
+      "_comment": [
+        "The values above are a FLOOR, not a constant, and this is the block",
+        "that makes them one.",
+        "",
+        "Small, light, 90% and one soft shadow is the right treatment for a name",
+        "sitting on quiet sky. Applied unconditionally it is also how a slide",
+        "ships illegible: the previous version of this file set exactly those",
+        "four numbers as fixed values, and a place name landing where a dark",
+        "planter met bright paving — about 2:1 contrast — had nothing left to",
+        "defend it. Four reductions at once, and the one mechanism that used to",
+        "adapt had been turned into a constant at the same time.",
+        "",
+        "So each is now a floor that rises with the shortfall render/photo.js",
+        "measured for THIS photograph. On a clean frame nothing here fires and",
+        "the slide looks exactly as specified. On a hard one the type thickens,",
+        "goes fully opaque and gets a real shadow under it — which is what the",
+        "reference accounts do too; their type is light because their frames are",
+        "chosen, not because light type always works.",
+        "",
+        "Set all three to 0 / equal-to-base to get the old fixed behaviour back."
+      ],
+      "weightBoost": 200,
+      "opacityCeiling": 1,
+      "shadowBoost": true
+    }
   },
-
+  "clips": {
+    "_comment": [
+      "Short vertical videos: a stock clip with one line of Hebrew burned onto it.",
+      "",
+      "A different format from a deck, and the difference is what the text DOES.",
+      "A slide labels the picture — 'סקוגאפוס, איסלנד'. A clip's line does not",
+      "describe the footage at all: it names a mundane Israeli moment and lets the",
+      "video be the daydream that answers it. 'על מה אני חושב בשיעור מתמטיקה' over",
+      "a forest trail is the whole format.",
+      "",
+      "That is also why this format does not fight verify.js. A line that makes no",
+      "claim about WHERE the footage was shot has nothing to source, so a generic",
+      "trail can carry it honestly — where 'מפלים באיסלנד' over the same clip",
+      "would be a place claim with a stock uploader's title as its only evidence."
+    ],
+    "hooks": {
+      "_comment": [
+        "The line that goes on the clip. One per post, drawn at random.",
+        "",
+        "SEED ONLY — the first is the owner's own example and the rest are",
+        "placeholders in the same shape, here so the pipeline runs end to end.",
+        "They are meant to be replaced wholesale with lines lifted from real",
+        "viral posts. This is the single highest-leverage thing in the file: the",
+        "footage is interchangeable and the line is not.",
+        "",
+        "The test for a line is whether somebody would send it to a friend. If it",
+        "could appear in a travel brochure, it is wrong."
+      ],
+      "lines": [
+        "על מה אני חושב בשיעור מתמטיקה",
+        "איפה שהראש שלי נמצא כל היום",
+        "במקום להיות בעבודה עכשיו",
+        "התחביב שלי זה לברוח מפה",
+        "כשאני עוצם עיניים בפקק",
+        "הטאב שאני פותח כל בוקר",
+        "אני בעוד חודשיים בע\"ה",
+        "המקום ששומר לי מקום"
+      ]
+    },
+    "search": {
+      "_comment": [
+        "What to pull, and what never to pull.",
+        "",
+        "`queries` are the searches that produced the clips the owner picked by",
+        "eye — POV and trail work, not destinations. Destination searches were",
+        "tried and they return aerials and static scenics, which is the opposite",
+        "of what this format needs.",
+        "",
+        "`prefer` and `reject` score the TITLE. They encode one rule, and it is",
+        "worth stating because it generalises further than the word lists do:",
+        "keep the clips where the camera is a PARTICIPANT, drop the ones where it",
+        "is a SPECTATOR watching a person. A POV bike ride, a hike behind a",
+        "waterfall, a dog in a creek — someone is doing the thing. 'Serene woman",
+        "walking along ocean shoreline' is a model being filmed, and no amount of",
+        "Hebrew on top of it stops it reading as a stock lifestyle shoot.",
+        "",
+        "`reject` is a hard veto, not a penalty. A bikini clip with the word",
+        "'trail' in its title must not score its way back in."
+      ],
+      "queries": [
+        "pov walking mountain",
+        "hiking pov",
+        "walking pov nature",
+        "first person walking",
+        "pov hiking trail",
+        "walking through forest pov",
+        "walking towards waterfall",
+        "pov bike ride forest",
+        "hiking adventure rocky mountain trail",
+        "walking through autumn leaves forest",
+        "dog exploring forest creek",
+        "forest walk at sunrise"
+      ],
+      "prefer": [
+        "pov",
+        "first person",
+        "walking",
+        "walk",
+        "hiking",
+        "hike",
+        "trail",
+        "path",
+        "forest",
+        "creek",
+        "stream",
+        "ridge",
+        "summit",
+        "mountain",
+        "waterfall",
+        "autumn",
+        "sunrise",
+        "bike",
+        "cycling",
+        "dog",
+        "exploring",
+        "adventure",
+        "stairs",
+        "boardwalk",
+        "canyon",
+        "cliff",
+        "valley"
+      ],
+      "reject": [
+        "bikini",
+        "swimsuit",
+        "lingerie",
+        "model",
+        "modeling",
+        "posing",
+        "poses",
+        "fashion",
+        "glamour",
+        "dress",
+        "skirt",
+        "heels",
+        "makeup",
+        "boyfriend",
+        "shoreline",
+        "beach at sunset",
+        "sensual",
+        "seductive",
+        "yoga",
+        "dancing",
+        "studio",
+        "close up of a woman",
+        "attractive",
+        "sexy"
+      ],
+      "minScore": 3,
+      "minHeight": 1600,
+      "minDuration": 5,
+      "maxDuration": 30
+    },
+    "video": {
+      "_comment": [
+        "The encode. 1080x1920 H.264, which is what TikTok wants and what every",
+        "phone plays without thinking about it.",
+        "",
+        "`seconds` is the finished length. Stock clips run 5-25s and most of them",
+        "have one good moment; 8 seconds is long enough to read the line and see",
+        "the payoff and short enough to loop, and a loop is worth more than a",
+        "watch. Trimmed from `startAt` so the first second of camera-settling is",
+        "not what the viewer lands on.",
+        "",
+        "`fadeIn` holds the line on screen from the start rather than fading it",
+        "in late: the hook has to be readable before the thumb decides."
+      ],
+      "width": 1080,
+      "height": 1920,
+      "seconds": 8,
+      "startAt": 0.6,
+      "fps": 30,
+      "crf": 21,
+      "preset": "medium",
+      "keepAudio": false
+    },
+    "overlay": {
+      "_comment": [
+        "Deliberately NOT the slide overlay above, and the difference is the job.",
+        "",
+        "A slide's text labels a photograph, so it is small, light and off to one",
+        "side — the picture is the post. A clip's text IS the post: the footage is",
+        "the punchline to it. It has to be readable in the half second before a",
+        "thumb decides, so it is larger, centred, and set the way TikTok's own",
+        "text tool sets it, which is what the reference posts all use.",
+        "",
+        "Same pixel grammar as the slide config so both are edited the same way:",
+        "sizePct against sizeBasis, a weight, an opacity, a shadow, a line cap."
+      ],
+      "sizePct": 0.042,
+      "sizeBasis": "width",
+      "weight": 600,
+      "opacity": 0.96,
+      "shadow": "0 2px 10px rgba(0,0,0,0.45)",
+      "maxLines": 3,
+      "align": "center",
+      "y": 0.3,
+      "width": 0.82
+    }
+  },
   "destinations": {
     "_comment": [
       "Where this account's audience actually flies, weighted.",

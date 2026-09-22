@@ -101,9 +101,56 @@ export async function publishTelegramDeck(telegram, chatId, cand) {
   return { messageId: first.message_id, mode: 'album', slides: media.length };
 }
 
+/**
+ * A clip for approval: the video itself, with the text and buttons under it.
+ *
+ * sendVideo rather than sendDocument or sendAnimation, and the difference is
+ * whether you can judge it. A document is a download; an animation is muted and
+ * loops with no scrubber. sendVideo gives a player with a timeline, which is
+ * the only way to see whether the line is still readable at the moment the
+ * footage changes.
+ *
+ * `supports_streaming` needs the moov atom at the front of the file — burnClip
+ * writes with -movflags +faststart for exactly this.
+ */
+export async function sendClipForApproval(telegram, chatId, cand, approvalText, keyboard) {
+  const file = cand.clip?.file;
+
+  if (!file || !existsSync(file)) {
+    return telegram.sendMessage(chatId, `⚠️ הקליפ לא נמצא על הדיסק\n\n${approvalText}`, {
+      link_preview_options: { is_disabled: true },
+      ...keyboard,
+    });
+  }
+
+  if (approvalText.length <= CAPTION_MAX) {
+    return telegram.sendVideo(
+      chatId,
+      { source: createReadStream(file) },
+      {
+        caption: approvalText,
+        supports_streaming: true,
+        width: cand.clip.width,
+        height: cand.clip.height,
+        duration: Math.round(cand.clip.seconds),
+        ...keyboard,
+      }
+    );
+  }
+
+  await telegram
+    .sendVideo(chatId, { source: createReadStream(file) }, { supports_streaming: true })
+    .catch((e) => console.error(`approval UX: clip send failed — ${e.message}`));
+  return telegram.sendMessage(chatId, approvalText, {
+    link_preview_options: { is_disabled: true },
+    ...keyboard,
+  });
+}
+
 /** The staging card: the rendered image plus the approval text and buttons. */
 export async function sendForApproval(telegram, chatId, cand, approvalText, keyboard) {
   if (cand.kind === 'deck') return sendDeckForApproval(telegram, chatId, cand, approvalText, keyboard);
+  if (cand.kind === 'clip') return sendClipForApproval(telegram, chatId, cand, approvalText, keyboard);
 
   const file = cand.card?.file;
 

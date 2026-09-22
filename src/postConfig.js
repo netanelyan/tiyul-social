@@ -69,15 +69,86 @@ export function postConfig() {
         lower: band(overlay.bands?.lower, [0.6, 0.78]),
       },
       assist: overlay.assist !== false,
+      // How far each of the above may rise when the photograph refuses to
+      // carry them. See the note in post-config.json — these are what make the
+      // values a floor rather than a constant.
+      adapt: {
+        weightBoost: num(overlay.adapt?.weightBoost, 200),
+        opacityCeiling: num(overlay.adapt?.opacityCeiling, 1),
+        shadowBoost: overlay.adapt?.shadowBoost !== false,
+      },
     },
     destinations: {
       defaultWeight: num(destinations.defaultWeight, 1),
       weights: { ...(destinations.weights || {}) },
     },
+    clips: clips(raw.clips || {}),
   };
 
   return cached;
 }
+
+/**
+ * The clip format's settings.
+ *
+ * Validated the same way as the rest and for the same reason, with one extra
+ * check: an empty hook pool is fatal. A clip with no line on it is a stock
+ * video, and a stock video posted bare is the most anonymous thing this account
+ * could publish.
+ */
+function clips(raw) {
+  const hooks = ((raw.hooks || {}).lines || []).map((s) => String(s).trim()).filter(Boolean);
+  if (!hooks.length) throw new Error('post-config.json: clips.hooks.lines is empty — a clip is its line');
+
+  const s = raw.search || {};
+  const v = raw.video || {};
+  const o = raw.overlay || {};
+  const words = (list) =>
+    (Array.isArray(list) ? list : []).map((w) => String(w).trim().toLowerCase()).filter(Boolean);
+
+  const queries = (s.queries || []).map((q) => String(q).trim()).filter(Boolean);
+  if (!queries.length) throw new Error('post-config.json: clips.search.queries is empty — nothing to pull');
+
+  return {
+    hooks,
+    search: {
+      queries,
+      prefer: words(s.prefer),
+      reject: words(s.reject),
+      minScore: num(s.minScore, 3),
+      minHeight: num(s.minHeight, 1600),
+      minDuration: num(s.minDuration, 5),
+      maxDuration: num(s.maxDuration, 30),
+    },
+    video: {
+      width: Math.round(num(v.width, 1080)),
+      height: Math.round(num(v.height, 1920)),
+      seconds: num(v.seconds, 8),
+      startAt: Math.max(0, num(v.startAt, 0.6)),
+      fps: Math.round(num(v.fps, 30)),
+      crf: Math.round(num(v.crf, 21)),
+      preset: String(v.preset || 'medium'),
+      keepAudio: v.keepAudio === true,
+    },
+    overlay: {
+      sizePct: num(o.sizePct, 0.042),
+      sizeBasis: o.sizeBasis === 'height' ? 'height' : 'width',
+      weight: num(o.weight, 600),
+      opacity: num(o.opacity, 0.96),
+      shadow: String(o.shadow || '0 2px 10px rgba(0,0,0,0.45)'),
+      maxLines: Math.max(1, Math.round(num(o.maxLines, 3))),
+      align: ['left', 'right', 'center'].includes(o.align) ? o.align : 'center',
+      y: num(o.y, 0.3),
+      width: num(o.width, 0.82),
+    },
+  };
+}
+
+/** One hook line for one clip. */
+export const clipHook = ({ rand = Math.random } = {}) => {
+  const { hooks } = postConfig().clips;
+  return hooks[Math.floor(rand() * hooks.length)];
+};
 
 const num = (v, fallback) => (Number.isFinite(Number(v)) ? Number(v) : fallback);
 const count = (v, fallback) => Math.max(0, Math.round(num(v, fallback)));

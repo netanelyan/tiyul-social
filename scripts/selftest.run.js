@@ -2280,10 +2280,37 @@ ok(
 // supplies its own weights; the weight an actual slide is set in comes from
 // post-config.json, because 600 is a semibold and a semibold place name over a
 // photograph is the loudest thing on the slide.
+// ...and it arrives as the FALLBACK of a variable, not as a fixed value.
+//
+// That indirection is the fix for the regression this shipped with. The
+// stylesheet declares `font-weight: var(--w, <configured>)`, and each slide
+// sets --w from the shortfall render/photo.js measured for its own photograph:
+// equal to the configured weight on a clean frame, heavier on one that cannot
+// carry it. Asserting the literal would pass just as well against a stylesheet
+// that had gone back to a constant, which is exactly what must not happen.
 const cfgWeight = postConfig().overlay.weight;
-ok('the configured weight reaches the stylesheet', placed.includes(`font-weight: ${cfgWeight};`));
-ok('and it reaches the info style too', slideHtml.includes(`font-weight: ${cfgWeight};`));
+ok('the configured weight is the stylesheet default', placed.includes(`font-weight: var(--w, ${cfgWeight});`));
+ok('and it reaches the info style too', slideHtml.includes(`font-weight: var(--w, ${cfgWeight});`));
 ok('the table weight no longer does', !placed.includes(`font-weight: ${FACES.minimal.name};`));
+ok('opacity is a variable too', placed.includes('opacity: var(--op,'));
+
+// The adaptation itself, which is the part with teeth. A slide measured as
+// comfortable must come out at exactly the configured numbers — the whole
+// point of the light look is that it is what you normally see — and a slide
+// measured as hopeless must come out heavier and fully opaque.
+{
+  const base = { x: 0.3, y: 0.3, width: 0.44, color: '#FFFFFF', onDark: true, assist: 0, accent: null };
+  const clean = renderSlideHtml({ nameHe: 'קפה סנטרל', fields: [] }, { spot: { ...base, shadow: 0 } });
+  const hard = renderSlideHtml({ nameHe: 'קפה סנטרל', fields: [] }, { spot: { ...base, shadow: 1 } });
+  const ad = postConfig().overlay.adapt;
+
+  ok('a clean frame gets exactly the configured weight', clean.includes(`--w:${cfgWeight}`));
+  ok('and exactly the configured opacity', clean.includes(`--op:${postConfig().overlay.opacity.toFixed(3)}`));
+  ok('a hopeless frame gets the boosted weight', hard.includes(`--w:${cfgWeight + ad.weightBoost}`));
+  ok('and goes fully opaque', hard.includes(`--op:${ad.opacityCeiling.toFixed(3)}`));
+  ok('the extra shadow layer is absent on a clean frame', !/text-shadow:[^;"]*,[^;"]*rgba\(0,0,0,0\.\d\d\)/.test(clean));
+  ok('and present on a hard one', hard.includes('rgba(0,0,0,0.55)'));
+}
 
 // The wash behind the text is the last resort and has to stay rare, or every
 // slide grows a panel and the look is gone.
@@ -3434,8 +3461,17 @@ eq('a clean caption passes through untouched', assertNoUrl('יעד לרשימה'
 // group; this is the contract those assertions read from.
 {
   const ov = pcfg.overlay;
+  // A band rather than a number, and the band is wide on purpose.
+  //
+  // This asserted 26-36px, which is the reading of the brief that shipped names
+  // nobody could read on a busy street photograph. The honest constraint is not
+  // a target size at all — it is that the type stays in caption territory and
+  // out of poster territory. Roughly 2.5% to 5% of the frame's short edge; the
+  // reference accounts sit at the bottom of that and a headline would blow
+  // through the top of it.
   const px = Math.round((ov.sizeBasis === 'height' ? 1920 : 1080) * ov.sizePct);
-  ok('the type lands near 30px on a 1080x1920 frame', px >= 26 && px <= 36, `${px}px`);
+  ok('the type is a caption, not a headline', px >= 27 && px <= 54, `${px}px`);
+  ok('and legible without the adaptive boost having to save it', px >= 40, `${px}px`);
   ok('it is lighter than a semibold', ov.weight <= 500);
   ok('and held below full opacity', ov.opacity > 0.7 && ov.opacity < 1);
   eq('two lines and no more', ov.maxLines, 2);

@@ -335,7 +335,7 @@ body {
   align-items: ${align.items};
   text-align: ${align.text};
   transform: translateY(-50%);
-  opacity: ${ov.opacity};
+  opacity: var(--op, ${ov.opacity});
 }
 
 /* --- minimal ------------------------------------------------------------ */
@@ -363,7 +363,7 @@ body {
    51px and a visible tightening at 32px. */
 .name {
   font-size: ${t.body}px;
-  font-weight: ${face.name};
+  font-weight: var(--w, ${face.name});
   line-height: 1.12;
   letter-spacing: 0;
   ${clamp}
@@ -395,7 +395,7 @@ body {
   gap: 0.3em;
   margin-top: ${Math.round(t.body * 0.34)}px;
   font-size: ${t.note}px;
-  font-weight: ${face.note};
+  font-weight: var(--w, ${face.note});
   line-height: 1.12;
   opacity: 0.96;
 }
@@ -412,7 +412,7 @@ body {
    RTL line — which is its left — is exactly where a trailing image belongs. */
 .title-info {
   font-size: ${t.body}px;
-  font-weight: ${face.name};
+  font-weight: var(--w, ${face.name});
   line-height: 1.12;
   letter-spacing: 0;
   text-wrap: balance;
@@ -447,7 +447,7 @@ body {
   justify-content: ${align.text === 'left' ? 'flex-end' : 'flex-start'};
   gap: 0.32em;
   font-size: ${t.field}px;
-  font-weight: ${face.field ?? face.name};
+  font-weight: var(--w, ${face.field ?? face.name});
   line-height: 1.24;
   white-space: nowrap;
 }
@@ -468,7 +468,7 @@ body {
    Clamped to the same two lines as everything else. A cover that needs three is
    a cover that needs rewriting, and the truncation is the signal. */
 .cover {
-  font-weight: ${face.cover};
+  font-weight: var(--w, ${face.cover});
   line-height: 1.16;
   letter-spacing: 0;
   font-size: ${t.cover}px;
@@ -547,21 +547,31 @@ function ink(spot, style, { cover = false } = {}) {
   // if every word is cream, no word is shouted.
   const colour = spot?.color || '#FFFFFF';
 
-  // One configured drop shadow, and it is meant to be barely visible.
+  // The configured shadow, PLUS a second layer that only exists when the
+  // photograph could not carry the type on its own.
   //
-  // This was two stacked shadows whose radius and opacity both scaled with the
-  // measured shortfall — up to a 26px spread at 0.64 alpha, which is not a
-  // shadow, it is a dark halo the size of the word. That was doing legibility
-  // work that now has a better owner: `assist` measures the same shortfall and
-  // fades a soft wash in behind the block, and the type colour still flips to
-  // near-black over a genuinely pale frame.
+  // The configured one alone was the regression. It is deliberately barely
+  // visible — that is the look — and a barely-visible shadow is worth nothing
+  // to a name straddling a dark planter and bright paving, which measures about
+  // 2:1 and is a real frame this shipped on. The version before it scaled both
+  // radius and alpha with the shortfall, up to a 26px spread; that was too much
+  // on every slide, but it was the only thing keeping the hard ones readable,
+  // and replacing it with a constant removed the mechanism rather than tuning
+  // it.
+  //
+  // So: the soft shadow always, and a wider darker one faded in by `force`,
+  // which is zero on a clean frame. Capped well below where the old one went.
   //
   // Dark type over a pale photograph keeps the inverse treatment — a faint halo
   // of the background's own brightness — because a black drop shadow under
   // near-black letters separates nothing.
-  const light = String(postConfig().overlay.shadow);
+  const ov = postConfig().overlay;
+  const boost =
+    ov.adapt.shadowBoost && force > 0.02
+      ? `, 0 2px ${Math.round(6 + force * 12)}px rgba(0,0,0,${(force * 0.55).toFixed(2)})`
+      : '';
   const shadow = onDark
-    ? light
+    ? `${ov.shadow}${boost}`
     : `0 1px 2px rgba(255,255,255,${(0.4 + force * 0.3).toFixed(2)}), ` +
       `0 2px ${12 + Math.round(force * 10)}px rgba(255,255,255,${(0.36 + force * 0.34).toFixed(2)})`;
 
@@ -696,7 +706,23 @@ export function renderSlideHtml(slide, { size = 'tiktok', cover = false, style =
   const accent = place.accent || (place.onDark === false ? '#8A5300' : CREAM);
   // Sized off the type, not off the frame — see typeScale. A stroke that was
   // right around 68px letters closes the counters of 32px ones.
-  const vars = [`--accent:${accent}`, `--stroke:${t.stroke}px`].join(';');
+  //
+  // Weight and opacity ride the same measured shortfall the shadow does. This
+  // is the other half of "the config is a floor": on a clean frame `force` is
+  // zero, both resolve to exactly the configured values, and the slide is the
+  // light unbranded thing it is supposed to be. On a frame that cannot carry
+  // them the letters thicken and go fully opaque — which costs nothing on the
+  // slides that never needed it, because they never see it.
+  const force = Math.max(0, Math.min(1, place.shadow ?? 0));
+  const adapt = ov.adapt;
+  const weight = Math.round(ov.weight + force * adapt.weightBoost);
+  const opacity = (ov.opacity + (adapt.opacityCeiling - ov.opacity) * force).toFixed(3);
+  const vars = [
+    `--accent:${accent}`,
+    `--stroke:${t.stroke}px`,
+    `--w:${weight}`,
+    `--op:${opacity}`,
+  ].join(';');
 
   let body;
   if (cover) {
