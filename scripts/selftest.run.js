@@ -3587,6 +3587,59 @@ group('clips — participant or spectator, judged from the title');
 }
 
 /* -------------------------------------------------------------------------- */
+group('model tiering — the cheap tier has to be legal, not just cheaper');
+
+{
+  const { modelFor, modelSplit, supportsEffort, outputConfig } = await import('../src/models.js');
+  const split = modelSplit();
+
+  // The split exists at all. Everything ran on opus-5 before, including
+  // transliteration and command parsing.
+  ok('three distinct tiers', new Set(Object.values(split)).size === 3, JSON.stringify(split));
+  eq('editorial stays on the expensive model', split.editorial, 'claude-opus-5');
+  ok('judgement is cheaper than editorial', split.judgement !== split.editorial);
+  ok('mechanical is cheapest', split.mechanical !== split.editorial && split.mechanical !== split.judgement);
+
+  // The incompatibility that made this more than a config change: Haiku 4.5
+  // REJECTS output_config.effort with a 400, so a cheap tier that still sends
+  // it is not cheaper, it is broken. Found by pointing the mechanical tier at
+  // Haiku and watching every call fail.
+  ok('Claude 5 models take effort', supportsEffort('claude-opus-5') && supportsEffort('claude-sonnet-5'));
+  ok('Haiku 4.5 does not', !supportsEffort('claude-haiku-4-5'));
+
+  const S = { type: 'object', properties: {} };
+  ok('effort is sent where it is legal', outputConfig('claude-opus-5', 'medium', S).effort === 'medium');
+  eq('and omitted where it is not', outputConfig('claude-haiku-4-5', 'medium', S).effort, undefined);
+  ok('the schema always survives', outputConfig('claude-haiku-4-5', 'low', S).format.schema === S);
+
+  // Every call site has to go through the helper, or the next model without
+  // effort support breaks exactly one forgotten call — at 3am, on one deck.
+  const { readFileSync: rf } = await import('node:fs');
+  const callSites = [
+    '../src/deck/build.js', '../src/deck/hebrew.js', '../src/deck/shape.js',
+    '../src/deck/request.js', '../src/deck/ideas.js',
+    '../src/images/textbox.js', '../src/images/curate.js', '../src/video/vision.js',
+  ];
+  for (const f of callSites) {
+    const src = rf(new URL(f, import.meta.url), 'utf8');
+    ok(
+      `${f.split('/').pop()} builds output_config through the helper`,
+      !/output_config: \{ effort:/.test(src),
+      'a raw effort literal will 400 on a model that does not support it'
+    );
+  }
+
+  // Billing follows the model actually used. A call moved to the cheap tier but
+  // still recorded against opus reports a saving that did not happen.
+  const { costOf } = await import('../src/usage.js');
+  const u = { input_tokens: 10000, output_tokens: 2000 };
+  ok('haiku costs a fifth of opus', costOf(u, 'claude-haiku-4-5') * 4.9 < costOf(u, 'claude-opus-5'));
+  ok('sonnet sits between them',
+    costOf(u, 'claude-haiku-4-5') < costOf(u, 'claude-sonnet-5') &&
+    costOf(u, 'claude-sonnet-5') < costOf(u, 'claude-opus-5'));
+}
+
+/* -------------------------------------------------------------------------- */
 group('font guard — the check that was silently passing');
 
 try {

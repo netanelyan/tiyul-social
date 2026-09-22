@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { record as recordUsage } from '../usage.js';
+import { modelFor, outputConfig } from '../models.js';
 
 // Every name on a slide, in Hebrew.
 //
@@ -19,7 +20,8 @@ import { record as recordUsage } from '../usage.js';
 // one slide shorter is a small cost, and it is paid once, whereas an English
 // name on a Hebrew slide is the thing being fixed.
 
-const MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-5';
+// Every viewer reads the place name; a wrong transliteration is the most visible error on a slide.
+const MODEL = modelFor('judgement');
 
 let client = null;
 const getClient = () => (client ??= new Anthropic());
@@ -129,7 +131,7 @@ export async function hebrewNames(places) {
   const res = await getClient().messages.create({
     model: MODEL,
     max_tokens: 4000,
-    output_config: { effort: 'low', format: { type: 'json_schema', schema: SCHEMA } },
+    output_config: outputConfig(MODEL, 'low', SCHEMA),
     system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
     messages: [
       {

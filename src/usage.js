@@ -41,6 +41,11 @@ const state = {
   output: 0,
   cost: 0,
   wastedCost: 0,
+  // Per model, because the pipeline no longer runs on one. Without this the
+  // readout cannot answer the only question worth asking after splitting the
+  // work by role: did the cheap tier actually take the volume, or is everything
+  // still landing on the expensive one because a default went unchanged.
+  byModel: new Map(),
 };
 
 let lastCost = 0;
@@ -54,6 +59,12 @@ export function record(usage, model) {
   state.output += usage.output_tokens || 0;
   lastCost = costOf(usage, model);
   state.cost += lastCost;
+
+  const key = model || 'unknown';
+  const m = state.byModel.get(key) || { calls: 0, cost: 0 };
+  m.calls++;
+  m.cost += lastCost;
+  state.byModel.set(key, m);
 }
 
 /**
@@ -71,6 +82,11 @@ export function snapshot() {
   const totalIn = state.input + state.cacheWrite + state.cacheRead;
   return {
     ...state,
+    // Flattened out of the Map, dearest first — the expensive tier is the one
+    // worth looking at.
+    byModel: [...state.byModel.entries()]
+      .map(([model, m]) => ({ model, ...m }))
+      .sort((a, b) => b.cost - a.cost),
     cacheHitRate: totalIn ? state.cacheRead / totalIn : 0,
     wasteRate: state.calls ? state.wasted / state.calls : 0,
     perCall: state.calls ? state.cost / state.calls : 0,
@@ -78,6 +94,7 @@ export function snapshot() {
 }
 
 export function reset() {
+  state.byModel.clear();
   Object.assign(state, {
     since: new Date().toISOString(),
     calls: 0,
@@ -112,5 +129,11 @@ export function usageReport() {
     '',
     `עלות: ${usd(s.cost)} · לקריאה: ${usd(s.perCall)}`,
     `בזבוז: ${usd(s.wastedCost)}`,
+    // Only when the work actually split. On a run pinned to one model via
+    // ANTHROPIC_MODEL this is noise; on a normal run it is the line that says
+    // whether the cheap tier took the volume it was supposed to.
+    ...(s.byModel.length > 1
+      ? ['', '🧮 לפי מודל:', ...s.byModel.map((m) => `   ${m.model}: ${m.calls} · ${usd(m.cost)}`)]
+      : []),
   ].join('\n');
 }

@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { record as recordUsage } from '../usage.js';
+import { modelFor, outputConfig } from '../models.js';
 
 // Where the empty background is, as a rectangle.
 //
@@ -23,7 +24,8 @@ import { record as recordUsage } from '../usage.js';
 // outright if it turns out to be busy or low-contrast. Semantics from the
 // model, arithmetic from the pixels.
 
-const MODEL = process.env.TEXTBOX_MODEL || process.env.ANTHROPIC_MODEL || 'claude-opus-5';
+// A bad region hint puts a line of text across a mountain.
+const MODEL = modelFor('judgement');
 const EFFORT = process.env.TEXTBOX_EFFORT || 'low';
 
 let client = null;
@@ -106,7 +108,7 @@ export async function findTextRegion(thumb, { place = '' } = {}) {
     res = await getClient().messages.create({
       model: MODEL,
       max_tokens: 1000,
-      output_config: { effort: EFFORT, format: { type: 'json_schema', schema: SCHEMA } },
+      output_config: outputConfig(MODEL, EFFORT, SCHEMA),
       system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
       messages: [
         {

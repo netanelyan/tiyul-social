@@ -4,6 +4,7 @@ import { KINDS, kindIds, isSourcedKind, subjectEn } from '../sources/places.js';
 import { namesPlace } from './region.js';
 import { loadDestinations } from '../sources/climate.js';
 import { byWeight, postConfig } from '../postConfig.js';
+import { modelFor, outputConfig } from '../models.js';
 
 // What deck to make. The step before any data is fetched.
 //
@@ -17,7 +18,11 @@ import { byWeight, postConfig } from '../postConfig.js';
 // several will. That is handled downstream by dropping slides and saying so,
 // never by inventing the fact that was missing.
 
-const MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-5';
+// Ideas and covers ARE the post — a flat idea is a flat deck and nothing
+// downstream catches it. The title calls below are a different job: short,
+// schema-bound, already run at effort 'low', and cheap to get slightly wrong.
+const MODEL = modelFor('editorial');
+const TITLE_MODEL = modelFor('judgement');
 const EFFORT = process.env.IDEAS_EFFORT || 'medium';
 
 let client = null;
@@ -568,7 +573,7 @@ export async function proposeIdeas({ count = 4, recent = [], today = new Date() 
   const res = await getClient().messages.create({
     model: MODEL,
     max_tokens: 8000,
-    output_config: { effort: EFFORT, format: { type: 'json_schema', schema: IDEAS_SCHEMA } },
+    output_config: outputConfig(MODEL, EFFORT, IDEAS_SCHEMA),
     system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
     messages: [{ role: 'user', content: user }],
   });
@@ -650,7 +655,7 @@ export async function reviseIdea(idea, instruction, { today = new Date() } = {})
   const res = await getClient().messages.create({
     model: MODEL,
     max_tokens: 8000,
-    output_config: { effort: EFFORT, format: { type: 'json_schema', schema: IDEAS_SCHEMA } },
+    output_config: outputConfig(MODEL, EFFORT, IDEAS_SCHEMA),
     system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
     messages: [{ role: 'user', content: user }],
   });
@@ -743,7 +748,7 @@ export async function freeformIdea(request, { today = new Date() } = {}) {
   const res = await getClient().messages.create({
     model: MODEL,
     max_tokens: 4000,
-    output_config: { effort: EFFORT, format: { type: 'json_schema', schema: FREEFORM_SCHEMA } },
+    output_config: outputConfig(MODEL, EFFORT, FREEFORM_SCHEMA),
     system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
     messages: [
       {
@@ -813,7 +818,7 @@ async function reviseFreeform(idea, said, { today = new Date() } = {}) {
   const res = await getClient().messages.create({
     model: MODEL,
     max_tokens: 4000,
-    output_config: { effort: EFFORT, format: { type: 'json_schema', schema: FREEFORM_SCHEMA } },
+    output_config: outputConfig(MODEL, EFFORT, FREEFORM_SCHEMA),
     system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
     messages: [
       {
@@ -1082,13 +1087,13 @@ export async function coverForDeck({
 
   const write = async (messages) => {
     const res = await getClient().messages.create({
-      model: MODEL,
+      model: TITLE_MODEL,
       max_tokens: 4000,
-      output_config: { effort: 'low', format: { type: 'json_schema', schema: TITLE_SCHEMA } },
+      output_config: outputConfig(TITLE_MODEL, 'low', TITLE_SCHEMA),
       system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
       messages,
     });
-    recordUsage(res.usage, MODEL);
+    recordUsage(res.usage, TITLE_MODEL);
     const text = res.content.find((b) => b.type === 'text')?.text;
     if (!text) throw new Error('cover generation returned no text');
     return { raw: text, parsed: JSON.parse(text) };
@@ -1164,9 +1169,9 @@ export async function titleForRequest({ where, kind, count = 5, today = new Date
   if (!hasApiKey()) throw new Error('ANTHROPIC_API_KEY is not set');
 
   const res = await getClient().messages.create({
-    model: MODEL,
+    model: TITLE_MODEL,
     max_tokens: 4000,
-    output_config: { effort: 'low', format: { type: 'json_schema', schema: TITLE_SCHEMA } },
+    output_config: outputConfig(TITLE_MODEL, 'low', TITLE_SCHEMA),
     system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
     messages: [
       {
@@ -1181,7 +1186,7 @@ export async function titleForRequest({ where, kind, count = 5, today = new Date
     ],
   });
 
-  recordUsage(res.usage, MODEL);
+  recordUsage(res.usage, TITLE_MODEL);
   const text = res.content.find((b) => b.type === 'text')?.text;
   if (!text) throw new Error('title generation returned no text');
 

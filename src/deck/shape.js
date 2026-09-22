@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { record as recordUsage } from '../usage.js';
+import { modelFor, outputConfig } from '../models.js';
 
 // Does this deck want anything under the name?
 //
@@ -16,7 +17,8 @@ import { record as recordUsage } from '../usage.js';
 // decides for itself, once, and then every slide in it looks the same — the
 // consistency within a deck is what makes it scan.
 
-const MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-5';
+// Classification against a fixed schema — is this visitable, does it carry bullets.
+const MODEL = modelFor('mechanical');
 
 let client = null;
 const getClient = () => (client ??= new Anthropic());
@@ -186,7 +188,7 @@ export async function keepVisitable(places, { where, kind = null }) {
   const res = await getClient().messages.create({
     model: MODEL,
     max_tokens: 2000,
-    output_config: { effort: 'low', format: { type: 'json_schema', schema: KEEP_SCHEMA } },
+    output_config: outputConfig(MODEL, 'low', KEEP_SCHEMA),
     system: [{ type: 'text', text: KEEP_SYSTEM, cache_control: { type: 'ephemeral' } }],
     messages: [
       {
@@ -246,7 +248,7 @@ export async function decideShape({ where, kind, places = [] }) {
   const res = await getClient().messages.create({
     model: MODEL,
     max_tokens: 1500,
-    output_config: { effort: 'low', format: { type: 'json_schema', schema: SCHEMA } },
+    output_config: outputConfig(MODEL, 'low', SCHEMA),
     system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
     messages: [
       {

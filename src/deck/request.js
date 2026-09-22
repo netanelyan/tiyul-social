@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { record as recordUsage } from '../usage.js';
 import { KINDS, kindIds } from '../sources/places.js';
 import { canonicalKind } from '../sources/tiyulplus.js';
+import { modelFor, outputConfig } from '../models.js';
 
 // What "/deck Italy mountains" actually means.
 //
@@ -21,7 +22,8 @@ import { canonicalKind } from '../sources/tiyulplus.js';
 // knows and a category the pipeline has. It is the difference between a command
 // that works when you phrase it correctly and one that works.
 
-const MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-5';
+// Parsing a slash command into fields. A wrong parse fails loudly and immediately.
+const MODEL = modelFor('mechanical');
 
 let client = null;
 const getClient = () => (client ??= new Anthropic());
@@ -137,7 +139,7 @@ export async function resolveRequest(arg, { today = new Date() } = {}) {
   const res = await getClient().messages.create({
     model: MODEL,
     max_tokens: 2000,
-    output_config: { effort: 'low', format: { type: 'json_schema', schema: SCHEMA } },
+    output_config: outputConfig(MODEL, 'low', SCHEMA),
     system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
     messages: [
       {

@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { record as recordUsage } from '../usage.js';
+import { modelFor, outputConfig } from '../models.js';
 
 // Looking at the photographs before choosing one.
 //
@@ -16,7 +17,8 @@ import { record as recordUsage } from '../usage.js';
 // Cheap on purpose: 200px thumbnails, one call per slide, and only the winner
 // is downloaded at full size.
 
-const MODEL = process.env.CURATE_MODEL || process.env.ANTHROPIC_MODEL || 'claude-opus-5';
+// Generating stock search terms; a weak query costs one image lookup.
+const MODEL = modelFor('mechanical');
 const EFFORT = process.env.CURATE_EFFORT || 'low';
 
 let client = null;
@@ -177,7 +179,7 @@ export async function pickCinematic(
   const res = await getClient().messages.create({
     model: MODEL,
     max_tokens: 2000,
-    output_config: { effort: EFFORT, format: { type: 'json_schema', schema: SCHEMA } },
+    output_config: outputConfig(MODEL, EFFORT, SCHEMA),
     system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
     messages: [{ role: 'user', content }],
   });

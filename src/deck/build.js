@@ -19,6 +19,7 @@ import { decideShape, keepVisitable } from './shape.js';
 import { countryOfDestination } from './where.js';
 import { deckPlace, countryMismatch } from './region.js';
 import { vocabForPrompt } from './emoji.js';
+import { modelFor, outputConfig } from '../models.js';
 
 // An idea becomes a deck, or it doesn't.
 //
@@ -36,7 +37,17 @@ import { vocabForPrompt } from './emoji.js';
 // make impossible. A deck that wanted five places and found three says so on
 // the approval card.
 
-const MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-5';
+// Writing the slide IS the post — a flat hook is a flat slide and nothing
+// downstream catches it.
+const MODEL = modelFor('editorial');
+
+// Filling in the fixed fields is NOT writing, and FIELDS_SYSTEM says so in its
+// first line: read the page, supply the values, quote each one character for
+// character. Every quote is then checked against the page by verifyEvidence, so
+// a wrong extraction fails loudly rather than shipping — which is the condition
+// for running a job on the cheaper tier. It is also the per-slide call, so it
+// is where the money actually is.
+const FIELDS_MODEL = modelFor('judgement');
 const EFFORT = process.env.DECK_EFFORT || 'medium';
 
 let client = null;
@@ -305,7 +316,7 @@ export async function draftBulletsFromEntry(place, pageText) {
   const res = await getClient().messages.create({
     model: MODEL,
     max_tokens: 3000,
-    output_config: { effort: EFFORT, format: { type: 'json_schema', schema: BULLETS_SCHEMA } },
+    output_config: outputConfig(MODEL, EFFORT, BULLETS_SCHEMA),
     system: [{ type: 'text', text: BULLETS_SYSTEM, cache_control: { type: 'ephemeral' } }],
     messages: [
       {
@@ -407,9 +418,9 @@ export async function draftFieldsFromEntry(place, pageText, kind) {
   const spec = fieldsFor(kind);
 
   const res = await getClient().messages.create({
-    model: MODEL,
+    model: FIELDS_MODEL,
     max_tokens: 4000,
-    output_config: { effort: EFFORT, format: { type: 'json_schema', schema: FIELDS_SCHEMA } },
+    output_config: outputConfig(FIELDS_MODEL, EFFORT, FIELDS_SCHEMA),
     system: [{ type: 'text', text: FIELDS_SYSTEM, cache_control: { type: 'ephemeral' } }],
     messages: [
       {
@@ -429,7 +440,7 @@ export async function draftFieldsFromEntry(place, pageText, kind) {
     ],
   });
 
-  recordUsage(res.usage, MODEL);
+  recordUsage(res.usage, FIELDS_MODEL);
   if (res.stop_reason === 'refusal') throw new RejectedError('refused', 'field drafting refused');
 
   const text = res.content.find((b) => b.type === 'text')?.text;
@@ -495,7 +506,7 @@ export async function draftSlideFromEntry(place, pageText) {
   const res = await getClient().messages.create({
     model: MODEL,
     max_tokens: 6000,
-    output_config: { effort: EFFORT, format: { type: 'json_schema', schema: SLIDE_SCHEMA_V2 } },
+    output_config: outputConfig(MODEL, EFFORT, SLIDE_SCHEMA_V2),
     system: [{ type: 'text', text: SLIDE_SYSTEM_V2, cache_control: { type: 'ephemeral' } }],
     messages: [{ role: 'user', content: user }],
   });
@@ -733,7 +744,7 @@ export async function draftSlide(place, pageText, { url }) {
   const res = await getClient().messages.create({
     model: MODEL,
     max_tokens: 8000,
-    output_config: { effort: EFFORT, format: { type: 'json_schema', schema: SLIDE_SCHEMA } },
+    output_config: outputConfig(MODEL, EFFORT, SLIDE_SCHEMA),
     system: [{ type: 'text', text: SLIDE_SYSTEM, cache_control: { type: 'ephemeral' } }],
     messages: [{ role: 'user', content: user }],
   });
@@ -1187,7 +1198,19 @@ export async function buildDeck(idea, { wantImages = true } = {}) {
   // Wikidata has a Hebrew label for the famous places and not for the rest, and
   // "Piz Bernina" on a Hebrew slide is the thing the channel most obviously
   // must not do. Asked for the whole shortlist at once rather than per slide.
-  const candidates = pool.places.slice(0, Math.max(idea.want * 2, idea.want + 4));
+  // The surplus exists because places lose their photograph later and the
+  // image step walks down the list — see fillImages. It is NOT free: every
+  // candidate past `want` is a full drafting call on the editorial model, and
+  // at `want * 2` a five-slide deck paid for ten of them to use five.
+  //
+  // `want + 3` keeps the same insurance against image failure at a little over
+  // half the cost. Three spare places is already more than fillImages has ever
+  // needed on a deck this size; the doubling was a guess, not a measurement.
+  //
+  // The real fix is to draft lazily, as the image step discovers it needs a
+  // slide rather than up front. That is a larger change to the order of this
+  // function and is deliberately not bundled with a pricing change.
+  const candidates = pool.places.slice(0, idea.want + 3);
   const hebrew = await hebrewNames(candidates).catch((e) => {
     console.error(`deck: transliteration failed — ${e.message}`);
     return new Map();
