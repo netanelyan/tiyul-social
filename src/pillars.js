@@ -61,7 +61,7 @@ export const PILLARS = {
   },
   route: {
     he: 'קו חדש מתל אביב',
-    hint: 'A new or returning route from TLV, or a schedule change that matters. Never fares.',
+    hint: 'A new or returning route from TLV, or a schedule change that matters. A fare only if the page states one.',
   },
 };
 

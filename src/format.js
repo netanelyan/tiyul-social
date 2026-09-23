@@ -7,6 +7,7 @@ import { KINDS } from './sources/places.js';
 import { clipApprovalMessage } from './video/clip.js';
 import { postConfig } from './postConfig.js';
 import { hashtagLine } from './hashtags.js';
+import { URL_LIKE } from './urlLike.js';
 
 // Two different texts, for two different readers.
 //
@@ -92,15 +93,12 @@ export const captionHook = ({ rand = Math.random } = {}) => {
   return lines[Math.floor(rand() * lines.length)];
 };
 
-/**
- * Anything that reads as a link: a scheme, a www host, or a .com / .co.il.
- *
- * Deliberately broader than a URL parser. What gets a post demoted is not a
- * well-formed URL, it is a domain a human can retype — "tiyulplus.com" with no
- * scheme and no www is the same signal to the platform and the same signal to
- * the reader, and a parser would pass it.
- */
-export const URL_LIKE = /(?:https?:\/\/)|(?:\bwww\.)|(?:\.(?:com|co\.il)\b)/i;
+// The link pattern moved to src/urlLike.js so postConfig.js can guard the
+// configured CTA with the same object without closing an import cycle — see
+// the note there. Imported AND re-exported, not forwarded: `export { X } from`
+// alone would publish the name without binding it in this module's scope, and
+// assertNoUrl below reads it.
+export { URL_LIKE };
 
 /**
  * The guard between a built caption and the approval queue.

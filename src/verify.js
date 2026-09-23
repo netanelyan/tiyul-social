@@ -209,6 +209,34 @@ export function verifyEvidence(draft, sourceText) {
 
 // --- flight-price guard -----------------------------------------------------
 
+// OFF BY DEFAULT SINCE THE BRIEF. See BRIEF.md, "The fare ban is lifted".
+//
+// This used to be unconditional, and the reasoning is still worth reading: a
+// fare is the one number on a travel post that no allowlisted authority
+// publishes, so a price that reached a draft came from the model's memory and
+// this was the only thing standing between it and a post.
+//
+// Rule 2 of the brief requires the opposite. The reference account it was built
+// against leads with prices in four of its eight best hooks — ₪8,500 for
+// Lisbon, ₪20,000 for New Year, ₪4,500 for three days — and it is the most
+// reproducible thing about that account. The owner's instruction, given after
+// the above was put to them, is that the prices ship.
+//
+// What that costs is stated rather than hidden: a number on a post is now
+// unsourced, in a pipeline where everything else is traceable to a page that
+// was fetched. Two things reduce the blast radius and neither removes it:
+//
+//   - the guard is OFF, not DELETED. FLIGHT_PRICE_GUARD=on restores it
+//     everywhere, in one environment variable, with no code change.
+//   - a price is the OWNER's claim. On a shoot you are the source and you know
+//     the number; on an automated clip the price format is weighted low and the
+//     line is printed on the approval card before anything is tapped.
+//
+// The function itself is unchanged and still exported, because the selftest
+// still asserts it detects what it always detected. What changed is whether
+// verifyDraft consults it.
+export const flightPriceGuardOn = () => /^(1|on|true|yes)$/i.test(String(process.env.FLIGHT_PRICE_GUARD || ''));
+
 // Deliberately not a blanket ban on money: "entry costs €19" is a perfectly good
 // practical tip. What's out of scope for v1 is *fares*, so the guard fires only
 // when an amount sits near flight vocabulary.
@@ -378,8 +406,14 @@ export function verifyDraftText(draft) {
     .filter(Boolean)
     .join('\n');
 
-  const fare = flightPriceGuard(blob);
-  if (fare) throw new RejectedError('flight_price_out_of_scope', fare);
+  // Consulted only when switched on — see the long note at flightPriceGuardOn.
+  // A card that carries a fare now publishes, and that is a decision, not a
+  // gap: the rest of this function is unchanged, so every OTHER claim on the
+  // card still has to be quoted from a page that was fetched.
+  if (flightPriceGuardOn()) {
+    const fare = flightPriceGuard(blob);
+    if (fare) throw new RejectedError('flight_price_out_of_scope', fare);
+  }
 
   const decimal = noDecimalsUpFront(draft);
   if (decimal) throw new RejectedError('unrounded_number', decimal);

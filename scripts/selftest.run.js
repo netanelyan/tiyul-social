@@ -134,8 +134,16 @@ for (const [url, want, why] of [
 }
 
 /* -------------------------------------------------------------------------- */
-group('fare guard — flight prices out of scope in v1, other costs fine');
+group('fare guard — off by default since the brief, and still correct when on');
 
+// THE DETECTOR IS UNCHANGED AND STILL TESTED. What changed is whether
+// verifyDraftText consults it: the brief requires prices (rule 2), the owner
+// lifted the ban after the cost was put to them, and FLIGHT_PRICE_GUARD=on
+// restores it in one environment variable. See BRIEF.md.
+//
+// Testing the detector separately from the switch is the point. A guard that
+// is off is one env var away from being on, and the day somebody flips it is
+// the day they need it to still know a fare from an entry fee.
 for (const [text, want] of [
   ['טיסה לאתונה החל מ-249 שקל', true],
   ['צ׳רטר ישיר, 1,200 ש״ח הלוך ושוב', true],
@@ -146,14 +154,48 @@ for (const [text, want] of [
   ['ארוחת ערב טובה בעיר: 120 ש״ח לזוג', false],
   ['הטיסה נוחתת ב-06:30 בבוקר', false],
 ]) {
-  eq(`${want ? 'blocks' : 'allows'}: ${text}`, Boolean(flightPriceGuard(text)), want);
+  eq(`${want ? 'detects' : 'allows'}: ${text}`, Boolean(flightPriceGuard(text)), want);
 }
 
-throws(
-  'verifyDraftText rejects a draft carrying a fare',
-  () => verifyDraftText({ headline: 'טיסות זולות', caption: 'כרטיס טיסה החל מ-199 שקל הלוך ושוב לאתונה' }),
-  'flight_price_out_of_scope'
-);
+{
+  const { flightPriceGuardOn } = await import('../src/verify.js');
+  const before = process.env.FLIGHT_PRICE_GUARD;
+  // A draft that is clean on every OTHER rule, so what this measures is the
+  // fare decision alone. The previous version of this test used a two-word
+  // headline and, once the guard went off, failed on headline_length instead —
+  // which is a pass for the wrong reason waiting to happen in the other
+  // direction too.
+  const fareDraft = {
+    headline: 'הקו החדש מתל אביב לאתונה',
+    subhead: 'איג׳יאן פותחת קו ישיר בנובמבר',
+    caption: 'כרטיס טיסה החל מ-199 שקל הלוך ושוב לאתונה. הקו נפתח בנובמבר.',
+  };
+
+  delete process.env.FLIGHT_PRICE_GUARD;
+  ok('off by default', !flightPriceGuardOn());
+  ok(
+    'so a draft carrying a fare now passes',
+    (() => {
+      try {
+        verifyDraftText(fareDraft);
+        return true;
+      } catch (e) {
+        return `threw ${e.reason || e.message}`;
+      }
+    })() === true
+  );
+
+  process.env.FLIGHT_PRICE_GUARD = 'on';
+  ok('the switch turns it back on', flightPriceGuardOn());
+  throws(
+    'and the old rejection returns, unchanged',
+    () => verifyDraftText(fareDraft),
+    'flight_price_out_of_scope'
+  );
+
+  if (before === undefined) delete process.env.FLIGHT_PRICE_GUARD;
+  else process.env.FLIGHT_PRICE_GUARD = before;
+}
 
 /* -------------------------------------------------------------------------- */
 group('claim verification — quotes must be verbatim');
@@ -3841,60 +3883,341 @@ group('one country per clip — the line, the pin and the tag are one fact');
 }
 
 /* -------------------------------------------------------------------------- */
-group('clip lines — the owner-approved shapes must survive their own guards');
+group('clip lines — the brief’s own hooks must survive their own guards');
 
-// Three separate guards silently ate the owner's own approved lines, each time
-// looking like the writer had failed. Locked here so it cannot happen a fourth
-// time: a guard that rejects a canonical line is a broken guard.
+// The rule this group has always encoded: A GUARD THAT REJECTS A CANONICAL LINE
+// IS A BROKEN GUARD. Three separate guards silently ate the owner's approved
+// lines under the previous format, each time looking like the writer had
+// failed, and the fix was to lock the canonical lines into the tests.
+//
+// The canon changed with the brief; the rule did not. Every hook printed
+// verbatim in BRIEF.md must pass every check in video/hooks.js, and the two
+// guards that were RELAXED for it must still catch what they were built for.
 {
-  const { hasPerson, isLabel } = await import('../src/video/hooks.js');
+  const { hasPerson, isLabel, beatCountMismatch } = await import('../src/video/hooks.js');
   const cfg = postConfig().clips;
   const fmt = (id) => cfg.formats.find((f) => f.id === id);
 
-  // The two place formats are built out of pronouns. hasPerson bans אני, אתה
-  // and אחי — correctly, in general: it stops the account claiming to have
-  // stood somewhere it has not. A vocative and an invitation make no such
-  // claim, so they carry an explicit exemption rather than weakening the rule.
-  for (const id of ['vocative', 'invite']) {
+  // The five shapes of the brief's rule 5, as clip formats.
+  for (const [id, shape] of [
+    ['mistakes', 'A'],
+    ['warning', 'A'],
+    ['budget', 'B'],
+    ['list', 'D'],
+    ['myth', 'E'],
+  ]) {
     ok(`${id} exists`, Boolean(fmt(id)));
-    ok(`${id} is exempt from the person guard`, fmt(id).allowsPerson === true);
-    ok(`${id} only fires when the country is known`, fmt(id).needsPlace === true);
+    eq(`${id} declares its shape`, fmt(id)?.shape, shape);
+    ok(`${id} says what its beats are`, Boolean(fmt(id)?.beatsAre));
   }
-  ok('the guard still bans the on-location voice', hasPerson('אני נשבע שהאוויר פה אחר'));
-  ok('but not the viewer voice the owner approved', !hasPerson('למה אף אחד לא סיפר לי על השביל הזה'));
+  ok('the budget shape is the one allowed a price', fmt('budget').allowsPrice === true);
 
-  // Both place shapes are short by design — three and four words. A blanket
-  // five-word floor rejected both on every single run.
-  ok('the vocative may be three words', fmt('vocative').minWords <= 3);
-  ok('the invite may be four', fmt('invite').minWords <= 4);
+  // THE PERSON GUARD WAS SPLIT, and this is the pair that proves the split is
+  // real rather than a weakening. Presence — a claim to have stood there — is
+  // still banned over stock footage. Address — speaking to the viewer — is the
+  // voice of four of the five formats and is now allowed outright.
+  ok('presence is still banned', hasPerson('אני נשבע שהאוויר פה אחר'));
+  ok('and so is the past tense of it', hasPerson('כשהייתי שם לא היה אף אחד'));
+  ok('address is not presence', !hasPerson('אל תטוסו לשם לפני שאתם יודעים את זה'));
+  ok('nor is the second-person possessive', !hasPerson('הדרכון שלכם חייב להיות בתוקף'));
+  ok('the viewer voice still survives', !hasPerson('למה אף אחד לא סיפר לי על השביל הזה'));
 
-  // The label check has to let nature vocabulary through. Its first version
-  // rejected any line containing יער / הר / שביל, which would have thrown out
-  // the 229K reference post the whole format is modelled on.
+  // isLabel gained a PROMISE arm for the same reason. "3 טעויות שישראלים עושים
+  // בגאורגיה" asserts nothing grammatically and the old check rejected it as a
+  // caption — which is backwards: the digit is what makes it a hook.
   ok('a bare noun phrase is still a label', isLabel('שביל יפה ביער'));
-  ok('but a statement about nature is not', !isLabel('יש רגע בהליכה שבו הראש מתרוקן'));
+  ok('and so is a caption of the picture', isLabel('הדולומיטים, איטליה'));
+  ok('a statement is still not a label', !isLabel('יש רגע בהליכה שבו הראש מתרוקן'));
 
-  // Every line the owner approved verbatim must pass every check. If one of
-  // these fails, the guards have drifted away from the taste they encode.
-  const approved = [
-    'העובדה שהשביל הזה לא עולה כסף',
-    'חייב להיות בטופ 3 מסלולים שקיימים',
-    'יש אנשים שזה המסלול שלהם לעבודה',
-    'חייב להיות בטופ 3 דברים שעשיתי השבוע',
-    'למה אף אחד לא סיפר לי על השביל הזה',
-    'איך לא שמעתי על המסלול הזה עד היום',
+  // Every hook printed in BRIEF.md, verbatim.
+  const canon = [
+    '3 טעויות שישראלים עושים בגאורגיה',
+    'אל תטוסו לתאילנד לפני שאתם יודעים את זה',
+    '5 ימים ברומא ב-2,000 ₪ — ככה',
+    '5 יעדים לאוקטובר בלי ויזה',
+    'כולם חושבים ששווייץ יקרה מדי — האמת אחרת',
+    'המקום בפורטוגל שאף ישראלי לא מגיע אליו',
   ];
-  for (const line of approved) {
-    ok(`approved line survives: ${line}`, !hasPerson(line) && !isLabel(line));
+  for (const line of canon) {
+    ok(`brief hook survives: ${line}`, !hasPerson(line) && !isLabel(line));
   }
 
-  // And the fallback pool is drawn from those approved lines, so a failed API
-  // call degrades to something already judged rather than to something invented.
+  // The promise check, and the false positive that shaped it. A number is only
+  // a beat count when a LIST noun follows it — "5 ימים" is how long the trip
+  // is, and reading it as a promise of five beats rejected the budget format on
+  // every single run.
+  eq('a kept promise passes', beatCountMismatch('3 טעויות שישראלים עושים בגאורגיה', ['a', 'b', 'c']), null);
+  ok('a broken one does not', Boolean(beatCountMismatch('3 טעויות שישראלים עושים בגאורגיה', ['a', 'b'])));
+  eq('a duration is not a count', beatCountMismatch('5 ימים ברומא ב-2,000 ₪ — ככה', ['a', 'b', 'c']), null);
+  eq('nor is a price', beatCountMismatch('טיול ב-2,000 ₪ — ככה', ['a', 'b']), null);
+
+  // The list format promises five, so the ceiling has to allow five. It was
+  // four, which made the brief's own example impossible to satisfy: one guard
+  // rejected every run for obeying another.
+  ok('the beat ceiling can satisfy the list format', cfg.beatsMax >= 5, `beatsMax=${cfg.beatsMax}`);
+  ok('and the floor is at least two', cfg.beatsMin >= 2);
+
+  // The fallback pool degrades to the same shapes rather than to the old memes.
+  for (const line of cfg.hooks) {
+    ok(`fallback line is a promise: ${line}`, !hasPerson(line) && !isLabel(line));
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+group('clip length — the beats have to fit inside the brief’s 15-35 seconds');
+
+{
+  const { timeline } = await import('../src/video/overlay.js');
+  const cfg = postConfig().clips;
+
+  // Rule 6 is a range, and every beat count the writer may return has to land
+  // inside it. The ceiling is the interesting end: five beats at 4.5 seconds
+  // plus a hook is 26, and a config edit that pushed it past 35 would ship a
+  // video the brief says is too long without anything noticing.
+  for (let n = cfg.beatsMin; n <= cfg.beatsMax; n++) {
+    const plan = timeline(Array.from({ length: n }, (_, i) => `beat ${i + 1}`));
+    ok(
+      `${n} beats fits the brief: ${plan.seconds}s`,
+      plan.seconds >= cfg.video.secondsMin && plan.seconds <= cfg.video.secondsMax,
+      `${plan.seconds}s outside [${cfg.video.secondsMin}, ${cfg.video.secondsMax}]`
+    );
+    eq(`${n} beats gets ${n + 1} windows`, plan.windows.length, n + 1);
+  }
+
+  // No gaps and no overlaps. A gap is a frame with no text on it in the middle
+  // of a video whose whole point is that the text keeps arriving.
+  const plan = timeline(['a', 'b', 'c']);
+  eq('the first window opens at zero', plan.windows[0].from, 0);
+  eq('the last closes at the end', plan.windows.at(-1).to, plan.seconds);
   ok(
-    'the fallback pool is owner-approved copy',
-    cfg.hooks.every((l) => approved.includes(l) || /אני, אתה/.test(l)),
-    cfg.hooks.find((l) => !approved.includes(l) && !/אני, אתה/.test(l))
+    'every window is contiguous with the next',
+    plan.windows.every((w, i) => i === 0 || Math.abs(w.from - plan.windows[i - 1].to) < 0.002)
   );
+
+  // The no-beats case is the fallback pool, and it must not produce a
+  // zero-length or unclamped video.
+  const bare = timeline([]);
+  eq('no beats still clamps to the floor', bare.seconds, cfg.video.secondsMin);
+  eq('and is a single window', bare.windows.length, 1);
+
+  // The looping switch is what made the length rise possible at all: Pexels
+  // holds 5-30 second clips and the finished video is routinely longer.
+  ok('the source loops to fill the length', cfg.video.loopSource === true);
+}
+
+/* -------------------------------------------------------------------------- */
+group('posting windows — Israel time, and not on Shabbat');
+
+{
+  const { israelNow, inShabbat, inWindow, sendableNow, nextSendableAt } = await import('../src/schedule.js');
+
+  // Fixed UTC instants, so this measures the TIME ZONE CONVERSION rather than
+  // whatever the machine running the tests thinks the time is. That is the
+  // whole reason the module uses Intl instead of getHours(): the VPS is not in
+  // Israel, and a schedule that means something different per box is the kind
+  // of bug that reads as "the bot is quiet today".
+  const at = (iso) => new Date(iso);
+  eq('13:00 Israel from 10:00Z', Math.round(israelNow(at('2026-09-23T10:00:00Z')).hour), 13);
+  eq('and the weekday comes with it', israelNow(at('2026-09-23T10:00:00Z')).day, 3);
+
+  ok('midday is a window', inWindow(at('2026-09-23T10:00:00Z')));
+  ok('so is the evening', inWindow(at('2026-09-23T17:00:00Z')));
+  ok('08:00 is not', !inWindow(at('2026-09-23T05:00:00Z')));
+  ok('nor is 16:00, between the two', !inWindow(at('2026-09-23T13:00:00Z')));
+
+  ok('Friday afternoon is Shabbat', inShabbat(at('2026-09-25T13:00:00Z')));
+  ok('Saturday midday is Shabbat', inShabbat(at('2026-09-26T10:00:00Z')));
+  ok('Friday lunchtime is not yet', !inShabbat(at('2026-09-25T09:00:00Z')));
+  ok('Saturday night is past it', !inShabbat(at('2026-09-26T18:00:00Z')));
+
+  // Shabbat beats the window. Friday 12:00 is inside a posting window AND
+  // before candle-lighting, so it sends; Friday 16:00 is inside no window and
+  // inside Shabbat, and the reason given has to be the Shabbat one because
+  // that is the one that lasts another day.
+  ok('Friday lunchtime sends', sendableNow(at('2026-09-25T09:00:00Z')).ok);
+  ok('Friday evening does not', !sendableNow(at('2026-09-25T13:00:00Z')).ok);
+  ok('and says why', /שבת/.test(sendableNow(at('2026-09-25T13:00:00Z')).why));
+  ok('outside hours says something else', /שעות/.test(sendableNow(at('2026-09-23T05:00:00Z')).why));
+
+  // The next opening after Shabbat is Saturday evening, not Sunday.
+  const next = nextSendableAt(at('2026-09-25T13:00:00Z'));
+  ok('there is a next opening', Boolean(next));
+  ok('and it is after Shabbat ends', !inShabbat(next) && inWindow(next));
+  ok('within a day and a half', next - at('2026-09-25T13:00:00Z') < 36 * 3_600_000);
+}
+
+/* -------------------------------------------------------------------------- */
+group('shoot rotation — the brief’s counting rules are checks, not hopes');
+
+{
+  const { chooseFormat, nextSeries, seriesLabels, pickAngle } = await import('../src/shoot/rotation.js');
+  const cfg = postConfig().shoot;
+
+  // A deterministic PRNG, because the claims below are about what happens over
+  // a run and a flaky counting test is worse than none.
+  const prng = (seed) => () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+
+  const simulate = (n, seed) => {
+    const rand = prng(seed);
+    const history = [];
+    for (let i = 0; i < n; i++) {
+      const { format } = chooseFormat(history, { rand });
+      const series = nextSeries(history);
+      const angle = pickAngle(history, { rand });
+      history.unshift({
+        formatId: format.id,
+        shape: format.shape,
+        needsProduct: format.needsProduct,
+        series,
+        angle,
+      });
+    }
+    return history.reverse();
+  };
+
+  for (const seed of [7, 41, 1009]) {
+    const run = simulate(20, seed);
+
+    // Rule 5: never the same template twice in a row. Checked on SHAPE, not on
+    // id — mistakes → warning is two different ids and one template as far as
+    // anybody scrolling is concerned.
+    const repeats = run.filter((r, i) => i > 0 && r.shape && r.shape === run[i - 1].shape);
+    eq(`seed ${seed}: no back-to-back shapes`, repeats.length, 0);
+
+    // Rule 3: the product in at least half. A floor, so it is a check — and
+    // the check is on EVERY ROLLING WINDOW, not on the average, because an
+    // average can be met by a burst of demos after a fortnight without one.
+    //
+    // This is the assertion that caught the real bug. The first version of the
+    // rule counted the window that had just slid past and forced the demo when
+    // it was short, which converges to 44% rather than 50%: by the time a
+    // window is measurably short, the window it was protecting has gone out.
+    const need = Math.ceil(cfg.productShare * cfg.productWindow);
+    let worst = Infinity;
+    for (let i = 0; i + cfg.productWindow <= run.length; i++) {
+      worst = Math.min(worst, run.slice(i, i + cfg.productWindow).filter((r) => r.needsProduct).length);
+    }
+    ok(
+      `seed ${seed}: every ${cfg.productWindow}-shoot window has ${need}+ product (worst ${worst})`,
+      worst >= need,
+      `worst window ${worst}/${cfg.productWindow}, need ${need}`
+    );
+
+    const product = run.filter((r) => r.needsProduct).length;
+    ok(
+      `seed ${seed}: product in at least half overall (${product}/${run.length})`,
+      product >= run.length * cfg.productShare,
+      `${product}/${run.length} below ${cfg.productShare}`
+    );
+
+    // Rule 7: a series that starts must reach its last part. A series
+    // abandoned at part 1 is a promise broken to everyone who followed for it.
+    const starts = run.filter((r) => r.series?.index === 1).length;
+    const finishes = run.filter((r) => r.series && r.series.index === r.series.of).length;
+    ok(`seed ${seed}: ${starts} series started, ${finishes} finished`, finishes >= starts - 1);
+
+    // And every series runs 1, 2, 3 in order with nothing skipped.
+    const parts = run.filter((r) => r.series).map((r) => r.series.index);
+    ok(
+      `seed ${seed}: series parts are consecutive`,
+      parts.every((p, i) => i === 0 || p === 1 || p === parts[i - 1] + 1),
+      parts.join(',')
+    );
+  }
+
+  // A SERIES IS ABOUT ONE THING. Part 1 records its destination as the topic
+  // and every later part is pinned to it — without which the mechanism breaks
+  // in the one way that matters: part 1 ends on "עקבו לחלק 2 מחר", part 2
+  // arrives about a different city, and the only people who acted on the
+  // promise are the ones let down.
+  {
+    const started = nextSeries([]);
+    eq('a new series opens at part 1', started.index, 1);
+    eq('with no topic yet — part 1 chooses it', started.topic, null);
+
+    const afterOne = [{ formatId: 'demo', shape: 'C', needsProduct: true, series: { index: 1, of: 3, topic: 'קורפו' } }];
+    const second = nextSeries(afterOne);
+    eq('part 2 follows part 1', second.index, 2);
+    eq('and inherits the topic', second.topic, 'קורפו');
+
+    const afterTwo = [{ formatId: 'myth', shape: 'E', needsProduct: false, series: { index: 2, of: 3, topic: 'קורפו' } }, ...afterOne];
+    eq('part 3 still inherits it', nextSeries(afterTwo).topic, 'קורפו');
+
+    // And a finished series does not silently continue into a fourth part.
+    const afterThree = [{ formatId: 'list', shape: 'D', needsProduct: false, series: { index: 3, of: 3, topic: 'קורפו' } }, ...afterTwo];
+    const next = nextSeries(afterThree);
+    ok('a finished series does not run to part 4', !next || next.index === 1, JSON.stringify(next));
+  }
+
+  // "עקבו לחלק 4 מחר" under part 3 of 3 is the exact promise-breaking the
+  // series mechanism exists to avoid.
+  eq('the last part asks for no next one', seriesLabels({ index: 3, of: 3 }).next, null);
+  ok('an earlier part does', Boolean(seriesLabels({ index: 1, of: 3 }).next));
+  ok('and is labelled', /1/.test(seriesLabels({ index: 1, of: 3 }).label));
+
+  // An empty history must not crash the first ever shoot.
+  ok('a cold start chooses something', Boolean(chooseFormat([]).format));
+  ok('and picks an angle', Boolean(pickAngle([])));
+}
+
+/* -------------------------------------------------------------------------- */
+group('the caption — a question, sometimes a CTA, and never a URL');
+
+{
+  const { captionQuestion, captionCta, clipCaption } = await import('../src/hashtags.js');
+  const { assertNoUrl } = await import('../src/format.js');
+  const { shootMessage, shootCaption } = await import('../src/shoot/message.js');
+  const cfg = postConfig().caption;
+
+  ok('there are questions to draw from', cfg.questions.length > 0);
+  ok('every one of them asks something', cfg.questions.every((q) => q.includes('?')));
+  ok('a question comes back', Boolean(captionQuestion({ rand: () => 0.1 })));
+
+  // THE CTA CAME BACK AND THE URL DID NOT. This is the pair that keeps the two
+  // apart: post-config.json's own argument for removing the CTA was about the
+  // DOMAIN, and "הלינק בביו" carries none.
+  ok('the CTA exists', Boolean(cfg.cta));
+  ok('and mentions the bio', /ביו/.test(cfg.cta));
+  ok('and carries no domain', (() => { try { assertNoUrl(cfg.cta); return true; } catch { return false; } })());
+
+  // Soft means "not on every post". ctaShare is what makes that true, and the
+  // two ends of the random range are what prove it is wired up at all.
+  ok('below the share, the CTA appears', Boolean(captionCta({ rand: () => 0 })));
+  eq('above it, nothing', captionCta({ rand: () => 0.999 }), null);
+  ok('and the share is under one', cfg.ctaShare < 1, `ctaShare=${cfg.ctaShare}`);
+
+  const cand = { clip: { vision: { place: 'Italy', site: 'Cinque Torri', siteHe: 'צ׳ינקווה טורי' } } };
+  const caption = clipCaption(cand, { rand: () => 0.1 });
+  ok('the clip caption still opens with the pin', caption.startsWith('📍'));
+  ok('carries a question', /\?/.test(caption));
+  ok('and still ends with the tags', /#\S+$/.test(caption.trim()));
+  ok('and has no URL in it', (() => { try { assertNoUrl(caption); return true; } catch { return false; } })());
+
+  // The hashtag pools went Hebrew. #fyp and #foryou were two English words on a
+  // Hebrew post, doing the least of the five.
+  const tags = postConfig().hashtags;
+  ok('no English tags remain', [...tags.broad, ...tags.niche].every((t) => !/[A-Za-z]/.test(t)), [...tags.broad, ...tags.niche].find((t) => /[A-Za-z]/.test(t)));
+  ok('between three and five tags go out', tags.broadCount + tags.nicheCount >= 3 && tags.broadCount + tags.nicheCount <= 5);
+
+  // A shot list is the one message in this bot that ends at a person rather
+  // than at a button, and it has to say so.
+  const shoot = {
+    formatHe: 'הדגמת המוצר', shape: 'C', destination: 'ליסבון',
+    seriesLabel: 'חלק 2 מתוך 3', seriesNext: 'עקבו לחלק 3 מחר',
+    angle: 'טיול עם ילדים', lengthSeconds: [15, 35],
+    hook: 'ביקשתי מ-AI לתכנן לי 4 ימים בליסבון',
+    beats: ['הקלדתי את הבקשה', 'חזר מסלול יום-יום', 'היום השלישי בסינטרה'],
+    caption: 'ככה נראה מסלול שנבנה בשתי דקות',
+    prompt: '4 ימים בליסבון עם שני ילדים',
+    note: 'תחזיקו על היום השלישי',
+    shots: ['הקלטת מסך', 'התוכנית חוזרת'],
+  };
+  const msg = shootMessage(shoot, { rand: () => 0.1 });
+  ok('the shot list leads with the hook', msg.indexOf(shoot.hook) < msg.indexOf(shoot.beats[0]));
+  ok('numbers the beats', /1\. הקלדתי/.test(msg));
+  ok('prints the exact thing to type', msg.includes(shoot.prompt));
+  ok('says nobody else will publish it', /אף אחד לא מפרסם/.test(msg));
+  ok('and the copyable caption carries no URL', (() => { try { assertNoUrl(shootCaption(shoot, { rand: () => 0.1 })); return true; } catch { return false; } })());
 }
 
 /* -------------------------------------------------------------------------- */

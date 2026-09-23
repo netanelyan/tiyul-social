@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { URL_LIKE } from './urlLike.js';
 
 // post-config.json, read once and checked on the way in.
 //
@@ -35,6 +36,19 @@ export function postConfig() {
   const lines = (caption.lines || []).map((s) => String(s).trim()).filter(Boolean);
   if (!lines.length) throw new Error('post-config.json: caption.lines is empty — every post needs an opening line');
 
+  // The brief's caption shape: one short line plus a question, and a soft CTA
+  // at the end of some of them. Both are optional in the file and absent means
+  // off — a caption pool with no questions in it is the old behaviour and is a
+  // perfectly valid thing to go back to.
+  const questions = (caption.questions || []).map((s) => String(s).trim()).filter(Boolean);
+  const cta = String(caption.cta || '').trim();
+  // Checked HERE rather than at build time. A CTA with a domain in it would
+  // otherwise throw once per post, from assertNoUrl, deep inside a build — and
+  // the thing that is actually broken is this file.
+  if (cta && URL_LIKE.test(cta)) {
+    throw new Error(`post-config.json: caption.cta contains a URL — the link lives in the bio, the caption says so in words`);
+  }
+
   const broad = tags(hashtags.broad, 'hashtags.broad');
   const niche = tags(hashtags.niche, 'hashtags.niche');
   const broadCount = count(hashtags.broadCount, 2);
@@ -43,7 +57,15 @@ export function postConfig() {
   if (niche.length < nicheCount) throw new Error(`post-config.json: hashtags.niche has ${niche.length} tags, needs ${nicheCount}`);
 
   cached = {
-    caption: { lines },
+    caption: {
+      lines,
+      questions,
+      cta,
+      // How often the CTA is appended. Clamped rather than trusted: a share
+      // above 1 is a CTA on every post, which the brief calls the opposite of
+      // soft, and a negative one silently turns the feature off.
+      ctaShare: Math.max(0, Math.min(1, num(caption.ctaShare, 0))),
+    },
     hashtags: {
       broad,
       niche,
@@ -83,6 +105,8 @@ export function postConfig() {
       weights: { ...(destinations.weights || {}) },
     },
     clips: clips(raw.clips || {}),
+    shoot: shoot(raw.shoot || {}),
+    schedule: schedule(raw.schedule || {}),
     // English country name from the vision judge -> Hebrew, for the place
     // formats. Keyed on free text a model produced, which is why it is separate
     // from deck/flags.js and why a miss simply withdraws those formats.
@@ -150,6 +174,22 @@ function clips(raw) {
       id: String(f.id || '').trim(),
       he: String(f.he || '').trim(),
       desc: String(f.desc || '').trim(),
+      // Which of the brief's five shapes this is (BRIEF.md, rule 5). Carried so
+      // the rotation can refuse to offer the same shape twice in a row — two
+      // different ids that are both shape A are still the same video twice.
+      shape: String(f.shape || '').trim().toUpperCase() || null,
+      // Whether this shape may carry a price. The fare guard is off globally
+      // now, so this is no longer a gate — it is what tells the writer that a
+      // number in shekels is the POINT of this format rather than something it
+      // is merely permitted to mention.
+      allowsPrice: f.allowsPrice === true,
+      // What the lines AFTER the hook are, for this shape. A hook promising
+      // three mistakes and beats listing three destinations is a post that
+      // broke its own promise in the first four seconds.
+      beatsAre: String(f.beatsAre || '').trim(),
+      beatExamples: (Array.isArray(f.beatExamples) ? f.beatExamples : [])
+        .map((e) => String(e).trim())
+        .filter(Boolean),
       // How often this format is offered relative to the others. The owner
       // graded the shapes good/fine, and the grade is a weight, not a cut.
       weight: Math.max(1, Math.round(num(f.weight, 1))),
@@ -167,9 +207,20 @@ function clips(raw) {
     }))
     .filter((f) => f.id && f.desc);
 
+  const h = raw.hooks || {};
+  // Two is the floor because one beat is a hook with a punchline rather than a
+  // post that delivered anything; four is the ceiling because the finished clip
+  // is capped at secondsMax and a beat needs about five seconds to be read once,
+  // in Hebrew, on a moving background.
+  const beatsMin = Math.max(0, Math.round(num(h.beatsMin, 2)));
+  const beatsMax = Math.max(beatsMin, Math.round(num(h.beatsMax, 4)));
+
   return {
     hooks,
-    hooksMaxWords: Math.max(3, Math.round(num((raw.hooks || {}).maxWords, 12))),
+    hooksMaxWords: Math.max(3, Math.round(num(h.maxWords, 12))),
+    beatsMin,
+    beatsMax,
+    beatMaxWords: Math.max(3, Math.round(num(h.beatMaxWords, 11))),
     formats,
     search: {
       queries,
@@ -202,7 +253,21 @@ function clips(raw) {
     video: {
       width: Math.round(num(v.width, 1080)),
       height: Math.round(num(v.height, 1920)),
+      // The floor, and what a clip with no beats gets. Kept as `seconds` so
+      // every existing caller — measureClip, pickWindow, the approval card —
+      // keeps working on a clip that never grew a middle.
       seconds: num(v.seconds, 8),
+      // The brief's 15-35 (rule 6). secondsMax is a hard ceiling rather than a
+      // target: four beats at 4.5s plus a 3.5s hook is 21.5, and the clamp is
+      // what stops a config edit turning a clip into a minute of stock.
+      secondsMin: Math.max(1, num(v.secondsMin, 15)),
+      secondsMax: Math.max(1, num(v.secondsMax, 35)),
+      hookSeconds: Math.max(0.5, num(v.hookSeconds, 3.5)),
+      secondsPerBeat: Math.max(0.5, num(v.secondsPerBeat, 4.5)),
+      // Repeat the source until the requested length is filled. Off means a
+      // short source is simply trimmed to what it has, which is the old
+      // behaviour and produces a clip shorter than its own beats need.
+      loopSource: v.loopSource !== false,
       startAt: Math.max(0, num(v.startAt, 0.6)),
       fps: Math.round(num(v.fps, 30)),
       crf: Math.round(num(v.crf, 21)),
@@ -246,6 +311,112 @@ function clips(raw) {
       colors: colours,
     },
   };
+}
+
+/**
+ * The filming queue's settings.
+ *
+ * Validated less strictly than clips, and deliberately: nothing here is ever
+ * published. A malformed clip config ships a broken video; a malformed shoot
+ * config ships a worse shot list to one person who can read it and tell.
+ *
+ * The one fatal case is an empty format list, because a rotation with nothing
+ * to rotate through produces a shot list with no shape — which is a message
+ * saying "film something", and the whole point of this queue is that it does
+ * not say that.
+ */
+function shoot(raw) {
+  const formats = (Array.isArray(raw.formats) ? raw.formats : [])
+    .map((f) => ({
+      id: String(f.id || '').trim(),
+      shape: String(f.shape || '').trim().toUpperCase() || null,
+      he: String(f.he || '').trim(),
+      desc: String(f.desc || '').trim(),
+      weight: Math.max(1, Math.round(num(f.weight, 1))),
+      // The format that IS the product demo. Counted by the rotation so the
+      // brief's "at least half" is a check rather than a hope — see
+      // productShare below and src/shoot/rotation.js.
+      needsProduct: f.needsProduct === true,
+      allowsPrice: f.allowsPrice === true,
+      hookExamples: list(f.hookExamples),
+      // What to actually film, in order. The field that makes this a task
+      // rather than a brief: "a face to camera saying the hook" is something
+      // you can do in the next ten minutes, and "make a mistakes video" is not.
+      shots: list(f.shots),
+    }))
+    .filter((f) => f.id && f.desc);
+
+  if (!formats.length) {
+    throw new Error('post-config.json: shoot.formats is empty — a shot list with no shape is a message saying "film something"');
+  }
+
+  const series = raw.series || {};
+  return {
+    perDay: Math.max(0, Math.round(num(raw.perDay, 1))),
+    backlogMax: Math.max(1, Math.round(num(raw.backlogMax, 3))),
+    lengthSeconds: pair(raw.lengthSeconds, [15, 35]),
+    cta: String(raw.cta || '').trim(),
+    // The brief's rule 3 is "at least half", which is a floor. A weight is a
+    // tendency and a run of five non-product shoots sits well inside normal for
+    // any weighting, so this is enforced over a window instead.
+    productShare: Math.max(0, Math.min(1, num(raw.productShare, 0.5))),
+    productWindow: Math.max(1, Math.round(num(raw.productWindow, 6))),
+    angles: list(raw.angles),
+    series: {
+      every: Math.max(0, Math.round(num(series.every, 0))),
+      length: Math.max(2, Math.round(num(series.length, 3))),
+      labelHe: String(series.labelHe || 'חלק {n} מתוך {of}'),
+      nextHe: String(series.nextHe || 'עקבו לחלק {n} מחר'),
+    },
+    formats,
+  };
+}
+
+/**
+ * When an Israeli audience is actually on the application.
+ *
+ * Both halves default to OFF rather than to a guess. A schedule block that
+ * failed to parse and silently fell back to "noon to two" would suppress the
+ * queue for twenty-two hours a day and look exactly like a quiet bot.
+ */
+function schedule(raw) {
+  const windows = (Array.isArray(raw.windows) ? raw.windows : [])
+    .map((w) => pair(w, null))
+    .filter((w) => w && w[0] >= 0 && w[1] <= 24 && w[1] > w[0]);
+
+  const sh = raw.shabbat || {};
+  const day = (v, fallback) => {
+    const n = Math.round(num(v, fallback));
+    return n >= 0 && n <= 6 ? n : fallback;
+  };
+  const hour = (v, fallback) => {
+    const n = num(v, fallback);
+    return n >= 0 && n <= 24 ? n : fallback;
+  };
+
+  return {
+    timeZone: String(raw.timeZone || 'Asia/Jerusalem'),
+    windows,
+    shabbat: raw.shabbat
+      ? {
+          // getDay(): 0 Sunday … 5 Friday, 6 Saturday.
+          fromDay: day(sh.fromDay, 5),
+          fromHour: hour(sh.fromHour, 15),
+          toDay: day(sh.toDay, 6),
+          toHour: hour(sh.toHour, 20),
+        }
+      : null,
+  };
+}
+
+/** A list of non-empty trimmed strings, which is most of what this file holds. */
+const list = (v) => (Array.isArray(v) ? v : []).map((s) => String(s).trim()).filter(Boolean);
+
+/** A numeric [a, b] pair, or the fallback. */
+function pair(v, fallback) {
+  if (!Array.isArray(v) || v.length !== 2) return fallback;
+  const [a, b] = v.map(Number);
+  return Number.isFinite(a) && Number.isFinite(b) ? [a, b] : fallback;
 }
 
 /** One hook line for one clip. */

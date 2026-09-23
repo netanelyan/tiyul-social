@@ -121,7 +121,8 @@ async function build(item, { render = true } = {}) {
   const gap = tripGap(d.trip);
   if (gap) throw new RejectedError('no_trip', gap);
 
-  // 3. Every quote must literally appear in the page we fetched, and no fares.
+  // 3. Every quote must literally appear in the page we fetched. The fare ban
+  //    that used to sit here is off by default — see BRIEF.md and verify.js.
   verifyEvidence(d, sourceText);
   verifyDraftText(d);
 

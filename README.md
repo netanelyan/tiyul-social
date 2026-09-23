@@ -31,8 +31,15 @@ cards   sources → rank → draft (Claude) → verify → render → Telegram �
 
 decks   idea (Claude) → you tap בנה → places → facts → photographs → render ×2 → ✅ → TikTok + Instagram
 
-clips   destinations → Pexels → vision judge → line → trim + burn in → ✅ → TikTok drafts
+clips   destinations → Pexels → vision judge → hook + beats → trim + burn in → ✅ → TikTok drafts
+
+shoots  rotation → angle + destination → hook + beats + caption (Claude) → Telegram → YOU FILM IT
 ```
+
+The fourth one is new and is not like the others: a **shoot** is a shot list,
+and nothing publishes it because the video does not exist until somebody films
+it. [`BRIEF.md`](BRIEF.md) is the editorial standard all four are now held to,
+and the reason a fourth kind exists at all.
 
 1. **Gather.** Twenty enabled feeds and one dataset, fetched live.
 2. **Rank.** A cheap sort on titles and summaries, because the next step costs
@@ -68,23 +75,40 @@ same wordmark, the same accent rule, the same type scale as the news cards, so a
 slideshow in the grid looks like the account that posted it. Same words, same
 photographs, two designs — one deck published twice, never two decks.
 
-A **clip** is eight seconds of vertical stock video with one Hebrew line burned
-into it, and it goes to TikTok only. There is no Instagram artefact for it the
-way a deck has a carousel, and posting the same eight seconds to two places is
-how every account becomes a copy of the others.
+A **clip** is 15–35 seconds of vertical stock video carrying a Hebrew hook and
+the two to five beats that deliver what the hook promised, and it goes to TikTok
+only. There is no Instagram artefact for it the way a deck has a carousel, and
+posting the same seconds to two places is how every account becomes a copy of
+the others.
 
-**All three arrive on a timer, and the difference between them is when you get
-to say no.** A card and a deck are cheap to propose and expensive to build, so
-you see them before they are made. A clip cannot be judged that way — "a POV of
-a mountain pass with a line about flying to Italy" tells you nothing about
-whether the footage is any good or whether the text landed somewhere legible —
-so it is built and the finished video arrives with approve and reject under it.
+A **shoot** is a shot list. It is the one kind the bot does not make: it picks
+the destination, the angle and the shape, writes the hook, the beats and the
+caption, remembers which part of which series is next, and sends all of it to
+Telegram for you to film. The two rules that matter most —
+[`BRIEF.md`](BRIEF.md) rules 3 and 4, show the product and use real footage —
+need a camera and a voice, and no pipeline has either.
+
+**Three of the four arrive on a timer, and the difference between them is when
+you get to say no.** A card and a deck are cheap to propose and expensive to
+build, so you see them before they are made. A clip cannot be judged that way —
+"a POV of a mountain pass with a line about flying to Italy" tells you nothing
+about whether the footage is any good or whether the text landed somewhere
+legible — so it is built and the finished video arrives with approve and reject
+under it. A shoot has nothing to approve at all.
 
 | | per day | arrives as | approve → |
 |---|---|---|---|
 | card | `DAILY_TARGET` (3) | the rendered card | Instagram |
 | deck | `DECKS_PER_DAY` (2) | a line of text | TikTok + Instagram |
 | clip | `CLIPS_PER_DAY` (3) | the finished video | TikTok drafts |
+| shoot | `SHOOTS_PER_DAY` (1) | a shot list | nothing — you film it |
+
+The shoot timer is the only one that is not governed by `RUN_HOUR`. A shot list
+is acted on within the hour, so it arrives when the audience it is being filmed
+for is on the app — 12:00–14:00 and 19:00–22:00 Israel time — and never between
+Friday afternoon and Saturday evening. `src/schedule.js` answers both in
+Israel's time zone rather than the VPS's. `/shoot` ignores all of it, because
+asking is not the same as being offered.
 
 Each is capped twice: a daily budget, and a ceiling on how many may be waiting
 for a decision. A week away returns a handful to answer, not forty — an approval
@@ -174,10 +198,13 @@ a quote will occasionally paraphrase one — and a paraphrased quote is precisel
 the case where the claim came from the model's memory rather than the source.
 
 **The rules are code, not prompt text.** A style rule that lives only in a
-prompt holds until the model meets a source that pushes against it. The fare
-ban, the rounding rule, the repeated-word check, the allowlist and the quote
-check are all enforced after the model has spoken, and each returns a reason you
-can read in Hebrew. So is the shape of the copy: a headline outside 3-11 words,
+prompt holds until the model meets a source that pushes against it. The rounding
+rule, the repeated-word check, the allowlist and the quote check are all
+enforced after the model has spoken, and each returns a reason you can read in
+Hebrew. (The **fare ban** used to be on that list and is now off by default —
+see [`BRIEF.md`](BRIEF.md), "The fare ban is lifted". The detector is unchanged
+and `FLIGHT_PRICE_GUARD=on` restores it; what it costs to have it off is stated
+there rather than left to be discovered.) So is the shape of the copy: a headline outside 3-11 words,
 a caption past four sentences, a filler adjective (מדהים, מרהיב, קסום...), or a
 post that opens on a rhetorical question or "ידעתם ש" is sent back for another
 draft rather than published. The brief also carries one real published post as
@@ -373,7 +400,8 @@ separately, with its last error · `/usage` tokens and cost · `/igquota` ·
 `/sources` every feed with its last success and error, `/sources off <id>` to
 stand one down · `/mix` topic balance · `/why` last run's rejections ·
 `/deck` build one now, `/deck Kyoto temple` name it · `/clip` build a clip now,
-`/clip 3` build three · `/pending` ·
+`/clip 3` build three · `/shoot` a shot list to film now, `/shoot 3` three of
+them · `/pending` ·
 `/queue` what is waiting, numbered, with destinations · `/next` publish the
 next · `/post 3` publish that one, out of turn · `/held` `/retry` `/clear_held`
 
@@ -425,8 +453,13 @@ message says when the slot frees.
 | `src/postConfig.js` | reads and checks the above; the only module that knows the path |
 | `src/hashtags.js` | the five tags under a slideshow, one of them the deck's own country |
 | `src/video/vision.js` | judges a clip's thumbnail: is this somewhere worth going |
-| `src/video/hooks.js` | the Hebrew line, by filling one of the configured formats |
-| `src/video/overlay.js` | ffmpeg, and the text rendered through Chromium for bidi |
+| `src/video/hooks.js` | the Hebrew hook and its beats, by filling a configured format |
+| `src/video/overlay.js` | ffmpeg, the beat timeline, and text rendered through Chromium for bidi |
+| `src/schedule.js` | Israel's posting windows and Shabbat, in Israel's time zone |
+| `src/shoot/rotation.js` | which shape is next, the product floor, which part of the series |
+| `src/shoot/plan.js` | the shot list: hook, beats, caption, what to film |
+| `src/shoot/message.js` | what a shoot looks like on a phone, standing up |
+| `src/urlLike.js` | the link pattern, where three import chains can all reach it |
 | `src/models.js` | which model does which job, and the effort-parameter guard |
 | `scripts/clip-lab.js` | build a batch of clips to look at |
 | `scripts/clip-redo.js` | re-render specific clips with footage and line pinned |
@@ -437,18 +470,26 @@ message says when the slot frees.
 Four things about a published deck are decisions rather than code, and they all
 live in `post-config.json`:
 
-- **The caption is one short line, drawn at random from a pool of twenty, and it
-  carries no URL, no call to action and no brand name.** It used to be
-  `למתכנן טיולים חכם בביו שלנו` over `www.tiyulplus.com` on every post. An
-  external domain in a TikTok description is a demotion, and the string was
-  never tappable on either platform anyway — the bio link is reachable from the
-  post regardless of what the description says. `format.js` enforces this rather
-  than trusting it: `assertNoUrl` runs before a deck can become a candidate, and
-  a caption containing `http`, `www.`, `.com` or `.co.il` throws in the build
-  instead of becoming something you can approve by tapping.
+- **The caption is one short line, a question, and — on half of posts — a
+  pointer to the bio. It still carries no URL and no brand name.** It used to be
+  `למתכנן טיולים חכם בביו שלנו` over `www.tiyulplus.com` on every post, and that
+  was removed because an external domain in a TikTok description is a demotion
+  and the string was never tappable anyway. That argument was about the
+  **domain**, and it stands: `assertNoUrl` runs before anything can become a
+  candidate, and a caption containing `http`, `www.`, `.com` or `.co.il` throws
+  in the build instead of becoming something you can approve by tapping. What
+  came back — see [`BRIEF.md`](BRIEF.md) rule 8 — is the pointer with no domain
+  in it, `הלינק בביו`, at the end, on `caption.ctaShare` of posts. A CTA on
+  every post is not soft; it is a signature. The question is the other half of
+  the shape, and it is there because a caption that states and stops gives
+  nobody anything to type.
 - **Five hashtags, two broad and three niche.** There were none. The deck's own
   country — `#פורטוגל` — spends one of the niche slots rather than adding a
   sixth, so the count is the same whether or not the country resolved.
+  `#fyp` and `#foryou` were dropped: five is already inside the brief's three
+  to five, so the count did not have to move — what moved is that two of the
+  five were English words on a Hebrew post, competing in a pool that is not a
+  pool but the whole application.
 - **The type on a slide is small, light, and pinned to the upper-left or
   lower-left third.** Roughly 3% of the frame's short edge, ~32px on 1080x1920,
   regular weight, 90% opacity, one soft shadow, two lines maximum, no box and no
@@ -506,17 +547,25 @@ at boot and warns once rather than failing at the first clip of the day; cards
 and decks are unaffected. The text is composited as an image rather than drawn
 by ffmpeg, because `drawtext` has no bidi support and renders Hebrew reversed.
 
-**The description is a pin, where it is, and five tags.**
+**The description is a pin, a question, sometimes the bio pointer, and five
+tags.**
 
 ```
 📍 צ׳ינקווה טורי, איטליה
 
-#ויראלי #פוריו #איטליה #מטיילים #טיפיםלטיול
+לאן אתם טסים הבא?
+
+תכננו טיול כזה בחינם — הלינק בביו
+
+#פוריו #ויראלי #איטליה #טיולים #טיפיםלטיול
 ```
 
-The line is not repeated there — it is burned into the video, and printing it
-again spends the description on something the viewer read two seconds ago. What
-the description adds is the one thing the video cannot say.
+The hook is not repeated there — it is burned into the video, and printing it
+again spends the description on something the viewer read two seconds ago. The
+pin is first because it is the one thing the video cannot say and the one thing
+somebody searching will match on. The question sits above the CTA so a viewer
+who reads to the end hits the thing that costs them nothing before the thing
+that asks them to leave.
 
 **Every word of it is Hebrew, including the awkward names.** The site used to
 stay in Latin, on the argument that "Cinque Torri" is a proper noun and what a
@@ -558,12 +607,28 @@ thumbnail, and `destination >= 7` is a **gate**, not a score term: a beautifully
 shot POV of nowhere is still nowhere, and folding it into a weighted sum would
 let the POV bonus buy a road back in.
 
-**The line fills a known format.** Every reference post that works is a
-recognisable template — "top 5 X oat", "Average X in Y" — filled with banal
-content. Free composition returns clever originals with metaphors, and clever is
-the wrong *type*. The nine formats in `clips.hooks.formats` are the account's
-voice; two of them name the country and only fire when the vision judge
-identified one with confidence ≥ 7.
+**The line fills a known format, and the format is now a promise.** It used to
+be a meme template — "top 5 X oat", "Average X in Y" — on the reasoning that
+free composition returns clever originals with metaphors and clever is the wrong
+*type*. That reasoning is still right and the target was wrong: those references
+belong to accounts selling nothing, in English, and applied here they produced
+seven videos decaying 672 → 33 views. A meme template over stock scenery
+promises the viewer nothing, so nobody watches to the end, so the next video
+starts lower.
+
+The six formats in `clips.hooks.formats` are the brief's five shapes — mistakes,
+a warning, a budget, a list, a myth — and what survives from the old file is the
+rule that was never about memes: **fill a format, do not compose freely.**
+
+**And the hook now has beats under it.** "3 טעויות שישראלים עושים בגאורגיה" over
+eight seconds of scenery is a promise the video does not keep, and a broken
+promise costs more than a dull one — the viewer who stayed for the answer and
+did not get it is the one who scrolls past the next post. So the writer returns
+the hook *and* the two to five lines that deliver it, `overlay.js` burns each
+over its own window, and `beatCountMismatch` refuses a hook promising three
+things that arrives with two. The source is looped to fill the length, which is
+what lets a 26-second clip be built from the 5–30 second videos Pexels actually
+holds.
 
 **The type is 52px, `#FFF4B3`, no stroke, two rows, and it moves.** The block is
 narrow (46% of the frame) *so that it wraps* — at 72% no position on a picture

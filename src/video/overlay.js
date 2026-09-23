@@ -114,11 +114,16 @@ export async function ffmpegReady() {
  * and wash any frame asked for. The type is therefore sized for the hardest
  * moment in the clip rather than the first one.
  */
-export async function measureClip(source, { frames = 5, startAt = null } = {}) {
+export async function measureClip(source, { frames = 5, startAt = null, seconds = null } = {}) {
   const cfg = postConfig().clips.video;
   const ov = postConfig().clips.overlay;
-  const { width: w, height: h, seconds, fps } = cfg;
+  const { width: w, height: h, fps } = cfg;
   const from = startAt ?? cfg.startAt;
+  // Passed in by burnClip, because the finished length is now computed from how
+  // many beats there are and this has to sample the span that ships. Defaulting
+  // to cfg.seconds silently measured the first eight seconds of a twenty-six
+  // second clip and sized the type for a third of it.
+  const span = Number(seconds) > 0 ? Number(seconds) : cfg.seconds;
   const dir = mkdtempSync(join(tmpdir(), 'tiyul-clip-'));
 
   try {
@@ -128,8 +133,8 @@ export async function measureClip(source, { frames = 5, startAt = null } = {}) {
     // that never reach the screen.
     await run(ffmpegPath(), [
       '-y', '-hide_banner', '-loglevel', 'error',
-      '-ss', String(from), '-t', String(seconds), '-i', source,
-      '-vf', `${coverFilter(w, h, fps)},fps=${(frames / seconds).toFixed(4)},scale=270:480`,
+      '-ss', String(from), '-t', String(span), '-i', source,
+      '-vf', `${coverFilter(w, h, fps)},fps=${(frames / span).toFixed(4)},scale=270:480`,
       '-frames:v', String(frames),
       join(dir, 'f-%02d.jpg'),
     ]);
@@ -457,31 +462,130 @@ const coverFilter = (w, h, fps) =>
  * and discarding — on a 25-second 4K source that is the difference between a
  * second and twenty.
  */
-export async function burnClip(source, { text, outFile, pngFile, id = '', duration = null }) {
+/**
+ * How long the finished clip is, and when each line is on screen.
+ *
+ * The hook holds alone for hookSeconds — long enough to be read before anything
+ * replaces it, because it is the only line that has to land in the window that
+ * decides whether there is a viewer at all. Then one window per beat.
+ *
+ * Clamped to [secondsMin, secondsMax] at the end rather than per-beat, and the
+ * clamp SQUEEZES rather than truncates: if five beats would run past the
+ * ceiling, every window is scaled down to fit instead of the last beat being
+ * cut off mid-video. A beat that is never shown is worse than a beat shown
+ * slightly fast — the hook promised five things and four arrived.
+ *
+ * Exported because it is the one piece of this file that is pure arithmetic,
+ * and the selftest can therefore hold it to the brief's 15-35 without an
+ * encoder installed.
+ */
+export function timeline(beats = []) {
   const cfg = postConfig().clips.video;
-  const { width: w, height: h, seconds, fps, crf, preset, keepAudio } = cfg;
+  const { hookSeconds, secondsPerBeat, secondsMin, secondsMax } = cfg;
 
-  // WHICH eight seconds. Previously always 0.6 → 8.6 regardless of what was in
-  // them, which on a twenty-second clip throws away two thirds of the material
-  // unseen and keeps whatever the camera happened to be doing at the start —
-  // usually settling. Now the windows are scored and the steadiest one wins.
+  const n = beats.length;
+  // No beats is the fallback-pool case: one line, and the floor. It is a worse
+  // post and it is secondsMin of a worse post — see the note in post-config.
+  const wanted = n ? hookSeconds + n * secondsPerBeat : secondsMin;
+  const total = Math.min(secondsMax, Math.max(secondsMin, wanted));
+
+  if (!n) return { seconds: Number(total.toFixed(2)), windows: [{ text: null, from: 0, to: total }] };
+
+  // The hook keeps its full share of whatever the clamp allowed, and the beats
+  // divide the rest. Scaling the hook down too would buy about a second and
+  // spend it on the part of the video that is already being read.
+  const hookFor = Math.min(hookSeconds, total * 0.4);
+  const per = (total - hookFor) / n;
+
+  const windows = [{ text: null, from: 0, to: hookFor }];
+  for (let i = 0; i < n; i++) {
+    windows.push({
+      text: beats[i],
+      from: Number((hookFor + i * per).toFixed(3)),
+      to: Number((hookFor + (i + 1) * per).toFixed(3)),
+    });
+  }
+  // The last window runs to the exact end. Rounding each boundary to three
+  // decimals leaves a few milliseconds unaccounted for, and a few milliseconds
+  // with no overlay on them is one black-text frame at the end of the clip.
+  windows[windows.length - 1].to = Number(total.toFixed(2));
+
+  return { seconds: Number(total.toFixed(2)), windows };
+}
+
+/**
+ * One finished post: trimmed, cropped, with the hook and its beats burned in.
+ *
+ * `-ss` before `-i` so the seek is done on the input rather than by decoding
+ * and discarding — on a 25-second 4K source that is the difference between a
+ * second and twenty.
+ *
+ * THE SOURCE IS LOOPED, which is what made the length rise possible at all.
+ * Pexels holds clips of five to thirty seconds and a finished video is now
+ * routinely longer than its own source; `-stream_loop -1` repeats the input
+ * until `-t` is satisfied. On scenery with no cut in it the seam is invisible,
+ * and it decouples what the library happens to hold from what the format needs.
+ * It sits BEFORE `-i` because it is an input option, and after `-ss` because
+ * seeking a looped input is what makes the loop start from the chosen window
+ * rather than from the top of the file.
+ */
+export async function burnClip(source, { text, beats = [], outFile, pngFile, id = '', duration = null }) {
+  const cfg = postConfig().clips.video;
+  const { width: w, height: h, fps, crf, preset, keepAudio, loopSource } = cfg;
+
+  const plan = timeline(beats);
+
+  // WHICH seconds. Previously always 0.6 → 8.6 regardless of what was in them,
+  // which on a twenty-second clip throws away two thirds of the material unseen
+  // and keeps whatever the camera happened to be doing at the start — usually
+  // settling. Now the windows are scored and the steadiest one wins.
   const startAt = await pickWindow(source, duration).catch(() => cfg.startAt);
 
-  // Measured second — where the words go and what colour they are are
-  // properties of the footage, and both have to be measured on the window that
-  // will actually ship rather than on the whole clip.
-  const spot = await measureClip(source, { startAt }).catch(() => null);
-  await renderOverlayPng(text, { width: w, height: h, file: pngFile, spot, id });
+  // Measured once, on the window that will actually ship. Every line in the
+  // clip is placed by the SAME measurement, and that is deliberate: a hook in
+  // the top third replaced by a beat in the lower third is two lines that look
+  // like two different videos. The background moves under them; the type
+  // should not.
+  // Measured across what the source can actually show. With looping on, a
+  // 26-second clip built from an 8-second source repeats the same 8 seconds
+  // three times, so sampling beyond the source's own length measures nothing
+  // new and, on a short source, measures past its end and returns no frames.
+  const span = duration ? Math.min(plan.seconds, Math.max(1, duration - startAt)) : plan.seconds;
+  const spot = await measureClip(source, { startAt, seconds: span }).catch(() => null);
+
+  // One PNG per line. pngFile is the hook's, and the beats get numbered
+  // siblings beside it so the caller's existing cleanup — which deletes
+  // pngFile — is extended rather than silently leaking four files per clip.
+  const pngs = [{ text, file: pngFile }];
+  for (let i = 0; i < beats.length; i++) {
+    pngs.push({ text: beats[i], file: pngFile.replace(/\.png$/, `-b${i + 1}.png`) });
+  }
+  for (const p of pngs) {
+    await renderOverlayPng(p.text, { width: w, height: h, file: p.file, spot, id });
+  }
+
+  // [0:v] is cropped once, then each overlay is applied in turn, each gated to
+  // its own window by `enable`. Chained rather than composited in one pass
+  // because overlay takes exactly two inputs; the chain is N filters long and
+  // N is at most six.
+  const chain = [`[0:v]${coverFilter(w, h, fps)}[v0]`];
+  plan.windows.forEach((win, i) => {
+    const src = `[v${i}]`;
+    const out = i === plan.windows.length - 1 ? '[out]' : `[v${i + 1}]`;
+    const between = `between(t,${win.from},${win.to})`;
+    chain.push(`${src}[${i + 1}:v]overlay=0:0:format=auto:enable='${between}'${out}`);
+  });
 
   const args = [
     '-y',
     '-hide_banner',
     '-loglevel', 'error',
     '-ss', String(startAt),
-    '-t', String(seconds),
+    ...(loopSource ? ['-stream_loop', '-1'] : []),
+    '-t', String(plan.seconds),
     '-i', source,
-    '-i', pngFile,
-    '-filter_complex', `[0:v]${coverFilter(w, h, fps)}[v];[v][1:v]overlay=0:0:format=auto[out]`,
+    ...pngs.flatMap((p) => ['-i', p.file]),
+    '-filter_complex', chain.join(';'),
     '-map', '[out]',
     // Stock audio is almost always a library music bed that will be replaced by
     // whatever sound is chosen in the TikTok app, so it is dropped by default:
@@ -498,9 +602,15 @@ export async function burnClip(source, { text, outFile, pngFile, id = '', durati
     outFile,
   ];
 
-  await run(ffmpegPath(), args, { maxBuffer: 1 << 24 });
+  try {
+    await run(ffmpegPath(), args, { maxBuffer: 1 << 24 });
+  } finally {
+    // The hook's PNG is the caller's to delete, because the caller named it.
+    // The beat PNGs were invented here and are cleaned up here.
+    for (const p of pngs.slice(1)) rmSync(p.file, { force: true });
+  }
   if (!existsSync(outFile)) throw new Error('ffmpeg reported success but wrote no file');
-  return { file: outFile, spot, startAt };
+  return { file: outFile, spot, startAt, seconds: plan.seconds, windows: plan.windows.length };
 }
 
 /** Pull the source clip down to disk. Pexels serves these straight from its CDN. */

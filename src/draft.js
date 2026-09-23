@@ -124,7 +124,7 @@ const DRAFT_SCHEMA = {
     },
     route: {
       type: 'object',
-      description: 'For the route layout. Never include a fare anywhere in these fields.',
+      description: 'For the route layout. A fare only if the fetched page states one, quoted like any other claim.',
       properties: {
         from: { type: 'string', description: 'Origin in Hebrew, almost always "תל אביב"' },
         to: { type: 'string', description: 'Destination in Hebrew' },
@@ -406,7 +406,8 @@ Text-led (for a post with no place to photograph — the exception):
   photoFull and put the month in the headline. Default to photoFull for timing.
 - alert: an entry, visa, permit or border change. Lead with what changed and from when.
 - route: a new or returning route out of Tel Aviv. Fill "route" with origin,
-  destination, operator and start date. Never a fare, in any field.
+  destination, operator and start date. A fare only if the page states one —
+  see PRICES below.
 
 WHAT THE CARD IS FOR
 The card is a hook, not the post. Someone scrolling gives it under a second.
@@ -644,9 +645,18 @@ one occasional thread among many — tag it "kosher" when it genuinely applies, 
 manufacture that angle for a source that isn't about it. Most posts have nothing to do
 with it, and that is correct.
 
-OUT OF SCOPE
-Never write flight prices or fares — not "starting from", not a range, not an
-approximation. Entry fees and other on-the-ground costs are fine.`;
+PRICES
+A fare is allowed on a card and it is not special. It is a number like every
+other number here, which means it needs a quote from the page that was fetched,
+character for character, exactly as any other claim does. What is still banned
+is the shape that cannot be sourced: "starting from", "around", a range you
+assembled yourself, an approximation, or a figure you remember rather than one
+the page prints. If the source does not state the amount, the card does not
+carry it.
+
+This was an absolute prohibition until the brief (see BRIEF.md). The blanket ban
+is gone; the evidence requirement it was standing in for is not, and on this
+path — a sourced news card — it was always the stronger of the two.`;
 
 /**
  * Draft a post from a source item and the text fetched from its page.

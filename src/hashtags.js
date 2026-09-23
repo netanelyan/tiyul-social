@@ -196,17 +196,55 @@ export function clipPlaceLine(cand) {
 }
 
 /**
+ * One question to close a caption with, or null.
+ *
+ * The brief's caption shape is "one short line plus a question" (rule 7), and
+ * the question is doing a specific job: it is the thing a comment is an answer
+ * TO. A caption that states and stops gives nobody anything to type, and the
+ * comment count on the first seven posts — which is zero — is what that looks
+ * like in the data.
+ *
+ * Null when none are configured, which is the old behaviour and a valid thing
+ * to go back to by emptying the list.
+ */
+export function captionQuestion({ rand = Math.random } = {}) {
+  const { questions } = postConfig().caption;
+  return questions.length ? questions[Math.floor(rand() * questions.length)] : null;
+}
+
+/**
+ * The soft call to action, on `ctaShare` of posts.
+ *
+ * NOT on every post, and that is the whole of what "soft" means here. The
+ * brief's rule 8 says a soft CTA at the end and never make the whole video an
+ * advertisement; a pointer to the bio under every single caption is not soft,
+ * it is a signature. Half is the configured default.
+ *
+ * The string is checked for a domain when post-config.json is read rather than
+ * here, so a CTA with a URL in it fails once, loudly, at startup — instead of
+ * once per post from inside a build.
+ */
+export function captionCta({ rand = Math.random } = {}) {
+  const { cta, ctaShare } = postConfig().caption;
+  if (!cta || ctaShare <= 0) return null;
+  return rand() < ctaShare ? cta : null;
+}
+
+/**
  * The whole TikTok description for a clip.
  *
- * A pin line and the tags. The HOOK is not repeated here — it is burned into
- * the video, and printing it again spends the description on something the
- * viewer read two seconds ago. What the description adds is the one thing the
- * video cannot say: where this is.
+ * The pin, a question, sometimes the CTA, then the tags. The HOOK is still not
+ * repeated here — it is burned into the video, and printing it again spends the
+ * description on something the viewer read two seconds ago.
+ *
+ * ORDER IS THE DECISION. The pin is first because it is the one thing the video
+ * cannot say and the one thing somebody searching will match on. The question
+ * sits above the CTA because a viewer who reads to the end of a caption should
+ * hit the thing that costs them nothing before the thing that asks them to
+ * leave. The tags are last, where they have always been.
  */
 export function clipCaption(cand, opts) {
-  const place = clipPlaceLine(cand);
+  const parts = [clipPlaceLine(cand), captionQuestion(opts), captionCta(opts)].filter(Boolean);
   const tags = clipHashtags(cand, opts).join(' ');
-  return place ? `${place}
-
-${tags}` : tags;
+  return parts.length ? `${parts.join('\n\n')}\n\n${tags}` : tags;
 }

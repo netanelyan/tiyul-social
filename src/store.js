@@ -38,6 +38,9 @@ const empty = {
   // holds things that are already built and are awaiting publication.
   proposals: {},
   pendingEdit: {},
+  // Shot lists already sent, most recent first. A history, not a queue — see
+  // the section further down. rotation.js is the only reader.
+  shoots: [],
   published: [],
   // Ids of everything ever published, kept separately from `published`.
   //
@@ -181,6 +184,12 @@ function load() {
   if (!s.targetHealth || typeof s.targetHealth !== 'object') s.targetHealth = {};
   if (!s.sourceHealth || typeof s.sourceHealth !== 'object') s.sourceHealth = {};
   if (!s.sourceOff || typeof s.sourceOff !== 'object') s.sourceOff = {};
+  // Shot lists that have been sent. Not a queue and not an approval collection —
+  // nothing in here is waiting for a decision, because a shoot has no publish
+  // step. It is a HISTORY, and it exists because the brief's three counting
+  // rules (never the same shape twice in a row, the product in at least half, a
+  // series that reaches part 3) are all questions about what was sent last.
+  if (!Array.isArray(s.shoots)) s.shoots = [];
 
   // Migration for stores written before publishedIds existed. Backfill from the
   // quota window — it is the only record of what went out, and recovering the
@@ -490,6 +499,64 @@ export function clearProposal(key) {
   save();
 }
 export const proposalSize = () => Object.keys(state.proposals).length;
+
+// --- shoots -----------------------------------------------------------------
+// Shot lists that have been sent, most recent first.
+//
+// A history rather than a queue, and the distinction is load-bearing. Every
+// other collection in this store holds something waiting for a decision — a
+// staged card, an unanswered proposal, a held publish. A shoot is not waiting
+// for anything: it was sent, and whether it becomes a video is decided by
+// somebody picking up a phone, which this process cannot observe and does not
+// pretend to.
+//
+// What it is FOR is the three counting rules in BRIEF.md. "Never the same shape
+// twice in a row", "the product in at least half", and "a series that reaches
+// part 3" are all questions about what went out recently, and rotation.js
+// answers all three by reading this list. Nothing else consults it.
+
+// Thirty is comfortably more than any rule here looks back through — the
+// longest window is productWindow, which defaults to six — and it is small
+// enough that the whole thing is cheap to keep forever.
+const SHOOT_HISTORY = 30;
+
+export function addShoot(shoot) {
+  // Only the fields the rotation reads are kept. The hook, the beats and the
+  // caption were sent to a person and are their problem now; storing them would
+  // grow the state file for nothing and put a copy of every line this account
+  // has ever planned into a file that is gitignored for a different reason.
+  state.shoots.unshift({
+    id: shoot.id,
+    ts: Date.now(),
+    formatId: shoot.formatId,
+    shape: shoot.shape || null,
+    needsProduct: shoot.needsProduct === true,
+    destination: shoot.destination || null,
+    angle: shoot.angle || null,
+    series: shoot.series || null,
+  });
+  state.shoots = state.shoots.slice(0, SHOOT_HISTORY);
+  save();
+  return shoot.id;
+}
+
+/** Most recent first, which is the order rotation.js expects. */
+export const shootHistory = () => state.shoots.slice();
+
+/** How many went out today, for the daily budget. */
+export function shootsToday(now = Date.now()) {
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  return state.shoots.filter((s) => s.ts >= start.getTime()).length;
+}
+
+/** For tests, and for /redo. */
+export function clearShoots() {
+  const n = state.shoots.length;
+  state.shoots = [];
+  save();
+  return n;
+}
 
 // --- pending edits ----------------------------------------------------------
 // Keyed by the staging key, never by chat: BrickDeal learned the hard way that

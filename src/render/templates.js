@@ -418,7 +418,7 @@ function alertCard(d, accent) {
   });
 }
 
-/** route — a new or returning line out of TLV. Never fares. */
+/** route — a new or returning line out of TLV. A fare only if the page states one. */
 function routeCard(d, accent) {
   const r = d.route || {};
   const meta = [
