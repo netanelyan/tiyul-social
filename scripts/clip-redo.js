@@ -1,4 +1,5 @@
 import { loadEnv } from '../src/env.js';
+import { postConfig } from '../src/postConfig.js';
 import { buildClip } from '../src/video/clip.js';
 import { pickFile, titleOf } from '../src/video/pexels.js';
 import { judgeThumb } from '../src/video/vision.js';
@@ -36,13 +37,43 @@ const toDraft = process.argv.includes('draft');
 // and a key staged on one machine means nothing to a bot reading another
 // machine's store — the tap resolves to an item that is not there.
 const toStage = process.argv.includes('stage');
-const pairs = process.argv.slice(2).filter((a) => a !== 'draft' && a !== 'stage').map((a) => {
-  const at = a.indexOf('=');
-  return at === -1 ? { id: a, hook: null } : { id: a.slice(0, at), hook: a.slice(at + 1) };
-});
+
+// `place=Switzerland` — the country, decided by you rather than by the judge.
+//
+// The judge reads one thumbnail and is sometimes wrong about it, and when it is
+// wrong the error does not stay in one place: the country it names is what the
+// hook writer is told to use, what the pin under the video prints, and what the
+// one destination hashtag is generated from. Correcting it clip by clip in
+// three files is how a post ends up saying איטליה in the video and שווייץ
+// underneath, so it is one flag and it sets all three.
+//
+// English, exactly as clips.places in post-config.json spells it, because that
+// is the key the Hebrew name is looked up under.
+// `place=X` and `--place=X` both work. Every other argument is a numeric Pexels
+// id with an optional line after it, so the word cannot be mistaken for one —
+// and a flag that only works with the dashes nobody typed is a flag that gets
+// silently parsed as a clip id, which is exactly what happened the first time
+// this was run.
+const placeArg = process.argv.slice(2).find((a) => /^-{0,2}place=/.test(a));
+const pinnedPlace = placeArg ? placeArg.replace(/^-{0,2}place=/, '').trim() : null;
+if (pinnedPlace && !postConfig().places[pinnedPlace.toLowerCase()]) {
+  console.error(
+    `place=${pinnedPlace} has no Hebrew spelling in post-config.json (clips.places) — ` +
+      'add it there first, or the pin and the tag have nothing to print'
+  );
+  process.exit(1);
+}
+
+const pairs = process.argv
+  .slice(2)
+  .filter((a) => a !== 'draft' && a !== 'stage' && a !== placeArg)
+  .map((a) => {
+    const at = a.indexOf('=');
+    return at === -1 ? { id: a, hook: null } : { id: a.slice(0, at), hook: a.slice(at + 1) };
+  });
 
 if (!pairs.length) {
-  console.error('usage: npm run clip-redo -- [stage] [draft] <pexelsId>[="the line"] ...');
+  console.error('usage: npm run clip-redo -- [stage] [draft] [place=Country] <pexelsId>[="the line"] ...');
   process.exit(1);
 }
 
@@ -83,7 +114,21 @@ for (const { id, hook } of pairs) {
     // Judged anyway, because the place formats need a country and a pinned
     // line does not supply one — and a re-render that silently loses the
     // vision data would not be the same clip in the way that matters.
-    const vision = await judgeThumb(v.image);
+    let vision = await judgeThumb(v.image);
+
+    if (pinnedPlace) {
+      const was = vision?.place || '';
+      vision = { ...(vision || {}), place: pinnedPlace, placeConfidence: 10 };
+      // A site belongs to the country it is in. Keeping "Passo Gardena" while
+      // moving the country to Switzerland would print a pin that is wrong in a
+      // more specific and more embarrassing way than the one being corrected —
+      // so the landmark goes with the country that was overruled.
+      if (was.toLowerCase() !== pinnedPlace.toLowerCase()) {
+        vision.site = '';
+        vision.siteHe = '';
+      }
+      console.log(`   place: ${was || 'unplaced'} → ${pinnedPlace} (yours)`);
+    }
 
     const found = {
       id: String(v.id),

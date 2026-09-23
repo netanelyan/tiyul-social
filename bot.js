@@ -664,6 +664,10 @@ const publishedFacts = (cand) => ({
   // Where the post was about. A deck names its region; a card names it on the
   // trip, which is the field verify.js already insists every card have.
   place: (cand.deck ? cand.deck.where : cand.trip?.where) || null,
+  // Which stock video a clip was built from, so the row can answer "have we
+  // used this footage". It was read back by /clip long before anything wrote
+  // it — see the note in store.recordPublished.
+  pexelsId: cand.clip?.pexelsId || null,
   // So the row does not claim a post that has not been made. A draft reached
   // the inbox; whether it was ever posted happens in the app, where this
   // process cannot see it.
@@ -1617,6 +1621,43 @@ bot.command('igquota', async (ctx) => {
  * while you are sitting there, not discover in a digest.
  */
 /**
+ * Every Pexels video this account has already spent.
+ *
+ * The store's ledger is the durable answer and would do on its own. The four
+ * collections read on top of it are what makes the fix retroactive: a clip
+ * staged by scripts/clip-redo.js, a card restored from a backup, anything that
+ * put a built candidate somewhere without going through buildClips, is footage
+ * that has been seen and is not in the ledger. Cheap to ask — these are all in
+ * memory — and the cost of being wrong is being handed the same video twice,
+ * which is the complaint.
+ *
+ * Strings throughout. Pexels ids are numbers in the API and the set is tested
+ * against `String(v.id)` in findClips, and a Set of numbers silently matches
+ * nothing.
+ */
+function clipFootageSeen() {
+  const seen = store.usedClipIds();
+  const add = (cand) => {
+    if (cand?.kind !== 'clip') return;
+    // Clips built before `clip.pexelsId` existed used the Pexels id AS the
+    // candidate id. Three of those are in staging, and they are precisely the
+    // footage that must not be offered again.
+    const id = cand.clip?.pexelsId || (/^\d{1,9}$/.test(String(cand.id || '')) ? cand.id : null);
+    if (id) seen.add(String(id));
+  };
+  for (const { cand } of store.stagingItems()) add(cand);
+  for (const cand of store.queuedItems()) add(cand);
+  for (const h of store.heldItems()) add(h.cand);
+  for (const p of store.recentPublished()) if (p.pexelsId) seen.add(String(p.pexelsId));
+  return seen;
+}
+
+/** Spend the footage a finished batch was built from. */
+const spendClipFootage = (clips) => {
+  for (const c of clips) store.markClipUsed(c.clip?.pexelsId);
+};
+
+/**
  * `/clip` — build short vertical videos and stage them for approval.
  *
  * `/clip` builds one, `/clip 3` builds three. Each arrives as a playable video
@@ -1641,8 +1682,12 @@ bot.command('clip', async (ctx) => {
       const { buildClips } = await import('./src/video/clip.js');
       const { clips, considered, nowhere, failed, written } = await buildClips({
         count,
-        seen: new Set(store.recentPublished().map((p) => String(p.pexelsId || '')).filter(Boolean)),
+        seen: clipFootageSeen(),
       });
+      // Before they are staged, and before anything can fail. A clip that was
+      // built exists — the encode happened and you are about to be shown it —
+      // so it is spent whatever the next line does with it.
+      spendClipFootage(clips);
 
       if (!clips.length) {
         // The reason matters and is not guessable from an empty result: "the
@@ -1961,10 +2006,11 @@ const clipsWaiting = () => store.stagingItems().filter(({ cand }) => cand?.kind 
  */
 async function suggestClip() {
   const { buildClips } = await import('./src/video/clip.js');
-  const seen = new Set(
-    store.recentPublished().map((p) => String(p.pexelsId || '')).filter(Boolean)
-  );
-  const { clips, considered, nowhere, written } = await buildClips({ count: 1, seen });
+  const { clips, considered, nowhere, written } = await buildClips({
+    count: 1,
+    seen: clipFootageSeen(),
+  });
+  spendClipFootage(clips);
 
   if (!clips.length) {
     const why = nowhere?.length

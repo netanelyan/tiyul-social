@@ -163,6 +163,48 @@ export function isLabel(line) {
   return !STATEMENT.test(s);
 }
 
+// Hebrew spells a foreign name by ear, so the same country has two or three
+// accepted forms — שווייץ and שוויץ, נורווגיה and נורבגיה. Collapsing doubled
+// י and ו makes them one string for comparison purposes only; nothing is
+// published from this.
+const sameName = (a) => String(a || '').replace(/([יו])\1+/g, '$1');
+
+/**
+ * A country named in the line that is not the country of the clip.
+ *
+ * The line, the pin under the video and the country hashtag are three
+ * statements of one fact, and until this guard existed nothing checked that
+ * they agreed. The writer is TOLD which country to use and mostly obeys; when
+ * it does not, the result is a post whose burned-in line says one country while
+ * its own description says another, and that contradiction is visible to every
+ * viewer without them having to know which one is right.
+ *
+ * Only the countries this account has a Hebrew spelling for are checked — the
+ * same list the pin and the tag are drawn from — so this can only ever fire on
+ * a word the post could itself have printed.
+ */
+export function namesOtherCountry(line, placeHe) {
+  const s = String(line || '');
+  const mine = sameName(placeHe);
+  for (const he of new Set(Object.values(postConfig().places))) {
+    if (sameName(he) === mine) continue;
+    // Hebrew glues its prepositions on: לאיטליה, באיטליה, ואיטליה all carry
+    // the name and all have to be caught. The optional letter between each
+    // pair is the other half of the spelling problem — it lets נורבגיה match
+    // נורווגיה without either spelling having to be the canonical one.
+    //
+    // Escaped per character because the names come out of post-config.json,
+    // and a country typed in with a bracket in it would otherwise be a regex
+    // that throws in the middle of building a clip.
+    const stem = sameName(he)
+      .split('')
+      .map((ch) => ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+      .join('[יו]?');
+    if (new RegExp(`(^|[\\s"'״׳]|[בלוהמשכ])${stem}($|[\\s,.!?"'״׳])`).test(s)) return he;
+  }
+  return null;
+}
+
 /** A line is unusable if it carries a link, runs long, or is a caption. */
 /**
  * `allowsPerson` is the escape hatch for the two formats built out of pronouns.
@@ -314,6 +356,15 @@ export async function writeHook(clip, { used = new Set(), candidates = 3 } = {})
     }
     if (used.has(text)) {
       rejected.push(`${text} — already used in this batch`);
+      continue;
+    }
+    // The line may name the clip's country and no other. With no country
+    // established it may name none at all — the prompt says so, and a line
+    // that ignores it would put a country on the video that the description
+    // underneath deliberately refuses to claim.
+    const other = namesOtherCountry(text, placeHe);
+    if (other) {
+      rejected.push(`${text} — names ${other}, the clip is ${placeHe || 'unplaced'}`);
       continue;
     }
     return {

@@ -477,13 +477,29 @@ and sound is the one thing that cannot be changed after publishing.
 For working on the format rather than posting: `npm run clip-lab -- 4` builds a
 batch to look at, and `npm run clip-redo -- <pexelsId>="the line"` re-renders
 specific ones with the footage and the words pinned — the only way to judge a
-styling change without three variables moving at once.
+styling change without three variables moving at once. Add `place=Switzerland`
+when the judge got the country wrong: it sets the country for the line, the pin
+and the tag together, which is the only way they cannot end up disagreeing.
 
 Three a day is measured rather than cautious: the 26 destination queries return
 **1479 unique vertical clips** in the allowed duration range, so even assuming
 only half clear the destination gate that is over eight months of unique
 footage. The catalogue is not the constraint — how many you are willing to look
 at is, which is what `CLIP_BACKLOG_MAX` is for.
+
+**A video is used once.** Every Pexels id that has been made into a clip is
+recorded in the store and never offered again, and it is recorded when the clip
+is **built** rather than when it publishes — a clip sitting in the approval chat
+has been seen, and one you rejected was seen and turned down. With months of
+unique footage behind the queries, spending an id on a rejected clip costs
+nothing next to being handed the same video twice; `store.forgetClip(id)` puts
+one back, and `clip-redo` re-renders by id and ignores the ledger entirely.
+
+This is the fix for a real repeat, and the cause is worth recording. `/clip`
+already built an "already used" set and passed it to the search, and the search
+already filtered against it — but the set was mapped off `p.pexelsId` on rows
+that had never stored one, so it was empty on every run since the feature
+shipped. The filter looked right, ran every time, and did nothing.
 
 **Clips need ffmpeg.** `sudo apt install -y ffmpeg` on the VPS. The bot checks
 at boot and warns once rather than failing at the first clip of the day; cards
@@ -493,20 +509,41 @@ by ffmpeg, because `drawtext` has no bidi support and renders Hebrew reversed.
 **The description is a pin, where it is, and five tags.**
 
 ```
-📍 Cinque Torri, איטליה
+📍 צ׳ינקווה טורי, איטליה
 
 #ויראלי #פוריו #איטליה #מטיילים #טיפיםלטיול
 ```
 
 The line is not repeated there — it is burned into the video, and printing it
 again spends the description on something the viewer read two seconds ago. What
-the description adds is the one thing the video cannot say. The site stays in
-Latin because it is a proper noun and what a viewer would type into a search
-box; the country is Hebrew because that one has an agreed spelling. Both are
-dropped unless the vision judge cleared `placeMinConfidence`, and a site is
-dropped when the country was not established — naming the country is strictly
-easier than naming a landmark inside it, so a confident site under an unknown
-country is the judge contradicting itself.
+the description adds is the one thing the video cannot say.
+
+**Every word of it is Hebrew, including the awkward names.** The site used to
+stay in Latin, on the argument that "Cinque Torri" is a proper noun and what a
+viewer would type into a search box. True, and beside the point: one Latin word
+in the middle of a Hebrew line reads as a machine filling in a field. The vision
+judge now returns a Hebrew spelling alongside the name it identified — the same
+call, no extra cost — and `clips.sites` in `post-config.json` pins the spelling
+by hand for the places this feed keeps returning to, because a transliteration
+is a judgement call and the same valley spelled two ways across two posts is
+worse than either spelling used consistently. A site with no Hebrew spelling
+available is **dropped**, leaving the pin naming the country alone; it is never
+printed in Latin as a fallback. Same rule as `src/deck/hebrew.js`, same check.
+
+Both names are dropped unless the vision judge cleared `placeMinConfidence`, and
+a site is dropped when the country was not established — naming the country is
+strictly easier than naming a landmark inside it, so a confident site under an
+unknown country is the judge contradicting itself.
+
+**One country per clip.** The line burned into the video, the pin underneath it
+and the destination hashtag are three statements of one fact, reached by three
+different routes: the writer is told the country, the pin and the tag read it
+off the judge. Nothing checked that they agreed, so a writer that ignored the
+country it was given produced a post contradicted by its own description — and
+no viewer needs to know which half is right to see it. A line naming any country
+other than the clip's is now rejected before the encode, and the check knows
+that שווייץ and שוויץ are the same country, because a guard that rejects the
+owner's own spelling is a broken guard.
 
 Everything below was settled by looking at rendered batches, and every one of
 them is a value in `post-config.json` with a test in the selftest. They are not

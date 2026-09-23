@@ -91,6 +91,17 @@ export function postConfig() {
         .filter(([k]) => k !== '_comment')
         .map(([k, v]) => [k.toLowerCase(), String(v)])
     ),
+    // The owner's own Hebrew spelling for a named site, overriding whatever the
+    // vision judge transliterated. Needed because a transliteration is a
+    // judgement call — "לאוטרברונן" and "לאוטרברונן" and "לאוטרבורנן" are all
+    // defensible — and the same valley spelled three ways across three posts
+    // reads worse than any one of them. This file is never expected to be
+    // complete: a site missing here uses the judge's spelling.
+    sites: Object.fromEntries(
+      Object.entries(raw.clips?.sites || {})
+        .filter(([k]) => k !== '_comment')
+        .map(([k, v]) => [k.toLowerCase(), String(v)])
+    ),
   };
 
   return cached;

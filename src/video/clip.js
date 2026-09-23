@@ -4,7 +4,7 @@ import { rmSync } from 'node:fs';
 import { findClips } from './pexels.js';
 import { burnClip, download, clipOutputDir, ffmpegReady } from './overlay.js';
 import { clipHook, postConfig } from '../postConfig.js';
-import { writeHook, hasApiKey } from './hooks.js';
+import { writeHook, hasApiKey, namesOtherCountry } from './hooks.js';
 import { assertNoUrl } from '../format.js';
 import { clipCaption } from '../hashtags.js';
 import { targetsForKind } from '../publish/targets.js';
@@ -68,6 +68,29 @@ export async function buildClip(found, { outDir = clipOutputDir(), hook = null, 
   // cheapest place to find out that a line has a domain in it is before the
   // encode, not after.
   assertNoUrl(line, 'the clip hook');
+
+  // One country per clip, checked here because here is where the two halves
+  // meet. The line is burned into the video and the pin is printed underneath
+  // it, and they are built from the same fact by different routes — the writer
+  // is told the country, the pin reads it off the judge. A post that says
+  // "טיסה לאיטליה" over a pin reading שווייץ is wrong in a way no viewer needs
+  // any local knowledge to see.
+  //
+  // The writer's own guard catches this for a written line. This one catches
+  // the case it cannot see: a line pinned by hand, which is the whole point of
+  // scripts/clip-redo.js and the one path where a human is overruling the
+  // judge. If the judge is what is wrong, correct the judge — `place=` — do
+  // not publish two answers.
+  const placeHe = found.vision?.place
+    ? postConfig().places[String(found.vision.place).toLowerCase()] || null
+    : null;
+  const clash = namesOtherCountry(line, placeHe);
+  if (clash) {
+    throw new Error(
+      `the line names ${clash} and this clip is ${placeHe || 'not placed'} — ` +
+        'pass place=<Country> to say the footage is somewhere else'
+    );
+  }
 
   const id = clipId(found.id, line);
   const source = join(outDir, `src-${found.id}.mp4`);

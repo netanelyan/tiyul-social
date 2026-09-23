@@ -134,18 +134,54 @@ export function clipHashtags(cand, { rand = Math.random } = {}) {
 }
 
 /**
+ * The site's name in Hebrew letters, or null.
+ *
+ * The description is a Hebrew post and every word of it is Hebrew, including
+ * the hard ones. The earlier version left the site in Latin on the argument
+ * that "Lauterbrunnen" is what a viewer would type into a search box and that
+ * "לאוטרברונן" is one of several defensible spellings — true, and beside the
+ * point: one Latin word in the middle of a Hebrew line reads as a machine
+ * filling a field, which is the one impression this account cannot afford.
+ * The owner's instruction is the rule now — Hebrew even when the name is
+ * awkward to write.
+ *
+ * Two sources, pinned first. `clips.sites` in post-config.json is the owner's
+ * own spelling for the places this feed keeps returning to, and it wins,
+ * because a transliteration that changes between posts is worse than either
+ * choice made consistently. Everything else uses the spelling the vision judge
+ * returned alongside the name, which costs nothing — it is the same call that
+ * identified the place.
+ *
+ * Null rather than a fallback to Latin. A pin of just the country is a true
+ * line in Hebrew; a pin with one Latin word in it is the thing being fixed.
+ */
+export function clipSiteName(v) {
+  // The first segment only. The schema asks for the bare name, and the judge
+  // still returns "Cinque Torri, Dolomites" often enough to matter — which
+  // renders as "📍 Cinque Torri, Dolomites, איטליה", a pin with two commas and
+  // a region nobody asked for. Trimming here rather than trusting the prompt,
+  // because a prompt is a request and this is the line that publishes.
+  const site = String(v?.site || '').split(',')[0].trim();
+  if (!site) return null;
+
+  const pinned = postConfig().sites[site.toLowerCase()];
+  if (pinned) return pinned;
+
+  const he = String(v?.siteHe || '').split(',')[0].trim();
+  // Checked rather than trusted. The judge is asked for Hebrew letters and
+  // mostly obliges, but a model handed "Lago di Braies" sometimes hands it
+  // straight back — and an unchecked passthrough would put the Latin name back
+  // in the line under a field name that claims otherwise.
+  if (!he || /[A-Za-z]/.test(he) || !/\p{Script=Hebrew}/u.test(he)) return null;
+  return he;
+}
+
+/**
  * Where the clip is, for the first line of the description.
  *
  * Place then country, which is the order the deck slides already use
  * ("סקוגאפוס, איסלנד") and the order every map label in the world uses:
- * specific first, general second.
- *
- * The site stays in Latin rather than being transliterated. It is a proper
- * noun, it is what a viewer would type into a search box, and transliterating
- * it would cost a model call per clip to produce a spelling nobody has agreed
- * on — "לאוטרברונן" is one of several defensible answers and none of them is
- * what the place calls itself. The country is Hebrew because that one HAS an
- * agreed spelling, and it is the word an Israeli audience reads.
+ * specific first, general second. Both halves are Hebrew — see clipSiteName.
  *
  * Returns null when the country was not established. A pin with nothing after
  * it is worse than no pin.
@@ -155,12 +191,7 @@ export function clipPlaceLine(cand) {
   if (!v?.place) return null;
   const countryHe = postConfig().places[String(v.place).toLowerCase()];
   if (!countryHe) return null;
-  // The first segment only. The schema asks for the bare name, and the judge
-  // still returns "Cinque Torri, Dolomites" often enough to matter — which
-  // renders as "📍 Cinque Torri, Dolomites, איטליה", a pin with two commas and
-  // a region nobody asked for. Trimming here rather than trusting the prompt,
-  // because a prompt is a request and this is the line that publishes.
-  const site = String(v.site || '').split(',')[0].trim();
+  const site = clipSiteName(v);
   return site ? `📍 ${site}, ${countryHe}` : `📍 ${countryHe}`;
 }
 

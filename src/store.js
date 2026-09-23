@@ -48,6 +48,22 @@ const empty = {
   // guarding the case that actually happened: an item published to Instagram,
   // then staged again by the next /redo as though it were new.
   publishedIds: {},
+  // Pexels video ids that have already been made into a clip, by id -> when.
+  //
+  // Kept separately from everything above because none of them could answer the
+  // question. `publishedIds` is keyed on the CANDIDATE id, which is a hash of
+  // the footage AND the line — so the same video under a second line is a
+  // different id and sails through. `published` is a 30-day quota window and
+  // forgets. And both only know about clips that were approved: footage that
+  // was built, staged and rejected, or is still sitting in the approval chat,
+  // was invisible to all of it.
+  //
+  // Marked when the clip is BUILT rather than when it publishes, and that is
+  // the point. The complaint this fixes is being handed footage that has been
+  // seen before, and a clip waiting for a tap has been seen. There are ~1479
+  // unique verticals behind the configured queries, so spending one on a
+  // rejected clip costs nothing next to being offered it twice.
+  clipsUsed: {},
   // { date: 'YYYY-MM-DD', count: n, rejected: n } — the daily cap, survives restart.
   stagedDay: null,
   // When a card last reached the approval chat, and when something last went
@@ -121,6 +137,37 @@ function prunePublishedIds(s) {
   return changed;
 }
 
+// Same clock as a published id, for the same reason: forgetting costs a repeat
+// on a real feed, remembering costs a few hundred bytes a year.
+function pruneClipsUsed(s) {
+  const cutoff = Date.now() - PUBLISHED_ID_TTL_MS;
+  let changed = false;
+  for (const [id, ts] of Object.entries(s.clipsUsed || {})) {
+    if (ts < cutoff) {
+      delete s.clipsUsed[id];
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+/**
+ * The Pexels id behind a stored clip, across both shapes it has had.
+ *
+ * Clips built before `clip.pexelsId` existed used the Pexels id AS the
+ * candidate id, and three of them are sitting in staging right now. They are
+ * exactly the footage that must not come back, so the old shape is read rather
+ * than written off — bounded to a plausible id so a 12-hex candidate id that
+ * happens to be all digits cannot be mistaken for one.
+ */
+function clipPexelsId(cand) {
+  if (!cand || cand.kind !== 'clip') return null;
+  const direct = cand.clip?.pexelsId;
+  if (direct) return String(direct);
+  const legacy = String(cand.id || '');
+  return /^\d{1,9}$/.test(legacy) ? legacy : null;
+}
+
 function load() {
   let s;
   try {
@@ -158,8 +205,34 @@ function load() {
     migrated = Boolean(s.lastPublishedAt) || migrated;
   }
 
-  const changed = pruneSeen(s) || prunePublished(s) || prunePublishedIds(s) || migrated;
-  if (changed) save(s);
+  // And for the clip ledger. Everything the store already holds that names a
+  // Pexels id is footage this account has spent, so a store written before the
+  // ledger existed starts knowing about it rather than offering it all again on
+  // the next /clip — which, for the clips currently awaiting a tap, would be
+  // the exact repeat the ledger is here to stop.
+  if (!s.clipsUsed || typeof s.clipsUsed !== 'object') {
+    s.clipsUsed = {};
+    migrated = true;
+  }
+  const spent = [
+    ...Object.values(s.staging || {}).map((c) => [clipPexelsId(c), Date.parse(c?.createdAt || '') || Date.now()]),
+    ...(s.queue || []).map((c) => [clipPexelsId(c), Date.parse(c?.createdAt || '') || Date.now()]),
+    ...(s.held || []).map((h) => [clipPexelsId(h?.cand), Date.parse(h?.cand?.createdAt || '') || Date.now()]),
+    ...(s.published || []).map((p) => [p?.pexelsId ? String(p.pexelsId) : null, p?.ts || Date.now()]),
+  ];
+  for (const [id, ts] of spent) {
+    if (id && !s.clipsUsed[id]) {
+      s.clipsUsed[id] = ts;
+      migrated = true;
+    }
+  }
+
+  // Each prune runs. `||` short-circuits, so chaining them meant the first one
+  // with something to drop was the last one to run at all — harmless while
+  // every collection was pruned again on write, and not something to build a
+  // fifth collection on top of.
+  const pruned = [pruneSeen(s), prunePublished(s), prunePublishedIds(s), pruneClipsUsed(s)];
+  if (pruned.some(Boolean) || migrated) save(s);
   return s;
 }
 
@@ -233,6 +306,45 @@ export function forgetPublished(id) {
   save();
 }
 export const publishedCount = () => Object.keys(state.publishedIds).length;
+
+// --- clip footage already spent ---------------------------------------------
+/**
+ * Has this Pexels video already been made into a clip?
+ *
+ * The question `hasPublished` could not answer. A candidate id is a hash of the
+ * footage and the line together, so the same video written up a second way is a
+ * different id — and the search that produced it never asked the store anything
+ * at all, because the set of ids it was handed was mapped off a field the
+ * published log had never stored. Every clip ever built was offered from the
+ * full catalogue, and a repeat was a matter of when rather than whether.
+ */
+export const clipUsed = (pexelsId) => Boolean(pexelsId && state.clipsUsed[String(pexelsId)]);
+
+/** Spend one. Called when the clip is built, not when it publishes. */
+export function markClipUsed(pexelsId) {
+  if (!pexelsId) return;
+  state.clipsUsed[String(pexelsId)] = Date.now();
+  pruneClipsUsed(state);
+  save();
+}
+
+/**
+ * Every Pexels id this account has spent, as the search wants it.
+ *
+ * A Set of strings, because that is what findClips checks against, and built
+ * here rather than at the call site so there is one answer to "what counts as
+ * used" instead of one per caller.
+ */
+export const usedClipIds = () => new Set(Object.keys(state.clipsUsed));
+
+/** Put one back, for footage worth using again under a different line. */
+export function forgetClip(pexelsId) {
+  const had = clipUsed(pexelsId);
+  delete state.clipsUsed[String(pexelsId)];
+  save();
+  return had;
+}
+export const usedClipCount = () => Object.keys(state.clipsUsed).length;
 
 // --- how many were staged today --------------------------------------------
 //
@@ -501,11 +613,17 @@ export function recordPublished({
   topic = null,
   headline = null,
   place = null,
+  pexelsId = null,
   telegram,
   instagram,
   tiktok,
   tiktokDraft = false,
 }) {
+  // A clip's footage is spent for good the moment it goes out. Normally it was
+  // already marked at build time; this covers the paths that do not build —
+  // a re-render, a restore, anything that hands a finished candidate straight
+  // to the publisher — so the ledger can never be behind the feed.
+  if (pexelsId) markClipUsed(pexelsId);
   if (id) state.publishedIds[id] = Date.now();
   state.lastPublishedAt = Date.now();
 
@@ -554,6 +672,12 @@ export function recordPublished({
       // the world became a run of one city.
       headline,
       place,
+      // Which stock video this was, for clips. The field the /clip dedupe was
+      // already reading — `recentPublished().map(p => p.pexelsId)` — on rows
+      // that had never carried it, so the set of "already used" ids handed to
+      // the search was empty on every single run and the filter it fed was
+      // doing nothing at all.
+      pexelsId: pexelsId ? String(pexelsId) : null,
       telegram: Boolean(telegram),
       instagram: Boolean(instagram),
       tiktok: Boolean(tiktok),

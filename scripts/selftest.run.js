@@ -3702,12 +3702,36 @@ group('clip description — a published post with an empty caption is invisible'
   eq('a country with no Hebrew spelling is dropped', clipDestinationTag({ clip: { vision: { place: 'Narnia' } } }), null);
 
   // The pin line: 📍 site, country — or the country alone, or nothing.
-  const { clipPlaceLine, clipCaption } = await import('../src/hashtags.js');
+  const { clipPlaceLine, clipCaption, clipSiteName } = await import('../src/hashtags.js');
   const pin = (v) => clipPlaceLine({ clip: { vision: v } });
 
-  eq('site and country', pin({ place: 'Switzerland', site: 'Lauterbrunnen' }), '📍 Lauterbrunnen, שווייץ');
+  eq('site and country', pin({ place: 'Switzerland', site: 'Lauterbrunnen' }), '📍 לאוטרברונן, שווייץ');
   eq('country alone when the site is unknown', pin({ place: 'Italy', site: '' }), '📍 איטליה');
   eq('nothing at all when the country is unknown', pin({ place: '', site: 'Somewhere' }), null);
+
+  // EVERY word of the description is Hebrew, including the names that are
+  // awkward to write. One Latin word in the middle of a Hebrew line reads as a
+  // machine filling in a field, which is the impression this account cannot
+  // afford — so a site with no Hebrew spelling available is dropped rather
+  // than printed in Latin as a fallback.
+  ok('no Latin survives in the pin', !/[A-Za-z]/.test(pin({ place: 'Switzerland', site: 'Lauterbrunnen' })));
+  eq(
+    'the owner-pinned spelling wins over the judge',
+    clipSiteName({ site: 'Lauterbrunnen', siteHe: 'לאוטרברונען' }),
+    'לאוטרברונן'
+  );
+  eq(
+    'an unpinned site uses the spelling the judge returned',
+    clipSiteName({ site: 'Val Gardena', siteHe: 'ואל גרדנה' }),
+    'ואל גרדנה'
+  );
+  eq('a site the judge left in Latin is dropped', clipSiteName({ site: 'Val Gardena', siteHe: 'Val Gardena' }), null);
+  eq('and so is one with no spelling at all', clipSiteName({ site: 'Val Gardena', siteHe: '' }), null);
+  eq(
+    'the pin then names the country alone rather than half in Latin',
+    pin({ place: 'Italy', site: 'Val Gardena', siteHe: '' }),
+    '📍 איטליה'
+  );
 
   // The judge returns "Cinque Torri, Dolomites" often enough to matter, and
   // that renders as a pin with two commas and a region nobody asked for. The
@@ -3716,16 +3740,104 @@ group('clip description — a published post with an empty caption is invisible'
   eq(
     'a site carrying its own region is trimmed',
     pin({ place: 'Italy', site: 'Cinque Torri, Dolomites' }),
-    '📍 Cinque Torri, איטליה'
+    '📍 צ׳ינקווה טורי, איטליה'
   );
 
   // The description is the pin line and the tags, and NOT the hook — that is
   // burned into the video, and repeating it spends the description on something
   // the viewer read two seconds ago.
   const desc = clipCaption({ hook: 'אני, אתה, טיסה לאיטליה?', clip: { vision: { place: 'Italy', site: 'Lago di Braies' } } });
-  ok('the description opens with the pin', desc.startsWith('📍 Lago di Braies, איטליה'));
+  ok('the description opens with the pin', desc.startsWith('📍 לאגו די בראייס, איטליה'));
   ok('and ends with the tags', /#\S+( #\S+){4}$/.test(desc.trim()), desc);
   ok('the hook is not repeated in it', !desc.includes('אני, אתה'));
+  ok('the whole description is Hebrew but for the tag pool', !/[A-Za-z]/.test(desc.split('\n')[0]), desc);
+}
+
+/* -------------------------------------------------------------------------- */
+group('clip footage — the same video must never come back');
+
+// The bug, exactly: /clip built its "already used" set with
+//   store.recentPublished().map((p) => String(p.pexelsId || ''))
+// and recordPublished had never accepted, let alone stored, a pexelsId. So the
+// set was empty on every run, findClips filtered against nothing, and the
+// highest-ranked clip in the catalogue was offered again and again. The owner
+// was handed footage they had already posted.
+//
+// Two things had to be true for the filter to work at all, and neither was: the
+// id has to be WRITTEN when a clip goes out, and it has to be remembered past
+// the 30-day quota window and past a rejection.
+{
+  const seenIds = (rows) => rows.map((p) => String(p.pexelsId || '')).filter(Boolean);
+
+  store.recordPublished({
+    id: 'clip-ledger-probe',
+    pillar: 'day',
+    tags: [],
+    layout: null,
+    headline: 'אני, אתה, טיסה לאיטליה?',
+    pexelsId: '35714980',
+    tiktok: true,
+    tiktokDraft: true,
+  });
+
+  const row = store.recentPublished().find((p) => p.id === 'clip-ledger-probe');
+  eq('the published row records which video it was', row?.pexelsId, '35714980');
+  ok('so the set /clip builds is not empty', seenIds(store.recentPublished()).includes('35714980'));
+
+  // And the ledger, which is the half that survives everything the log does
+  // not: a rejection, a second line over the same footage, a month passing.
+  ok('publishing spends the footage', store.clipUsed('35714980'));
+  ok('the set handed to the search is strings', [...store.usedClipIds()].every((v) => typeof v === 'string'));
+  ok('the search would skip it', store.usedClipIds().has(String(35714980)));
+
+  store.markClipUsed('31384734');
+  ok('a clip that was only ever built is spent too', store.clipUsed('31384734'));
+  ok('which is the case a published-only check could not see', !store.hasPublished('31384734'));
+
+  // The candidate id is a hash of the footage AND the line, so the same video
+  // under a second line is a different id. That is why the ledger is keyed on
+  // the Pexels id and not on the candidate: dedupe by candidate id is dedupe by
+  // sentence, and the sentence is the part that changes every run.
+  const { clipId } = await import('../src/video/clip.js');
+  ok(
+    'the same video under two lines is two candidate ids',
+    clipId('35714980', 'אני, אתה, טיסה לאיטליה?') !== clipId('35714980', 'אני, אתה, טיסה לשוויץ?')
+  );
+  ok('but one footage id', store.clipUsed('35714980'));
+
+  eq('footage can be deliberately put back', store.forgetClip('31384734'), true);
+  ok('and is then offered again', !store.clipUsed('31384734'));
+  store.forgetPublished('clip-ledger-probe');
+  store.forgetClip('35714980');
+}
+
+/* -------------------------------------------------------------------------- */
+group('one country per clip — the line, the pin and the tag are one fact');
+
+// The post that prompted this said "אני, אתה, טיסה לאיטליה?" burned into the
+// video with a pin underneath it reading the same country — consistent, and
+// consistent is the point: the three statements are built by three different
+// routes from one judgement, and nothing checked they agreed. A writer that
+// ignores the country it was given produces a video whose own description
+// contradicts it, and no viewer needs to know which half is right to see it.
+{
+  const { namesOtherCountry } = await import('../src/video/hooks.js');
+
+  eq('the clip\'s own country is fine', namesOtherCountry('אני, אתה, טיסה לאיטליה?', 'איטליה'), null);
+  eq('another country is not', namesOtherCountry('אני, אתה, טיסה לאיטליה?', 'שווייץ'), 'איטליה');
+  eq('the glued preposition is caught', namesOtherCountry('חייב להיות בטופ 3 מסלולים ביוון', 'איטליה'), 'יוון');
+
+  // Hebrew spells a foreign name by ear and both spellings are in use. A guard
+  // that only knew post-config.json's שווייץ would have rejected the owner's
+  // own line, which is the way this kind of check usually fails.
+  eq('שוויץ and שווייץ are the same country', namesOtherCountry('אני, אתה, טיסה לשוויץ?', 'שווייץ'), null);
+  eq('and it is still caught against a different one', namesOtherCountry('אני, אתה, טיסה לשוויץ?', 'איטליה'), 'שווייץ');
+
+  // With no country established the line may name none at all. The pin and the
+  // tag both withdraw in that case, and a line that named a country anyway
+  // would be the only claim on the post — an unverifiable one.
+  eq('an unplaced clip may not name a country', namesOtherCountry('אני, אתה, טיסה ליוון?', null), 'יוון');
+  eq('a line with no country in it is always fine', namesOtherCountry('העובדה שהשביל הזה לא עולה כסף', null), null);
 }
 
 /* -------------------------------------------------------------------------- */

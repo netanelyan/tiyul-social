@@ -69,10 +69,15 @@ const SCHEMA = {
       type: 'integer',
       description: '0-10 certainty in `site`. Below the configured floor the name is discarded.',
     },
+    siteHe: {
+      type: 'string',
+      description:
+        'The SAME name written in Hebrew letters, as an Israeli travel account would spell it — "Lauterbrunnen" -> "לאוטרברונן", "Lago di Braies" -> "לאגו די בראייס". Transliterate by SOUND; never translate the words and never leave any Latin letters in it. Empty string when `site` is empty.',
+    },
   },
   required: [
     'destination', 'pov', 'aerial', 'staged', 'urban', 'subject',
-    'place', 'placeConfidence', 'site', 'siteConfidence',
+    'place', 'placeConfidence', 'site', 'siteConfidence', 'siteHe',
   ],
 };
 
@@ -83,7 +88,10 @@ const PROMPT =
   'a generic path through trees or anything that could be anywhere scores 0-3, however pretty the light is.\n\n' +
   'Name `place` and `site` only if you are certain. Both are printed on a published post, and a confident ' +
   'guess that is wrong is worse than saying nothing — leave them empty and set the confidence low whenever ' +
-  'there is doubt. `site` is the harder one: most footage is a generic valley or coastline with no name.';
+  'there is doubt. `site` is the harder one: most footage is a generic valley or coastline with no name.\n\n' +
+  'When you do name a `site`, also write it in Hebrew letters in `siteHe`. The post is published in Hebrew ' +
+  'and the name is read aloud by an Israeli audience, so transliterate the SOUND of it — never translate ' +
+  'the words, and never leave a Latin letter in that field.';
 
 /**
  * Judge one clip from its thumbnail.
@@ -134,6 +142,10 @@ export async function judgeThumb(url, { timeoutMs = 20_000 } = {}) {
     // country did not survive the floor, the site has not really been
     // identified either.
     if (!v.place) v.site = '';
+    // The Hebrew spelling is a spelling OF the site, so it cannot outlive it.
+    // Left behind, it would put a name on a post whose English original had
+    // just been discarded for being an unverifiable claim.
+    if (!v.site) v.siteHe = '';
     return v;
   } catch {
     return null;
