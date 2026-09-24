@@ -45,6 +45,11 @@ const SCHEMA = {
     },
     aerial: { type: 'boolean', description: 'Drone or high aerial vantage' },
     staged: { type: 'boolean', description: 'A posed lifestyle or model shoot rather than someone doing the thing' },
+    personSubject: {
+      type: 'boolean',
+      description:
+        'Is a person filmed FROM OUTSIDE the subject of this frame — standing in front of the view, facing or walking for the camera, or large enough in frame to be the point of the shot? False for a POV body edge (hands, feet, handlebars, a shoulder at the edge), and false for distant or incidental figures that only give a landscape its scale.',
+    },
     urban: { type: 'boolean', description: 'Predominantly street/city/traffic rather than nature or a scenic town' },
     subject: {
       type: 'string',
@@ -76,7 +81,7 @@ const SCHEMA = {
     },
   },
   required: [
-    'destination', 'pov', 'aerial', 'staged', 'urban', 'subject',
+    'destination', 'pov', 'aerial', 'staged', 'personSubject', 'urban', 'subject',
     'place', 'placeConfidence', 'site', 'siteConfidence', 'siteHe',
   ],
 };
@@ -86,6 +91,11 @@ const PROMPT =
   'The single most important field is `destination`: would somebody watching this want to go there? ' +
   'An iconic landmark, a dramatic landscape or a beautiful town scores high. An empty road, a car park, ' +
   'a generic path through trees or anything that could be anywhere scores 0-3, however pretty the light is.\n\n' +
+  '`personSubject` is the other one that decides whether this clip is used at all. Somebody standing in ' +
+  'front of the view, facing the camera or walking for it, means another person was standing back filming ' +
+  'them — and the post is then about that person rather than about the place. Judge it by who the shot is ' +
+  'OF: a figure the frame is built around is true; a hand on a railing, a boot on a step or two walkers the ' +
+  'size of a thumbnail on a ridge are not.\n\n' +
   'Name `place` and `site` only if you are certain. Both are printed on a published post, and a confident ' +
   'guess that is wrong is worse than saying nothing — leave them empty and set the confidence low whenever ' +
   'there is doubt. `site` is the harder one: most footage is a generic valley or coastline with no name.\n\n' +
@@ -164,6 +174,26 @@ export function rankVision(v, cfg = postConfig().clips.search) {
   if (!v) return null;
   if (v.destination < cfg.visionMinDestination) return null;
   if (cfg.rejectStaged && v.staged) return null;
+  // A person filmed in front of the place, which the owner prohibits outright.
+  //
+  // `staged` did not catch it and was never going to: it asks whether the shot
+  // is a MODEL SHOOT, and a man simply standing at a viewpoint is not posed,
+  // not a lifestyle setup and not selling anything — so the judge answered no
+  // and a clip of somebody's back went out over a Hebrew line about the place.
+  //
+  // The fault is not that the shot is fake. It is that the camera is a
+  // SPECTATOR, which is the distinction pexels.js draws from the title and the
+  // one thing the title cannot be trusted on. A viewer is being shown a
+  // stranger; the account is supposed to be showing them somewhere to go.
+  //
+  // A veto rather than a penalty, unlike an aerial. A drone shot is the right
+  // subject from the wrong height and is worth having on a day nothing else
+  // cleared the gate; a stranger in the frame is the wrong subject, and there
+  // is no destination score that makes it the right one.
+  //
+  // On unless it is explicitly turned off, because a key missing from a config
+  // should not quietly re-admit the one thing that is prohibited by name.
+  if (cfg.rejectPersonSubject !== false && v.personSubject) return null;
   if (cfg.rejectAerialOnly && v.aerial) return null;
 
   let score = v.destination;

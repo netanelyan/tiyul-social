@@ -100,6 +100,8 @@ const SYSTEM = `אתה כותב טקסט לסרטון טיקטוק קצר בעב
   "טעות אחת שכולם עושים"                   ← מעורפל. איזו טעות, איפה.
   "כדאי להזמין מראש"                       ← נכון וריק. כמה זה חוסך, מתי, איפה.
   "הנוף שם עוצר נשימה"                     ← תיאור של הפוטג׳, לא של מה שהצופה לא יודע.
+  "3 דברים שחייבים לדעת לפני ש..."          ← נקטע. השורה לא נגמרת והצופה קורא חצי משפט.
+  "והכי חשוב, הדבר ש"                      ← נגמר במילת חיבור. אין המשך.
 
 ההבדל: שורה טובה מוסרת משהו שהצופה לא ידע ויכול להשתמש בו — מספר, עונה,
 מסמך, מרחק, שעה, סכום. שורה פסולה מתארת את מה שכבר רואים או מתפעלת ממנו.
@@ -114,6 +116,13 @@ const SYSTEM = `אתה כותב טקסט לסרטון טיקטוק קצר בעב
   הפורמט הזה.
 - אסור לטעון שהיית במקום: "אני שם", "הייתי שם", "האוויר פה", "נשבע לכם".
   הפוטג׳ הוא סטוק ואף אחד מאיתנו לא עמד שם.
+
+כל שורה נגמרת:
+- כל שורה היא משפט שלם. היא נקראת לבד על המסך, ואין על מה ללחוץ בשביל ההמשך.
+- בלי "..." בסוף שורה ובלי שורה שנקטעת באמצע. אם אין מקום לכל המשפט — כתוב
+  משפט קצר יותר, לא חצי משפט.
+- אסור לסיים שורה במילת חיבור או יחס: "של", "את", "עם", "ש", "ו", "כי", "ב", "ל".
+- ההוק לא ממשיך לתוך הביט הראשון. הם שני משפטים נפרדים.
 
 חוקים:
 - ההוק: עד {MAXWORDS} מילים. ביט: עד {BEATWORDS} מילים. עברית פשוטה.
@@ -265,6 +274,49 @@ export function namesOtherCountry(line, placeHe) {
   return null;
 }
 
+// An ellipsis, in either spelling. A line that ends in one is a line that was
+// not finished.
+const ELLIPSIS = /…|\.\s*\.\s*\.?/;
+
+// The words a Hebrew sentence cannot end on. Every one of them takes something
+// after it, so a line that stops here stopped in the middle.
+//
+// Conspicuously ABSENT, and each for a line this account would actually
+// publish: יותר and פחות ("זול יותר" is a finished sentence), לפני and אחרי
+// ("מזמינים חודש לפני" is a whole beat and a good one), גם, רק. The test for
+// membership is not "does it feel unfinished" — it is "is there any sentence
+// this bot would print that ends on this word", and if there is, the word does
+// not belong here. A guard that rejects a good line is the failure this file
+// has already recorded twice.
+const DANGLING =
+  /(^|\s)(ו|ש|של|את|עם|על|אל|כי|אבל|או|כמו|בין|כדי|ב|ל|מ|כ|ה)$/;
+
+/**
+ * A line that trails off instead of ending.
+ *
+ * Written for a batch that shipped with "..." burned into the video. The model
+ * had been told to fill a format and wrote the first half of one — a teaser,
+ * which is a shape that works in a caption a reader can scroll and is worthless
+ * on screen, where there is nothing to click and the next thing the viewer sees
+ * is the beat after it.
+ *
+ * It is also the one defect none of the other checks could see. It is not a
+ * URL, not an emoji, not a claim of presence, not a label — it is a correctly
+ * formatted line that does not finish its own sentence, and it passed every
+ * guard in this file on the way to being encoded.
+ *
+ * Returns the reason, or null when the line ends.
+ */
+export function trailsOff(text) {
+  const s = String(text || '').trim();
+  if (!s) return null;
+  if (ELLIPSIS.test(s)) return 'trails off — a line on screen has nothing to click for the rest';
+  if (/[,\-–—:;]$/.test(s)) return 'ends on punctuation that expects more after it';
+  const last = s.split(/\s+/).pop();
+  if (DANGLING.test(` ${last}`)) return `ends on "${last}" — the sentence is cut off`;
+  return null;
+}
+
 /** A line is unusable if it carries a link, runs long, or is a caption. */
 /**
  * `allowsPerson` is the escape hatch for the two formats built out of pronouns.
@@ -290,6 +342,8 @@ function reject(text, { maxWords, minWords = 5, allowsPerson = false }) {
   // Per format, because the shapes are different lengths BY DESIGN. A blanket
   // floor of five used to reject two owner-written formats on every run.
   if (words < minWords) return `${words} words, under ${minWords} — too short to say anything`;
+  const unfinished = trailsOff(s);
+  if (unfinished) return unfinished;
   if (!allowsPerson && hasPerson(s)) return 'claims to have been there — the footage is not ours';
   if (isLabel(s)) return 'a label, not a promise — nothing is offered and nothing is asserted';
   return null;
@@ -313,6 +367,12 @@ function rejectBeat(text, { maxWords, allowsPerson = false }) {
   const words = s.split(/\s+/).length;
   if (words > maxWords) return `${words} words, over ${maxWords}`;
   if (words < 2) return 'one word — not a beat';
+  // Unfinished on the same terms as the hook, and this is where it actually
+  // happened: a beat is a line item, the model writes it in a hurry, and
+  // "הדרכון חייב להיות בתוקף..." reads as an afterthought rather than as the
+  // fact somebody stayed twenty seconds for.
+  const unfinished = trailsOff(s);
+  if (unfinished) return unfinished;
   if (!allowsPerson && hasPerson(s)) return 'claims to have been there — the footage is not ours';
   return null;
 }

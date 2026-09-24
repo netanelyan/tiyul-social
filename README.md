@@ -558,7 +558,9 @@ posted is exactly the kind of decision that should be written down.
 
 **The approval card shows what the judge thought.** `יעד n/10` is the gate,
 `דירוג` is the rank it was chosen by, and `רחפן`, `גוף ראשון` and `עירוני` are
-the flags that moved it. This was missing and it cost a batch: a drone shot went
+the flags that moved it. `⚠️ אדם בפריים` cannot appear on a clip the pipeline
+built — that one is vetoed before anything is encoded — so on a card it means
+the footage came from `clip-redo`, chosen by hand, and it is the wrong footage. This was missing and it cost a batch: a drone shot went
 out and the card gave no way to tell whether the judge had seen an aerial and
 the penalty was too small, or whether it had misread the frame. Two faults, two
 different fixes, and no way to tell them apart from the message.
@@ -637,6 +639,31 @@ the weakest clip that cleared the gate on the ground. It is built only on a day
 the ground returned nothing at all, which is the one case where it beats no clip
 at all. It used to cost 1, which a destination score of 9 pays without noticing,
 and that is how an aerial reached the approval chat.
+
+**A person standing in front of the view is vetoed outright.** This is the one
+filter that is a rule rather than a ranking, and it is the opposite call from
+the drone. `rejectStaged` did not catch it and never could: it asks whether the
+shot is a *model shoot*, and a man simply standing at a viewpoint is not posed,
+not a lifestyle setup and not selling anything, so the judge answered no and a
+clip of a stranger's back went out over a Hebrew line about the place. What is
+wrong with it is not that it is fake — it is that the camera is a **spectator**,
+so the post is about that person rather than about somewhere to go. An aerial is
+the right subject from the wrong height and is worth keeping at a price; this is
+the wrong subject, and no destination score makes it the right one. The judge
+answers `personSubject` on its own, and it is told what does *not* count — a
+hand on a railing, a boot on a step, two walkers the size of a thumbnail on a
+ridge — because POV footage always has a body edge in it and POV is wanted.
+
+**No line trails off.** A batch shipped with `...` burned into the video: the
+writer had been asked to fill a format and wrote the first half of one. A teaser
+works in a caption somebody can scroll; on screen there is nothing to click for
+the rest, so half a sentence is all the viewer ever gets. `trailsOff` in
+`src/video/hooks.js` refuses an ellipsis, trailing punctuation and a line ending
+on a connector — `של`, `את`, `ש`, `ב` — on the hook and on every beat, and the
+prompt says it first so the guard is a backstop rather than the mechanism. The
+words it deliberately does *not* list are the ones a real line ends on: `יותר`
+("זול יותר"), `לפני` ("מזמינים חודש לפני"). The same check runs again in
+`buildClip`, which is the path a line pinned by hand in `clip-redo` takes.
 
 **The line fills a known format, and the format is now a promise.** It used to
 be a meme template — "top 5 X oat", "Average X in Y" — on the reasoning that

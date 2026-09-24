@@ -198,6 +198,13 @@ can do it and nothing in `bot.js` claims to.
 - an advertisement with no information in it
 - English-only on-screen text
 - several near-identical videos
+- **a stranger standing in front of the view.** Somebody filmed from outside,
+  facing or walking for the camera, makes the post about that person instead of
+  about the place. A participant camera — hands, feet, handlebars — is the
+  opposite thing and is wanted. Enforced by `rejectPersonSubject`.
+- **a line that trails off.** No `...` on screen. There is nothing to click for
+  the rest, so half a sentence is all the viewer ever gets. Enforced by
+  `trailsOff` in `src/video/hooks.js`.
 
 ---
 

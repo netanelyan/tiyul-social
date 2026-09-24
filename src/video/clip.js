@@ -4,7 +4,7 @@ import { rmSync } from 'node:fs';
 import { findClips } from './pexels.js';
 import { burnClip, download, clipOutputDir, ffmpegReady } from './overlay.js';
 import { clipHook, postConfig } from '../postConfig.js';
-import { writeHook, hasApiKey, namesOtherCountry } from './hooks.js';
+import { writeHook, hasApiKey, namesOtherCountry, trailsOff } from './hooks.js';
 import { assertNoUrl } from '../format.js';
 import { clipCaption } from '../hashtags.js';
 import { targetsForKind } from '../publish/targets.js';
@@ -75,6 +75,19 @@ export async function buildClip(found, { outDir = clipOutputDir(), hook = null, 
   // out is before the encode, not after.
   assertNoUrl(line, 'the clip hook');
   lines.forEach((b, i) => assertNoUrl(b, `clip beat ${i + 1}`));
+
+  // And nothing half-written gets encoded, whoever wrote it.
+  //
+  // The writer already refuses a line that trails off, so for a /clip batch
+  // this can only fire on the fallback pool. It is here for the path the writer
+  // does not see: a line pinned by hand in scripts/clip-redo.js, which is
+  // copied off a previous run's output and is exactly where a "..." survives a
+  // round trip. Burned into the video it costs the whole clip — a re-encode is
+  // the cheapest possible remedy and this is the last moment it is still cheap.
+  for (const [what, s] of [['hook', line], ...lines.map((b, i) => [`beat ${i + 1}`, b])]) {
+    const unfinished = trailsOff(s);
+    if (unfinished) throw new Error(`the ${what} ${unfinished}: "${s}"`);
+  }
 
   // One country per clip, checked here because here is where the two halves
   // meet. The line is burned into the video and the pin is printed underneath
@@ -288,7 +301,14 @@ export function clipApprovalMessage(cand) {
   // fixes, and the card showed neither. `ציון` is the title-keyword score,
   // which orders the queue and decides nothing; `יעד` is the gate that does.
   const v = c.vision || null;
-  const flags = v ? [v.aerial && 'רחפן', v.pov && 'גוף ראשון', v.urban && 'עירוני'].filter(Boolean) : [];
+  // אדם בפריים cannot appear on a clip the pipeline built — the judge vetoes
+  // it before anything is encoded. It is printed for the one path that skips
+  // the judge's verdict: scripts/clip-redo.js, where the footage was chosen by
+  // hand. If that word shows up on a card, the clip is the thing the owner
+  // prohibited and the redo picked the wrong id.
+  const flags = v
+    ? [v.aerial && 'רחפן', v.personSubject && '⚠️ אדם בפריים', v.pov && 'גוף ראשון', v.urban && 'עירוני'].filter(Boolean)
+    : [];
   return [
     `🎬 קליפ · ${c.seconds}ש׳ · ${c.width}x${c.height}`,
     '',

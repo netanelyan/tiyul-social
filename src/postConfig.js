@@ -245,6 +245,11 @@ function clips(raw) {
       visionMaxCandidates: Math.max(1, Math.round(num(s.visionMaxCandidates, 24))),
       preferPov: s.preferPov !== false,
       rejectStaged: s.rejectStaged !== false,
+      // A person filmed in front of the place, prohibited by the owner. On
+      // unless it is explicitly switched off, like rejectStaged and for a
+      // stronger reason: this one is a rule rather than a preference, and a
+      // missing key must not quietly re-admit it.
+      rejectPersonSubject: s.rejectPersonSubject !== false,
       rejectAerialOnly: s.rejectAerialOnly === true,
       // What a drone shot costs when it is not vetoed outright. Large enough
       // that it cannot outrank anything shot on the ground — see rankVision.

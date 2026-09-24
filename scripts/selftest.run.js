@@ -3608,10 +3608,36 @@ group('clips — participant or spectator, judged from the title');
   // precisely how the old title filter failed.
   const { rankVision } = await import('../src/video/vision.js');
   const vcfg = postConfig().clips.search;
-  const V = (o) => ({ destination: 8, pov: false, aerial: false, staged: false, urban: false, subject: '', ...o });
+  const V = (o) => ({
+    destination: 8, pov: false, aerial: false, staged: false, personSubject: false, urban: false, subject: '', ...o,
+  });
 
   eq('nowhere is rejected however good the camera', rankVision(V({ destination: 3, pov: true }), vcfg), null);
   eq('a staged shoot is rejected', rankVision(V({ staged: true }), vcfg), null);
+
+  // A person standing in front of the view, which the owner prohibits by name.
+  //
+  // The clip that caused this rule was not staged — nobody was posing, nothing
+  // was being sold, and `staged` therefore came back false while the frame was
+  // a stranger with a landscape behind them. So it is its own field and its own
+  // veto, and unlike an aerial no destination score buys it back: a drone shot
+  // is the right subject from the wrong height, this is the wrong subject.
+  eq('a person filmed in front of the place is rejected', rankVision(V({ personSubject: true }), vcfg), null);
+  eq(
+    'and the best destination in the world does not buy it back',
+    rankVision(V({ destination: 10, personSubject: true, pov: true }), vcfg),
+    null
+  );
+  ok('the rule is on', postConfig().clips.search.rejectPersonSubject === true);
+  ok(
+    'and a config that forgot the key still refuses',
+    rankVision(V({ personSubject: true }), { ...vcfg, rejectPersonSubject: undefined }) === null
+  );
+
+  // The carve-out that keeps this from eating the format. POV footage always
+  // has a body edge in it — hands, feet, handlebars — and preferPov says this
+  // account wants POV. A participant camera is not a person being filmed.
+  ok('a POV body edge is not a person in front of the camera', rankVision(V({ pov: true }), vcfg) > 0);
   ok('a real destination passes', rankVision(V({}), vcfg) > 0);
   ok(
     'POV breaks a tie between two real places',
@@ -3929,7 +3955,7 @@ group('clip lines — the brief’s own hooks must survive their own guards');
 // verbatim in BRIEF.md must pass every check in video/hooks.js, and the two
 // guards that were RELAXED for it must still catch what they were built for.
 {
-  const { hasPerson, isLabel, beatCountMismatch } = await import('../src/video/hooks.js');
+  const { hasPerson, isLabel, beatCountMismatch, trailsOff } = await import('../src/video/hooks.js');
   const cfg = postConfig().clips;
   const fmt = (id) => cfg.formats.find((f) => f.id === id);
 
@@ -3974,7 +4000,33 @@ group('clip lines — the brief’s own hooks must survive their own guards');
     'המקום בפורטוגל שאף ישראלי לא מגיע אליו',
   ];
   for (const line of canon) {
-    ok(`brief hook survives: ${line}`, !hasPerson(line) && !isLabel(line));
+    ok(`brief hook survives: ${line}`, !hasPerson(line) && !isLabel(line) && !trailsOff(line));
+  }
+
+  // A LINE THAT DOES NOT FINISH ITS OWN SENTENCE, which is what shipped: text
+  // burned into a video with "..." after it. On a screen there is nothing to
+  // click for the rest, so a teaser is simply half a sentence — and it passed
+  // every other guard in this file, because it carries no URL, no emoji, no
+  // claim of presence, and it is not a label.
+  ok('an ellipsis is unfinished', Boolean(trailsOff('3 דברים שחייבים לדעת לפני ש...')));
+  ok('and so is the typographic one', Boolean(trailsOff('המקום שאף אחד לא מספר לכם עליו…')));
+  ok('two dots count', Boolean(trailsOff('הדרכון חייב להיות בתוקף..')));
+  ok('a dangling connector is unfinished', Boolean(trailsOff('והכי חשוב, הדבר ש')));
+  ok('so is a dangling preposition', Boolean(trailsOff('3 טעויות שישראלים עושים ב')));
+  ok('and trailing punctuation', Boolean(trailsOff('שלושה דברים לבדוק —')));
+
+  // The false positives this check is NOT allowed to have. Each is a line this
+  // account would print: a sentence may end on a comparative, on a time before
+  // something, or on a full stop. A guard that rejects a good line is the
+  // failure this file has recorded twice already.
+  for (const line of [
+    'טיסה לשם זולה יותר בנובמבר',
+    'מזמינים את הכרטיס חודש לפני',
+    'הכניסה חינם עד השעה תשע',
+    'טיסה הלוך ושוב — 700 ₪',
+    '5 ימים ברומא ב-2,000 ₪ — ככה',
+  ]) {
+    eq(`a finished line passes: ${line}`, trailsOff(line), null);
   }
 
   // The promise check, and the false positive that shaped it. A number is only
@@ -3994,7 +4046,7 @@ group('clip lines — the brief’s own hooks must survive their own guards');
 
   // The fallback pool degrades to the same shapes rather than to the old memes.
   for (const line of cfg.hooks) {
-    ok(`fallback line is a promise: ${line}`, !hasPerson(line) && !isLabel(line));
+    ok(`fallback line is a promise: ${line}`, !hasPerson(line) && !isLabel(line) && !trailsOff(line));
   }
 }
 
