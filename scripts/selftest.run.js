@@ -4083,7 +4083,10 @@ group('AI itineraries — the plan has to survive its own shape check');
   const stop = (nameHe, costIls, extra = {}) => ({
     timeHe: '09:00',
     nameHe,
-    noteHe: 'מגיעים מוקדם ונכנסים בלי תור',
+    // Not printed anywhere — it is what the photo search runs on, and a stop
+    // without one has no picture and therefore no slide.
+    nameEn: 'Colosseum',
+    noteHe: 'מגיעים מוקדם ובלי תור',
     costIls,
     ...extra,
   });
@@ -4115,6 +4118,22 @@ group('AI itineraries — the plan has to survive its own shape check');
   eq('a Latin name costs its own stop', afterLatin.days[0].stops.length, 3);
   ok('and says so', afterLatin.dropped.some((d) => /Colosseum/.test(d)));
 
+  // A stop with no English name has nothing to search a photograph on, and a
+  // slide with no photograph is not a slide — the deck's rule, inherited whole.
+  const noEn = {
+    days: [day('העיר העתיקה', [stop('קולוסיאום', 80, { nameEn: '' }), stop('הפורום', 0), stop('טרסטוורה', 120), stop('פנתאון', 0)])],
+  };
+  eq('a stop with no English name leaves', shape(noEn, { days: 1 }).days[0].stops.length, 3);
+
+  // The full stop comes off the note, which is printed as a parenthesised
+  // fragment under the name. "(75 ₪ · נכנסים מראש.)" reads as a typo.
+  eq(
+    'a trailing period is stripped',
+    shape({ days: [day('יום', [stop('א', 0, { noteHe: 'נכנסים בלי תור.' }), stop('ב', 0), stop('ג', 0)])] }, { days: 1 })
+      .days[0].stops[0].noteHe,
+    'נכנסים בלי תור'
+  );
+
   // A day that loses too many stops is dropped whole: three bullets and then
   // one is a slideshow that looks like it ran out of material.
   const thin = { days: [day('העיר העתיקה', [stop('קולוסיאום', 80), stop('Forum', 0)])] };
@@ -4142,7 +4161,8 @@ group('AI itineraries — the plan has to survive its own shape check');
 group('the itinerary slideshow — what it says, and what it promises');
 
 {
-  const { planSlides, stopCount, dayTotal, renderPlanSlideHtml } = await import('../src/render/planSlides.js');
+  const { tripDecks, deckForSize, allStops, dayTotal, flagForHebrew } = await import('../src/plan/slides.js');
+  const { renderSlideHtml } = await import('../src/render/deckTemplates.js');
   const { planText, planGiveaway } = await import('../src/plan/text.js');
   const { planCaption } = await import('../src/hashtags.js');
   const cfg = postConfig().plans;
@@ -4152,11 +4172,11 @@ group('the itinerary slideshow — what it says, and what it promises');
     dest: { id: 'rome', he: 'רומא', en: 'Rome', country: 'איטליה' },
     days: [
       { n: 1, titleHe: 'העיר העתיקה', stops: [
-        { timeHe: '09:00', nameHe: 'קולוסיאום', noteHe: 'מזמינים מראש', costIls: 80 },
-        { timeHe: '13:00', nameHe: 'הפורום', noteHe: 'הכניסה מהצד', costIls: 0 },
+        { timeHe: '09:00', nameHe: 'קולוסיאום', nameEn: 'Colosseum', noteHe: 'מזמינים מראש', costIls: 80 },
+        { timeHe: '13:00', nameHe: 'הפורום', nameEn: 'Roman Forum', noteHe: 'הכניסה מהצד', costIls: 0 },
       ] },
       { n: 2, titleHe: 'וותיקן', stops: [
-        { timeHe: '08:00', nameHe: 'מוזיאוני הוותיקן', noteHe: 'הכניסה הראשונה', costIls: 90 },
+        { timeHe: '08:00', nameHe: 'מוזיאוני הוותיקן', nameEn: 'Vatican Museums', noteHe: 'הכניסה הראשונה', costIls: 90 },
       ] },
     ],
     total: 170,
@@ -4166,18 +4186,57 @@ group('the itinerary slideshow — what it says, and what it promises');
 
   // The cover promises a count and the slides have to deliver it, which is the
   // same rule as a hook that says "3 טעויות".
-  eq('the stop count is the slides own', stopCount(plan.days), 3);
+  eq('the stop count is the slides own', allStops(plan).length, 3);
   eq('a day total is its own stops', dayTotal(plan.days[0]), 80);
 
-  const slides = planSlides(plan, { giveaway: give });
-  eq('cover, days, total and the ask', slides.length, plan.days.length + (give ? 3 : 2));
-  eq('the cover opens', slides[0].type, 'cover');
-  eq('the total comes after the days', slides[plan.days.length + 1].type, 'total');
+  // A PLAN IS BUILT AS A DECK. The first version of this drew its own branded
+  // card and it read as a different account's post beside the real slideshows —
+  // so these return the slide shape render/deckTemplates.js already understands
+  // and the deck's renderer draws them.
+  const decks = tripDecks(plan, { text, giveaway: give });
+  const full = deckForSize(decks, 'tiktok');
+  const short = deckForSize(decks, 'instagram');
+
+  // One stop per slide on TikTok, one DAY per slide on Instagram. Instagram
+  // takes ten images and a four-day plan is nineteen slides, so the two sets
+  // are two lengths of the same plan rather than two crops of one set.
+  eq('tiktok gets a slide per stop', full.slides.length, allStops(plan).length + (give ? 2 : 1));
+  eq('instagram gets a slide per day', short.slides.length, plan.days.length + (give ? 2 : 1));
+  ok('and the Instagram set fits a carousel', short.slides.length + 1 <= 10);
+  ok('both sets are the minimal deck style', full.style === 'minimal' && short.style === 'minimal');
+
+  // The cover's emphasis has to be a SUBSTRING of the title or coverTitle
+  // silently drops the colour — which is a slide that renders correctly and
+  // looks like the accent was never configured.
+  ok('the cover emphasis is inside the hook', full.titleHe.includes(full.idea.emphasisHe));
+
+  // Every fact of a stop reaches its slide. The name line carries the time, the
+  // note line carries the price — see the note on stopSlide — and losing either
+  // is an itinerary that stopped being one.
+  const first = full.slides[0];
+  ok('the time is on the name line', first.nameHe.includes('09:00'));
+  ok('and the place', first.nameHe.includes('קולוסיאום'));
+  ok('the price leads the note', first.bullets[0].text.startsWith('80 ₪'));
+  ok('and the note follows it', first.bullets[0].text.includes('מזמינים מראש'));
+  // Free is a word, not a blank. An empty price on a slide reads as an
+  // omission; "חינם" reads as an answer.
+  ok('free says so', full.slides[1].bullets[0].text.startsWith('חינם'));
+
+  // The Instagram day slide names the day's stops in order — that is what makes
+  // it a summary of the same plan rather than a different, shorter plan.
+  ok('a day slide names its stops', short.slides[0].bullets[0].text.includes('קולוסיאום'));
+  ok('all of them', short.slides[0].bullets[0].text.includes('הפורום'));
+
+  // The flag comes off the Hebrew country name, because that is what
+  // destinations.json stores — there is no ISO code anywhere on a plan.
+  eq('Italy gets its flag', flagForHebrew('איטליה'), '🇮🇹');
+  eq('and an unknown country gets none', flagForHebrew('אטלנטיס'), null);
 
   // THE ASK IS ALL OR NOTHING. `giveaway.on: false` is how somebody stops
   // promising strangers a month of premium, and a slide that survived the
   // switch would keep making the promise after it was withdrawn.
-  eq('with the giveaway off there is no ask slide', planSlides(plan, { giveaway: null }).length, plan.days.length + 2);
+  const noAsk = deckForSize(tripDecks(plan, { text, giveaway: null }), 'tiktok');
+  eq('with the giveaway off there is no ask slide', noAsk.slides.length, allStops(plan).length + 1);
 
   // The templates are filled with the plan's own facts — an ask naming a
   // different city than the slides is the contradiction this kind is most
@@ -4188,8 +4247,12 @@ group('the itinerary slideshow — what it says, and what it promises');
 
   if (give) {
     ok('the keyword is the destination', give.keyword.includes('רומא'));
-    ok('every step is filled', give.stepsHe.every((s) => !/[{}]/.test(s)));
-    ok('the steps name the prize', give.stepsHe.join(' ').includes(String(give.premiumDays)));
+    ok('the ask names the action', give.actionHe.includes(give.keyword));
+    ok('and the line under it names the prize', give.prizeHe.includes(String(give.premiumDays)));
+    ok('neither keeps a placeholder', !/[{}]/.test(`${give.actionHe} ${give.prizeHe}`));
+    // The last two slides are not places, so they carry no flag. "525 ₪ לאדם 🇮🇹"
+    // says nothing and costs a line at this type size.
+    ok('the closing slides carry no flag', full.slides.slice(-2).every((s) => !s.flag));
     // The same numbers on the slide and in the caption. A post whose last frame
     // says five winners and whose description says three is a broken promise to
     // whoever commented for the third one.
@@ -4214,20 +4277,37 @@ group('the itinerary slideshow — what it says, and what it promises');
   // under "4 ימים ברומא" reads as the price of the trip unless something says
   // it is entrance fees — and that misreading is as bad as a wrong number.
   ok('the total is qualified', Boolean(cfg.totalNoteHe), 'plans.totalNoteHe is empty');
-  const totalHtml = renderPlanSlideHtml({ type: 'total' }, plan, { size: 'tiktok', text, giveaway: give });
-  ok('and the slide carries the qualification', totalHtml.includes(cfg.totalNoteHe));
+  const totalSlide = full.slides.at(give ? -2 : -1);
+  ok('the total slide carries the qualification', totalSlide.bullets[0].text === cfg.totalNoteHe);
+  ok('and the total itself', totalSlide.nameHe.includes('170'));
 
-  // Every slide type renders at both sizes without throwing. Cheap, and it is
-  // the check that catches a template referring to a field a slide type does
-  // not have — which is invisible until the one post that uses it.
+  // Nothing after a photograph should be a flat gradient: a bare closing slide
+  // reads as the post running out of material at the moment it asks for a
+  // follow. The last two borrow pictures rather than fetching their own.
+  const withPhotos = deckForSize(
+    tripDecks(
+      {
+        ...plan,
+        coverImage: { src: 'data:image/jpeg;base64,AAA' },
+        days: plan.days.map((d) => ({ ...d, stops: d.stops.map((s) => ({ ...s, image: { src: 'data:image/jpeg;base64,BBB' } })) })),
+      },
+      { text, giveaway: give }
+    ),
+    'tiktok'
+  );
+  ok('every slide has a photograph', withPhotos.slides.every((s) => s.image?.src));
+
+  // Every slide renders through the DECK's template at both sizes. It is the
+  // same call render/deck.js makes, so this catches a slide shape the deck
+  // cannot draw — which is invisible until the one post that uses it.
   for (const size of ['tiktok', 'instagram']) {
-    for (const slide of slides) {
-      const html = renderPlanSlideHtml(slide, plan, { size, text, giveaway: give });
-      ok(`${slide.type} renders at ${size}`, html.includes('<div class="frame">'));
+    for (const [i, slide] of deckForSize(decks, size).slides.entries()) {
+      const html = renderSlideHtml(slide, { size, cover: false, style: 'minimal' });
+      ok(`slide ${i + 1} renders at ${size}`, html.includes('class="block"'));
       // The font guard in render/index.js refuses any page whose declared faces
       // did not parse, and it can only refuse faces the page DECLARED. A slide
       // that forgot @font-face draws Hebrew in whatever Chromium falls back to.
-      ok(`${slide.type} declares Heebo at ${size}`, html.includes("font-family:'Heebo'"));
+      ok(`slide ${i + 1} declares Heebo at ${size}`, /font-family:\s*'Heebo'/.test(html));
     }
   }
 
@@ -4235,11 +4315,8 @@ group('the itinerary slideshow — what it says, and what it promises');
   // from the plan and painted into the ask slide, which is the one place a
   // string from a data file reaches the page as something other than text.
   const evil = { ...plan, dest: { ...plan.dest, he: '<script>x</script>' } };
-  const evilHtml = renderPlanSlideHtml({ type: 'day', day: plan.days[0] }, evil, {
-    size: 'tiktok',
-    text: planText(evil),
-    giveaway: give,
-  });
+  const evilDeck = deckForSize(tripDecks(evil, { text: planText(evil), giveaway: give }), 'instagram');
+  const evilHtml = evilDeck.slides.map((s) => renderSlideHtml(s, { size: 'tiktok', style: 'minimal' })).join('');
   ok('a name cannot inject markup', !evilHtml.includes('<script>x</script>'));
 }
 

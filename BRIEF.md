@@ -247,7 +247,10 @@ The existing three kinds are untouched:
 
 A **plan** is rule 3 — show the product — reached by the one route a program
 can take. It cannot film a screen, so it draws the output instead: "ביקשתי מ-AI
-לתכנן 4 ימים ברומא", a slide per day, the total, and then the ask. It is also
+לתכנן 4 ימים ברומא", then a photograph for every stop with its time and its
+price, the total, and then the ask. It is built as a deck and rendered by the
+deck's own renderer, so it sits in the feed looking like the account that posted
+it rather than like a leaflet. It is also
 the only post here that asks for a follow outright, which is why it is the only
 one with no timer: the last slide promises five commenters a month of premium,
 and a promise made on a schedule accumulates on a schedule. `/trip` when you are

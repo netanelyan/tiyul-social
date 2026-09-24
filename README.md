@@ -38,10 +38,11 @@ shoots  rotation → angle + destination → hook + beats + caption (Claude) →
 plans   destination → itinerary (Claude) → render ×2 → ✅ → TikTok drafts + Instagram
 ```
 
-The fourth one is new and is not like the others: a **shoot** is a shot list,
-and nothing publishes it because the video does not exist until somebody films
-it. [`BRIEF.md`](BRIEF.md) is the editorial standard all four are now held to,
-and the reason a fourth kind exists at all.
+Two of these are not like the other three. A **shoot** is a shot list, and
+nothing publishes it because the video does not exist until somebody films it. A
+**plan** publishes, but only when asked: it is the one post that promises a
+stranger something. [`BRIEF.md`](BRIEF.md) is the editorial standard all five
+are held to, and the reason the last two exist at all.
 
 1. **Gather.** Twenty enabled feeds and one dataset, fetched live.
 2. **Rank.** A cheap sort on titles and summaries, because the next step costs
@@ -85,14 +86,15 @@ a hook plus beats over twenty-six seconds; that is the right shape for footage
 that cuts and the wrong one for a single held shot — see
 [`BRIEF.md`](BRIEF.md#a-clip-grew-a-middle-and-then-gave-it-back).
 
-A **plan** is an itinerary an AI wrote, drawn as a slideshow: `ביקשתי מ-AI לתכנן
-4 ימים ברומא`, then one slide per day with the stops, their times and their
-prices, then the total, then the ask. It is the only post here where the thing
-being shown is the thing being sold, and the only one with no source behind a
-single line of it — an itinerary is a proposal rather than a set of facts, which
-is why the approval card prints the whole thing instead of hiding quotes behind
-a button. `/trip` builds one, `/trip רומא 5` names the destination and the
-length. Nothing sends one unasked.
+A **plan** is an itinerary an AI wrote, drawn as a deck: `ביקשתי מ-AI לתכנן 4
+ימים ברומא`, then a photograph for every stop with its time, its price and one
+line of what to do there, then the total, then the ask. It is the only post here
+where the thing being shown is the thing being sold, and the only one with no
+source behind a single line of it — an itinerary is a proposal rather than a set
+of facts, which is why the approval card prints the whole thing instead of
+hiding quotes behind a button. TikTok gets a slide per stop and Instagram, which
+takes ten images, gets one per day. `/trip` builds one, `/trip רומא 5` names the
+destination and the length. Nothing sends one unasked.
 
 A **shoot** is a shot list. It is the one kind the bot does not make: it picks
 the destination, the angle and the shape, writes the hook, the beats and the
@@ -101,7 +103,7 @@ Telegram for you to film. The two rules that matter most —
 [`BRIEF.md`](BRIEF.md) rules 3 and 4, show the product and use real footage —
 need a camera and a voice, and no pipeline has either.
 
-**Three of the four arrive on a timer, and the difference between them is when
+**Four of the five arrive on a timer, and the difference between them is when
 you get to say no.** A card and a deck are cheap to propose and expensive to
 build, so you see them before they are made. A clip cannot be judged that way —
 "a POV of a mountain pass with a line about flying to Italy" tells you nothing
@@ -380,11 +382,27 @@ for the TikTok crop of itself.
 
 `/trip` picks a destination the feed has not just used — or takes one:
 `/trip רומא 5`. One model call returns the days, each with three or four stops
-carrying a time, a name, one line of what to do there and a price. Then the
-slides: a cover with the ask on it, one per day, the total, and the follow ask.
-Both sizes, no photographs, no measurement — the layout is fixed on purpose, so
-a run of slides reads as one screen being scrolled rather than as five different
-posts.
+carrying a time, a name, one line of what to do there, a price, and an English
+name nobody sees. Then a photograph for every stop, through the deck's own image
+step — two libraries, a vision call per shortlist, and a refusal rather than a
+fallback when none of them is the place. Then the deck's renderer draws it.
+
+**A plan is built AS a deck**, and that is the whole design. The first version
+drew its own thing — a dark branded card with a timeline rail and the wordmark
+at the top — and beside the account's real slideshows it read as a different
+account's post. So these are deck slides: full-bleed photograph, small typed
+Hebrew on the quiet part of it, no panel and no branding on TikTok, the card
+treatment on Instagram. A stop's time goes on the name line and its price leads
+the note, which is the only arrangement that fits four facts into the two lines a
+deck slide has.
+
+**The two sets are two lengths, not two crops.** TikTok takes 35 photos and gets
+one slide per stop — nineteen for a four-day trip. Instagram takes ten, so it
+gets one slide per day: the day's title, its stops named in order, its subtotal,
+over that day's first photograph. Truncating the TikTok set at ten would publish
+an itinerary that stops on day two without saying so, which is the same broken
+promise as a hook that counts three and delivers two. Both counts are printed on
+the approval card.
 
 **Nothing behind it was sourced, and the design follows from that.** A card
 quotes an authority and a deck quotes Wikidata; an itinerary names places, puts
@@ -406,11 +424,14 @@ carry the honesty instead:
 - **The approval card prints the whole itinerary.** Forty small assertions, none
   of them visible on the cover image. There is no evidence button, because there
   is no evidence — the only way to disagree with a plan is to read it.
+- **A stop that cannot get a photograph leaves.** The curator refuses rather
+  than falling back to the library's top hit, and a stop with no slide would
+  still be in the total — so the plan is rewritten around what survived and
+  every number is recomputed from it. The card names what left.
 
-**The slides are ours, not a screenshot.** They carry the account's wordmark and
-palette and never draw a control the product does not have. The post says an AI
-planned the trip, an AI did, and that is the whole claim; wiring the real product
-in is a change to `src/plan/write.js` and to the note at the top of it.
+**The post says an AI planned the trip, an AI did, and that is the whole claim.**
+It is not a screenshot and does not imply one; wiring the real product in is a
+change to `src/plan/write.js` and to the note at the top of it.
 
 **The giveaway is a promise to strangers.** The last slide asks for a follow and
 a comment and offers five of them a month of premium. The bot writes the ask,
@@ -524,11 +545,11 @@ message says when the slot frees.
 | `src/shoot/message.js` | what a shoot looks like on a phone, standing up |
 | `src/plan/write.js` | the itinerary: days, stops, times and prices, shaped and checked |
 | `src/plan/text.js` | every word on a plan that the model did not write, filled once |
-| `src/plan/candidate.js` | renders the slides and prints the whole plan for approval |
-| `src/render/planSlides.js` | the slideshow itself — the one renderer that measures nothing |
+| `src/plan/slides.js` | the itinerary expressed as deck slides — one stop, one photograph |
+| `src/plan/candidate.js` | photographs, both slide sets, and the whole plan printed for approval |
 | `src/urlLike.js` | the link pattern, where three import chains can all reach it |
 | `src/models.js` | which model does which job, and the effort-parameter guard |
-| `scripts/plan-lab.js` | build one itinerary and render it; `fake` skips the model entirely |
+| `scripts/plan-lab.js` | build one itinerary and render it; `fake` skips the model, `flat` the photos |
 | `scripts/clip-lab.js` | build a batch of clips to look at |
 | `scripts/clip-redo.js` | re-render specific clips with footage and line pinned |
 | `scripts/` | selftest, source probe, card-hosting check, one-off runs |

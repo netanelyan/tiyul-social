@@ -75,18 +75,20 @@ export function planGiveaway(plan) {
     premiumDays: g.premiumDays,
     keyword,
     titleHe: fill(g.titleHe, withKeyword),
-    stepsHe: g.stepsHe.map((s) => fill(s, withKeyword)),
+    actionHe: g.actionHe ? fill(g.actionHe, withKeyword) : null,
+    prizeHe: g.prizeHe ? fill(g.prizeHe, withKeyword) : null,
     captionHe: g.captionHe ? fill(g.captionHe, withKeyword) : null,
     footHe: g.footHe ? fill(g.footHe, withKeyword) : '',
   };
 
-  for (const s of [out.titleHe, out.captionHe, out.footHe, ...out.stepsHe]) {
+  for (const s of [out.titleHe, out.actionHe, out.prizeHe, out.captionHe, out.footHe]) {
     if (s) assertNoUrl(s, 'plans.giveaway');
   }
-  // An ask with no steps on it is a slide that says "חודש פרימיום במתנה" and
-  // does not say how. That is worse than no slide: it promises and withholds.
-  if (!out.stepsHe.length) {
-    throw new Error('plans.giveaway is on but has no stepsHe — the ask slide would promise without asking');
+  // An ask with no instruction on it is a slide that offers a month of premium
+  // and does not say how to get it. That is worse than no slide: it promises
+  // and withholds.
+  if (!out.actionHe || !out.prizeHe) {
+    throw new Error('plans.giveaway is on but has no actionHe/prizeHe — the ask slide would promise without asking');
   }
   return out;
 }

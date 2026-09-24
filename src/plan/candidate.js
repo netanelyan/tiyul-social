@@ -1,11 +1,14 @@
 import { createHash } from 'node:crypto';
-import { renderToJpeg, cardOutputDir } from '../render/index.js';
-import { renderPlanSlideHtml, planSlides, SIZES, dayTotal, stopCount, shekels } from '../render/planSlides.js';
+import { cardOutputDir } from '../render/index.js';
+import { renderDeckSize } from '../render/deck.js';
+import { SIZES } from '../render/deckTemplates.js';
+import { fillImages } from '../deck/build.js';
 import { targetsForKind } from '../publish/targets.js';
 import { overrideActive, overrideNotes } from '../override.js';
 import { assertNoUrl } from '../format.js';
 import { planCaption } from '../hashtags.js';
 import { planText, planGiveaway } from './text.js';
+import { tripDecks, deckForSize, dayTotal, allStops, shekels } from './slides.js';
 
 // A written itinerary becomes something the approval queue can carry.
 //
@@ -39,46 +42,91 @@ export function planId(plan) {
   return createHash('sha1').update(key).digest('hex').slice(0, 12);
 }
 
-/** deck-<id>-<size>-<nn>, the naming decks already use — order is load-bearing. */
-export const planSlideStem = (id, size, index) => `plan-${id}-${size}-${String(index).padStart(2, '0')}`;
-
 /** One each of the destinations that have a render size, in publish order. */
 export const sizesFor = (targets) => [
   ...new Set((targets || []).filter((t) => t === 'instagram' || t === 'tiktok')),
 ];
 
 /**
- * Render every slide of a plan at every needed size.
+ * A photograph for every stop, and one for the cover.
  *
- * Instagram takes ten images in a carousel. A plan is days + 3 slides at most,
- * so five days is the configured ceiling and eight slides the practical one —
- * but the slice is here rather than trusted, because the failure mode is
- * Instagram rejecting the whole post at publish time, hours after approval.
+ * The deck's own image step, unchanged: `fillImages` searches two libraries,
+ * judges the thumbnails with a vision call — "is this actually the Colosseum" —
+ * and refuses rather than falling back to the library's top hit. That refusal
+ * is the reason this is worth the money. A mislabelled slide costs more than a
+ * missing one, and an itinerary is nothing but labelled places.
+ *
+ * SO A STOP CAN LOSE ITS PICTURE AND LEAVE. The plan and the slideshow have to
+ * be the same thing — a stop with no slide would still be in the total, and the
+ * arithmetic on the last slide would disagree with the slides above it — so the
+ * plan is rewritten around what survived and the totals are recomputed from it.
+ *
+ * It is also the slowest step in the build by a wide margin: up to three
+ * searches per stop across two libraries, each ending in a vision call, and a
+ * four-day plan has sixteen stops. `onProgress` is how the bot says so while it
+ * happens, because a working build and a hung one look identical from outside.
+ */
+export async function fillPlanPhotos(plan, { stopsMin = 0, onProgress = null } = {}) {
+  const cover = {};
+  // The stop objects themselves, so fillImages writes `image` onto the plan
+  // rather than onto copies of it. `about` is deliberately empty: these are
+  // named landmarks, and "Colosseum" is a better query than "Colosseum city
+  // landmark" — see cinematicQueries.
+  const stops = plan.days.flatMap((d) => d.stops);
+  await fillImages(stops, plan.dest.en, { want: stops.length, cover, about: '', onProgress });
+
+  const missing = [];
+  const days = [];
+  for (const day of plan.days) {
+    const kept = day.stops.filter((s) => s.image?.src);
+    for (const s of day.stops) if (!s.image?.src) missing.push(`${s.nameHe} — no photograph`);
+    if (kept.length < Math.max(1, stopsMin)) {
+      missing.push(`יום ${day.n}: ${kept.length} stop(s) with a photograph, needs ${Math.max(1, stopsMin)}`);
+      continue;
+    }
+    days.push({ ...day, stops: kept });
+  }
+
+  return {
+    ...plan,
+    days: days.map((d, i) => ({ ...d, n: i + 1 })),
+    coverImage: cover.image || null,
+    total: days.reduce((sum, d) => sum + dayTotal(d), 0),
+    dropped: [...(plan.dropped || []), ...missing],
+  };
+}
+
+/**
+ * Render both sets.
+ *
+ * TWO SETS, NOT TWO CROPS, and the count is why. TikTok takes 35 photos and
+ * gets one slide per stop; Instagram takes 10 and gets one per day. Both are
+ * built from the same photographs and the same plan — see the note on
+ * `daySlide` in ./slides.js.
+ *
+ * The rendering itself is the deck's, called on a deck-shaped object: it
+ * measures each photograph, chooses the band and the ink, and draws TikTok's
+ * unbranded slide and Instagram's card from the same words. Nothing in this
+ * module draws anything.
  */
 export async function renderPlan(plan, { sizes = ['instagram', 'tiktok'], outDir = cardOutputDir(), text, giveaway } = {}) {
   const want = sizes.filter((s) => SIZES[s]);
   if (!want.length) throw new Error(`renderPlan: no known size in [${sizes.join(', ')}]`);
 
-  const slides = planSlides(plan, { giveaway });
+  const decks = tripDecks(plan, { text, giveaway });
   const out = {};
-
   for (const size of want) {
-    const rendered = [];
-    for (const [i, slide] of slides.entries()) {
-      const html = renderPlanSlideHtml(slide, plan, { size, text, giveaway });
-      rendered.push({
-        ...(await renderToJpeg(html, {
-          stem: planSlideStem(plan.id, size, i + 1),
-          width: SIZES[size].w,
-          height: SIZES[size].h,
-          outDir,
-        })),
-        index: i + 1,
-        type: slide.type,
-        cover: i === 0,
-      });
+    const deck = deckForSize(decks, size);
+    // The bound Instagram enforces at publish time, checked here where it can
+    // still be acted on. A carousel over ten is rejected outright, hours after
+    // the post was approved and by an error that names none of this.
+    if (size === 'instagram' && deck.slides.length + 1 > 10) {
+      throw new Error(
+        `the Instagram set is ${deck.slides.length + 1} slides and a carousel takes 10 — ` +
+          'shorten the trip or lower plans.daysMax'
+      );
     }
-    out[size] = rendered;
+    out[size] = await renderDeckSize(deck, { size, outDir });
   }
 
   return {
@@ -91,6 +139,7 @@ export async function renderPlan(plan, { sizes = ['instagram', 'tiktok'], outDir
       tiktok: (out.tiktok || []).map((s) => s.url),
       instagram: (out.instagram || []).map((s) => s.url),
     },
+    slideCounts: Object.fromEntries(want.map((s) => [s, out[s].length])),
   };
 }
 
@@ -101,9 +150,16 @@ export async function renderPlan(plan, { sizes = ['instagram', 'tiktok'], outDir
  * a deck render last: it is the step that costs a browser, and a plan that lost
  * a day to its shape check should not have paid for one.
  */
-export async function toPlanCandidate(plan, { targets = targetsForKind('plan'), tiktokDraft = true, outDir = cardOutputDir() } = {}) {
-  const id = planId(plan);
-  const withId = { ...plan, id };
+export async function toPlanCandidate(plan, { targets = targetsForKind('plan'), tiktokDraft = true, outDir = cardOutputDir(), photos = true, stopsMin = 0, onProgress = null } = {}) {
+  // Photographs first, because they can still change the plan: a stop whose
+  // picture could not be found or could not be verified leaves, and everything
+  // downstream — the id, the totals, the caption, the card — has to describe
+  // what actually survived. `photos: false` is for the lab, where the layout is
+  // the question and the libraries are not.
+  const shot = photos ? await fillPlanPhotos(plan, { stopsMin, onProgress }) : plan;
+
+  const id = planId(shot);
+  const withId = { ...shot, id };
   const text = planText(withId);
   const giveaway = planGiveaway(withId);
 
@@ -126,6 +182,22 @@ export async function toPlanCandidate(plan, { targets = targetsForKind('plan'), 
     // would be a place a future kind could be forgotten.
     deck: {
       ...withId,
+      // The photographs go, now that they are baked into the JPEGs.
+      //
+      // The same decision toDeckCandidate makes and for the same reason: each
+      // image arrives as a base64 data URI, a staged candidate lives in
+      // data/store.json, and store.js rewrites that whole file every time
+      // anything is marked seen. A sixteen-stop itinerary awaiting approval
+      // would re-serialise twenty megabytes of base64 on every save.
+      days: withId.days.map((d) => ({
+        ...d,
+        stops: d.stops.map((s) =>
+          s.image ? { ...s, image: { provenance: s.image.provenance, credit: s.image.credit || null } } : s
+        ),
+      })),
+      coverImage: withId.coverImage
+        ? { provenance: withId.coverImage.provenance, credit: withId.coverImage.credit || null }
+        : null,
       ...rendered,
       // `where` and `category` are the two fields the published ledger reads off
       // a slideshow — bot.js writes `topic: deckTopic(cand.deck)` and
@@ -138,18 +210,24 @@ export async function toPlanCandidate(plan, { targets = targetsForKind('plan'), 
       category: 'מסלול AI',
       // What the slides say, kept beside them so the approval card can print the
       // plan without re-deriving any of it.
-      stops: stopCount(plan.days),
-      dayTotals: plan.days.map((d) => dayTotal(d)),
+      stops: allStops(withId).length,
+      dayTotals: withId.days.map((d) => dayTotal(d)),
     },
     plan: {
-      dest: plan.dest,
-      days: plan.days.length,
-      stops: stopCount(plan.days),
-      total: plan.total,
-      // Which lines the shape check dropped. Printed on the card, because a
-      // day that arrived with four stops and shows three is the difference
-      // between an itinerary and a shortened one.
-      dropped: plan.dropped || [],
+      dest: withId.dest,
+      days: withId.days.length,
+      stops: allStops(withId).length,
+      total: withId.total,
+      // How many slides each platform actually got. They differ by design —
+      // TikTok one per stop, Instagram one per day — and the difference is the
+      // kind of thing that should be read on the card rather than discovered in
+      // the feed.
+      slides: rendered.slideCounts,
+      // Which lines the shape check dropped, and which stops lost their
+      // photograph. Printed on the card, because a day that arrived with four
+      // stops and shows three is the difference between an itinerary and a
+      // shortened one.
+      dropped: withId.dropped || [],
       giveaway: giveaway
         ? { winners: giveaway.winners, premiumDays: giveaway.premiumDays, keyword: giveaway.keyword }
         : null,
@@ -203,8 +281,15 @@ export function planApprovalMessage(cand) {
   const deck = cand.deck || {};
   const days = deck.days || [];
 
+  // The two counts, both of them, because they differ by design and the album
+  // above this message only shows one of them. Somebody who sees seven pictures
+  // and reads "19 slides" should be able to tell which is which without asking.
+  const counts = Object.entries(p.slides || {})
+    .map(([size, n]) => `${size === 'tiktok' ? 'טיקטוק' : 'אינסטגרם'} ${n}`)
+    .join(' · ');
+
   const lines = [
-    `🗺️ מסלול AI · ${p.dest?.he || '—'} · ${p.days} ימים · ${deck.tiktok?.length || deck.instagram?.length || 0} שקופיות`,
+    `🗺️ מסלול AI · ${p.dest?.he || '—'} · ${p.days} ימים · ${counts || '—'} שקופיות`,
     '',
     `✍️ ${cand.headline}`,
     '',

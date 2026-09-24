@@ -98,9 +98,13 @@ const SYSTEM = `אתה מתכנן מסלול טיול קצר בעברית, לז�
 - אל תכתוב סכום כולל בשום מקום. הוא מחושב מהעצירות, לא נכתב.
 
 שפה:
-- עברית בלבד בכל שדה. שם לועזי נכתב בעברית: "טרסטוורה", "קולוסיאום".
+- עברית בכל שדה שמופיע על המסך. שם לועזי נכתב בעברית: "טרסטוורה", "קולוסיאום".
+- nameEn הוא היוצא מן הכלל, והוא לא מוצג לצופה: השם באנגלית שמשמש לחיפוש
+  תצלום של המקום. כתוב אותו כמו שצלם היה מתייג אותו — "Colosseum",
+  "Trastevere", "Vatican Museums". בלי מילות תיאור ובלי שם המדינה.
 - בלי אימוג׳י, האשטג, קישור, שם מותג, קריאה לפעולה.
-- שורת "מה עושים" — עד 9 מילים, משפט שלם שנגמר.
+- שורת "מה עושים" — עד 6 מילים, משפט שלם שנגמר. היא נדפסת בשורה אחת קטנה
+  מתחת לשם על גבי תצלום, ומשפט ארוך יותר נשבר לשלוש שורות על התמונה.
 
 החזר JSON בלבד.`;
 
@@ -130,10 +134,14 @@ const SCHEMA = {
               properties: {
                 timeHe: { type: 'string', description: 'שעה משוערת, בפורמט 09:30' },
                 nameHe: { type: 'string', description: 'שם המקום בעברית' },
+                nameEn: {
+                  type: 'string',
+                  description: 'The same place in English, as a photographer would label it: "Colosseum", "Trastevere"',
+                },
                 noteHe: { type: 'string', description: 'מה עושים שם — משפט אחד קצר' },
                 costIls: { type: 'integer', description: 'מחיר לאדם בשקלים, מעוגל. 0 אם חינם' },
               },
-              required: ['timeHe', 'nameHe', 'noteHe', 'costIls'],
+              required: ['timeHe', 'nameHe', 'nameEn', 'noteHe', 'costIls'],
             },
           },
         },
@@ -191,9 +199,21 @@ export function shapePlan(raw, { days, stopsMin, stopsMax }) {
     const stops = [];
     for (const stop of (Array.isArray(day.stops) ? day.stops : []).slice(0, stopsMax)) {
       const nameBad = badString(stop?.nameHe, { maxWords: 6 });
-      const noteBad = badString(stop?.noteHe, { maxWords: 9 });
+      // Six words, because the note is printed under the name ON A PHOTOGRAPH
+      // in the deck's small type. A seventh word is a third line across the
+      // picture, which is the thing that layout exists to avoid.
+      const noteBad = badString(stop?.noteHe, { maxWords: 6 });
       if (nameBad || noteBad) {
         dropped.push(`${stop?.nameHe || '(ללא שם)'} — ${nameBad || noteBad}`);
+        continue;
+      }
+      // The English name is not printed anywhere — it is what the photo search
+      // is run on, and a stop with no usable one has no picture, which under
+      // the deck's rule means no slide. Dropping it here rather than at the
+      // image step keeps the plan and the slideshow the same thing.
+      const nameEn = String(stop?.nameEn || '').trim();
+      if (!/[A-Za-z]{3}/.test(nameEn)) {
+        dropped.push(`${stop.nameHe} — no English name to search a photograph on`);
         continue;
       }
       // A cost that is not a number is the field being left empty, which is
@@ -209,7 +229,13 @@ export function shapePlan(raw, { days, stopsMin, stopsMax }) {
         // where a time should be makes the whole column look invented.
         timeHe: TIME.test(String(stop.timeHe || '').trim()) ? String(stop.timeHe).trim() : null,
         nameHe: String(stop.nameHe).trim(),
-        noteHe: String(stop.noteHe).trim(),
+        nameEn,
+        // The full stop comes off. The note is printed as a parenthesised
+        // fragment under the name — "(75 ₪ · נכנסים עם כרטיס מוזמן מראש.)" — and
+        // a sentence-ending period inside brackets reads as a typo rather than
+        // as grammar. Asking the prompt for it would be one more rule to obey
+        // at temperature; taking it off here always works.
+        noteHe: String(stop.noteHe).trim().replace(/\s*\.$/, ''),
         costIls: cost,
       });
     }

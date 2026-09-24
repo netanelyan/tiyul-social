@@ -384,10 +384,11 @@ function plans(raw) {
   // this block can reach a published caption or a rendered slide.
   for (const [where, s] of [
     ['giveaway.captionHe', g.captionHe],
+    ['giveaway.actionHe', g.actionHe],
+    ['giveaway.prizeHe', g.prizeHe],
     ['giveaway.titleHe', g.titleHe],
     ['hookHe', raw.hookHe],
     ['askHe', raw.askHe],
-    ...list(g.stepsHe).map((step, i) => [`giveaway.stepsHe[${i}]`, step]),
   ]) {
     if (s && URL_LIKE.test(String(s))) {
       throw new Error(`post-config.json: plans.${where} contains a URL — the link lives in the bio, the post says so in words`);
@@ -423,7 +424,12 @@ function plans(raw) {
       premiumDays: Math.max(1, Math.round(num(g.premiumDays, 30))),
       keywordHe: String(g.keywordHe || '{dest}'),
       titleHe: String(g.titleHe || 'חודש פרימיום במתנה'),
-      stepsHe: list(g.stepsHe),
+      // The ask slide's two lines. A deck slide has a name and one short note
+      // and nothing else, so the instruction goes on the name and the prize
+      // goes under it — see askSlide in src/plan/slides.js. One string for both
+      // wrapped to three lines and arrived as a paragraph in brackets.
+      actionHe: String(g.actionHe || 'עקבו ותגיבו "{keyword}"').trim(),
+      prizeHe: String(g.prizeHe || '{winners} מכם מקבלים {premiumDays} יום פרימיום').trim(),
       captionHe: String(g.captionHe || '').trim(),
       footHe: String(g.footHe || '').trim(),
     },

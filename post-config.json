@@ -1004,11 +1004,8 @@
       "premiumDays": 30,
       "keywordHe": "{dest}",
       "titleHe": "חודש פרימיום במתנה",
-      "stepsHe": [
-        "עקבו אחרינו",
-        "תגיבו \"{keyword}\"",
-        "{winners} מכם מקבלים {premiumDays} יום פרימיום עלינו"
-      ],
+      "actionHe": "עקבו ותגיבו \"{keyword}\"",
+      "prizeHe": "{winners} מכם מקבלים {premiumDays} יום פרימיום",
       "captionHe": "עקבו ותגיבו \"{keyword}\" — {winners} מכם מקבלים {premiumDays} יום פרימיום עלינו",
       "footHe": "הזוכים ייבחרו מהתגובות",
       "_comment": [
