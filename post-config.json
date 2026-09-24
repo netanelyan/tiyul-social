@@ -3,7 +3,7 @@
     "How a slideshow post is dressed: the caption line, the hashtags, the type on",
     "the slides, and which destinations the pipeline leans toward.",
     "",
-    "Everything here is editorial rather than structural — it is the set of",
+    "Everything here is editorial rather than structural, it is the set of",
     "decisions that get re-litigated after looking at a week of numbers, so it",
     "lives in one file you can edit without reading any code. src/postConfig.js",
     "reads it, validates it, and is the only module that knows this path.",
@@ -26,17 +26,17 @@
       "carrying one to the approval queue, so a line added here with a domain in",
       "it fails loudly at build time rather than being published.",
       "",
-      "What is restored is the pointer with no domain in it — `הלינק בביו` — at",
+      "What is restored is the pointer with no domain in it, `הלינק בביו`, at",
       "the END of the caption, on `ctaShare` of posts rather than on all of them.",
       "The brief's rule is 'a soft one at the end', and a CTA on every single",
       "post is not soft; it is the whole caption wearing a different hat.",
       "",
       "`questions` is the other half of the brief's caption shape: one short line",
-      "plus a question. The question is what a comment is an answer TO — a",
+      "plus a question. The question is what a comment is an answer TO, a",
       "caption that states and stops gives nobody anything to type."
     ],
     "ctaShare": 0.5,
-    "cta": "תכננו טיול כזה בחינם — הלינק בביו",
+    "cta": "תכננו טיול כזה בחינם, הלינק בביו",
     "questions": [
       "לאן אתם טסים הבא?",
       "מי כבר היה שם?",
@@ -72,19 +72,19 @@
   },
   "hashtags": {
     "_comment": [
-      "Exactly `broadCount + nicheCount` tags under every post — five, by default.",
+      "Exactly `broadCount + nicheCount` tags under every post, five, by default.",
       "",
       "Broad tags buy the first impressions and niche tags decide who the post is",
       "then shown to, so the split matters more than the total. Two and three is",
       "the mix this account is testing.",
       "",
       "`useDestination` spends ONE of the niche slots on a tag generated from the",
-      "deck's own country — #פורטוגל on a Portugal deck — rather than adding a",
+      "deck's own country, #פורטוגל on a Portugal deck, rather than adding a",
       "sixth tag. The count stays exactly five either way; when the deck's country",
       "cannot be resolved the slot falls back to the niche pool.",
       "",
       "#fyp AND #foryou WERE REMOVED. Five is inside the brief's 3-5, so the",
-      "count did not have to change — what changed is that two of the five were",
+      "count did not have to change, what changed is that two of the five were",
       "English words on a Hebrew post, and they were the two doing the least. A",
       "broad tag is supposed to buy the first impressions from a POOL this post",
       "could plausibly win in; #fyp is every video on the application, which is",
@@ -114,7 +114,7 @@
   },
   "overlay": {
     "_comment": [
-      "The type on a TikTok slide. Small, light, off to one side — a caption",
+      "The type on a TikTok slide. Small, light, off to one side, a caption",
       "somebody typed on their own photograph, not a graphic laid over stock.",
       "",
       "`sizePct` is measured against `sizeBasis`, and the basis is the frame's",
@@ -123,7 +123,7 @@
       "The number was arrived at twice. The brief said '~3% of canvas height",
       "(roughly 30px)', and those two do not agree: 3% of 1920 is 58px and 3% of",
       "1080 is 32px. 32 was built first, on the reading that 'roughly 30px' was",
-      "the firmer half of the sentence — and it shipped slides whose names could",
+      "the firmer half of the sentence, and it shipped slides whose names could",
       "not be read on a busy street photograph. 49px is where it landed after",
       "looking at four renders of the same hard frame side by side, and it is",
       "also, independently, about what the reference accounts use: lucyysarchive",
@@ -134,9 +134,9 @@
       "no stated basis is not a specification.",
       "",
       "`bands` are the vertical thirds the text is allowed into, as fractions of",
-      "the frame, and `x` pins it to the left. The placement search still runs —",
+      "the frame, and `x` pins it to the left. The placement search still runs, ",
       "it decides which of the two bands the photograph can actually carry, and",
-      "what colour the type has to be — but it can no longer land in the middle.",
+      "what colour the type has to be, but it can no longer land in the middle.",
       "",
       "`assist` is the soft elliptical wash that fades in only when the measured",
       "contrast was not enough on its own. It is not a background box and cannot",
@@ -172,14 +172,14 @@
         "sitting on quiet sky. Applied unconditionally it is also how a slide",
         "ships illegible: the previous version of this file set exactly those",
         "four numbers as fixed values, and a place name landing where a dark",
-        "planter met bright paving — about 2:1 contrast — had nothing left to",
+        "planter met bright paving, about 2:1 contrast, had nothing left to",
         "defend it. Four reductions at once, and the one mechanism that used to",
         "adapt had been turned into a constant at the same time.",
         "",
         "So each is now a floor that rises with the shortfall render/photo.js",
         "measured for THIS photograph. On a clean frame nothing here fires and",
         "the slide looks exactly as specified. On a hard one the type thickens,",
-        "goes fully opaque and gets a real shadow under it — which is what the",
+        "goes fully opaque and gets a real shadow under it, which is what the",
         "reference accounts do too; their type is light because their frames are",
         "chosen, not because light type always works.",
         "",
@@ -195,14 +195,14 @@
       "Short vertical videos: a stock clip with one line of Hebrew burned onto it.",
       "",
       "A different format from a deck, and the difference is what the text DOES.",
-      "A slide labels the picture — 'סקוגאפוס, איסלנד'. A clip's line does not",
+      "A slide labels the picture, 'סקוגאפוס, איסלנד'. A clip's line does not",
       "describe the footage at all: it names a mundane Israeli moment and lets the",
       "video be the daydream that answers it. 'על מה אני חושב בשיעור מתמטיקה' over",
       "a forest trail is the whole format.",
       "",
       "That is also why this format does not fight verify.js. A line that makes no",
       "claim about WHERE the footage was shot has nothing to source, so a generic",
-      "trail can carry it honestly — where 'מפלים באיסלנד' over the same clip",
+      "trail can carry it honestly, where 'מפלים באיסלנד' over the same clip",
       "would be a place claim with a stock uploader's title as its only evidence."
     ],
     "hooks": {
@@ -273,7 +273,7 @@
           "he": "אני, אתה, טיסה?",
           "weight": 2,
           "needsPlace": true,
-          "desc": "\"אני, אתה, טיסה ל<מדינה>?\" — הזמנה קצרה בלי להזמין. כשאין מדינה: \"אני, אתה, טיול בהרים?\"",
+          "desc": "\"אני, אתה, טיסה ל<מדינה>?\": הזמנה קצרה בלי להזמין. כשאין מדינה: \"אני, אתה, טיול בהרים?\"",
           "examples": [
             "אני, אתה, טיסה לפרו?",
             "אני, אתה, טיול בהרים?"
@@ -285,7 +285,7 @@
           "id": "top",
           "he": "דירוג מוגזם",
           "weight": 1,
-          "desc": "טענת דירוג מוגזמת ובטוחה בעצמה. התוכן הכי בנאלי שאפשר — בלי הברקות.",
+          "desc": "טענת דירוג מוגזמת ובטוחה בעצמה. התוכן הכי בנאלי שאפשר: בלי הברקות.",
           "examples": [
             "חייב להיות בטופ 3 מסלולים שקיימים",
             "חייב להיות בטופ 3 דברים שעשיתי השבוע"
@@ -295,7 +295,7 @@
           "id": "someones",
           "he": "אצל מישהו זו שגרה",
           "weight": 1,
-          "desc": "\"יש אנשים ש...\" — הקנאה היבשה במי שזה היומיום שלו. עוגן קונקרטי: עבודה, בוקר.",
+          "desc": "\"יש אנשים ש...\": הקנאה היבשה במי שזה היומיום שלו. עוגן קונקרטי: עבודה, בוקר.",
           "examples": [
             "יש אנשים שזה המסלול שלהם לעבודה"
           ]
@@ -304,7 +304,7 @@
           "id": "fact",
           "he": "העובדה ש",
           "weight": 1,
-          "desc": "\"העובדה ש...\" — עובדה פשוטה שנגמרת בלי מסקנה. בלי רעיונות מומצאים.",
+          "desc": "\"העובדה ש...\": עובדה פשוטה שנגמרת בלי מסקנה. בלי רעיונות מומצאים.",
           "examples": [
             "העובדה שהשביל הזה לא עולה כסף"
           ]
@@ -313,7 +313,7 @@
           "id": "nobody",
           "he": "אף אחד לא מדבר",
           "weight": 1,
-          "desc": "\"אף אחד לא מדבר על...\" — רק כשה-X באמת שווה דיבור ולא מדובר. השקט עובד; צל, קול מים, כמה ריק — לא.",
+          "desc": "\"אף אחד לא מדבר על...\": רק כשה-X באמת שווה דיבור ולא מדובר. השקט עובד; צל, קול מים, כמה ריק, לא.",
           "examples": [
             "אף אחד לא מדבר על השקט הזה"
           ]
@@ -322,7 +322,7 @@
           "id": "reminder",
           "he": "תזכורת",
           "weight": 1,
-          "desc": "\"תזכורת ש...\" — עובדה פשוטה שקיימת. אסור להצליב עם מושגים ממוסדים (שעות פתיחה, שעות עבודה).",
+          "desc": "\"תזכורת ש...\": עובדה פשוטה שקיימת. אסור להצליב עם מושגים ממוסדים (שעות פתיחה, שעות עבודה).",
           "examples": [
             "תזכורת שמקומות כאלה קיימים כל השנה"
           ]
@@ -331,7 +331,7 @@
           "id": "gt",
           "he": "השוואה עם >",
           "weight": 1,
-          "desc": "X > Y — קצר ופסקני. בלי חשבונאות (עשר דקות מול יום חופש) — השוואה ישירה בלבד.",
+          "desc": "X > Y: קצר ופסקני. בלי חשבונאות (עשר דקות מול יום חופש), השוואה ישירה בלבד.",
           "examples": [
             "מסלול כזה > כל יום בעיר"
           ]
@@ -340,7 +340,7 @@
           "id": "question",
           "he": "שאלה רטורית",
           "weight": 1,
-          "desc": "שאלה שהיא התפעלות. בלי מושגים מומצאים — רק פליאה ישירה.",
+          "desc": "שאלה שהיא התפעלות. בלי מושגים מומצאים: רק פליאה ישירה.",
           "examples": [
             "למה אף אחד לא סיפר לי על השביל הזה",
             "איך לא שמעתי על המסלול הזה עד היום"
@@ -464,7 +464,7 @@
       "maxDuration": 30,
       "_spectator_comment": [
         "A person named in the title is a person in the FRAME, which means somebody is",
-        "standing back filming them — and that is a stock lifestyle shot however good",
+        "standing back filming them, and that is a stock lifestyle shot however good",
         "the scenery behind it is.",
         "",
         "This list is the correction for the filter's first version, which had only",
@@ -476,7 +476,7 @@
         "",
         "Matched as WHOLE WORDS, which is load-bearing. \"hiker\" is a person being",
         "filmed and \"hiking\" is the activity, and the prefix matching used for prefer",
-        "cannot tell them apart — that exact pair is what got through.",
+        "cannot tell them apart, that exact pair is what got through.",
         "",
         "A penalty rather than a veto, so an explicit POV marker can outrun it: \"pov",
         "hiker on a ridge\" is a participant and should survive."
@@ -623,7 +623,7 @@
         "shadow and the wash, both of which respond to what render/photo.js measured.",
         "",
         "One colour, #FFF4B3, chosen by the owner. The palette used to hold white too",
-        "and a third of posts drew it — white was rejected on sight twice.",
+        "and a third of posts drew it, white was rejected on sight twice.",
         "",
         "Position is NOT fixed: xs offers three columns and the measurement picks the",
         "one whose sky is actually empty. Pinning it to the centre put text on a cliff",
@@ -670,7 +670,7 @@
         "professional.",
         "",
         "At 0.72 the block is 777px on a 1080px frame, and on a picture whose subject",
-        "stands in the middle — a tower, a cliff, a waterfall — NO position fits it on",
+        "stands in the middle, a tower, a cliff, a waterfall, NO position fits it on",
         "clean sky. The placement search then picks the least-bad straddle and the line",
         "runs from sky onto rock, which is the single most amateur-looking thing these",
         "clips did.",
@@ -720,7 +720,7 @@
         "The description is Hebrew all the way through, including the names that",
         "are awkward to write, so the judge is asked for a Hebrew spelling",
         "alongside every site it identifies. That works, but a transliteration is",
-        "a judgement call and the model does not make the same one every time —",
+        "a judgement call and the model does not make the same one every time, ",
         "and the same valley spelled two ways across two posts reads worse than",
         "either spelling does on its own.",
         "",
@@ -763,8 +763,8 @@
       "A SHOOT IS A SHOT LIST, NOT A POST. Nothing here is ever published by the",
       "bot, because the video does not exist until somebody films it.",
       "",
-      "This is the honest half of BRIEF.md. Rules 3 and 4 — show the product, use",
-      "real footage — need a camera, a voice and a screen, and no pipeline has",
+      "This is the honest half of BRIEF.md. Rules 3 and 4, show the product, use",
+      "real footage, need a camera, a voice and a screen, and no pipeline has",
       "any of those. What a pipeline can do is everything around them: choose the",
       "destination and the angle, rotate the shape so two of a kind never land",
       "back to back, write the hook and the beats and the caption and the tags,",
@@ -776,16 +776,16 @@
       "500-970 views a video on hand-held product footage with none of this",
       "project's measured typography behind it, while @tiyulplus decayed 672 → 33",
       "on stock. The variable is not production value. It is whether something",
-      "real is happening in the frame, and that cannot be automated — only",
+      "real is happening in the frame, and that cannot be automated, only",
       "scheduled, briefed, and made easy enough to actually do."
     ],
     "perDay": 1,
     "backlogMax": 3,
     "lengthSeconds": [15, 35],
-    "cta": "תכננו טיול כזה בחינם — הלינק בביו",
+    "cta": "תכננו טיול כזה בחינם, הלינק בביו",
     "_productShare_comment": [
       "Rule 3 says the product appears in at least half the videos. A weighted",
-      "rotation alone does not guarantee that — weights are a tendency and a run",
+      "rotation alone does not guarantee that, weights are a tendency and a run",
       "of five non-product shoots is well within normal for any weighting.",
       "",
       "So this is enforced rather than weighted: src/shoot/rotation.js counts the",
@@ -806,23 +806,23 @@
       "writer might remember."
     ],
     "angles": [
-      "טיסה ישירה מנתב״ג — כמה זמן, איזו חברה",
+      "טיסה ישירה מנתב״ג: כמה זמן, איזו חברה",
       "אוכל כשר, ומה עושים כשאין",
-      "שבת ביעד — מה פתוח ומה נסגר",
-      "ויזה לדרכון ישראלי — צריך או לא",
+      "שבת ביעד: מה פתוח ומה נסגר",
+      "ויזה לדרכון ישראלי: צריך או לא",
       "בטיחות, ומה באמת כתוב באזהרות המסע",
       "כמה זה עולה בשקלים, לא במטבע המקומי",
-      "חופשת סוכות — מזג אוויר ועומס",
-      "חנוכה בחו״ל — מה פתוח בעונה",
-      "החופש הגדול — איפה לא יהיה בלתי נסבל",
-      "טיול עם ילדים — מרחקים ותחבורה",
-      "סופ״ש קצר — מה נכנס בשלושה ימים",
+      "חופשת סוכות: מזג אוויר ועומס",
+      "חנוכה בחו״ל: מה פתוח בעונה",
+      "החופש הגדול: איפה לא יהיה בלתי נסבל",
+      "טיול עם ילדים: מרחקים ותחבורה",
+      "סופ״ש קצר: מה נכנס בשלושה ימים",
       "מה אפשר לעשות בלי לשכור רכב"
     ],
     "_series_comment": [
       "Rule 7: a reason to follow.",
       "",
-      "A series is the cheapest one there is — 'חלק 1 מתוך 3' tells a viewer that",
+      "A series is the cheapest one there is, 'חלק 1 מתוך 3' tells a viewer that",
       "something specific is coming and that the way to get it is to follow. The",
       "bot holds the state, because the whole point is that part 2 arrives and a",
       "series that stops at part 1 is worse than no series at all.",
@@ -856,7 +856,7 @@
         ],
         "shots": [
           "פנים למצלמה, 2 שניות, אומרים את ההוק בקול",
-          "ביט לכל טעות — קטע וידאו אמיתי או צילום מסך של מה שמתכוונים אליו",
+          "ביט לכל טעות: קטע וידאו אמיתי או צילום מסך של מה שמתכוונים אליו",
           "סיום: השאלה, ואז הקריאה לפעולה"
         ]
       },
@@ -869,12 +869,12 @@
         "allowsPrice": true,
         "desc": "טיול אחד, מפורק לסעיפים בשקלים. הסכום בהוק חייב להיות הסכום שהביטים מסתכמים אליו.",
         "hookExamples": [
-          "טיול 5 ימים ברומא ב-2,000 ₪ — ככה",
-          "4 ימים בגאורגיה ב-1,500 ₪ — ככה"
+          "טיול 5 ימים ברומא ב-2,000 ₪, ככה",
+          "4 ימים בגאורגיה ב-1,500 ₪, ככה"
         ],
         "shots": [
           "פנים למצלמה עם הסכום הכולל, 2 שניות",
-          "ביט לכל סעיף — צילום מסך של ההזמנה או של המחיר האמיתי",
+          "ביט לכל סעיף: צילום מסך של ההזמנה או של המחיר האמיתי",
           "סיום על הסכום הכולל שוב, ואז השאלה"
         ]
       },
@@ -887,11 +887,11 @@
         "desc": "הקלטת מסך של Tiyul+ בונה מסלול בעברית. מקלידים בקשה, מקבלים תוכנית, מראים את התוצאה. הפריים הוא המוצר.",
         "hookExamples": [
           "ביקשתי מ-AI לתכנן לי 4 ימים בליסבון",
-          "ביקשתי מ-AI טיול עם ילדים ביוון — זה מה שחזר"
+          "ביקשתי מ-AI טיול עם ילדים ביוון, זה מה שחזר"
         ],
         "shots": [
           "הקלטת מסך: הקלדת הבקשה בעברית, מהתו הראשון",
-          "התוכנית חוזרת — מחזיקים על היום הראשון מספיק זמן כדי לקרוא",
+          "התוכנית חוזרת: מחזיקים על היום הראשון מספיק זמן כדי לקרוא",
           "גוללים ליום שמישהו לא היה חושב עליו לבד, ומצביעים עליו",
           "סיום: השאלה, ואז הקריאה לפעולה"
         ]
@@ -902,14 +902,14 @@
         "he": "רשימת יעדים",
         "weight": 2,
         "needsProduct": false,
-        "desc": "רשימה מצומצמת בתנאי אחד ברור — בלי ויזה, עד 4 שעות טיסה, מתחת לסכום. התנאי הוא מה שהופך רשימה לפוסט.",
+        "desc": "רשימה מצומצמת בתנאי אחד ברור: בלי ויזה, עד 4 שעות טיסה, מתחת לסכום. התנאי הוא מה שהופך רשימה לפוסט.",
         "hookExamples": [
           "5 יעדים לאוקטובר בלי ויזה",
           "4 יעדים עד 4 שעות טיסה מתל אביב"
         ],
         "shots": [
           "פנים למצלמה עם ההוק, 2 שניות",
-          "ביט ליעד — צילום אמיתי משם אם יש, אחרת B-roll מתחת לטקסט",
+          "ביט ליעד: צילום אמיתי משם אם יש, אחרת B-roll מתחת לטקסט",
           "סיום: השאלה"
         ]
       },
@@ -921,12 +921,12 @@
         "needsProduct": false,
         "desc": "אמונה רווחת אחת, ומה באמת קורה. או מקום שלא מגיעים אליו וכדאי.",
         "hookExamples": [
-          "כולם חושבים ששווייץ יקרה מדי — האמת אחרת",
+          "כולם חושבים ששווייץ יקרה מדי, האמת אחרת",
           "המקום בפורטוגל שאף ישראלי לא מגיע אליו"
         ],
         "shots": [
           "פנים למצלמה עם האמונה, 2 שניות",
-          "ביט לכל עובדה שסותרת — מספר על המסך, לא רק בקול",
+          "ביט לכל עובדה שסותרת: מספר על המסך, לא רק בקול",
           "סיום: השאלה"
         ]
       }
@@ -936,7 +936,7 @@
     "_comment": [
       "THE FOURTH PUBLISHED KIND: an itinerary an AI wrote, shown as a slideshow.",
       "",
-      "\"ביקשתי מ-AI לתכנן לי 4 ימים ברומא — הנה מה שיצא\", and then the plan",
+      "\"ביקשתי מ-AI לתכנן לי 4 ימים ברומא, הנה מה שיצא\", and then the plan",
       "itself, one slide per day, drawn as the product rather than as another",
       "photograph with a caption on it. It is the only post this account makes",
       "where the thing being shown IS the thing being sold, which is rule 3 of the",
@@ -987,11 +987,11 @@
     "dayLabelHe": "יום {n}",
     "totalLabelHe": "הכל ביחד",
     "perPersonHe": "לאדם",
-    "totalNoteHe": "כניסות ואטרקציות בלבד — בלי טיסה ולינה",
+    "totalNoteHe": "כניסות ואטרקציות בלבד, בלי טיסה ולינה",
     "_totalNote_comment": [
       "THIS LINE IS NOT DECORATION. The total on the slide is the sum of the stop",
       "prices and nothing else, so a viewer reading \"2,340 ₪ ל-4 ימים ברומא\"",
-      "would otherwise be reading it as the price of the trip — which it is not,",
+      "would otherwise be reading it as the price of the trip, which it is not,",
       "by an order of magnitude once a flight and four nights are in it.",
       "",
       "A number that invites the wrong reading is the same defect as a wrong",
@@ -1006,7 +1006,7 @@
       "titleHe": "חודש פרימיום במתנה",
       "actionHe": "עקבו ותגיבו \"{keyword}\"",
       "prizeHe": "{winners} מכם מקבלים {premiumDays} יום פרימיום",
-      "captionHe": "עקבו ותגיבו \"{keyword}\" — {winners} מכם מקבלים {premiumDays} יום פרימיום עלינו",
+      "captionHe": "עקבו ותגיבו \"{keyword}\", ו-{winners} מכם מקבלים {premiumDays} יום פרימיום עלינו",
       "footHe": "הזוכים ייבחרו מהתגובות",
       "_comment": [
         "The keyword is the destination on purpose. A comment that says \"רומא\"",
@@ -1021,8 +1021,8 @@
       "",
       "`windows` are local Israel hours, as [from, to). The two are the lunch",
       "break and the evening, which is where this audience is; a post outside",
-      "them spends its first-hour test — the one that decides whether there is a",
-      "second hour — on a smaller pool than it deserved.",
+      "them spends its first-hour test, the one that decides whether there is a",
+      "second hour, on a smaller pool than it deserved.",
       "",
       "`shabbat` is not a preference. Friday evening to Saturday evening is the",
       "one window where most of this audience is definitively not scrolling, and",
@@ -1032,15 +1032,21 @@
       "Friday and an hour late on the Saturday costs nothing, while computing it",
       "properly would mean shipping a zmanim table to save an hour of reach.",
       "",
-      "This governs the SHOOT queue — when a shot list is worth sending, because",
+      "This governs the SHOOT queue, when a shot list is worth sending, because",
       "a shot list is a thing you act on within the hour. It deliberately does",
       "not govern the card and deck drip, which is spaced by POST_INTERVAL and",
       "has its own quiet hours."
     ],
     "timeZone": "Asia/Jerusalem",
     "windows": [
-      [12, 14],
-      [19, 22]
+      [
+        12,
+        14
+      ],
+      [
+        19,
+        22
+      ]
     ],
     "shabbat": {
       "fromDay": 5,
@@ -1060,7 +1066,7 @@
       "",
       "Keyed on the Hebrew country name exactly as destinations.json spells it.",
       "A country not listed here gets `defaultWeight`, so this file never has to",
-      "be complete — adding a country raises it, removing one does not ban it.",
+      "be complete, adding a country raises it, removing one does not ban it.",
       "Long-haul and cold destinations are deliberately left at the default",
       "rather than zeroed: they are worth a post occasionally, just not a post",
       "ahead of Greece."

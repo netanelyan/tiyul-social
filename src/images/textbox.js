@@ -65,7 +65,7 @@ WHAT YOU MUST NOT RETURN
 
 Any part of the SUBJECT. If the photograph is of a mountain, the rectangle does
 not touch the mountain. If it is a temple, it does not touch the temple. If it
-is a village on a shore, it does not touch the village — the water beside it is
+is a village on a shore, it does not touch the village, the water beside it is
 correct, the rooftops are not.
 
 This is the entire point of the question. A rectangle that is technically smooth
@@ -85,7 +85,7 @@ imagine the words. The caller decides the exact position inside it.
 
 IF THERE IS NONE
 
-A close-up of a facade, a forest filling the frame, a crowd — some photographs
+A close-up of a facade, a forest filling the frame, a crowd, some photographs
 genuinely have nowhere. Set found to false. The caller darkens a patch and
 writes there instead, which is the right outcome and much better than a
 confident rectangle across somebody's face.`;

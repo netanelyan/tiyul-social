@@ -91,7 +91,7 @@ async function main() {
 
   console.log(`${wanted.length} in the vocabulary · ${fetched} fetched · ${already} already here`);
   if (missing.length) {
-    console.log('\nNOT FOUND — these will fall back to the system font, which is what we are trying to avoid:');
+    console.log('\nNOT FOUND - these will fall back to the system font, which is what we are trying to avoid:');
     for (const m of missing) console.log('  ' + m);
   }
   console.log(`\nSaved to assets/emoji/ from ${SET_URL.replace('{cp}', '<codepoints>')}`);

@@ -27,7 +27,7 @@ async function main() {
   for (const s of enabledSources()) {
     const n = perSource[s.id] ?? 0;
     const err = errors.find((e) => e.sourceId === s.id);
-    const state = err ? `FAILED — ${err.message}` : n === 0 ? 'ok, but nothing returned' : `${n} items`;
+    const state = err ? `FAILED - ${err.message}` : n === 0 ? 'ok, but nothing returned' : `${n} items`;
     console.log(`  ${err ? '✗' : '✓'} ${s.id.padEnd(22)} ${state}`);
   }
 
@@ -79,7 +79,7 @@ async function main() {
       const key = `${r.reason}|${r.detail}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      console.log(`      ${r.reason} — ${r.detail}  [${reasonHe(r.reason)}]`);
+      console.log(`      ${r.reason} - ${r.detail}  [${reasonHe(r.reason)}]`);
     }
   }
 
@@ -92,7 +92,7 @@ async function main() {
   const offList = items.filter((it) => !primaryAuthority(it.url));
   if (offList.length) {
     console.log(`\n⚠️ ${offList.length} item(s) link off the allowlist and would be rejected:`);
-    for (const it of offList.slice(0, 5)) console.log(`   ${new URL(it.url).hostname} — ${it.title.slice(0, 70)}`);
+    for (const it of offList.slice(0, 5)) console.log(`   ${new URL(it.url).hostname} - ${it.title.slice(0, 70)}`);
   }
 
   const ranked = rank(items);
@@ -102,7 +102,7 @@ async function main() {
   }
 
   if (!ranked.length && items.length) {
-    console.log('  (everything gathered has been seen before — this is normal on a repeat run)');
+    console.log('  (everything gathered has been seen before - this is normal on a repeat run)');
   }
 
   if (errors.length) process.exitCode = 1;

@@ -20,6 +20,7 @@ import { countryOfDestination } from './where.js';
 import { deckPlace, countryMismatch } from './region.js';
 import { vocabForPrompt } from './emoji.js';
 import { modelFor, outputConfig } from '../models.js';
+import { stripDashes as clean } from '../dashes.js';
 
 // An idea becomes a deck, or it doesn't.
 //
@@ -333,7 +334,6 @@ export async function draftBulletsFromEntry(place, pageText) {
   const parsed = JSON.parse(text);
   if (!parsed.usable) return [];
 
-  const clean = (s) => String(s || '').replace(/[—–]/g, '-').replace(/\s+/g, ' ').trim();
 
   // A hard cap, because "under 30 characters" in a brief is a request and this
   // is a rule.
@@ -350,7 +350,7 @@ export async function draftBulletsFromEntry(place, pageText) {
     .filter((b) => b.text && b.quote)
     .filter((b) => {
       if (b.text.length <= MAX) return true;
-      console.error(`deck: note dropped, ${b.text.length} chars — "${b.text}"`);
+      console.error(`deck: note dropped, ${b.text.length} chars - "${b.text}"`);
       return false;
     })
     // One line, not two. The minimal style puts this under a place name in type
@@ -429,7 +429,7 @@ export async function draftFieldsFromEntry(place, pageText, kind) {
           `PLACE: ${place.nameHe}`,
           '',
           'FIELDS TO FILL, in order:',
-          ...spec.map((f) => `  ${f.key} — ${f.labelHe}`),
+          ...spec.map((f) => `  ${f.key} - ${f.labelHe}`),
           '',
           'PAGE TEXT (the only thing you may draw from):',
           '---',
@@ -449,7 +449,6 @@ export async function draftFieldsFromEntry(place, pageText, kind) {
   const parsed = JSON.parse(text);
   if (!parsed.usable) throw new RejectedError('thin_entry', parsed.reject_reason || 'page states none of the fields');
 
-  const clean = (s) => String(s || '').replace(/[—–]/g, '-').replace(/\s+/g, ' ').trim();
   const byKey = new Map((parsed.values || []).map((v) => [v.key, v]));
 
   const fields = [];
@@ -521,7 +520,6 @@ export async function draftSlideFromEntry(place, pageText) {
   const parsed = JSON.parse(text);
   if (!parsed.usable) throw new RejectedError('thin_entry', parsed.reject_reason || 'nothing worth repeating');
 
-  const clean = (s) => String(s || '').replace(/[—–]/g, '-').replace(/\s+/g, ' ').trim();
   const hook = clean(parsed.what_it_is);
   const hookQuote = String(parsed.what_quote || '').trim();
   if (!hook || !hookQuote) throw new RejectedError('no_hook', 'no line worth putting on a slide');
@@ -599,7 +597,7 @@ async function cinematicImage({ nameEn, where, used, label, about = '' }) {
       try {
         pool = await lib.candidates(q, { n: 8, w: 440, h: 780 });
       } catch (e) {
-        console.error(`images: candidates "${q}" failed — ${e.message}`);
+        console.error(`images: candidates "${q}" failed - ${e.message}`);
         continue;
       }
 
@@ -622,7 +620,7 @@ async function cinematicImage({ nameEn, where, used, label, about = '' }) {
         // put a photograph of a different baroque garden under a slide named
         // Strahov: the library cannot know what the place looks like, and a
         // mislabelled slide costs more than a missing one.
-        console.error(`images: curation failed — ${e.message}`);
+        console.error(`images: curation failed - ${e.message}`);
         chosen = null;
       }
 
@@ -759,7 +757,6 @@ export async function draftSlide(place, pageText, { url }) {
   const parsed = JSON.parse(text);
   if (!parsed.usable) throw new RejectedError('thin_page', parsed.reject_reason || 'page says nothing concrete');
 
-  const clean = (s) => String(s || '').replace(/[—–]/g, '-').replace(/\s+/g, ' ').trim();
 
   const hook = clean(parsed.hook_he);
   const hookQuote = String(parsed.hook_quote || '').trim();
@@ -853,7 +850,7 @@ export async function buildDeckFromSite(idea, { wantImages = true } = {}) {
   // drafted or any picture is fetched.
   const picked = (
     await keepVisitable(wide, { where: idea.where, kind: idea.kind }).catch((e) => {
-      console.error(`deck: place filter failed, using the raw list — ${e.message}`);
+      console.error(`deck: place filter failed, using the raw list - ${e.message}`);
       return wide;
     })
   ).slice(0, idea.want + 3);
@@ -872,7 +869,7 @@ export async function buildDeckFromSite(idea, { wantImages = true } = {}) {
   const shape = withFields
     ? { bullets: false, why: 'this kind carries fixed fields instead' }
     : await decideShape({ where: idea.where, kind: idea.kind, places: picked.slice(0, idea.want) }).catch((e) => {
-        console.error(`deck: shape decision failed, name only — ${e.message}`);
+        console.error(`deck: shape decision failed, name only - ${e.message}`);
         return { bullets: false, why: 'decision failed' };
       });
 
@@ -892,7 +889,7 @@ export async function buildDeckFromSite(idea, { wantImages = true } = {}) {
       // missing line would be the wrong trade.
       const bullets = shape.bullets
         ? await draftBulletsFromEntry(place, place.description).catch((e) => {
-            console.error(`deck: bullets for ${place.nameHe} failed — ${e.message}`);
+            console.error(`deck: bullets for ${place.nameHe} failed - ${e.message}`);
             return [];
           })
         : [];
@@ -988,7 +985,7 @@ export async function buildDeckFromSite(idea, { wantImages = true } = {}) {
         // decks in a row cannot come back with the same closing phrase.
         nth: idea.nth ?? publishedCount(),
       }).catch((e) => {
-        console.error(`deck: cover generation failed, keeping the working title — ${e.message}`);
+        console.error(`deck: cover generation failed, keeping the working title - ${e.message}`);
         return null;
       })
     : null;
@@ -1119,7 +1116,7 @@ export async function buildDeck(idea, { wantImages = true } = {}) {
   // Our own page first. The map route stays for everywhere it does not cover —
   // it is slower, thinner and needs a search budget, but it works anywhere.
   const fromSite = await buildDeckFromSite(idea, { wantImages }).catch((e) => {
-    console.error(`deck: tiyulplus route failed, falling back to the map — ${e.message}`);
+    console.error(`deck: tiyulplus route failed, falling back to the map - ${e.message}`);
     return null;
   });
 
@@ -1183,7 +1180,7 @@ export async function buildDeck(idea, { wantImages = true } = {}) {
     requireAuthority: pageFields && !wikiFields,
   }).catch((e) => {
     if (fromSite?.slides.length) {
-      console.error(`deck: map route unavailable, keeping the ${fromSite.slides.length}-slide site deck — ${e.message}`);
+      console.error(`deck: map route unavailable, keeping the ${fromSite.slides.length}-slide site deck - ${e.message}`);
       return null;
     }
     throw e;
@@ -1212,7 +1209,7 @@ export async function buildDeck(idea, { wantImages = true } = {}) {
   // function and is deliberately not bundled with a pricing change.
   const candidates = pool.places.slice(0, idea.want + 3);
   const hebrew = await hebrewNames(candidates).catch((e) => {
-    console.error(`deck: transliteration failed — ${e.message}`);
+    console.error(`deck: transliteration failed - ${e.message}`);
     return new Map();
   });
 

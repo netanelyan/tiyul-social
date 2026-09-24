@@ -28,7 +28,7 @@ console.log(`${considered} clip(s) passed the filter, ${clips.length} built\n`);
 
 for (const c of clips) {
   console.log(`  ${c.clip.file}`);
-  console.log(`     “${c.hook}”${c.hookWritten ? '' : `   ⚠️ pool — ${c.hookNote || 'no line written'}`}`);
+  console.log(`     “${c.hook}”${c.hookWritten ? '' : `   ⚠️ pool - ${c.hookNote || 'no line written'}`}`);
   console.log(`     ${c.clip.title}  ·  score ${c.clip.score}  ·  "${c.clip.query}"`);
   if (c.clip.spot) {
     const s = c.clip.spot;

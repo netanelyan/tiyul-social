@@ -26,7 +26,7 @@ export function deckRepeats(deck, history = recentPublished()) {
     if (p.topic !== topic) break;
     run++;
   }
-  if (run >= 1) notes.push(`חוזר על "${topic}" — ${run + 1} מצגות ברצף`);
+  if (run >= 1) notes.push(`חוזר על "${topic}" - ${run + 1} מצגות ברצף`);
 
   // The same run counted on the PLACE alone, because the topic above is
   // "<where> · <category>" and that is too specific to catch the thing it was
@@ -41,7 +41,7 @@ export function deckRepeats(deck, history = recentPublished()) {
       placeRun++;
     }
     if (placeRun >= 1 && placeRun !== run) {
-      notes.push(`אותו מקום (${deck.where}) — ${placeRun + 1} ברצף`);
+      notes.push(`אותו מקום (${deck.where}) - ${placeRun + 1} ברצף`);
     }
   }
 
@@ -107,7 +107,7 @@ export async function toDeckCandidate(
 ) {
   if (built.slides.length < minSlides) {
     const err = new Error(
-      `only ${built.slides.length} slide(s) survived sourcing, needs ${minSlides} — ` +
+      `only ${built.slides.length} slide(s) survived sourcing, needs ${minSlides} - ` +
         (built.dropped[0]?.why || 'no reason recorded')
     );
     err.deck = built;

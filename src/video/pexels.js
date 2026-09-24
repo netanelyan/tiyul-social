@@ -210,7 +210,7 @@ export async function findClips({ limit = 12, seen = new Set(), pages = 2, timeo
       // most useful line in a run that came back empty, and it is the number
       // that tells you a query is asking for the wrong thing.
       nowhere.push(
-        `${c.title} — ${
+        `${c.title} - ${
           vision
             ? `destination ${vision.destination}${vision.staged ? ', staged' : ''}${
                 vision.personSubject ? ', person in front of the camera' : ''

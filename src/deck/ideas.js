@@ -5,6 +5,7 @@ import { namesPlace } from './region.js';
 import { loadDestinations } from '../sources/climate.js';
 import { byWeight, postConfig } from '../postConfig.js';
 import { modelFor, outputConfig } from '../models.js';
+import { stripDashes as clean } from '../dashes.js';
 
 // What deck to make. The step before any data is fetched.
 //
@@ -60,9 +61,9 @@ function destinationsForPrompt() {
     const rows = byWeight(loadDestinations());
     const { weights } = postConfig().destinations;
     const lead = Object.keys(weights);
-    const menu = rows.map((d) => `  ${d.en} — ${d.he}, ${d.country}`).join('\n');
+    const menu = rows.map((d) => `  ${d.en} - ${d.he}, ${d.country}`).join('\n');
     destinationMenu = lead.length
-      ? `Lead with these countries — they are where this audience actually books flights:\n  ${lead.join(
+      ? `Lead with these countries - they are where this audience actually books flights:\n  ${lead.join(
           ', '
         )}\n\n${menu}`
       : menu;
@@ -101,7 +102,7 @@ const IDEAS_SCHEMA = {
           want: {
             type: 'integer',
             description:
-              'How many places the deck should carry. FIVE unless there is a reason, which there usually is not — five destinations after the cover is the template this format settled on.',
+              'How many places the deck should carry. FIVE unless there is a reason, which there usually is not - five destinations after the cover is the template this format settled on.',
           },
           angle_he: {
             type: 'string',
@@ -111,7 +112,7 @@ const IDEAS_SCHEMA = {
           why_now: {
             type: 'string',
             description:
-              'English. Why this month rather than any other — season, opening hours, a festival, weather. "no seasonal reason" is an acceptable and honest answer.',
+              'English. Why this month rather than any other - season, opening hours, a festival, weather. "no seasonal reason" is an acceptable and honest answer.',
           },
           search_terms: {
             type: 'array',
@@ -171,7 +172,7 @@ const IDEAS_SCHEMA = {
 const SYSTEM = `You plan slideshow posts for tiyul+, a Hebrew travel channel for Israeli travellers.
 
 A deck is a TikTok photo slideshow: a cover slide that names the list, then one
-slide per place with two to four short lines of fact — opening hours, ticket
+slide per place with two to four short lines of fact, opening hours, ticket
 price, how long it takes, how hard it is, what it is known for.
 
 TWO KINDS OF DECK, AND THE SUBJECT DECIDES WHICH
@@ -179,13 +180,13 @@ TWO KINDS OF DECK, AND THE SUBJECT DECIDES WHICH
 A deck is one of two artefacts, and which one is decided by the category, not
 by you. Propose the subject; the pipeline picks the form.
 
-  LANDSCAPE — mountain, waterfall, beach, lake, island, canyon, village,
+  LANDSCAPE, mountain, waterfall, beach, lake, island, canyon, village,
   aurora, trail. Five named places, a country each, a photograph each, and NO
   facts: no hours, no prices, no durations, no difficulty grades. Nothing is
   looked up, so nothing constrains you but whether the place is real, famous
   enough to be photographed well, and obviously the thing the cover promised.
 
-  SOURCED — museum, attraction, food. Every fact on every slide is quoted word
+  SOURCED, museum, attraction, food. Every fact on every slide is quoted word
   for word from the official website of the place or of the body that manages
   it. If a place has no official page it cannot carry a fact and does not
   belong in one of these.
@@ -220,14 +221,14 @@ close, so treat it as the strongest guidance here:
   about yet" is a better reason than "it is happening now".
 
 A DECK STILL HAS TO HAVE AN ORGANISING IDEA BEYOND "THESE EXIST". For a sourced
-deck that idea answers a traveller's question — what is worth the ticket, what
+deck that idea answers a traveller's question - what is worth the ticket, what
 is open on a Monday, where locals eat. For a landscape deck it is a visual
 promise, and the promise has to be true of the five photographs.
 
 THE MIX, WHEN YOU ARE ASKED FOR SEVERAL
 
 Most of them landscape, and not all of them. Roughly one in five should be a
-sourced deck — a museum, an attraction, a food market.
+sourced deck, a museum, an attraction, a food market.
 
 This is not a compromise, it is the only thing this channel has that a repost
 account does not. Anyone can put five photographs of Lofoten in a row; a
@@ -238,7 +239,7 @@ nothing but landscape has quietly given that up.
 
 Israeli travellers are the audience. Direct flights, kosher-adjacent practicality,
 school holidays and the Jewish calendar are all legitimate reasons to choose a
-destination — but the deck itself is about the place, not about being Israeli.
+destination, but the deck itself is about the place, not about being Israeli.
 
 WHERE TO SET IT
 
@@ -247,14 +248,14 @@ THERE. It is 102 places chosen for where this audience actually flies, and a
 deck set in one of them is a deck someone reading this page might book.
 
 It is a preference and not a whitelist. Somewhere not on the list is fine when
-it is genuinely better — the Dolomites are not on it and make an excellent
-deck — but "somewhere not on the list" should be a choice you could defend,
+it is genuinely better, the Dolomites are not on it and make an excellent
+deck, but "somewhere not on the list" should be a choice you could defend,
 not the first place that came to mind. Asked for a beautiful travel slideshow
 with nothing to go on, the honest answer is Kyoto every time, and a feed of
 that is a feed about one city.
 
 A PHENOMENON-LED DECK MAY RANGE. "The clearest water in the world" is not a
-deck about one country and forcing it into one ruins it — those five places may
+deck about one country and forcing it into one ruins it, those five places may
 come from five continents, and the catalogue stops applying the moment the
 subject has no home. What the catalogue still protects is the ordinary case: a
 deck that COULD be set anywhere should be set somewhere this audience flies.
@@ -263,7 +264,7 @@ is the archive account this one is not trying to be.
 
 HARD CONSTRAINTS
 
-On a SOURCED deck — museum, attraction, food — every fact on every slide will
+On a SOURCED deck, museum, attraction, food, every fact on every slide will
 have to be quoted, word for word, from the official website of the place itself
 or of the body that manages it. If a place has no official page it cannot carry
 a fact. Museums, temples, castles, galleries, markets, zoos and parks have them.
@@ -276,7 +277,7 @@ result was a feed with no landscape in it at all.
 
 Every place must be real, specific and standable-in. "The Dolomites" is a
 region and a viewer cannot be in it; Lago di Braies is a place. A phenomenon is
-not a place either — an aurora deck is about Abisko and Tromso, not about the
+not a place either, an aurora deck is about Abisko and Tromso, not about the
 aurora.
 
 Do not propose a deck about a place that is at war, under evacuation, or where
@@ -308,7 +309,7 @@ go. "המפל הכי גבוה" passes. "המפל הגבוה ביותר" is a cap
 
 HOW A COVER IS ACTUALLY WRITTEN
 
-The cover is ONE short line. Five to eight words. These four are the spec — not
+The cover is ONE short line. Five to eight words. These four are the spec, not
 illustrations of a spec, the spec itself:
 
   הרים באיסלנד שלא נראים אמיתיים
@@ -323,7 +324,7 @@ NO COUNT. None of them says how many. "טופ 6" and "6 מקומות" are not wr
 they are just rarely what this page sounds like, and they will be asked for
 explicitly when they are wanted.
 
-NAME THE PLACE OR NAME THE PHENOMENON — one of the two, and never neither.
+NAME THE PLACE OR NAME THE PHENOMENON, one of the two, and never neither.
 
 A cover has to promise something a viewer can picture before they swipe. There
 are exactly two ways to do that and both work:
@@ -335,7 +336,7 @@ The second one names no country at all and that is allowed, because the aurora
 IS the promise. Roughly half of the covers in the sample this is drawn from
 name no place, and the best-performing post in it was one of them.
 
-What is NOT allowed is the shape that promises neither — a continent and an
+What is NOT allowed is the shape that promises neither, a continent and an
 interchangeable superlative:
 
   ✗  המקומות הכי יפים באפריקה
@@ -361,10 +362,10 @@ category from a database.
 
 ONE STRONG CLAUSE, and it may be any of these:
 
-  a superlative     — הכי יפים בעולם, הכי טובים ל...
-  a picture         — שלא נראים אמיתיים, שנראים כמו סרט
-  an obligation     — שאתם חייבים לראות, שאסור לפספס
-  a time pressure   — לפני שזה מאוחר מדי, פעם אחת בחיים לפחות
+  a superlative, הכי יפים בעולם, הכי טובים ל...
+  a picture, שלא נראים אמיתיים, שנראים כמו סרט
+  an obligation, שאתם חייבים לראות, שאסור לפספס
+  a time pressure, לפני שזה מאוחר מדי, פעם אחת בחיים לפחות
 
 Superlatives are welcome here. "הכי יפים בעולם" is a claim nobody can check and
 everybody understands, and it is exactly how this kind of page talks.
@@ -373,7 +374,7 @@ THE CLAUSE HAS TO BE TRUE OF WHAT IS ACTUALLY ON THE SLIDES
 
 "שלא נראים אמיתיים" and "שנראים כמו סרט" are claims about how somewhere LOOKS.
 They belong to landscape. A deck of houses titled "מקומות בפורטוגל שלא נראים
-אמיתיים" is contradicted by its own first swipe, and the swipe is the proof —
+אמיתיים" is contradicted by its own first swipe, and the swipe is the proof, 
 a cover is the one line a viewer checks against the pictures immediately.
 
   mountain, waterfall, beach, trail
@@ -392,7 +393,7 @@ STOP WHEN THE LINE IS DONE
 
 The commonest failure is not a bad opening, it is a good opening that keeps
 going. "המקומות הכי טובים בנורווגיה לראות את האורות הצפוניים" is finished. Any
-clause after it — what you will find there, how many there are, why now — is
+clause after it, what you will find there, how many there are, why now, is
 the caption's job and belongs nowhere near the cover.
 
 Read your line back and cut everything after the point where it could have
@@ -400,7 +401,7 @@ stopped. If two clauses both earn their place, you have written two covers and
 should keep the better one.
 
 A deck about something a photograph already shows does not need the photograph
-described. An aurora deck is not "the skies that do not look real" — the sky is
+described. An aurora deck is not "the skies that do not look real" - the sky is
 in the picture. Name the place and what the list is FOR.
 
 NEVER "פעם אחת בחיים" ON ITS OWN. It is always "פעם אחת בחיים לפחות" - the
@@ -454,7 +455,7 @@ Also fatal: a neutral catalogue title ("מוזיאונים בפראג"), a quest
 IF A COUNT IS ASKED FOR
 
 Then the number is a NUMERAL and "טופ" is borrowed: טופ 5, טופ 3. Never spelled
-out — "חמישה מוזיאונים" is how a newspaper writes. Count correctly; a deck of
+out, "חמישה מוזיאונים" is how a newspaper writes. Count correctly; a deck of
 four places does not say 5.
 
 NEVER on a cover: a second explanatory line, a city label above the title, a
@@ -482,7 +483,7 @@ export const COVER_SHAPES = [
   {
     id: 'unreal',
     brief:
-      'A plain plural noun, then the place, then a clause saying it does not look real. No "ה" on the noun, no count, and NO pronoun — "הרים באיסלנד שלא נראים אמיתיים", never "הרים שאתם לא תאמינו שהם אמיתיים".',
+      'A plain plural noun, then the place, then a clause saying it does not look real. No "ה" on the noun, no count, and NO pronoun - "הרים באיסלנד שלא נראים אמיתיים", never "הרים שאתם לא תאמינו שהם אמיתיים".',
     voice: 'none',
     examples: ['הרים באיסלנד שלא נראים אמיתיים', 'מקומות בפורטוגל שנראים כמו סרט'],
   },
@@ -547,7 +548,7 @@ export const hasApiKey = () =>
  * October is the kind of mistake that reads as automation.
  */
 export async function proposeIdeas({ count = 4, recent = [], today = new Date() } = {}) {
-  if (!hasApiKey()) throw new Error('ANTHROPIC_API_KEY is not set — idea generation is required');
+  if (!hasApiKey()) throw new Error('ANTHROPIC_API_KEY is not set - idea generation is required');
 
   const month = today.toLocaleString('en-GB', { month: 'long' });
   const user = [
@@ -555,7 +556,7 @@ export async function proposeIdeas({ count = 4, recent = [], today = new Date() 
     `PROPOSE: ${count} deck ideas, ranked best first.`,
     '',
     'CATEGORIES AVAILABLE (a deck must be exactly one of these):',
-    ...Object.entries(KINDS).map(([id, k]) => `  ${id} — ${k.he}`),
+    ...Object.entries(KINDS).map(([id, k]) => `  ${id} - ${k.he}`),
     '',
     recent.length
       ? ['ALREADY PUBLISHED (do not repeat, and avoid the same city twice in a row):', ...recent.map((r) => `  ${r}`)].join('\n')
@@ -564,7 +565,7 @@ export async function proposeIdeas({ count = 4, recent = [], today = new Date() 
     // as background. Its absence is what left the model choosing from its own
     // prior, which for "a beautiful travel slideshow" is the postcard answer.
     destinationsForPrompt()
-      ? ['', 'DESTINATIONS THIS CHANNEL COVERS — start here:', destinationsForPrompt()].join('\n')
+      ? ['', 'DESTINATIONS THIS CHANNEL COVERS - start here:', destinationsForPrompt()].join('\n')
       : '',
   ]
     .filter(Boolean)
@@ -608,9 +609,9 @@ export async function proposeIdeas({ count = 4, recent = [], today = new Date() 
  * one thing, not re-commissioning it.
  */
 export async function reviseIdea(idea, instruction, { today = new Date() } = {}) {
-  if (!hasApiKey()) throw new Error('ANTHROPIC_API_KEY is not set — revision needs it');
+  if (!hasApiKey()) throw new Error('ANTHROPIC_API_KEY is not set - revision needs it');
   const said = String(instruction || '').trim();
-  if (!said) throw new Error('nothing to apply — the reply was empty');
+  if (!said) throw new Error('nothing to apply - the reply was empty');
 
   // A free-form idea is revised AS a free-form idea.
   //
@@ -641,7 +642,7 @@ export async function reviseIdea(idea, instruction, { today = new Date() } = {})
     `  why_now: ${idea.whyNow || ''}`,
     '',
     'CATEGORIES AVAILABLE (the revision must be exactly one of these):',
-    ...Object.entries(KINDS).map(([id, k]) => `  ${id} — ${k.he}`),
+    ...Object.entries(KINDS).map(([id, k]) => `  ${id} - ${k.he}`),
     '',
     'WHAT THE OWNER REPLIED, VERBATIM:',
     said,
@@ -671,7 +672,7 @@ export async function reviseIdea(idea, instruction, { today = new Date() } = {})
   // normaliseIdea returns null for a title, region or category it cannot use.
   // Failing here keeps the original proposal intact and answerable, rather than
   // replacing it with something half-formed that fails later during the build.
-  if (!revised) throw new Error('the revision came back unusable — the idea is unchanged');
+  if (!revised) throw new Error('the revision came back unusable - the idea is unchanged');
   return revised;
 }
 
@@ -777,7 +778,6 @@ export async function freeformIdea(request, { today = new Date() } = {}) {
   if (!text) throw new Error('free-form idea returned no text');
 
   const parsed = JSON.parse(text);
-  const clean = (v) => String(v || '').replace(/[—–]/g, '-').replace(/\s+/g, ' ').trim();
   const places = (parsed.places || [])
     .map((p) => ({ nameHe: clean(p.name_he), nameEn: clean(p.name_en), noteHe: clean(p.note_he) }))
     .filter((p) => p.nameHe && p.nameEn)
@@ -854,7 +854,6 @@ async function reviseFreeform(idea, said, { today = new Date() } = {}) {
   if (!text) throw new Error('revision returned no text');
 
   const parsed = JSON.parse(text);
-  const clean = (v) => String(v || '').replace(/[—–]/g, '-').replace(/\s+/g, ' ').trim();
   const places = (parsed.places || [])
     .map((p) => ({ nameHe: clean(p.name_he), nameEn: clean(p.name_en), noteHe: clean(p.note_he) }))
     .filter((p) => p.nameHe && p.nameEn)
@@ -1071,7 +1070,7 @@ export async function coverForDeck({
     `  ${voice.example}`,
     'Let the voice shape the sentence; do not wedge a pronoun into a',
     'comparison. "שנראים כמו אגדה" is right and "שנראים לכם כמו אגדה" is',
-    'not — if the voice does not fit naturally, write the line without it.',
+    'not - if the voice does not fit naturally, write the line without it.',
     '',
     'Use that shape and that voice. They rotate between posts so the page',
     'does not read as a template; this is the turn for these two.',
@@ -1102,7 +1101,6 @@ export async function coverForDeck({
   const turns = [{ role: 'user', content: ask }];
   let { raw, parsed } = await write(turns);
 
-  const clean = (s) => String(s || '').replace(/[—–]/g, '-').replace(/\s+/g, ' ').trim();
 
   // The colon rule, enforced rather than requested.
   //
@@ -1138,7 +1136,7 @@ export async function coverForDeck({
         titleHe = second;
         parsed = retry.parsed;
       } else {
-        console.error(`deck: cover would not name ${wanted} — keeping "${titleHe}"`);
+        console.error(`deck: cover would not name ${wanted} - keeping "${titleHe}"`);
       }
     }
   }
@@ -1191,7 +1189,6 @@ export async function titleForRequest({ where, kind, count = 5, today = new Date
   if (!text) throw new Error('title generation returned no text');
 
   const parsed = JSON.parse(text);
-  const clean = (s) => String(s || '').replace(/[—–]/g, '-').replace(/\s+/g, ' ').trim();
   const placesHe = (parsed.places_he || []).map(clean).filter(Boolean);
   const placesEn = (parsed.places_en || []).map(clean).filter(Boolean);
 
@@ -1237,7 +1234,6 @@ function pairPlaces(placesHe = [], placesEn = [], want = 5, countriesHe = []) {
 
 export function normaliseIdea(raw) {
   if (!raw?.title_he || !raw?.where || !KINDS[raw.kind]) return null;
-  const clean = (s) => String(s || '').replace(/[—–]/g, '-').replace(/\s+/g, ' ').trim();
 
   // Five, because that is the template. Six is allowed and seven is not: the
   // format this is modelled on ran twelve of thirteen posts at exactly five

@@ -53,7 +53,7 @@ export function runReport({
   // says so. The difference matters: one means there was nothing to post, the
   // other means we stopped looking. This one stays because it changes what you
   // would do next.
-  if (budgetExhausted) lines.push('⚠️ תקציב הקריאות נגמר — ייתכן שנשארו פריטים טובים');
+  if (budgetExhausted) lines.push('⚠️ תקציב הקריאות נגמר - ייתכן שנשארו פריטים טובים');
 
   // Failures stay too, named, because a source that has quietly stopped
   // returning anything is invisible in a count that only reports successes.
@@ -76,14 +76,14 @@ export function runReport({
 export function rejectDigest(items, hours) {
   if (!items.length) return null;
   const lines = items.map((it, i) => {
-    const detail = it.detail ? ` — ${String(it.detail).slice(0, 160)}` : '';
+    const detail = it.detail ? ` - ${String(it.detail).slice(0, 160)}` : '';
     return `${i + 1}. [${reasonHe(it.reason)}] ${it.title}${detail}\n   ${it.url}`;
   });
   return `🗑️ ${items.length} מועמדים נפסלו ב-${hours} השעות האחרונות:\n\n${lines.join('\n\n')}`;
 }
 
 export function rejectSingle(item) {
-  const detail = item.detail ? ` — ${String(item.detail).slice(0, 200)}` : '';
+  const detail = item.detail ? ` - ${String(item.detail).slice(0, 200)}` : '';
   return `🗑️ נפסל [${reasonHe(item.reason)}] ${item.title}${detail}\n${item.url}`;
 }
 
@@ -99,7 +99,7 @@ export function rejectSingle(item) {
  */
 export function targetAbandoned(headline, abandoned = []) {
   const why = abandoned.map((a) => `${TARGET_HE[a.target] || a.target}: ${a.message}`).join(' · ');
-  return `⤫ ויתרנו: ${why} — ${headline}`;
+  return `⤫ ויתרנו: ${why} - ${headline}`;
 }
 
 export function published({ headline, succeeded, failed = [], drafted = [] }) {
@@ -117,7 +117,7 @@ export function published({ headline, succeeded, failed = [], drafted = [] }) {
   if (posted.length) parts.push(`📤 ${targetsHe(posted)}`);
   if (drafted.length) parts.push(`📥 ${targetsHe(drafted)} טיוטה`);
   for (const f of failed) parts.push(`⚠️ ${TARGET_HE[f.target] || f.target}: ${f.message}`);
-  return `${parts.join(' · ')} — ${headline}`;
+  return `${parts.join(' · ')} - ${headline}`;
 }
 
 /**
@@ -133,7 +133,7 @@ export function publishRetrying(headline, failed, attempt, max, succeeded = []) 
   // was reprinted on each one.
   const ok = succeeded.length ? `📤 ${targetsHe(succeeded)} · ` : '';
   const why = failed.map((f) => `${TARGET_HE[f.target] || f.target}: ${f.message}`).join(' · ');
-  return `🔁 ${ok}${attempt}/${max} — ${headline}\n${why}`;
+  return `🔁 ${ok}${attempt}/${max} - ${headline}\n${why}`;
 }
 
 /**
@@ -145,7 +145,7 @@ export function publishRetrying(headline, failed, attempt, max, succeeded = []) 
  */
 export function publishHeld(headline, owed, succeeded = [], heldCount = 1) {
   const ok = succeeded.length ? `📤 ${targetsHe(succeeded)} · ` : '';
-  return `⏸️ ${ok}מוחזק: ${targetsHe(owed)} (${heldCount}) — ${headline} · /retry`;
+  return `⏸️ ${ok}מוחזק: ${targetsHe(owed)} (${heldCount}) - ${headline} · /retry`;
 }
 
 /**
@@ -191,7 +191,7 @@ export function withDetail(hebrew, detail, { limit = 200 } = {}) {
  * nowhere to put it yet, and there will be.
  */
 export function publishWaitingForSetup(headline, owed, heldCount = 1) {
-  return `⏸️ ${targetsHe(owed)} לא מחובר · מוחזק (${heldCount}) — ${headline} · /retry אחרי חיבור`;
+  return `⏸️ ${targetsHe(owed)} לא מחובר · מוחזק (${heldCount}) - ${headline} · /retry אחרי חיבור`;
 }
 
 /**
@@ -215,7 +215,7 @@ export function platformLimited(headline, limited = [], freesAt = null, succeede
   // waiting reads as a post that did not go out. This was the last of the three
   // to be told.
   const ok = succeeded.length ? `📤 ${targetsHe(succeeded)} · ` : '';
-  return `⏳ ${ok}${why}${when} — ${headline}`;
+  return `⏳ ${ok}${why}${when} - ${headline}`;
 }
 
 /**
@@ -233,19 +233,19 @@ export function healthReport(rows = [], extra = []) {
   for (const r of rows) {
     const name = TARGET_HE[r.target] || r.target;
     if (r.degraded) {
-      lines.push(`🔴 ${name} — מושבת אחרי ${r.failures} כשלונות ברצף`);
+      lines.push(`🔴 ${name} - מושבת אחרי ${r.failures} כשלונות ברצף`);
       if (r.recoveryDueAt) {
         const left = r.recoveryDueAt - Date.now();
         lines.push(
           left > 0
             ? `   בדיקה חוזרת אוטומטית בעוד ${humanDuration(left)}`
-            : '   מוכן לבדיקה חוזרת — הפוסט הבא ינסה'
+            : '   מוכן לבדיקה חוזרת - הפוסט הבא ינסה'
         );
       }
     } else if (r.failures > 0) {
-      lines.push(`🟡 ${name} — ${r.failures} כשלונות ברצף, עדיין מנסה`);
+      lines.push(`🟡 ${name} - ${r.failures} כשלונות ברצף, עדיין מנסה`);
     } else {
-      lines.push(`🟢 ${name} — תקין`);
+      lines.push(`🟢 ${name} - תקין`);
     }
 
     lines.push(
@@ -279,7 +279,7 @@ export function overrideNotice(headline, overrides = []) {
   // that it is deliberate and deliberate means it was said out loud. But
   // saying it at that length is how a thing meant to be noticed becomes a
   // thing that is scrolled past.
-  return `🔓 ${headline} — ${overrides.join(' · ')}`;
+  return `🔓 ${headline} - ${overrides.join(' · ')}`;
 }
 
 /**
@@ -355,10 +355,10 @@ export function quietAlert({
     );
   }
 
-  if (heldCount) lines.push(`👉 ${heldCount} פוסטים מאושרים מוחזקים — /held, ואחרי תיקון /retry`);
-  else if (stagingSize) lines.push(`👉 ${stagingSize} כרטיסים ממתינים לאישור שלך — אשר או דחה`);
-  else if (queueSize) lines.push(`👉 ${queueSize} מאושרים בתור אבל לא יוצאים — בדוק את הפרסום`);
-  else lines.push('👉 אין כלום ממתין ואין כלום בתור — /status או /run');
+  if (heldCount) lines.push(`👉 ${heldCount} פוסטים מאושרים מוחזקים - /held, ואחרי תיקון /retry`);
+  else if (stagingSize) lines.push(`👉 ${stagingSize} כרטיסים ממתינים לאישור שלך - אשר או דחה`);
+  else if (queueSize) lines.push(`👉 ${queueSize} מאושרים בתור אבל לא יוצאים - בדוק את הפרסום`);
+  else lines.push('👉 אין כלום ממתין ואין כלום בתור - /status או /run');
 
   return lines.join('\n');
 }
@@ -425,13 +425,13 @@ export function statusReport({
       if (h.lastOkAt) return `   ✅ ${name}: לפני ${humanDuration(Date.now() - h.lastOkAt)}`;
       return `   ⚪ ${name}: עוד לא פורסם`;
     }),
-    ...(heldCount ? [`⏸️ ${heldCount} מוחזקים — /held`] : []),
+    ...(heldCount ? [`⏸️ ${heldCount} מוחזקים - /held`] : []),
   ].join('\n');
 }
 
 /** /mix — the pillar and tag balance the quotas are actually computed from. */
 export function mixReport(history) {
-  if (!history.length) return '📊 עדיין לא פורסם כלום — אין ממה לחשב תמהיל';
+  if (!history.length) return '📊 עדיין לא פורסם כלום - אין ממה לחשב תמהיל';
 
   const total = history.length;
   const counts = Object.fromEntries(PILLAR_KEYS.map((k) => [k, 0]));

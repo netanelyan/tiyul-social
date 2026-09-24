@@ -277,7 +277,7 @@ export async function osmPlaces(bbox, kind) {
   // means something routed a free-form deck down the sourced path, and the
   // useful failure says that rather than "spec.q is not a function".
   if (!spec.q) {
-    throw new PlacesError(`${kind} is not a sourced kind — it builds free-form`, { step: 'overpass' });
+    throw new PlacesError(`${kind} is not a sourced kind - it builds free-form`, { step: 'overpass' });
   }
 
   const ql = `[out:json][timeout:60];(${spec.q(bbox)});out tags center ${Number(process.env.PLACES_MAX || 200)};`;
@@ -332,10 +332,10 @@ export async function osmPlaces(bbox, kind) {
           break;
         }
         empty ??= got;
-        console.error(`places: ${new URL(host).hostname} — answered with nothing, trying the next mirror`);
+        console.error(`places: ${new URL(host).hostname} - answered with nothing, trying the next mirror`);
       } catch (e) {
         last = e;
-        console.error(`places: ${new URL(host).hostname} — ${e.message}`);
+        console.error(`places: ${new URL(host).hostname} - ${e.message}`);
       }
     }
   }

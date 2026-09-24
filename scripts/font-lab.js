@@ -45,7 +45,7 @@ const CANDIDATES = [
     id: 'assistant',
     family: 'Assistant',
     weight: 600,
-    note: 'humanist, slightly warmer — the usual stand-in for SF Hebrew on iOS',
+    note: 'humanist, slightly warmer - the usual stand-in for SF Hebrew on iOS',
   },
   {
     id: 'notosanshebrew',
@@ -91,7 +91,7 @@ async function face({ id, family, weight }) {
       ).then((r) => r.text());
 
       const url = css.match(/url\((https:\/\/[^)]+\.ttf)\)/)?.[1];
-      if (!url) throw new Error(`no ttf for ${family} ${weight} — the API returned woff2 only`);
+      if (!url) throw new Error(`no ttf for ${family} ${weight} - the API returned woff2 only`);
       writeFileSync(file, Buffer.from(await fetch(url).then((r) => r.arrayBuffer())));
     }
   }
@@ -153,7 +153,7 @@ async function main() {
   const sheet = writeContactSheet(
     [{ titleHe: 'איזה פונט עברי', style: 'minimal', size: 'tiktok', note: 'same slide, same photo, one render per face', slides }],
     OUT,
-    { title: 'hebrew font — same slide in each candidate' }
+    { title: 'hebrew font - same slide in each candidate' }
   );
   console.log(`\nContact sheet: ${sheet}`);
 }

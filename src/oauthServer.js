@@ -75,14 +75,14 @@ function bearerOk(header, secret) {
 
 async function authorize(req) {
   if (Date.now() < lockedUntil) {
-    throw new HttpError(429, 'too many failed attempts — try again in a minute');
+    throw new HttpError(429, 'too many failed attempts - try again in a minute');
   }
   if (!bearerOk(req.headers.authorization, process.env.TIKTOK_BOT_SECRET || '')) {
     failures += 1;
     if (failures >= LOCKOUT_AFTER) {
       lockedUntil = Date.now() + LOCKOUT_MS;
       failures = 0;
-      console.warn('tiktok oauth: repeated bad bearer — endpoint locked for 60s');
+      console.warn('tiktok oauth: repeated bad bearer - endpoint locked for 60s');
     }
     await sleep(FAIL_DELAY_MS);
     throw new HttpError(401, 'unauthorized');
@@ -201,7 +201,7 @@ async function exchange(body) {
   // connection was only half a connection.
   const missing = missingScopes({ draft: true });
   if (missing.length) {
-    console.warn(`tiktok oauth: connected WITHOUT ${missing.join(', ')} — publishing will fail`);
+    console.warn(`tiktok oauth: connected WITHOUT ${missing.join(', ')} - publishing will fail`);
   }
 
   const saved = store.getTikTokToken();
@@ -285,7 +285,7 @@ export function startOAuthServer() {
     // re-authorised until the port is free.
     console.error(
       e.code === 'EADDRINUSE'
-        ? `tiktok oauth: ${HOST}:${PORT} is already in use — connect endpoint not started`
+        ? `tiktok oauth: ${HOST}:${PORT} is already in use - connect endpoint not started`
         : `tiktok oauth: server error: ${e.message}`
     );
     server = null;

@@ -5,6 +5,7 @@ import { postConfig, byWeight } from '../postConfig.js';
 import { modelFor, outputConfig } from '../models.js';
 import { isHebrew } from '../deck/hebrew.js';
 import { URL_LIKE } from '../urlLike.js';
+import { stripDashes } from '../dashes.js';
 
 // The itinerary an AI wrote, which is the post.
 //
@@ -78,32 +79,32 @@ export function findDestination(asked) {
 const SYSTEM = `אתה מתכנן מסלול טיול קצר בעברית, לזוג או לחברים מישראל, ומחזיר אותו כנתונים.
 
 זה לא טקסט שיווקי ולא תיאור של מקום. זה מסלול שמישהו הולך לבצע: לאן הולכים
-ביום הראשון, אחר כך לאן, וכמה זה עולה בערך. כל שורה נמדדת בשאלה אחת — האם
+ביום הראשון, אחר כך לאן, וכמה זה עולה בערך. כל שורה נמדדת בשאלה אחת, האם
 אפשר לקום מחר בבוקר ולעשות את זה בדיוק ככה.
 
 מה שפוסל שורה:
-- התפעלות. "נוף עוצר נשימה", "אווירה קסומה" — הצופה רוצה לדעת לאן ללכת.
+- התפעלות. "נוף עוצר נשימה", "אווירה קסומה" - הצופה רוצה לדעת לאן ללכת.
 - עמימות. "מסתובבים במרכז העיר" זה לא עצירה. "שוק קמפו דה פיורי" זה כן.
-- אתר שלא קיים, או שם שהומצא. אם אינך בטוח שהמקום קיים — אל תכתוב אותו.
+- אתר שלא קיים, או שם שהומצא. אם אינך בטוח שהמקום קיים, אל תכתוב אותו.
 - מסלול בלתי אפשרי. שתי עצירות בשני קצוות העיר ברבע שעה זה מסלול שלא נוסה.
 
 מבנה כל יום:
-- כותרת קצרה ליום — האזור או הנושא. "העיר העתיקה", "וותיקן ומערב הטיבר".
+- כותרת קצרה ליום, האזור או הנושא. "העיר העתיקה", "וותיקן ומערב הטיבר".
 - {STOPSMIN} עד {STOPSMAX} עצירות, לפי הסדר שבו עושים אותן.
 - לכל עצירה: שעה משוערת, שם המקום בעברית, שורה אחת מה עושים שם, ומחיר.
 
 מחירים:
-- בשקלים, לאדם, מעוגל. 60, 120, 250 — לא 137.
+- בשקלים, לאדם, מעוגל. 60, 120, 250, לא 137.
 - כניסה חינם זה 0. אל תמציא מחיר כדי למלא שדה.
 - אל תכתוב סכום כולל בשום מקום. הוא מחושב מהעצירות, לא נכתב.
 
 שפה:
 - עברית בכל שדה שמופיע על המסך. שם לועזי נכתב בעברית: "טרסטוורה", "קולוסיאום".
 - nameEn הוא היוצא מן הכלל, והוא לא מוצג לצופה: השם באנגלית שמשמש לחיפוש
-  תצלום של המקום. כתוב אותו כמו שצלם היה מתייג אותו — "Colosseum",
+  תצלום של המקום. כתוב אותו כמו שצלם היה מתייג אותו, "Colosseum",
   "Trastevere", "Vatican Museums". בלי מילות תיאור ובלי שם המדינה.
 - בלי אימוג׳י, האשטג, קישור, שם מותג, קריאה לפעולה.
-- שורת "מה עושים" — עד 6 מילים, משפט שלם שנגמר. היא נדפסת בשורה אחת קטנה
+- שורת "מה עושים" - עד 6 מילים, משפט שלם שנגמר. היא נדפסת בשורה אחת קטנה
   מתחת לשם על גבי תצלום, ומשפט ארוך יותר נשבר לשלוש שורות על התמונה.
 
 החזר JSON בלבד.`;
@@ -125,7 +126,7 @@ const SCHEMA = {
         type: 'object',
         additionalProperties: false,
         properties: {
-          titleHe: { type: 'string', description: 'כותרת קצרה ליום — אזור או נושא, עד 4 מילים' },
+          titleHe: { type: 'string', description: 'כותרת קצרה ליום - אזור או נושא, עד 4 מילים' },
           stops: {
             type: 'array',
             items: {
@@ -138,7 +139,7 @@ const SCHEMA = {
                   type: 'string',
                   description: 'The same place in English, as a photographer would label it: "Colosseum", "Trastevere"',
                 },
-                noteHe: { type: 'string', description: 'מה עושים שם — משפט אחד קצר' },
+                noteHe: { type: 'string', description: 'מה עושים שם - משפט אחד קצר' },
                 costIls: { type: 'integer', description: 'מחיר לאדם בשקלים, מעוגל. 0 אם חינם' },
               },
               required: ['timeHe', 'nameHe', 'nameEn', 'noteHe', 'costIls'],
@@ -190,30 +191,37 @@ export function shapePlan(raw, { days, stopsMin, stopsMax }) {
   const out = [];
 
   for (const [i, day] of (Array.isArray(raw?.days) ? raw.days : []).entries()) {
-    const titleBad = badString(day?.titleHe, { maxWords: 5 });
+    // Repaired before it is judged, not rejected for it. An em dash is banned
+    // on anything this account publishes (src/dashes.js) and it is also the
+    // single most common thing a model puts in a Hebrew line, so refusing on it
+    // would throw away most of a perfectly good itinerary over typography.
+    const titleHe = stripDashes(day?.titleHe);
+    const titleBad = badString(titleHe, { maxWords: 5 });
     if (titleBad) {
-      dropped.push(`יום ${i + 1}: title — ${titleBad}`);
+      dropped.push(`יום ${i + 1}: title - ${titleBad}`);
       continue;
     }
 
     const stops = [];
     for (const stop of (Array.isArray(day.stops) ? day.stops : []).slice(0, stopsMax)) {
-      const nameBad = badString(stop?.nameHe, { maxWords: 6 });
+      const nameHe = stripDashes(stop?.nameHe);
       // Six words, because the note is printed under the name ON A PHOTOGRAPH
       // in the deck's small type. A seventh word is a third line across the
       // picture, which is the thing that layout exists to avoid.
-      const noteBad = badString(stop?.noteHe, { maxWords: 6 });
+      const noteHe = stripDashes(stop?.noteHe);
+      const nameBad = badString(nameHe, { maxWords: 6 });
+      const noteBad = badString(noteHe, { maxWords: 6 });
       if (nameBad || noteBad) {
-        dropped.push(`${stop?.nameHe || '(ללא שם)'} — ${nameBad || noteBad}`);
+        dropped.push(`${nameHe || '(ללא שם)'} - ${nameBad || noteBad}`);
         continue;
       }
-      // The English name is not printed anywhere — it is what the photo search
+      // The English name is not printed anywhere. It is what the photo search
       // is run on, and a stop with no usable one has no picture, which under
       // the deck's rule means no slide. Dropping it here rather than at the
       // image step keeps the plan and the slideshow the same thing.
       const nameEn = String(stop?.nameEn || '').trim();
       if (!/[A-Za-z]{3}/.test(nameEn)) {
-        dropped.push(`${stop.nameHe} — no English name to search a photograph on`);
+        dropped.push(`${nameHe} - no English name to search a photograph on`);
         continue;
       }
       // A cost that is not a number is the field being left empty, which is
@@ -221,21 +229,21 @@ export function shapePlan(raw, { days, stopsMin, stopsMax }) {
       // on a slide reads as an omission and 0 reads as an answer.
       const cost = Math.max(0, Math.round(Number(stop.costIls) || 0));
       if (cost > 2000) {
-        dropped.push(`${stop.nameHe} — ${cost} ₪ is not a per-person stop price`);
+        dropped.push(`${nameHe} - ${cost} ₪ is not a per-person stop price`);
         continue;
       }
       stops.push({
         // A time that did not parse is dropped rather than printed: "בערך"
         // where a time should be makes the whole column look invented.
         timeHe: TIME.test(String(stop.timeHe || '').trim()) ? String(stop.timeHe).trim() : null,
-        nameHe: String(stop.nameHe).trim(),
+        nameHe,
         nameEn,
-        // The full stop comes off. The note is printed as a parenthesised
-        // fragment under the name — "(75 ₪ · נכנסים עם כרטיס מוזמן מראש.)" — and
-        // a sentence-ending period inside brackets reads as a typo rather than
-        // as grammar. Asking the prompt for it would be one more rule to obey
-        // at temperature; taking it off here always works.
-        noteHe: String(stop.noteHe).trim().replace(/\s*\.$/, ''),
+        // The full stop comes off too. The note is printed as a parenthesised
+        // fragment under the name, "(75 ₪ · נכנסים עם כרטיס מוזמן מראש.)", and a
+        // sentence-ending period inside brackets reads as a typo rather than as
+        // grammar. Asking the prompt for it would be one more rule to obey at
+        // temperature; taking it off here always works.
+        noteHe: noteHe.replace(/\s*\.$/, ''),
         costIls: cost,
       });
     }
@@ -244,7 +252,7 @@ export function shapePlan(raw, { days, stopsMin, stopsMax }) {
       dropped.push(`יום ${i + 1}: ${stops.length} usable stop(s), needs ${stopsMin}`);
       continue;
     }
-    out.push({ n: out.length + 1, titleHe: String(day.titleHe).trim(), stops });
+    out.push({ n: out.length + 1, titleHe, stops });
   }
 
   return { days: out.slice(0, days), dropped };
@@ -266,7 +274,7 @@ export async function writePlan({ dest, days = null, rand = Math.random, recent 
   const cfg = postConfig().plans;
   const want = Math.min(cfg.daysMax, Math.max(cfg.daysMin, Math.round(Number(days) || cfg.days)));
   const where = dest || pickDestination(recent, { rand });
-  if (!where) throw new Error('no destination available — destinations.json is empty');
+  if (!where) throw new Error('no destination available - destinations.json is empty');
   if (!hasApiKey()) throw new Error('ANTHROPIC_API_KEY is not set');
 
   const user = [
@@ -304,7 +312,7 @@ export async function writePlan({ dest, days = null, rand = Math.random, recent 
   // the promise is: "4 ימים ברומא" over three slides is the same broken
   // promise as a hook counting three mistakes over two beats.
   if (kept.length < want) {
-    const err = new Error(`only ${kept.length} of ${want} day(s) survived — ${dropped[0] || 'no reason recorded'}`);
+    const err = new Error(`only ${kept.length} of ${want} day(s) survived - ${dropped[0] || 'no reason recorded'}`);
     err.dropped = dropped;
     throw err;
   }

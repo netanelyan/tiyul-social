@@ -4,6 +4,7 @@ import { record as recordUsage } from '../usage.js';
 import { postConfig, byWeight } from '../postConfig.js';
 import { URL_LIKE } from '../urlLike.js';
 import { chooseFormat, nextSeries, seriesLabels, pickAngle } from './rotation.js';
+import { stripDashes } from '../dashes.js';
 
 // A shot list: what to film today, in what order, with the words already
 // written.
@@ -59,15 +60,15 @@ const SYSTEM = `אתה מכין תדריך צילום לסרטון טיקטוק 
 
 התדריך נמסר לאדם שהולך לצלם את הסרטון בעצמו בעשר הדקות הקרובות. לכן כל מה
 שאתה כותב חייב להיות משהו שאפשר לומר למצלמה או להציג על המסך כמו שהוא. לא
-רעיון לסרטון — הטקסט עצמו.
+רעיון לסרטון, הטקסט עצמו.
 
 המבנה:
-  הוק — שורה אחת, נאמרת ומופיעה בשנייה הראשונה, מבטיחה משהו מסוים.
-  ביטים — 2 עד 5 שורות קצרות שמוסרות בדיוק את מה שההוק הבטיח.
-  כיתוב — שורה אחת קצרה מתחת לסרטון.
+  הוק, שורה אחת, נאמרת ומופיעה בשנייה הראשונה, מבטיחה משהו מסוים.
+  ביטים, 2 עד 5 שורות קצרות שמוסרות בדיוק את מה שההוק הבטיח.
+  כיתוב, שורה אחת קצרה מתחת לסרטון.
 
-הכלל שאי אפשר להפר: ההוק מבטיח, והביטים מקיימים. אם ההוק אומר "3 טעויות" —
-יש בדיוק 3 ביטים וכל אחד הוא טעות. אם ההוק נוקב בסכום — הסכומים בביטים
+הכלל שאי אפשר להפר: ההוק מבטיח, והביטים מקיימים. אם ההוק אומר "3 טעויות", 
+יש בדיוק 3 ביטים וכל אחד הוא טעות. אם ההוק נוקב בסכום, הסכומים בביטים
 מסתכמים אליו בערך.
 
 ספציפיות היא כל העניין. שם יעד, מספר, חודש, עונה, סכום בשקלים, מרחק, שעה.
@@ -75,14 +76,14 @@ const SYSTEM = `אתה מכין תדריך צילום לסרטון טיקטוק 
 
 דוגמאות טובות:
   "3 טעויות שישראלים עושים בגאורגיה"
-    · שוכרים רכב רק בשדה התעופה — יקר בהרבה
+    · שוכרים רכב רק בשדה התעופה, יקר בהרבה
     · מגיעים באוגוסט, כשכולם שם
     · לא מזמינים מראש ומשלמים כפול
 
   "ביקשתי מ-AI לתכנן לי 4 ימים בליסבון"
     · הקלדתי: 4 ימים בליסבון, זוג, תקציב בינוני
     · חזר מסלול יום-יום עם זמני הליכה
-    · היום השלישי בסינטרה — לא הייתי חושב על זה
+    · היום השלישי בסינטרה, לא הייתי חושב על זה
 
 ואלה שורות שנפסלות, עם הסיבה:
   "יעדים מדהימים באירופה"        ← לא מבטיח כלום.
@@ -90,7 +91,7 @@ const SYSTEM = `אתה מכין תדריך צילום לסרטון טיקטוק 
   "כדאי להזמין מראש"             ← נכון וריק. כמה זה חוסך, מתי, איפה.
   "טעות אחת שכולם עושים"         ← מעורפל. איזו טעות, איפה.
 
-מחירים: סכומים בשקלים מותרים ורצויים. סכום עגול וסביר — 1,500 ₪, 2,000 ₪,
+מחירים: סכומים בשקלים מותרים ורצויים. סכום עגול וסביר, 1,500 ₪, 2,000 ₪,
 700 ₪. לא 1,847 ₪. אל תמציא מחיר לפורמט שלא ביקש אותו.
 
 אסור: אימוג׳י בהוק ובביטים, האשטגים, כתובת אתר, שם דומיין, אנגלית בטקסט
@@ -103,7 +104,7 @@ const SCHEMA = {
   additionalProperties: false,
   properties: {
     destination: { type: 'string', description: 'שם היעד בעברית, מתוך הרשימה שניתנה' },
-    hook: { type: 'string', description: 'ההוק — שורה אחת, נאמרת ומופיעה בשנייה הראשונה' },
+    hook: { type: 'string', description: 'ההוק - שורה אחת, נאמרת ומופיעה בשנייה הראשונה' },
     beats: {
       type: 'array',
       description: 'השורות שמקיימות את ההוק, לפי הסדר',
@@ -125,8 +126,12 @@ const SCHEMA = {
 
 /** Everything that must not appear in anything filmed or posted. */
 function clean(s, where) {
-  const t = String(s || '').trim();
-  if (URL_LIKE.test(t)) throw new Error(`${where} carries a URL — the link lives in the bio`);
+  // The em dash comes off before anything else looks at the line. It is banned
+  // on everything this account publishes (src/dashes.js) and a shot list is
+  // read off a phone and typed into an app by hand, so a dash that survives
+  // here is a dash somebody copies into a caption.
+  const t = stripDashes(s);
+  if (URL_LIKE.test(t)) throw new Error(`${where} carries a URL, and the link lives in the bio`);
   return t;
 }
 
@@ -172,11 +177,11 @@ export async function planShoot({ history = [], at = new Date(), rand = Math.ran
   if (!hasApiKey()) throw new Error('ANTHROPIC_API_KEY is not set');
 
   const user = [
-    `הפורמט: ${format.he} — ${format.desc}`,
+    `הפורמט: ${format.he} - ${format.desc}`,
     format.hookExamples.length ? `דוגמאות להוק בפורמט הזה: ${format.hookExamples.join(' · ')}` : null,
     format.allowsPrice ? 'הפורמט הזה בנוי סביב סכום בשקלים.' : null,
     format.needsProduct
-      ? 'הפורמט הזה הוא הקלטת מסך של Tiyul+ — מתכנן טיולים בעברית. מלא גם את השדה prompt: הבקשה המדויקת שיוקלד בו.'
+      ? 'הפורמט הזה הוא הקלטת מסך של Tiyul+ - מתכנן טיולים בעברית. מלא גם את השדה prompt: הבקשה המדויקת שיוקלד בו.'
       : null,
     '',
     angle ? `הזווית הישראלית לסרטון הזה: ${angle}` : null,
@@ -189,9 +194,9 @@ export async function planShoot({ history = [], at = new Date(), rand = Math.ran
     '',
     pinned
       ? `היעד נקבע: ${pinned}.`
-      : `בחר יעד אחד מהרשימה (לפי הסדר — הראשונים מועדפים): ${choices.map((d) => d.he).join(' · ')}`,
+      : `בחר יעד אחד מהרשימה (לפי הסדר - הראשונים מועדפים): ${choices.map((d) => d.he).join(' · ')}`,
     '',
-    `אורך: ${cfg.lengthSeconds[0]}-${cfg.lengthSeconds[1]} שניות. זה מגביל כמה ביטים אפשר — כל ביט בערך 4 שניות.`,
+    `אורך: ${cfg.lengthSeconds[0]}-${cfg.lengthSeconds[1]} שניות. זה מגביל כמה ביטים אפשר - כל ביט בערך 4 שניות.`,
   ]
     .filter((x) => x !== null)
     .join('\n');

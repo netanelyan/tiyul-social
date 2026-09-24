@@ -99,7 +99,7 @@ ${authorizeUrl()}
 
   const pasted = await ask('Redirected URL (or just the code): ');
   const code = codeFrom(pasted);
-  if (!code) throw new Error('no ?code= found in that — paste the full address after approving');
+  if (!code) throw new Error('no ?code= found in that - paste the full address after approving');
 
   console.log('\n1/2  exchanging the code for a token pair...');
   const t = await exchangeCode(code);
@@ -111,7 +111,7 @@ ${authorizeUrl()}
     // Worth stopping on rather than discovering at publish time: without
     // video.publish the whole path is dead, and the error it produces then
     // names the posting endpoint rather than the consent screen.
-    console.log(`     ⚠️  NOT granted: ${missingScopes.join(', ')} — posting will fail`);
+    console.log(`     ⚠️  NOT granted: ${missingScopes.join(', ')} - posting will fail`);
   }
 
   console.log('2/2  asking TikTok who that is and what it may post...');
@@ -142,7 +142,7 @@ if (process.argv[1] && process.argv[1].endsWith('tiktok-token.js')) {
   main().catch((e) => {
     console.error(`\nFailed: ${describeError(e)}\n`);
     if (/invalid|expired|code/i.test(e.message)) {
-      console.error('An authorization code is single-use and short-lived — open the URL again for a fresh one.');
+      console.error('An authorization code is single-use and short-lived - open the URL again for a fresh one.');
     }
     process.exitCode = 1;
   });

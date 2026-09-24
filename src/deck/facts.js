@@ -64,7 +64,7 @@ export const WIKIDATA_FIELDS = {
 /** Every Wikidata property any field spec asks for, plus the country. */
 export const WANTED_PROPS = [
   ...new Set([
-    'P17', // country — the flag and the Hebrew country name on every slide
+    'P17', // country - the flag and the Hebrew country name on every slide
     ...Object.values(WIKIDATA_FIELDS).flatMap((list) => list.map((f) => f.prop)),
   ]),
 ];

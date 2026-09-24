@@ -41,14 +41,14 @@ export async function buildWithFallback(idea, alternatives = [], { onAttempt = (
 
   for (const [i, attempt] of attempts.entries()) {
     if (barren.has(attempt.where)) {
-      console.error(`deck: skipping ${attempt.where}/${attempt.kind} — that region already came back empty`);
+      console.error(`deck: skipping ${attempt.where}/${attempt.kind} - that region already came back empty`);
       continue;
     }
 
     await onAttempt(attempt, i, why);
 
     const built = await buildDeck(attempt).catch((e) => {
-      console.error(`deck: ${attempt.where}/${attempt.kind} failed — ${e.message}`);
+      console.error(`deck: ${attempt.where}/${attempt.kind} failed - ${e.message}`);
       why = e.message;
       return null;
     });

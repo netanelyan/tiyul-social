@@ -254,7 +254,7 @@ html, body { width: ${w}px; height: ${h}px; overflow: hidden; }
    plainer.
 
    So MINIMAL uses Assistant at 600 rather than 900. TikTok Sans has no Hebrew
-   at all, so the app itself falls back to the phone's system face — SF Hebrew
+   at all, so the app itself falls back to the phone's system face - SF Hebrew
    on iOS — and Assistant is the closest thing that can lawfully be shipped.
    INFO keeps Rubik, because the chunky outlined look of those reference slides
    genuinely is a display face and reads wrong in anything lighter. */
@@ -480,7 +480,7 @@ body {
 .cover.xlong { font-size: ${t.coverXlong}px; }
 
 /* Hebrew has no capitals, so the one word the reference covers shout — "you
-   HAVE to visit WYOMING" — is carried by colour instead.
+   HAVE to visit WYOMING" - is carried by colour instead.
 
    Except in the info style, where the whole cover is already cream over bronze
    and a second colour inside it reads as two treatments arguing. The reference

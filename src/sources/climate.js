@@ -153,7 +153,7 @@ export async function fetchClimate(source, dest, now = new Date()) {
   const round = (n) => (n === null || n === undefined ? n : Math.round(n));
   const lines = months.map(
     (m) =>
-      `${String(m.month + 1).padStart(2, '0')} — mean daily high ${round(m.meanMax)}C, mean low ${round(m.meanMin)}C, ` +
+      `${String(m.month + 1).padStart(2, '0')} - mean daily high ${round(m.meanMax)}C, mean low ${round(m.meanMin)}C, ` +
       `about ${round(m.wetDaysPerMonth)} wet days/month (>=1mm), verdict ${m.verdict}`
   );
 
@@ -163,7 +163,7 @@ export async function fetchClimate(source, dest, now = new Date()) {
     authority: source.authority,
     lang: 'data',
     pillarHints: ['timing'],
-    title: `${dest.en} — monthly climate normals ${start.slice(0, 4)}–${end.slice(0, 4)} (ERA5)`,
+    title: `${dest.en} - monthly climate normals ${start.slice(0, 4)}–${end.slice(0, 4)} (ERA5)`,
     summary:
       `Destination: ${dest.en}, ${dest.country}. Hebrew name to use verbatim: ${dest.he}.\n` +
       `Source: Open-Meteo ERA5 reanalysis, daily values ${start} to ${end}, averaged per calendar month.\n` +

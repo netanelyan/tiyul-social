@@ -170,7 +170,7 @@ async function gatherClimate(source, { limit, now }) {
     } catch (e) {
       // One unreachable destination shouldn't stop the rotation reaching the
       // next one — the whole source only fails if every attempt fails.
-      console.error(`   climate: ${dest.en} failed — ${e.message}`);
+      console.error(`   climate: ${dest.en} failed - ${e.message}`);
     }
   }
   if (!out.length && ordered.length) {

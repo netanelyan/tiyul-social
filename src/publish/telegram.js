@@ -63,7 +63,7 @@ export async function sendDeckForApproval(telegram, chatId, cand, approvalText, 
         chatId,
         files.slice(0, 10).map((f) => ({ type: 'photo', media: { source: createReadStream(f) } }))
       )
-      .catch((e) => console.error(`approval UX: media group failed — ${e.message}`));
+      .catch((e) => console.error(`approval UX: media group failed - ${e.message}`));
   }
 
   return telegram.sendMessage(chatId, approvalText, {
@@ -140,7 +140,7 @@ export async function sendClipForApproval(telegram, chatId, cand, approvalText, 
 
   await telegram
     .sendVideo(chatId, { source: createReadStream(file) }, { supports_streaming: true })
-    .catch((e) => console.error(`approval UX: clip send failed — ${e.message}`));
+    .catch((e) => console.error(`approval UX: clip send failed - ${e.message}`));
   return telegram.sendMessage(chatId, approvalText, {
     link_preview_options: { is_disabled: true },
     ...keyboard,

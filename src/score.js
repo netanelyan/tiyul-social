@@ -172,7 +172,7 @@ const NAMED_PLACES = (() => {
 const DAY_MS = 86_400_000;
 
 function recencyScore(publishedAt, now) {
-  if (!publishedAt) return 0.4; // undated isn't disqualifying — a fact doesn't expire
+  if (!publishedAt) return 0.4; // undated isn't disqualifying - a fact doesn't expire
   const age = (now - Date.parse(publishedAt)) / DAY_MS;
   if (!Number.isFinite(age)) return 0.4;
   if (age < 0) return 0.6; // clock skew or a future-dated post

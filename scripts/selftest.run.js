@@ -98,9 +98,9 @@ function ok(name, cond, detail = '') {
     pass++;
   } else {
     fail++;
-    failures.push(`${name}${detail ? ` — ${detail}` : ''}`);
+    failures.push(`${name}${detail ? ` - ${detail}` : ''}`);
   }
-  console.log(`  ${cond ? '✓' : '✗'} ${name}${cond || !detail ? '' : ` — ${detail}`}`);
+  console.log(`  ${cond ? '✓' : '✗'} ${name}${cond || !detail ? '' : ` - ${detail}`}`);
 }
 
 const eq = (name, got, want) => ok(name, got === want, `expected ${JSON.stringify(want)}, got ${JSON.stringify(got)}`);
@@ -117,7 +117,7 @@ function throws(name, fn, reason) {
 const group = (title) => console.log(`\n${title}`);
 
 /* -------------------------------------------------------------------------- */
-group('allowlist — "no source, no candidate"');
+group('allowlist - "no source, no candidate"');
 
 for (const [url, want, why] of [
   ['https://www.gov.uk/foreign-travel-advice/japan', true, 'FCDO'],
@@ -134,7 +134,7 @@ for (const [url, want, why] of [
 }
 
 /* -------------------------------------------------------------------------- */
-group('fare guard — off by default since the brief, and still correct when on');
+group('fare guard - off by default since the brief, and still correct when on');
 
 // THE DETECTOR IS UNCHANGED AND STILL TESTED. What changed is whether
 // verifyDraftText consults it: the brief requires prices (rule 2), the owner
@@ -198,7 +198,7 @@ for (const [text, want] of [
 }
 
 /* -------------------------------------------------------------------------- */
-group('claim verification — quotes must be verbatim');
+group('claim verification - quotes must be verbatim');
 
 const SRC = 'The new Entry/Exit System starts on 12 October 2026 for all non-EU nationals crossing an external border.';
 
@@ -216,7 +216,7 @@ ok(
   'accepts a quote differing only in whitespace and punctuation',
   (() => {
     try {
-      return verifyEvidence({ evidence: [{ claim: 'x', quote: 'starts  on 12 October, 2026 — for all non-EU nationals' }] }, SRC);
+      return verifyEvidence({ evidence: [{ claim: 'x', quote: 'starts  on 12 October, 2026 - for all non-EU nationals' }] }, SRC);
     } catch {
       return false;
     }
@@ -252,7 +252,7 @@ throws(
 );
 
 /* -------------------------------------------------------------------------- */
-group('source text extraction — boilerplate must not become citable evidence');
+group('source text extraction - boilerplate must not become citable evidence');
 
 const HTML = `<html><body>
   <nav><a href="/">Home</a><a href="/x">Advice</a></nav>
@@ -276,7 +276,7 @@ ok(
 );
 
 /* -------------------------------------------------------------------------- */
-group('the 403 browser fallback — which failures are worth a second request');
+group('the 403 browser fallback - which failures are worth a second request');
 
 // globalThis.fetch is stubbed rather than hitting the network, so this stays an
 // offline check. It deliberately never exercises the Playwright path: launching
@@ -334,7 +334,7 @@ group('the 403 browser fallback — which failures are worth a second request');
 }
 
 /* -------------------------------------------------------------------------- */
-group('feed parsing — RSS and Atom through one adapter');
+group('feed parsing - RSS and Atom through one adapter');
 
 const src = { id: 't', name: 'T', authority: 'government', lang: 'en', pillars: ['entry'] };
 
@@ -426,7 +426,7 @@ ok(
 );
 
 /* -------------------------------------------------------------------------- */
-group('climate — monthly normals and month verdicts');
+group('climate - monthly normals and month verdicts');
 
 const daily = { time: [], temperature_2m_max: [], temperature_2m_min: [], precipitation_sum: [] };
 for (const y of ['2023', '2024']) {
@@ -446,7 +446,7 @@ eq('22C but very wet is "avoid"', verdictFor({ meanMax: 22, wetDaysPerMonth: 18 
 eq('no data is "unknown"', verdictFor({ meanMax: null }), 'unknown');
 
 /* -------------------------------------------------------------------------- */
-group('topic quotas — kosher is a thread, not the theme');
+group('topic quotas - kosher is a thread, not the theme');
 
 const hist = (n, tagged) =>
   Array.from({ length: n }, (_, i) => ({ pillar: 'inCity', tags: i < tagged ? ['kosher'] : [] }));
@@ -543,7 +543,7 @@ ok(
 ok('a deck about somewhere fresh says nothing', deckRepeats({ where: 'Porto', category: 'city', slides: [] }, mixedKyoto).length === 0);
 
 /* -------------------------------------------------------------------------- */
-group('what the idea prompt remembers — the list that was twelve hashes');
+group('what the idea prompt remembers - the list that was twelve hashes');
 
 // The bug this guards, exactly: recordPublished never accepted a `headline`, so
 // `p.headline || p.id` fell through to a sha1 on every row and the /deck prompt
@@ -573,7 +573,7 @@ eq('legacy rows drop out entirely', store.recentTitles({ history: [{ ts: 1, id: 
 eq('the list is capped', store.recentTitles({ history: Array.from({ length: 40 }, () => titleHist[0]) }).length, 12);
 
 /* -------------------------------------------------------------------------- */
-group('deck proposals — the text stage, before anything is built');
+group('deck proposals - the text stage, before anything is built');
 
 // A deck is an idea call, a search and a drafting call per place, then twelve
 // renders. All of it used to happen before you had seen anything, so a deck you
@@ -791,7 +791,7 @@ ok('and anything touching tiktok is a draft', destinationsFor('both').includes('
 eq('both renders both sizes', sizesFor(destinationsFor('both')).join(','), 'instagram,tiktok');
 
 /* -------------------------------------------------------------------------- */
-group('one deck, one vocabulary — and a photo of what the deck is about');
+group('one deck, one vocabulary - and a photo of what the deck is about');
 
 // The screenshot that prompted this: one slide read "מרחק", the next "אורך",
 // same measurement, same ruler emoji. Two field specs are live for a trail — a
@@ -825,7 +825,7 @@ ok('the bare name is still tried', qs.includes('Bodensee-Rundweg'));
 eq('no subject means the old queries', cinematicQueries('Prague', 'Prague')[0], 'Prague');
 
 /* -------------------------------------------------------------------------- */
-group('ranking — the two misfires found against live feeds');
+group('ranking - the two misfires found against live feeds');
 
 const base = { sourceId: 's', publishedAt: new Date().toISOString(), pillarHints: [] };
 const fcdo = { ...base, authority: 'government', title: 'Norway', summary: 'x'.repeat(400) };
@@ -843,7 +843,7 @@ ok('a short title with a real summary is not penalised as thin', scoreItem(fcdo)
 ok(
   'actionable news still outranks an evergreen dataset item',
   scoreItem({ title: 'Louvre reopens the Denon wing after two years', summary: 'x'.repeat(300), authority: 'government', publishedAt: new Date().toISOString(), pillarHints: ['inCity'] }) >
-    scoreItem({ title: 'Bangkok — monthly climate normals 2016–2025 (ERA5)', summary: 'x'.repeat(300), authority: 'dataset', publishedAt: null, evergreen: true, pillarHints: ['timing'] })
+    scoreItem({ title: 'Bangkok - monthly climate normals 2016–2025 (ERA5)', summary: 'x'.repeat(300), authority: 'dataset', publishedAt: null, evergreen: true, pillarHints: ['timing'] })
 );
 
 // The reversal, pinned. A travel desk is not a wire: a fact that is worth saving
@@ -869,7 +869,7 @@ ok(
 );
 
 /* -------------------------------------------------------------------------- */
-group('the trip rule — could they go, and does it make them want to');
+group('the trip rule - could they go, and does it make them want to');
 
 // The six posts that made this a natural-phenomena account rather than a travel
 // one. Each is checked against a mundane item from an equally authoritative
@@ -1011,7 +1011,7 @@ group('the daily cap survives repeated gathers and restarts');
 
   store.noteRejected(DAY);
   eq('a rejection is counted', store.rejectedToday(DAY), 1);
-  eq('but the offer count stands — the ceiling is computed from it', store.stagedToday(DAY), 3);
+  eq('but the offer count stands - the ceiling is computed from it', store.stagedToday(DAY), 3);
 
   store.noteRejected(DAY);
   store.noteRejected(DAY);
@@ -1033,7 +1033,7 @@ group('the daily cap survives repeated gathers and restarts');
     hour >= RUN_HOUR && hour < UNTIL && remaining(offered, rejected) > 0 && sinceLastMs >= EVERY_MS;
 
   ok('gathers at the start of the window', wouldGather(8, 0, Infinity));
-  ok('gathers again later in the day — this is the whole point', wouldGather(14, 1, EVERY_MS));
+  ok('gathers again later in the day - this is the whole point', wouldGather(14, 1, EVERY_MS));
   ok('does not gather before the window opens', !wouldGather(6, 0, Infinity));
   ok('does not gather overnight', !wouldGather(23, 0, Infinity));
   ok('stops once the daily cap is met', !wouldGather(14, 3, Infinity));
@@ -1050,7 +1050,7 @@ group('the daily cap survives repeated gathers and restarts');
 }
 
 /* -------------------------------------------------------------------------- */
-group('the quiet alarm — the check that could not fire');
+group('the quiet alarm - the check that could not fire');
 
 // It watched an in-memory `lastStagedAt` that started null, behind a truthiness
 // guard, and was only ever set by a successful staging. So a bot that staged
@@ -1279,7 +1279,7 @@ group('no word twice in a headline');
 // "יולי" appeared at both ends of a real staged card. Accurate, and it reads
 // assembled rather than written.
 ok('flags the live repeat', noRepeatedWord({ headline: 'יולי היה החודש הכי עמוס ביפן אי פעם ליולי' }));
-ok('sees through an attached Hebrew prefix — ליולי is יולי', noRepeatedWord({ headline: 'יולי עמוס ליולי' }));
+ok('sees through an attached Hebrew prefix - ליולי is יולי', noRepeatedWord({ headline: 'יולי עמוס ליולי' }));
 eq('the rewrite passes', noRepeatedWord({ headline: 'יולי השיא של התיירות ביפן' }), null);
 eq('a real headline passes', noRepeatedWord({ headline: 'הקרחון הענק במיצר שבין גרינלנד לאיסלנד' }), null);
 eq('an alert headline passes', noRepeatedWord({ headline: 'בריטניה ביטלה את האזהרה מנסיעה לבחריין' }), null);
@@ -1320,7 +1320,7 @@ ok('779 characters of clean report clears the feed floor', 779 > minSourceChars(
 ok('but 779 would not clear the page floor', 779 < minSourceChars('english text'));
 
 /* -------------------------------------------------------------------------- */
-group('rounding — a decimal on a card means it was generated, not written');
+group('rounding - a decimal on a card means it was generated, not written');
 
 // Both of these shipped to the approval queue before the guard existed.
 ok('rejects the live "16.7 מעלות" headline', noDecimalsUpFront({ headline: 'נובמבר בטוקיו: 16.7 מעלות ורק 8.6 ימי גשם' }));
@@ -1334,12 +1334,12 @@ throws('verifyDraftText refuses a draft carrying one', () =>
 );
 
 /* -------------------------------------------------------------------------- */
-group('card filenames — a dedupeId is not automatically a safe filename');
+group('card filenames - a dedupeId is not automatically a safe filename');
 
 // Found by measuring a real run: two drafting calls a day were being paid for
 // and then thrown away at the render step, because the climate adapter's
 // readable dedupeId contains colons.
-eq('colons are replaced — Windows rejects them outright', safeStem('climate:dubai:2025'), 'climate-dubai-2025');
+eq('colons are replaced - Windows rejects them outright', safeStem('climate:dubai:2025'), 'climate-dubai-2025');
 eq('a hex id is untouched', safeStem('a1b2c3d4e5f6'), 'a1b2c3d4e5f6');
 ok('nothing survives that would need URL-escaping', /^[A-Za-z0-9._-]+$/.test(safeStem('a b/c:d?e#f')));
 eq('an id of only separators still yields a filename', safeStem(':::'), 'card');
@@ -1366,14 +1366,14 @@ ok(
 );
 
 /* -------------------------------------------------------------------------- */
-group('image policy — AI imagery may only be generic');
+group('image policy - AI imagery may only be generic');
 
 throws('rejects a prompt naming the post\'s place', () => assertGenericAiPrompt('a sunny street in Lisbon', { place: 'Lisbon', country: 'Portugal' }));
 throws('rejects a prompt naming the country', () => assertGenericAiPrompt('rooftops in portugal at dusk', { place: 'Lisbon', country: 'Portugal' }));
 ok('allows an abstract prompt', assertGenericAiPrompt('abstract warm-toned travel texture', { place: 'Lisbon', country: 'Portugal' }));
 
 /* -------------------------------------------------------------------------- */
-group('rendering — escaping and layout selection');
+group('rendering - escaping and layout selection');
 
 const draft = {
   layout: 'fact',
@@ -1452,7 +1452,7 @@ ok(
 );
 
 /* -------------------------------------------------------------------------- */
-group('approval message — the source URL is never optional');
+group('approval message - the source URL is never optional');
 
 const cand = {
   ...draft,
@@ -1485,7 +1485,7 @@ ok('and names the layout it was demoted from', demoted.includes('photoFull'));
 ok('a deliberately text-led card has nothing to explain', !/ירד ל/.test(approvalMessage({ ...cand, publishTargets: ['telegram'] })));
 
 /* -------------------------------------------------------------------------- */
-group('publish targets — Telegram may be approval-only');
+group('publish targets - Telegram may be approval-only');
 
 const targetsFor = (env) => publishTargets({ ...env });
 const IG = { IG_USER_ID: '1', IG_ACCESS_TOKEN: 'x', CARD_PUBLIC_BASE_URL: 'https://x/c' };
@@ -1513,14 +1513,14 @@ withEnv({ ...IG, CHANNEL_ID: undefined }, () => {
 });
 withEnv({ IG_USER_ID: undefined, IG_ACCESS_TOKEN: undefined, CARD_PUBLIC_BASE_URL: undefined }, () => {
   eq('Telegram channel only is a valid setup', targetsFor({ CHANNEL_ID: '@c' }).join(','), 'telegram');
-  eq('neither configured yields no targets — bot refuses to start', targetsFor({ CHANNEL_ID: undefined }).length, 0);
+  eq('neither configured yields no targets - bot refuses to start', targetsFor({ CHANNEL_ID: undefined }).length, 0);
 });
 withEnv(IG, () => {
   eq('both configured publishes to both', targetsFor({ CHANNEL_ID: '@c' }).join(','), 'telegram,instagram');
 });
 withEnv({ ...IG, CARD_PUBLIC_BASE_URL: undefined }, () => {
   eq(
-    'Instagram without a public card URL is not configured — it cannot fetch the image',
+    'Instagram without a public card URL is not configured - it cannot fetch the image',
     targetsFor({ CHANNEL_ID: undefined }).length,
     0
   );
@@ -1901,7 +1901,7 @@ eq('slides with no country claim likewise', countryMismatch([{}, {}], 'US'), nul
 eq('and a deck spanning countries is not a mismatch', countryMismatch([{ iso: 'CH' }, { iso: 'IT' }], 'US'), null);
 
 /* -------------------------------------------------------------------------- */
-group('TikTok scopes — the half-connection that looked connected');
+group('TikTok scopes - the half-connection that looked connected');
 
 // A deck failed at init with scope_not_authorized against a token that plainly
 // carried video.publish. TikTok splits posting by MODE, not by media: a direct
@@ -1991,7 +1991,7 @@ ok('a cover is not numbered against a deck title it opens', !igCover.includes('c
 ok('a slide with no photograph still renders', renderInstagramSlideHtml({ nameHe: 'x' }, {}).includes('bg-empty'));
 
 /* -------------------------------------------------------------------------- */
-group('Hebrew first — technical detail below the line, never inside it');
+group('Hebrew first - technical detail below the line, never inside it');
 
 // Every failure read `❌ משהו נכשל: ${e.message}`, and e.message is whatever the
 // API or the runtime said: always English. A Hebrew clause and an English
@@ -2414,7 +2414,7 @@ eq(
 eq('a place with nothing has no authority', authorityDomains({ osmTags: {} }).length, 0);
 
 /* -------------------------------------------------------------------------- */
-group('the guide page — a deck of trails is not a deck of whatever is on the page');
+group('the guide page - a deck of trails is not a deck of whatever is on the page');
 
 // The bug this group exists for.
 //
@@ -2483,7 +2483,7 @@ const pragueish = [
 ];
 eq(
   'a name echoed with its description still matches',
-  keepByName(pragueish, ['מאלה סטראנה — הרובע הבארוקי שמתחת למצודה']).length,
+  keepByName(pragueish, ['מאלה סטראנה - הרובע הבארוקי שמתחת למצודה']).length,
   1
 );
 eq('and a bare name matches too', keepByName(pragueish, ['מצודת וישהראד']).length, 1);
@@ -2611,7 +2611,7 @@ eq('and clamped upwards too', normaliseIdea({ title_he: 'x', where: 'Prague', ki
 eq('an idea in an unknown category is dropped', normaliseIdea({ title_he: 'x', where: 'p', kind: 'nightclub', want: 5 }), null);
 ok(
   'em dashes are stripped from an idea title like everywhere else',
-  !normaliseIdea({ title_he: 'פראג — מוזיאונים', where: 'Prague', kind: 'museum', want: 5 }).titleHe.includes('—')
+  !normaliseIdea({ title_he: 'פראג - מוזיאונים', where: 'Prague', kind: 'museum', want: 5 }).titleHe.includes('—')
 );
 
 /* -------------------------------------------------------------------------- */
@@ -2764,7 +2764,7 @@ group('image query fallback chain');
 }
 
 /* -------------------------------------------------------------------------- */
-group('copy shape — the exemplar passes, its failure modes do not');
+group('copy shape - the exemplar passes, its failure modes do not');
 
 {
   const exemplar = {
@@ -2799,7 +2799,7 @@ group('copy shape — the exemplar passes, its failure modes do not');
 }
 
 /* -------------------------------------------------------------------------- */
-group('normalise — what is fixed for free rather than re-drafted');
+group('normalise - what is fixed for free rather than re-drafted');
 
 {
   eq('emoji leave the headline', stripEmoji('הזוהר 💜 הצפוני ✨'), 'הזוהר הצפוני');
@@ -2818,7 +2818,7 @@ group('normalise — what is fixed for free rather than re-drafted');
 }
 
 /* -------------------------------------------------------------------------- */
-group('feed parsing — a full-text feed is not an entity bomb');
+group('feed parsing - a full-text feed is not an entity bomb');
 
 {
   // Three of the first six official tourism feeds probed carried escaped HTML
@@ -2841,7 +2841,7 @@ group('feed parsing — a full-text feed is not an entity bomb');
 }
 
 /* -------------------------------------------------------------------------- */
-group('ranking — what a title alone can rule out');
+group('ranking - what a title alone can rule out');
 
 {
   const base = { authority: 'government', publishedAt: new Date().toISOString(), pillarHints: [], summary: 'x'.repeat(300) };
@@ -2866,7 +2866,7 @@ ok('ids are unique', new Set(reg.sources.map((s) => s.id)).size === reg.sources.
 // network. Checked in both directions, because the whole point is that the
 // obvious version of this check passed in both.
 /* -------------------------------------------------------------------------- */
-group('measured facts — the numbers a mountain has instead of a website');
+group('measured facts - the numbers a mountain has instead of a website');
 
 const METRE = { amount: '+3967', unit: 'http://www.wikidata.org/entity/Q11573' };
 eq('an elevation in metres reads as metres', lengthValue(METRE, 'm'), '3,967 מ׳');
@@ -2943,7 +2943,7 @@ eq('an ISO code becomes a flag', flagFor('it'), '🇮🇹');
 eq('and nonsense does not', flagFor('xyz'), null);
 
 /* -------------------------------------------------------------------------- */
-group('Hebrew names — a Latin name on a Hebrew slide is the loudest tell there is');
+group('Hebrew names - a Latin name on a Hebrew slide is the loudest tell there is');
 
 ok('Hebrew passes', isHebrew('מאטרהורן'));
 ok('Hebrew with a space and a comma passes', isHebrew('אלפה די סיוזי, איטליה'));
@@ -2954,7 +2954,7 @@ ok('an empty answer is refused', !isHebrew(''));
 ok('so is whitespace', !isHebrew('   '));
 
 /* -------------------------------------------------------------------------- */
-group('module surfaces — a deleted export must not fail silently');
+group('module surfaces - a deleted export must not fail silently');
 
 // A careless edit to deck/ideas.js removed hasApiKey and proposeIdeas along
 // with the function it meant to replace. Nothing caught it: the tests did not
@@ -2991,7 +2991,7 @@ for (const [mod, expected] of [
 }
 
 /* -------------------------------------------------------------------------- */
-group('covers — variety is a property of the sequence, not of one call');
+group('covers - variety is a property of the sequence, not of one call');
 
 // A model asked once per deck cannot see the previous deck, so "vary it" in a
 // brief converges on its favourite phrasing — which is how six decks in a row
@@ -3085,7 +3085,7 @@ eq('otherwise the tail does', emphasisFrom('6 פינות בפראג עם גגו�
 eq('a title too short to split gives nothing', emphasisFrom('פראג'), '');
 
 /* -------------------------------------------------------------------------- */
-group('where a deck is — the cover has to say it, so it has to be worked out');
+group('where a deck is - the cover has to say it, so it has to be worked out');
 
 // Six Icelandic waterfalls went out under "מפלים שאתם חייבים לראות פעם אחת
 // בחיים". Every slide was in one country and the cover named nowhere, which is
@@ -3191,7 +3191,7 @@ ok('a stem on its own is not a match', !namesPlace('מקומות יפים עם �
 ok('nothing asked for is always satisfied', namesPlace('כל דבר', ''));
 
 /* -------------------------------------------------------------------------- */
-group('deck requests — the command has to answer with a slideshow');
+group('deck requests - the command has to answer with a slideshow');
 
 eq('the category at the end is found', parseLocally('Prague museum')?.kind, 'museum');
 eq('and the region with it', parseLocally('Prague museum')?.where, 'Prague');
@@ -3206,7 +3206,7 @@ eq('a phrase with no category is handed upwards', parseLocally('japan autumn'), 
 eq('and so is a single word', parseLocally('Santorini'), null);
 
 /* -------------------------------------------------------------------------- */
-group('scrims — sized to the photograph, not to the worst photograph');
+group('scrims - sized to the photograph, not to the worst photograph');
 
 // The complaint: Instagram cards sometimes come out too dark. "Sometimes" is
 // the tell — the scrim was a constant sized for a white sky, so over a
@@ -3270,7 +3270,7 @@ ok('an unknown size keeps the TikTok scrim',
   renderSlideHtml({ nameHe: 'x', fields: [] }, { size: 'nonsense', style: 'minimal' }).includes('rgba(4,10,12,0.42) 100%'));
 
 /* -------------------------------------------------------------------------- */
-group('placement — measured off the photograph, not guessed at');
+group('placement - measured off the photograph, not guessed at');
 
 // White until the frame is genuinely pale. Strict contrast arithmetic flips to
 // near-black above about 0.22 luminance, which is most skies, and near-black
@@ -3382,7 +3382,7 @@ ok('nor one away to the left', photoTest.railOverlap(0.3, 0.6, 0.4, 0.2) === 0);
 }
 
 /* -------------------------------------------------------------------------- */
-group('post-config — the caption, the tags, and where the account leans');
+group('post-config - the caption, the tags, and where the account leans');
 
 // The whole reason this file exists: every one of these was a literal in a
 // module, and every one of them is a decision that gets revisited after looking
@@ -3523,7 +3523,7 @@ eq('a clean caption passes through untouched', assertNoUrl('יעד לרשימה'
 }
 
 /* -------------------------------------------------------------------------- */
-group('clips — participant or spectator, judged from the title');
+group('clips - participant or spectator, judged from the title');
 
 // The owner's own verdicts, used as the fixture.
 //
@@ -3674,7 +3674,7 @@ group('clips — participant or spectator, judged from the title');
 }
 
 /* -------------------------------------------------------------------------- */
-group('clip look — the owner settled these by eye, one render at a time');
+group('clip look - the owner settled these by eye, one render at a time');
 
 // Every assertion here is a decision that cost a round of screenshots. They are
 // locked so the next change to this pipeline cannot quietly undo one, and so
@@ -3733,7 +3733,7 @@ group('clip look — the owner settled these by eye, one render at a time');
 }
 
 /* -------------------------------------------------------------------------- */
-group('clip candidate — the fields the publish path reads');
+group('clip candidate - the fields the publish path reads');
 
 {
   const { targetsForKind, allowedForKind } = await import('../src/publish/targets.js');
@@ -3754,7 +3754,7 @@ group('clip candidate — the fields the publish path reads');
 }
 
 /* -------------------------------------------------------------------------- */
-group('clip description — a published post with an empty caption is invisible');
+group('clip description - a published post with an empty caption is invisible');
 
 {
   const { clipHashtags, clipDestinationTag } = await import('../src/hashtags.js');
@@ -3841,7 +3841,7 @@ group('clip description — a published post with an empty caption is invisible'
 }
 
 /* -------------------------------------------------------------------------- */
-group('clip footage — the same video must never come back');
+group('clip footage - the same video must never come back');
 
 // The bug, exactly: /clip built its "already used" set with
 //   store.recentPublished().map((p) => String(p.pexelsId || ''))
@@ -3915,7 +3915,7 @@ group('clip footage — the same video must never come back');
 }
 
 /* -------------------------------------------------------------------------- */
-group('one country per clip — the line, the pin and the tag are one fact');
+group('one country per clip - the line, the pin and the tag are one fact');
 
 // The post that prompted this said "אני, אתה, טיסה לאיטליה?" burned into the
 // video with a pin underneath it reading the same country — consistent, and
@@ -3944,7 +3944,7 @@ group('one country per clip — the line, the pin and the tag are one fact');
 }
 
 /* -------------------------------------------------------------------------- */
-group('clip lines — the owner-approved shapes must survive their own guards');
+group('clip lines - the owner-approved shapes must survive their own guards');
 
 // The rule this group has always encoded: A GUARD THAT REJECTS A CANONICAL LINE
 // IS A BROKEN GUARD. Three separate guards silently ate the owner's approved
@@ -4052,7 +4052,7 @@ group('clip lines — the owner-approved shapes must survive their own guards');
 }
 
 /* -------------------------------------------------------------------------- */
-group('clip length — one line, one length, and a source long enough to fill it');
+group('clip length - one line, one length, and a source long enough to fill it');
 
 {
   const cfg = postConfig().clips;
@@ -4074,7 +4074,93 @@ group('clip length — one line, one length, and a source long enough to fill it
 }
 
 /* -------------------------------------------------------------------------- */
-group('AI itineraries — the plan has to survive its own shape check');
+group('the em dash, banned everywhere a reader can see one');
+
+// An owner's instruction, and an absolute one. The reason it is a test rather
+// than a habit is that almost nothing here writes its own strings: a model does,
+// and a model reaches for the character constantly in both languages. A rule
+// that lives only in a prompt is a rule that holds at temperature 0 and nowhere
+// else.
+{
+  const { stripDashes, hasLongDash } = await import('../src/dashes.js');
+  const { planText, planGiveaway } = await import('../src/plan/text.js');
+
+  eq('an em dash becomes a hyphen', stripDashes('טיסה הלוך ושוב — 700 ₪'), 'טיסה הלוך ושוב - 700 ₪');
+  eq('and so does an en dash', stripDashes('a – b'), 'a - b');
+  eq('the double space it leaves is collapsed', stripDashes('a —  b'), 'a - b');
+  ok('and a line with one is detectable', hasLongDash('a — b') && !hasLongDash('a - b'));
+
+  // EVERY LIVE STRING IN post-config.json. Not the _comment blocks, which are
+  // prose for whoever edits the file; everything else there is either published
+  // or printed on a slide.
+  const live = [];
+  const walk = (o, path) => {
+    if (typeof o === 'string') return live.push([path, o]);
+    if (Array.isArray(o)) return o.forEach((v, i) => walk(v, `${path}[${i}]`));
+    if (o && typeof o === 'object') {
+      for (const k of Object.keys(o)) {
+        if (k.startsWith('_')) continue;
+        walk(o[k], path ? `${path}.${k}` : k);
+      }
+    }
+  };
+  walk(JSON.parse(readFileSync(new URL('../post-config.json', import.meta.url), 'utf8')), '');
+  const dashed = live.filter(([, v]) => hasLongDash(v));
+  eq('no live config string carries one', dashed.length, 0, dashed.map(([p]) => p).join(', '));
+
+  // The strings a plan puts on a slide, after the templates are filled. A
+  // destination name arrives from destinations.json by a different route than
+  // the templates do, so filling is where one could still get in.
+  const plan = {
+    id: 'dashprobe01',
+    dest: { id: 'rome', he: 'רומא', en: 'Rome', country: 'איטליה' },
+    days: [{ n: 1, titleHe: 'העיר העתיקה', stops: [{ timeHe: '09:00', nameHe: 'קולוסיאום', nameEn: 'Colosseum', noteHe: 'מזמינים מראש', costIls: 80 }] }],
+    total: 80,
+  };
+  const text = planText(plan);
+  const give = planGiveaway(plan);
+  for (const [k, v] of Object.entries(text)) {
+    if (typeof v === 'string') ok(`plan text ${k} is clean`, !hasLongDash(v), v);
+  }
+  if (give) {
+    for (const [k, v] of Object.entries(give)) {
+      if (typeof v === 'string') ok(`giveaway ${k} is clean`, !hasLongDash(v), v);
+    }
+  }
+
+  // THE WRITERS REPAIR RATHER THAN REFUSE. A dash is the most common thing a
+  // model puts in a Hebrew line, and rejecting on it would throw away most of a
+  // good itinerary over typography.
+  const { shapePlan } = await import('../src/plan/write.js');
+  const shaped = shapePlan(
+    {
+      days: [
+        {
+          titleHe: 'העיר — העתיקה',
+          stops: [
+            { timeHe: '09:00', nameHe: 'קולוסיאום — הזירה', nameEn: 'Colosseum', noteHe: 'מזמינים מראש — בלי תור', costIls: 80 },
+            { timeHe: '11:00', nameHe: 'הפורום', nameEn: 'Roman Forum', noteHe: 'הכניסה מהצד', costIls: 0 },
+            { timeHe: '13:00', nameHe: 'טרסטוורה', nameEn: 'Trastevere', noteHe: 'ארוחה בסמטאות', costIls: 90 },
+          ],
+        },
+      ],
+    },
+    { days: 1, stopsMin: 3, stopsMax: 4 }
+  );
+  ok('a written day title is repaired', !hasLongDash(shaped.days[0].titleHe), shaped.days[0].titleHe);
+  ok('and so is a stop', !hasLongDash(shaped.days[0].stops[0].nameHe + shaped.days[0].stops[0].noteHe));
+  eq('the stop is kept, not dropped', shaped.days[0].stops.length, 3);
+
+  // The clip writer and the shot list run the same repair on the way out, so
+  // the rule does not depend on which of the three wrote the line.
+  const hooks = readFileSync(new URL('../src/video/hooks.js', import.meta.url), 'utf8');
+  const shoot = readFileSync(new URL('../src/shoot/plan.js', import.meta.url), 'utf8');
+  ok('the clip writer strips them', /stripDashes\(l\.text\)/.test(hooks));
+  ok('the shot list strips them', /stripDashes\(s\)/.test(shoot));
+}
+
+/* -------------------------------------------------------------------------- */
+group('AI itineraries - the plan has to survive its own shape check');
 
 {
   const { shapePlan, planTotal } = await import('../src/plan/write.js');
@@ -4158,7 +4244,7 @@ group('AI itineraries — the plan has to survive its own shape check');
 }
 
 /* -------------------------------------------------------------------------- */
-group('the itinerary slideshow — what it says, and what it promises');
+group('the itinerary slideshow - what it says, and what it promises');
 
 {
   const { tripDecks, deckForSize, allStops, dayTotal, flagForHebrew } = await import('../src/plan/slides.js');
@@ -4321,7 +4407,7 @@ group('the itinerary slideshow — what it says, and what it promises');
 }
 
 /* -------------------------------------------------------------------------- */
-group('posting windows — Israel time, and not on Shabbat');
+group('posting windows - Israel time, and not on Shabbat');
 
 {
   const { israelNow, inShabbat, inWindow, sendableNow, nextSendableAt } = await import('../src/schedule.js');
@@ -4362,7 +4448,7 @@ group('posting windows — Israel time, and not on Shabbat');
 }
 
 /* -------------------------------------------------------------------------- */
-group('shoot rotation — the brief’s counting rules are checks, not hopes');
+group('shoot rotation - the brief’s counting rules are checks, not hopes');
 
 {
   const { chooseFormat, nextSeries, seriesLabels, pickAngle } = await import('../src/shoot/rotation.js');
@@ -4448,7 +4534,7 @@ group('shoot rotation — the brief’s counting rules are checks, not hopes');
   {
     const started = nextSeries([]);
     eq('a new series opens at part 1', started.index, 1);
-    eq('with no topic yet — part 1 chooses it', started.topic, null);
+    eq('with no topic yet - part 1 chooses it', started.topic, null);
 
     const afterOne = [{ formatId: 'demo', shape: 'C', needsProduct: true, series: { index: 1, of: 3, topic: 'קורפו' } }];
     const second = nextSeries(afterOne);
@@ -4476,7 +4562,7 @@ group('shoot rotation — the brief’s counting rules are checks, not hopes');
 }
 
 /* -------------------------------------------------------------------------- */
-group('the caption — a question, sometimes a CTA, and never a URL');
+group('the caption - a question, sometimes a CTA, and never a URL');
 
 {
   const { captionQuestion, captionCta, clipCaption } = await import('../src/hashtags.js');
@@ -4536,7 +4622,7 @@ group('the caption — a question, sometimes a CTA, and never a URL');
 }
 
 /* -------------------------------------------------------------------------- */
-group('model tiering — the cheap tier has to be legal, not just cheaper');
+group('model tiering - the cheap tier has to be legal, not just cheaper');
 
 {
   const { modelFor, modelSplit, supportsEffort, outputConfig } = await import('../src/models.js');
@@ -4589,7 +4675,7 @@ group('model tiering — the cheap tier has to be legal, not just cheaper');
 }
 
 /* -------------------------------------------------------------------------- */
-group('font guard — the check that was silently passing');
+group('font guard - the check that was silently passing');
 
 try {
   const { chromium } = await import('playwright');
@@ -4620,7 +4706,7 @@ try {
   };
 
   const bare = await probe('<html dir="rtl"><body style="font-family:Heebo">שלום</body></html>');
-  ok('document.fonts.check() is unreliable — it reports true with no @font-face at all', bare.naive === true, 'if this ever fails, the naive check may have become usable');
+  ok('document.fonts.check() is unreliable - it reports true with no @font-face at all', bare.naive === true, 'if this ever fails, the naive check may have become usable');
   ok('the real guard fires when the font is absent', bare.status !== 'loaded' && !bare.distinct);
 
   const real = await probe(renderHtml(draft));

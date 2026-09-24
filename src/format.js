@@ -119,7 +119,7 @@ export function assertNoUrl(caption, where = 'caption') {
   const hit = text.match(URL_LIKE);
   if (hit) {
     throw new Error(
-      `${where} contains a URL ("${hit[0]}") — nothing published may carry one; the link lives in the bio`
+      `${where} contains a URL ("${hit[0]}") - nothing published may carry one; the link lives in the bio`
     );
   }
   return text;
@@ -252,7 +252,7 @@ export function deckApprovalMessage(cand) {
     const fields = (s.fields || []).map((f) => `${f.labelHe}: ${f.value}`).join(' · ');
     const note = (s.bullets || [])[0]?.text;
     const extra = fields || note || '';
-    lines.push(`   ${i + 2}. ${s.nameHe}${s.flag ? ` ${s.flag}` : ''}${extra ? ` — ${extra}` : ''}`);
+    lines.push(`   ${i + 2}. ${s.nameHe}${s.flag ? ` ${s.flag}` : ''}${extra ? ` - ${extra}` : ''}`);
   }
   lines.push('');
 
@@ -291,7 +291,7 @@ export function deckApprovalMessage(cand) {
 
   if (targets.includes('tiktok')) {
     if (cand.tiktok?.error) {
-      lines.push(`⚠️ טיקטוק: לא ניתן לקרוא את הגדרות החשבון — ${cand.tiktok.error}`);
+      lines.push(`⚠️ טיקטוק: לא ניתן לקרוא את הגדרות החשבון - ${cand.tiktok.error}`);
     } else if (cand.tiktok?.privacy) {
       const who = cand.tiktok.username ? ` · @${cand.tiktok.username}` : '';
       lines.push(`🔒 פרטיות בטיקטוק: ${privacyHe(cand.tiktok.privacy)}${who}`);
@@ -393,7 +393,7 @@ export function approvalMessage(cand) {
   lines.push(
     cand.image
       ? `🖼️ תמונה: ${provenanceHe(cand.image.provenance)}${cand.image.credit ? ` · ${cand.image.credit}` : ''}${cand.image.query ? ` · חיפוש: "${cand.image.query}"` : ''}`
-      : '🖼️ תמונה: אין — כרטיס טקסט בלבד'
+      : '🖼️ תמונה: אין - כרטיס טקסט בלבד'
   );
 
   // A card that wanted a photograph and did not get one says so. Without this
@@ -419,7 +419,7 @@ export function approvalMessage(cand) {
   // confirmed against the account.
   if (targets.includes('tiktok')) {
     if (cand.tiktok?.error) {
-      lines.push(`⚠️ טיקטוק: לא ניתן לקרוא את הגדרות החשבון — ${cand.tiktok.error}`);
+      lines.push(`⚠️ טיקטוק: לא ניתן לקרוא את הגדרות החשבון - ${cand.tiktok.error}`);
     } else if (cand.tiktok?.privacy) {
       const who = cand.tiktok.username ? ` · @${cand.tiktok.username}` : '';
       lines.push(`🔒 פרטיות בטיקטוק: ${privacyHe(cand.tiktok.privacy)}${who}`);

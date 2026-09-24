@@ -224,7 +224,7 @@ export async function renderToJpeg(html, { stem, width = CARD_W, height = CARD_H
 
     if (font.status !== 'loaded' || !font.distinct) {
       throw new Error(
-        `Heebo did not load (@font-face status: ${font.status}, distinct from fallback: ${font.distinct}) — ` +
+        `Heebo did not load (@font-face status: ${font.status}, distinct from fallback: ${font.distinct}) - ` +
           'refusing to render, because the Hebrew would come out as tofu boxes'
       );
     }
@@ -232,7 +232,7 @@ export async function renderToJpeg(html, { stem, width = CARD_W, height = CARD_H
     const broken = font.others.filter((f) => f.status === 'error');
     if (broken.length) {
       throw new Error(
-        `these faces are not valid fonts: ${broken.map((f) => f.family).join(', ')} — ` +
+        `these faces are not valid fonts: ${broken.map((f) => f.family).join(', ')} - ` +
           'refusing to render, because the text would silently come out in a fallback typeface'
       );
     }

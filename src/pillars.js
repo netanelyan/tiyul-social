@@ -46,7 +46,7 @@ export const PILLARS = {
   tip: {
     he: 'טיפ מעשי',
     hint:
-      'Something practical that saves money or saves a wasted morning — booking, transport, ' +
+      'Something practical that saves money or saves a wasted morning - booking, transport, ' +
       'opening hours, a pass, a queue.',
   },
   conditions: {
@@ -218,12 +218,12 @@ export function describeRepeats(cand, history = recentPublished(), { streak = 5 
 
   const pillarRun = runLength((p) => p.pillar, cand.pillar);
   if (pillarRun >= 2) {
-    notes.push(`חוזר על הפילר "${pillarHe(cand.pillar)}" — ${pillarRun + 1} ברצף`);
+    notes.push(`חוזר על הפילר "${pillarHe(cand.pillar)}" - ${pillarRun + 1} ברצף`);
   }
 
   const sourceRun = runLength((p) => p.sourceId, cand.sourceId);
   if (sourceRun >= 2) {
-    notes.push(`אותו מקור (${cand.sourceId}) — ${sourceRun + 1} ברצף`);
+    notes.push(`אותו מקור (${cand.sourceId}) - ${sourceRun + 1} ברצף`);
   }
 
   // The run that is most obvious to a reader and was measured by nothing. Same
@@ -232,12 +232,12 @@ export function describeRepeats(cand, history = recentPublished(), { streak = 5 
   // the window, under every cap, and the only thing anybody notices.
   const placeRun = runLength((p) => placeKey(p.place), placeKey(cand.place));
   if (placeRun >= 2) {
-    notes.push(`אותו מקום (${cand.place}) — ${placeRun + 1} ברצף`);
+    notes.push(`אותו מקום (${cand.place}) - ${placeRun + 1} ברצף`);
   }
 
   if ((cand.tags || []).includes('kosher')) {
     const share = history.filter((p) => (p.tags || []).includes('kosher')).length;
-    if (share) notes.push(`תגית kosher — ${share} מתוך ${history.length} בחלון`);
+    if (share) notes.push(`תגית kosher - ${share} מתוך ${history.length} בחלון`);
   }
 
   return notes;

@@ -71,8 +71,8 @@ USE THE REGION THE REQUEST NAMES. If it names a country, the region is that
 country. Do not substitute a smaller one you believe is meant: "Austria" is
 Austria, not Tyrol, and "Italy" is Italy, not the Dolomites.
 
-This rule used to run the other way — a named country was narrowed to the part
-travellers mean — and it was wrong about who is being served. The person typing
+This rule used to run the other way, a named country was narrowed to the part
+travellers mean, and it was wrong about who is being served. The person typing
 the request runs the channel and has already decided where the deck is set. A
 resolver that improves on that is overruling the only person who knows what the
 post is for, silently, on the one field they were most explicit about.
@@ -148,7 +148,7 @@ export async function resolveRequest(arg, { today = new Date() } = {}) {
           `TODAY: ${today.toISOString().slice(0, 10)}`,
           '',
           'CATEGORIES AVAILABLE:',
-          ...Object.entries(KINDS).map(([id, k]) => `  ${id} — ${k.he}`),
+          ...Object.entries(KINDS).map(([id, k]) => `  ${id} - ${k.he}`),
           '',
           `REQUEST: ${arg}`,
           local

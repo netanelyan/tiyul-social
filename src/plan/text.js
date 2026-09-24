@@ -88,7 +88,7 @@ export function planGiveaway(plan) {
   // and does not say how to get it. That is worse than no slide: it promises
   // and withholds.
   if (!out.actionHe || !out.prizeHe) {
-    throw new Error('plans.giveaway is on but has no actionHe/prizeHe — the ask slide would promise without asking');
+    throw new Error('plans.giveaway is on but has no actionHe/prizeHe - the ask slide would promise without asking');
   }
   return out;
 }

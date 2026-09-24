@@ -50,7 +50,7 @@ async function one(request, nth = 0) {
   // up where the bot would have tried the next region.
   const deck = await buildWithFallback(idea, req.alternatives, {
     onAttempt: (attempt, i, why) => {
-      if (i > 0) console.log(`   ↩️ ${why} — trying ${attempt.where} / ${attempt.kind}`);
+      if (i > 0) console.log(`   ↩️ ${why} - trying ${attempt.where} / ${attempt.kind}`);
     },
   });
   if (!deck?.slides?.length) return null;

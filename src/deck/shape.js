@@ -201,7 +201,7 @@ export async function keepVisitable(places, { where, kind = null }) {
           // The description as well as the name, because "אגם סוראפיס" and
           // "סאס פורדוי" are both two Italian words to anybody who has not been
           // there, and one of them is a lake.
-          ...places.map((p) => `  ${p.nameHe}${p.description ? ` — ${String(p.description).slice(0, 160)}` : ''}`),
+          ...places.map((p) => `  ${p.nameHe}${p.description ? ` - ${String(p.description).slice(0, 160)}` : ''}`),
         ].join('\n'),
       },
     ],

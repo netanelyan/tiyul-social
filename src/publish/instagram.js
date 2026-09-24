@@ -93,12 +93,12 @@ export const isPlatformLimit = (e) =>
 // do. Deliberately short: a wrong guess about what an unknown code means is
 // worse than printing the code and letting you look it up.
 const CODE_HINTS = {
-  190: 'הטוקן פג או נפסל — npm run ig-token',
-  102: 'הסשן נפסל — npm run ig-token',
-  4: 'חריגה ממכסת הקריאות — יתפנה מעצמו',
-  17: 'חריגה ממכסת הקריאות — יתפנה מעצמו',
-  32: 'חריגה ממכסת הקריאות — יתפנה מעצמו',
-  613: 'חריגה ממכסת הקריאות — יתפנה מעצמו',
+  190: 'הטוקן פג או נפסל - npm run ig-token',
+  102: 'הסשן נפסל - npm run ig-token',
+  4: 'חריגה ממכסת הקריאות - יתפנה מעצמו',
+  17: 'חריגה ממכסת הקריאות - יתפנה מעצמו',
+  32: 'חריגה ממכסת הקריאות - יתפנה מעצמו',
+  613: 'חריגה ממכסת הקריאות - יתפנה מעצמו',
   9: 'חריגה ממכסת הפרסום היומית (25 ב-24 שעות)',
 };
 
@@ -313,7 +313,7 @@ async function publishContainer(igUser, creationId) {
         // and the post being live is the fact that matters. Null rather than a
         // guess.
         mediaId: null,
-        notes: [`פורסם למרות שגיאה מ-Graph — ${describeError(e).split('\n')[0]}`],
+        notes: [`פורסם למרות שגיאה מ-Graph - ${describeError(e).split('\n')[0]}`],
       };
     }
     // Genuinely not published. The container id travels with the error so the
@@ -405,7 +405,7 @@ export async function publishInstagram(cand) {
     return {
       mediaId: null,
       creationId: cand.instagramCreationId,
-      notes: ['כבר היה מפורסם מהניסיון הקודם — לא פורסם שוב'],
+      notes: ['כבר היה מפורסם מהניסיון הקודם - לא פורסם שוב'],
     };
   }
 
@@ -421,7 +421,7 @@ export async function publishInstagram(cand) {
 
   const imageUrl = cand.card?.url || deckImages[0];
   if (!imageUrl) {
-    throw new InstagramError('no public card URL — Instagram fetches the image itself', { step: 'config' });
+    throw new InstagramError('no public card URL - Instagram fetches the image itself', { step: 'config' });
   }
   if (!imageUrl.startsWith('https://')) {
     // Instagram will not fetch over plain http; catching it here names the real

@@ -48,7 +48,7 @@ export const overrideActive = () => Boolean(als.getStore()?.active);
 export function noteOverride(guard, detail) {
   const s = als.getStore();
   if (!s?.active) return false;
-  const line = detail ? `${guard} — ${detail}` : guard;
+  const line = detail ? `${guard} - ${detail}` : guard;
   if (!s.notes.includes(line)) s.notes.push(line);
   return true;
 }

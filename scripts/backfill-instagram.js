@@ -77,7 +77,7 @@ function reportGap() {
   }
 
   if (store.heldCount()) {
-    console.log(`\n${store.heldCount()} posts are HELD and do not need this script — run /retry in the bot.`);
+    console.log(`\n${store.heldCount()} posts are HELD and do not need this script - run /retry in the bot.`);
   }
   if (health.degraded) {
     console.log(`\nInstagram is currently marked broken: ${health.lastError || 'no detail'}`);
@@ -96,14 +96,14 @@ function check(ref) {
   const id = ID_RE.test(ref) ? ref : candidateId({ url: ref });
   const row = gap().find((p) => p.id === id);
   if (row) {
-    console.log(`   ✓ ${id} — missing since ${new Date(row.ts).toISOString().slice(0, 16).replace('T', ' ')}`);
+    console.log(`   ✓ ${id} - missing since ${new Date(row.ts).toISOString().slice(0, 16).replace('T', ' ')}`);
     return true;
   }
   if (store.hasPublished(id)) {
-    console.log(`   • ${id} — already published to both. Nothing to backfill.`);
+    console.log(`   • ${id} - already published to both. Nothing to backfill.`);
     return false;
   }
-  console.log(`   ✗ ${id} — not in the gap. Wrong URL, or it never published at all.`);
+  console.log(`   ✗ ${id} - not in the gap. Wrong URL, or it never published at all.`);
   // The trap this exists to name. A source whose identity comes from the item
   // title cannot be addressed by URL at all: every entry shares one landing
   // page, so the hash of that page matches nothing.
@@ -176,7 +176,7 @@ async function backfill(ref) {
       // be addressed by that URL for as long as the page exists — the id route
       // is only *required* for sources where many items share one link.
       console.log(`   ✗ ${ref} has rolled off every feed, so the id no longer resolves.`);
-      console.log('     If you have its source URL, pass that instead — it works after the');
+      console.log('     If you have its source URL, pass that instead - it works after the');
       console.log('     feed has moved on. Only feed-identity sources need the id.');
       return false;
     }
@@ -190,7 +190,7 @@ async function backfill(ref) {
     // actually missing. This script publishes to real followers and there is no
     // undo; a URL copied from the wrong message should cost nothing.
     if (!check(ref) && !args.includes('--force')) {
-      console.log('   skipped — pass --force to publish it anyway');
+      console.log('   skipped - pass --force to publish it anyway');
       return false;
     }
     item = manualItem(ref);
@@ -219,7 +219,7 @@ async function backfill(ref) {
   console.log(`   card: ${cand.card?.file}`);
 
   if (!confirmed) {
-    console.log('   (dry run — pass --yes to publish this to Instagram)');
+    console.log('   (dry run - pass --yes to publish this to Instagram)');
     return false;
   }
 
@@ -264,12 +264,12 @@ async function main() {
   }
 
   if (!instagramConfigured()) {
-    console.error('Instagram is not configured — needs IG_ACCESS_TOKEN, IG_USER_ID and CARD_PUBLIC_BASE_URL.');
+    console.error('Instagram is not configured - needs IG_ACCESS_TOKEN, IG_USER_ID and CARD_PUBLIC_BASE_URL.');
     process.exitCode = 1;
     return;
   }
   if (!hasApiKey()) {
-    console.error('ANTHROPIC_API_KEY is not set — each post has to be drafted again.');
+    console.error('ANTHROPIC_API_KEY is not set - each post has to be drafted again.');
     process.exitCode = 1;
     return;
   }

@@ -2,7 +2,7 @@
 
 It has to run on a server, and not for the usual reasons. Instagram's
 `POST /{ig-user-id}/media` takes an `image_url` **that Instagram's own servers
-fetch** — the bytes never travel through our request. TikTok's Content Posting
+fetch**, the bytes never travel through our request. TikTok's Content Posting
 API works the same way. So a card that only exists on a laptop cannot be
 published at all, and `cardPublicUrl()` returning null is exactly why
 `publishInstagram()` refuses rather than failing halfway.
@@ -17,8 +17,7 @@ The target here is Debian/Ubuntu with Caddy, because that is what
 
 ## ffmpeg (required for clips)
 
-Clips are encoded with ffmpeg, and the text on them is composited as an image —
-ffmpeg's own `drawtext` has no bidi support, so Hebrew comes out reversed and
+Clips are encoded with ffmpeg, and the text on them is composited as an image, ffmpeg's own `drawtext` has no bidi support, so Hebrew comes out reversed and
 unshaped with no flag to fix it. The line is rendered in Chromium, which this
 project already runs, and ffmpeg overlays the result.
 
@@ -38,12 +37,12 @@ before falling back to PATH.
 **Clips are served from the card directory.** `CLIP_OUT_DIR` defaults to
 `CARD_OUTPUT_DIR`, which is what Caddy already serves at `CARD_PUBLIC_BASE_URL`.
 TikTok fetches video by URL exactly as Instagram fetches a card image, so a clip
-written anywhere else has a public address that resolves to nothing — it would
+written anywhere else has a public address that resolves to nothing, it would
 look fine here and 404 at TikTok. No extra Caddy rule is needed.
 
 ## What is actually being deployed
 
-One long-running Node process. It is **not** a cron job — `bot.js` schedules
+One long-running Node process. It is **not** a cron job, `bot.js` schedules
 itself with `setInterval`, gathers through the day from `RUN_HOUR`, and drips
 posts every `POST_INTERVAL_MINUTES`. Killing and restarting it on a timer would
 lose the day's state. It wants systemd with `Restart=always`.
@@ -55,7 +54,7 @@ Three things live outside the repository and none of them are in git:
 
 | What | Where | Why it is not in git |
 |---|---|---|
-| Secrets | `.env` | `.gitignore` covers `.env` and `.env.*` — a `.env.bak` is the same secrets with a different extension |
+| Secrets | `.env` | `.gitignore` covers `.env` and `.env.*`, a `.env.bak` is the same secrets with a different extension |
 | State | `data/store.json` | dedupe history, the publish queue, the published log the pillar quotas are computed from, and the TikTok token pair |
 | Rendered cards | `CARD_OUTPUT_DIR` | regenerable from the candidate at any time |
 
@@ -106,7 +105,7 @@ cannot see it.
 Fonts are **not** a system dependency here. Every face is bundled in `assets/`
 and inlined into the HTML as a data URI, precisely so that a server with no
 fonts installed renders identically to a laptop. If Hebrew comes out as boxes,
-something else is wrong — and the renderer will refuse before it gets there, see
+something else is wrong, and the renderer will refuse before it gets there, see
 the font guard in `src/render/index.js`.
 
 ## 4. The web root Caddy already serves
@@ -146,7 +145,7 @@ card either, and the failure it gives you is far less legible than this one.
 
 ## 5. `.env`
 
-Copy `.env.example` and fill it in — it documents every variable. Two entries
+Copy `.env.example` and fill it in, it documents every variable. Two entries
 differ from a laptop:
 
 ```ini
@@ -164,7 +163,7 @@ sudo -u tiyul nano .env
 sudo chmod 600 .env
 ```
 
-Set `TZ=Asia/Jerusalem` here as well as in the unit file — `RUN_HOUR=8` means
+Set `TZ=Asia/Jerusalem` here as well as in the unit file, `RUN_HOUR=8` means
 8am where the audience is, not 8am UTC.
 
 ## 6. Prove it works before it runs unattended
@@ -185,8 +184,8 @@ the hard part of this deployment is done.
 > **What the live box actually does, as of 2026-09-20.** The production host
 > runs this under **pm2 as root from `/opt/tiyul-social`**, not under systemd
 > from `/srv/tiyul/app`. The unit file below describes the intended shape and is
-> still the better one — it drops privileges, caps memory and isolates the
-> filesystem, none of which pm2 is doing here — but it is not what is running,
+> still the better one, it drops privileges, caps memory and isolates the
+> filesystem, none of which pm2 is doing here, but it is not what is running,
 > and a deploy that follows this file to the letter will end up with two copies
 > of the bot long-polling the same Telegram token. Reconcile before you follow
 > the section below.
@@ -201,7 +200,7 @@ the hard part of this deployment is done.
 > ```
 >
 > Note also that pm2 does not read `.env` for you the way `EnvironmentFile`
-> does — `src/env.js` loads it from the working directory, which is why
+> does, `src/env.js` loads it from the working directory, which is why
 > `exec cwd` must stay `/opt/tiyul-social`.
 
 `/etc/systemd/system/tiyul.service`:
@@ -224,7 +223,7 @@ ExecStart=/usr/bin/node bot.js
 Restart=always
 RestartSec=10
 
-# It shares this box. Chromium is the spike — it is held for about five
+# It shares this box. Chromium is the spike, it is held for about five
 # minutes after the last render (RENDER_IDLE_MS) and then shut down, so the
 # steady state is far below this ceiling.
 MemoryMax=1200M
@@ -238,7 +237,7 @@ ReadWritePaths=/srv/tiyul/app/data /var/www/tiyul/cards
 WantedBy=multi-user.target
 ```
 
-`EnvironmentFile` does not understand quotes the way a shell does — a value
+`EnvironmentFile` does not understand quotes the way a shell does, a value
 wrapped in `"` arrives *with* the quote characters. Leave them off.
 
 ```bash
@@ -264,21 +263,21 @@ domain:
 
 Set `TIKTOK_VERIFIED_DOMAINS` to whatever you verified there. It is checked
 before init, and an image on any other domain is refused by name rather than
-handed over — because TikTok's answer to an unverified host is not reliably an
+handed over, because TikTok's answer to an unverified host is not reliably an
 error, it can simply decline to fetch, and that surfaces as a post stuck in
 `PROCESSING` and looks like nothing at all. Left unset it falls back to the host
 of the first card base URL, which is right while there is only one; the moment
 you add a second via `CARD_PUBLIC_BASE_URLS`, set it explicitly or the new host
 will be refused.
 
-`npm run dry-run` exercises all of this — config, token, `creator_info`, the
-privacy level, the domain preflight and the 24h cap — and stops at the one call
+`npm run dry-run` exercises all of this, config, token, `creator_info`, the
+privacy level, the domain preflight and the 24h cap, and stops at the one call
 that would create a post. It points `STORE_PATH` at a copy of `data/store.json`
 first, so it is safe to run while the bot is live. Run it after any change to
 the card host or the TikTok app.
 
 Then `npm run tiktok-token` as the service user, so the token pair lands in
-`data/store.json` — where it is refreshed, because the access token lasts about
+`data/store.json`, where it is refreshed, because the access token lasts about
 a day and a value in `.env` would be stale by morning.
 
 ---
@@ -302,7 +301,7 @@ sudo -u tiyul npm test
 sudo systemctl restart tiyul
 ```
 
-**Cards accumulate.** They are regenerable, so old ones can go — but not
+**Cards accumulate.** They are regenerable, so old ones can go, but not
 recent ones, which Instagram and TikTok may still be fetching:
 
 ```bash
@@ -315,7 +314,7 @@ find /var/www/tiyul/cards -name '*.jpg' -mtime +30 -delete
 |---|---|
 | Bot silent, service running | Did you DM it `/start`? Is your id `OWNER_ID`? |
 | `Host system is missing dependencies` | Step 3, and check which user owns `~/.cache/ms-playwright` |
-| Renders fail mentioning Heebo | The font guard fired — a bundled face did not parse. It is refusing on purpose; a silent fallback would publish tofu boxes |
+| Renders fail mentioning Heebo | The font guard fired, a bundled face did not parse. It is refusing on purpose; a silent fallback would publish tofu boxes |
 | `url_ownership_unverified` | TikTok domain verification, step 8 |
 | Instagram fetch fails | `curl -I` the exact URL from off the box; check the `CARD_OUTPUT_DIR` / `CARD_PUBLIC_BASE_URL` pair |
 | `no places found` on every deck | Overpass, not you. All three mirrors go down together sometimes; it is transient |

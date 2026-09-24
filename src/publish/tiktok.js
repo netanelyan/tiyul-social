@@ -130,11 +130,11 @@ export class TikTokError extends Error {
 // do about it. Short on purpose: guessing wrong about an unknown code is worse
 // than printing it and letting you look it up.
 const CODE_HINTS = {
-  access_token_invalid: 'הטוקן פג או נפסל — npm run tiktok-token',
+  access_token_invalid: 'הטוקן פג או נפסל - npm run tiktok-token',
   scope_not_authorized:
-    'ההרשאה הדרושה לא ניתנה בחיבור לטיקטוק. מצגת נשלחת כטיוטה, וזה דורש video.upload — ' +
+    'ההרשאה הדרושה לא ניתנה בחיבור לטיקטוק. מצגת נשלחת כטיוטה, וזה דורש video.upload - ' +
     'טוקן שנוצר לפני כן מחזיק רק video.publish. חברו מחדש; רענון טוקן לא מוסיף הרשאות.',
-  scope_permission_missed: 'ההרשאה video.publish לא נכללה בהתחברות — npm run tiktok-token',
+  scope_permission_missed: 'ההרשאה video.publish לא נכללה בהתחברות - npm run tiktok-token',
   url_ownership_unverified: 'הדומיין של הכרטיס לא מאומת ב-Developer Portal',
   privacy_level_option_mismatch: 'רמת הפרטיות לא זמינה לחשבון הזה כרגע',
   unaudited_client_can_only_post_to_private_accounts:
@@ -143,7 +143,7 @@ const CODE_HINTS = {
   spam_risk_too_many_posts: 'חריגה ממכסת הפרסום היומית של טיקטוק',
   spam_risk_user_banned_from_posting: 'החשבון חסום לפרסום בטיקטוק',
   reached_active_user_cap: 'חריגה במספר המשתמשים של האפליקציה (sandbox)',
-  rate_limit_exceeded: 'חריגה בקצב הקריאות — יתפנה מעצמו',
+  rate_limit_exceeded: 'חריגה בקצב הקריאות - יתפנה מעצמו',
   // Ours, not TikTok's. Raised by the preflight below, before any call goes
   // out, because TikTok's own answer to an unverified domain is not reliably
   // an error — it can simply decline to fetch and leave the post unfinished.
@@ -151,7 +151,7 @@ const CODE_HINTS = {
     'הדומיין של התמונות לא מאומת ב-TikTok Developer Portal (URL properties). ' +
     'אמתו אותו שם, או הוסיפו אותו ל-TIKTOK_VERIFIED_DOMAINS אם הוא כבר מאומת.',
   tiktok_daily_cap: 'הגעתם למכסת הפרסום של טיקטוק ל-24 שעות. הפוסט ממתין ויפורסם כשהמכסה תתפנה.',
-  no_publish_id: 'טיקטוק אישרה את הבקשה אך לא החזירה publish_id — נסו שוב',
+  no_publish_id: 'טיקטוק אישרה את הבקשה אך לא החזירה publish_id - נסו שוב',
 };
 
 /**
@@ -426,8 +426,8 @@ async function liveToken(step) {
   if (!saved?.accessToken) {
     throw new TikTokError(
       refreshError
-        ? `no usable TikTok token: refresh failed (${refreshError.message}) — npm run tiktok-token`
-        : 'no TikTok token stored — npm run tiktok-token',
+        ? `no usable TikTok token: refresh failed (${refreshError.message}) - npm run tiktok-token`
+        : 'no TikTok token stored - npm run tiktok-token',
       { step, code: refreshError?.code }
     );
   }
@@ -440,7 +440,7 @@ async function liveToken(step) {
       `TikTok access token expired ${Math.round((Date.now() - saved.expiresAt) / 60_000)} min ago` +
         (refreshError ? ` and refresh failed: ${refreshError.message}` : '') +
         (daysLeft !== null && daysLeft <= 0
-          ? ' — the refresh token has expired too, reconnect with npm run tiktok-token'
+          ? ' - the refresh token has expired too, reconnect with npm run tiktok-token'
           : ''),
       { step, code: refreshError?.code || 'access_token_invalid' }
     );
@@ -564,7 +564,7 @@ async function waitForPublish(publishId, tok, { timeoutMs = 120_000, intervalMs 
       // more than the timeout does, because that is what makes it checkable
       // rather than a post that may or may not exist.
       throw new TikTokError(
-        `still ${last || 'unknown'} after ${Math.round(timeoutMs / 1000)}s — ` +
+        `still ${last || 'unknown'} after ${Math.round(timeoutMs / 1000)}s - ` +
           `TikTok may still finish it. publish_id ${publishId}`,
         { step: 'status', code: 'status_timeout' }
       );
@@ -630,7 +630,7 @@ export async function resolvePrivacy(cand, { allowRefetch = true } = {}) {
         source: 'downgraded',
         offered,
         note:
-          `רמת הפרטיות שנבחרה (${privacyHe(shown)}) כבר לא זמינה לחשבון — ` +
+          `רמת הפרטיות שנבחרה (${privacyHe(shown)}) כבר לא זמינה לחשבון - ` +
           `פורסם ב${privacyHe(fallback)} במקום`,
       };
     }
@@ -645,7 +645,7 @@ export async function resolvePrivacy(cand, { allowRefetch = true } = {}) {
       privacy: chosen,
       source: 'refetched',
       offered,
-      note: `לא נבחרה רמת פרטיות באישור — נקראה מחדש מטיקטוק ופורסם ב${privacyHe(chosen)}`,
+      note: `לא נבחרה רמת פרטיות באישור - נקראה מחדש מטיקטוק ופורסם ב${privacyHe(chosen)}`,
     };
   }
 
@@ -657,7 +657,7 @@ export async function resolvePrivacy(cand, { allowRefetch = true } = {}) {
     note:
       `לא נבחרה רמת פרטיות באישור` +
       (refetchError ? ` וקריאת creator_info נכשלה (${refetchError.message})` : '') +
-      ` — פורסם ב${privacyHe(chosen)}`,
+      ` - פורסם ב${privacyHe(chosen)}`,
   };
 }
 
@@ -699,7 +699,7 @@ export function preflight(cand) {
   const deckImages = cand.deck?.urls?.tiktok || [];
   if (['deck', 'plan'].includes(cand.kind) && !deckImages.length) {
     throw new TikTokError(
-      `this ${cand.kind} has no 1080x1920 renders — it was built for another destination. ` +
+      `this ${cand.kind} has no 1080x1920 renders - it was built for another destination. ` +
         'Rebuild it with TikTok among its targets rather than posting the 4:5 crop.',
       { step: 'config' }
     );
@@ -709,7 +709,7 @@ export function preflight(cand) {
   const missing = images.filter((u) => !u).length;
   if (!images.length || missing === images.length) {
     throw new TikTokError(
-      'no public image URL — TikTok fetches the images itself, so the card must be on a public https host ' +
+      'no public image URL - TikTok fetches the images itself, so the card must be on a public https host ' +
         '(CARD_PUBLIC_BASE_URLS / CARD_PUBLIC_BASE_URL)',
       { step: 'config' }
     );
@@ -718,7 +718,7 @@ export function preflight(cand) {
   // deck with holes in it, so this is a refusal, but it names the count.
   if (missing) {
     throw new TikTokError(
-      `${missing} of ${images.length} slides have no public URL — the render wrote them but CARD_PUBLIC_BASE_URL does not cover them`,
+      `${missing} of ${images.length} slides have no public URL - the render wrote them but CARD_PUBLIC_BASE_URL does not cover them`,
       { step: 'config' }
     );
   }
@@ -726,7 +726,7 @@ export function preflight(cand) {
   const notHttps = images.filter((u) => !u.startsWith('https://'));
   if (notHttps.length) {
     throw new TikTokError(
-      `every image URL must be https — ${notHttps.length} is not: ${[...new Set(notHttps)].slice(0, 3).join(', ')}`,
+      `every image URL must be https - ${notHttps.length} is not: ${[...new Set(notHttps)].slice(0, 3).join(', ')}`,
       { step: 'config' }
     );
   }
@@ -739,7 +739,7 @@ export function preflight(cand) {
   const domains = tiktokVerifiedDomains();
   if (!domains.length) {
     throw new TikTokError(
-      'no TikTok-verified image domain is configured — set TIKTOK_VERIFIED_DOMAINS to the domains verified ' +
+      'no TikTok-verified image domain is configured - set TIKTOK_VERIFIED_DOMAINS to the domains verified ' +
         'under URL properties in the developer portal',
       { step: 'config', code: 'image_host_unverified' }
     );
@@ -747,7 +747,7 @@ export function preflight(cand) {
   const unverified = unverifiedTikTokHosts(images, domains);
   if (unverified.length) {
     throw new TikTokError(
-      `image host not verified with TikTok: ${unverified.join(', ')} — verified: ${domains.join(', ')}`,
+      `image host not verified with TikTok: ${unverified.join(', ')} - verified: ${domains.join(', ')}`,
       { step: 'config', code: 'image_host_unverified' }
     );
   }
@@ -758,7 +758,7 @@ export function preflight(cand) {
   // kind of thing you find out about from a follower.
   if (images.length > MAX_PHOTOS) {
     notes.push(
-      `הדק כלל ${images.length} שקופיות; טיקטוק מקבלת ${MAX_PHOTOS} — פורסמו ${MAX_PHOTOS} הראשונות`
+      `הדק כלל ${images.length} שקופיות; טיקטוק מקבלת ${MAX_PHOTOS} - פורסמו ${MAX_PHOTOS} הראשונות`
     );
     images = images.slice(0, MAX_PHOTOS);
   }
@@ -826,7 +826,7 @@ export async function publishTikTok(cand, { dryRun = false, draft = false } = {}
   const videoUrl = isClip ? clipUrl(cand) : null;
   if (isClip && !videoUrl) {
     throw new TikTokError(
-      'the clip has no public URL — TikTok pulls video by URL, so CARD_PUBLIC_BASE_URL must be set and the file hosted under it',
+      'the clip has no public URL - TikTok pulls video by URL, so CARD_PUBLIC_BASE_URL must be set and the file hosted under it',
       { step: 'preflight', code: 'no_video_url' }
     );
   }
@@ -838,7 +838,7 @@ export async function publishTikTok(cand, { dryRun = false, draft = false } = {}
   const missing = missingScopes({ draft });
   if (missing.length) {
     throw new TikTokError(
-      `the TikTok connection was never granted ${missing.join(', ')} — ` +
+      `the TikTok connection was never granted ${missing.join(', ')} - ` +
         `${draft ? 'a draft needs video.upload' : 'a direct post needs video.publish'}. ` +
         'Reconnect to grant it; refreshing the token cannot add a scope.',
       { step: 'scope', code: 'scope_not_authorized' }
@@ -859,7 +859,7 @@ export async function publishTikTok(cand, { dryRun = false, draft = false } = {}
     const mins = freesAt ? Math.max(1, Math.round((freesAt - Date.now()) / 60_000)) : null;
     throw new TikTokError(
       `TikTok's 24h limit reached: ${used}/${cap} posts already published` +
-        (mins ? ` — the next slot frees in about ${mins} min` : ''),
+        (mins ? ` - the next slot frees in about ${mins} min` : ''),
       { step: 'platform_limit', code: 'tiktok_daily_cap' }
     );
   }

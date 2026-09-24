@@ -79,7 +79,7 @@ export async function fillPlanPhotos(plan, { stopsMin = 0, onProgress = null } =
   const days = [];
   for (const day of plan.days) {
     const kept = day.stops.filter((s) => s.image?.src);
-    for (const s of day.stops) if (!s.image?.src) missing.push(`${s.nameHe} — no photograph`);
+    for (const s of day.stops) if (!s.image?.src) missing.push(`${s.nameHe} - no photograph`);
     if (kept.length < Math.max(1, stopsMin)) {
       missing.push(`יום ${day.n}: ${kept.length} stop(s) with a photograph, needs ${Math.max(1, stopsMin)}`);
       continue;
@@ -122,7 +122,7 @@ export async function renderPlan(plan, { sizes = ['instagram', 'tiktok'], outDir
     // the post was approved and by an error that names none of this.
     if (size === 'instagram' && deck.slides.length + 1 > 10) {
       throw new Error(
-        `the Instagram set is ${deck.slides.length + 1} slides and a carousel takes 10 — ` +
+        `the Instagram set is ${deck.slides.length + 1} slides and a carousel takes 10 - ` +
           'shorten the trip or lower plans.daysMax'
       );
     }
@@ -296,7 +296,7 @@ export function planApprovalMessage(cand) {
   ];
 
   for (const day of days) {
-    lines.push(`📅 יום ${day.n} — ${day.titleHe}`);
+    lines.push(`📅 יום ${day.n} - ${day.titleHe}`);
     for (const stop of day.stops) {
       const price = stop.costIls > 0 ? `${shekels(stop.costIls)} ₪` : 'חינם';
       lines.push(`   ${stop.timeHe ? `${stop.timeHe} · ` : ''}${stop.nameHe} · ${price}`);
@@ -309,14 +309,14 @@ export function planApprovalMessage(cand) {
   // The qualification, repeated here and not only on the slide. Approving is
   // where the number becomes the account's, so this is the moment to be told
   // what it does and does not include.
-  lines.push('   כניסות ואטרקציות בלבד — בלי טיסה ולינה');
+  lines.push('   כניסות ואטרקציות בלבד - בלי טיסה ולינה');
 
   // Who was promised what, spelled out, because the bot cannot keep this
   // promise and the person tapping approve can.
   if (p.giveaway) {
     lines.push('');
     lines.push(`🎁 ${p.giveaway.winners} זוכים · ${p.giveaway.premiumDays} יום פרימיום · מילת מפתח "${p.giveaway.keyword}"`);
-    lines.push('   ⚠️ הבחירה והמתנה עליך — הבוט לא קורא תגובות');
+    lines.push('   ⚠️ הבחירה והמתנה עליך - הבוט לא קורא תגובות');
   }
 
   if (p.dropped?.length) {

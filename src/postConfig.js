@@ -34,7 +34,7 @@ export function postConfig() {
   const destinations = raw.destinations || {};
 
   const lines = (caption.lines || []).map((s) => String(s).trim()).filter(Boolean);
-  if (!lines.length) throw new Error('post-config.json: caption.lines is empty — every post needs an opening line');
+  if (!lines.length) throw new Error('post-config.json: caption.lines is empty - every post needs an opening line');
 
   // The brief's caption shape: one short line plus a question, and a soft CTA
   // at the end of some of them. Both are optional in the file and absent means
@@ -46,7 +46,7 @@ export function postConfig() {
   // otherwise throw once per post, from assertNoUrl, deep inside a build — and
   // the thing that is actually broken is this file.
   if (cta && URL_LIKE.test(cta)) {
-    throw new Error(`post-config.json: caption.cta contains a URL — the link lives in the bio, the caption says so in words`);
+    throw new Error(`post-config.json: caption.cta contains a URL - the link lives in the bio, the caption says so in words`);
   }
 
   const broad = tags(hashtags.broad, 'hashtags.broad');
@@ -145,7 +145,7 @@ function clips(raw) {
   // this is what a failed API call degrades to, and it must not be empty,
   // because a clip with no line on it is just a stock video.
   const hooks = ((raw.hooks || {}).lines || []).map((s) => String(s).trim()).filter(Boolean);
-  if (!hooks.length) throw new Error('post-config.json: clips.hooks.lines is empty — a clip is its line');
+  if (!hooks.length) throw new Error('post-config.json: clips.hooks.lines is empty - a clip is its line');
 
   const s = raw.search || {};
   const v = raw.video || {};
@@ -154,7 +154,7 @@ function clips(raw) {
     (Array.isArray(list) ? list : []).map((w) => String(w).trim().toLowerCase()).filter(Boolean);
 
   const queries = (s.queries || []).map((q) => String(q).trim()).filter(Boolean);
-  if (!queries.length) throw new Error('post-config.json: clips.search.queries is empty — nothing to pull');
+  if (!queries.length) throw new Error('post-config.json: clips.search.queries is empty - nothing to pull');
 
   const colours = (o.colors || [])
     .map((c) => ({
@@ -332,7 +332,7 @@ function shoot(raw) {
     .filter((f) => f.id && f.desc);
 
   if (!formats.length) {
-    throw new Error('post-config.json: shoot.formats is empty — a shot list with no shape is a message saying "film something"');
+    throw new Error('post-config.json: shoot.formats is empty - a shot list with no shape is a message saying "film something"');
   }
 
   const series = raw.series || {};
@@ -391,7 +391,7 @@ function plans(raw) {
     ['askHe', raw.askHe],
   ]) {
     if (s && URL_LIKE.test(String(s))) {
-      throw new Error(`post-config.json: plans.${where} contains a URL — the link lives in the bio, the post says so in words`);
+      throw new Error(`post-config.json: plans.${where} contains a URL - the link lives in the bio, the post says so in words`);
     }
   }
 
@@ -416,7 +416,7 @@ function plans(raw) {
     // optional: the sum is stop prices only, and a four-figure number under
     // "4 ימים ברומא" with nothing qualifying it reads as the price of the trip.
     totalNoteHe: String(
-      raw.totalNoteHe === undefined ? 'כניסות ואטרקציות בלבד — בלי טיסה ולינה' : raw.totalNoteHe
+      raw.totalNoteHe === undefined ? 'כניסות ואטרקציות בלבד - בלי טיסה ולינה' : raw.totalNoteHe
     ).trim(),
     giveaway: {
       on: g.on === true,

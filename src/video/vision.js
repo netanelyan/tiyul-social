@@ -41,14 +41,14 @@ const SCHEMA = {
     pov: {
       type: 'boolean',
       description:
-        'Is the camera a participant — handlebars, feet, hands or a body edge in frame, moving through the place — rather than filming a person from outside?',
+        'Is the camera a participant - handlebars, feet, hands or a body edge in frame, moving through the place - rather than filming a person from outside?',
     },
     aerial: { type: 'boolean', description: 'Drone or high aerial vantage' },
     staged: { type: 'boolean', description: 'A posed lifestyle or model shoot rather than someone doing the thing' },
     personSubject: {
       type: 'boolean',
       description:
-        'Is a person filmed FROM OUTSIDE the subject of this frame — standing in front of the view, facing or walking for the camera, or large enough in frame to be the point of the shot? False for a POV body edge (hands, feet, handlebars, a shoulder at the edge), and false for distant or incidental figures that only give a landscape its scale.',
+        'Is a person filmed FROM OUTSIDE the subject of this frame - standing in front of the view, facing or walking for the camera, or large enough in frame to be the point of the shot? False for a POV body edge (hands, feet, handlebars, a shoulder at the edge), and false for distant or incidental figures that only give a landscape its scale.',
     },
     urban: { type: 'boolean', description: 'Predominantly street/city/traffic rather than nature or a scenic town' },
     subject: {
@@ -59,7 +59,7 @@ const SCHEMA = {
     place: {
       type: 'string',
       description:
-        'The country, in English, ONLY if the frame is unmistakably identifiable — a famous landmark, or architecture and landscape that could not be anywhere else. Empty string when unsure. A guess here becomes a factual claim on a published post.',
+        'The country, in English, ONLY if the frame is unmistakably identifiable - a famous landmark, or architecture and landscape that could not be anywhere else. Empty string when unsure. A guess here becomes a factual claim on a published post.',
     },
     placeConfidence: {
       type: 'integer',
@@ -68,7 +68,7 @@ const SCHEMA = {
     site: {
       type: 'string',
       description:
-        'The specific place and NOTHING ELSE — "Lago di Braies", "Cinque Torri", "Lauterbrunnen". No region, no country, no comma: the country is a separate field and gets added separately. ONLY when the frame is unmistakably that place; a generic mountain valley has no site name and gets an empty string.',
+        'The specific place and NOTHING ELSE - "Lago di Braies", "Cinque Torri", "Lauterbrunnen". No region, no country, no comma: the country is a separate field and gets added separately. ONLY when the frame is unmistakably that place; a generic mountain valley has no site name and gets an empty string.',
     },
     siteConfidence: {
       type: 'integer',
@@ -77,7 +77,7 @@ const SCHEMA = {
     siteHe: {
       type: 'string',
       description:
-        'The SAME name written in Hebrew letters, as an Israeli travel account would spell it — "Lauterbrunnen" -> "לאוטרברונן", "Lago di Braies" -> "לאגו די בראייס". Transliterate by SOUND; never translate the words and never leave any Latin letters in it. Empty string when `site` is empty.',
+        'The SAME name written in Hebrew letters, as an Israeli travel account would spell it - "Lauterbrunnen" -> "לאוטרברונן", "Lago di Braies" -> "לאגו די בראייס". Transliterate by SOUND; never translate the words and never leave any Latin letters in it. Empty string when `site` is empty.',
     },
   },
   required: [
@@ -93,14 +93,14 @@ const PROMPT =
   'a generic path through trees or anything that could be anywhere scores 0-3, however pretty the light is.\n\n' +
   '`personSubject` is the other one that decides whether this clip is used at all. Somebody standing in ' +
   'front of the view, facing the camera or walking for it, means another person was standing back filming ' +
-  'them — and the post is then about that person rather than about the place. Judge it by who the shot is ' +
+  'them - and the post is then about that person rather than about the place. Judge it by who the shot is ' +
   'OF: a figure the frame is built around is true; a hand on a railing, a boot on a step or two walkers the ' +
   'size of a thumbnail on a ridge are not.\n\n' +
   'Name `place` and `site` only if you are certain. Both are printed on a published post, and a confident ' +
-  'guess that is wrong is worse than saying nothing — leave them empty and set the confidence low whenever ' +
+  'guess that is wrong is worse than saying nothing - leave them empty and set the confidence low whenever ' +
   'there is doubt. `site` is the harder one: most footage is a generic valley or coastline with no name.\n\n' +
   'When you do name a `site`, also write it in Hebrew letters in `siteHe`. The post is published in Hebrew ' +
-  'and the name is read aloud by an Israeli audience, so transliterate the SOUND of it — never translate ' +
+  'and the name is read aloud by an Israeli audience, so transliterate the SOUND of it - never translate ' +
   'the words, and never leave a Latin letter in that field.';
 
 /**

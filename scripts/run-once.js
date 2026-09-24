@@ -17,7 +17,7 @@ import { hasApiKey } from '../src/draft.js';
 
 async function main() {
   if (!hasApiKey()) {
-    console.error('ANTHROPIC_API_KEY is not set — drafting is required for a full run.');
+    console.error('ANTHROPIC_API_KEY is not set - drafting is required for a full run.');
     console.error('Run `npm run check-sources` to exercise gathering and ranking without it.');
     process.exitCode = 1;
     return;
@@ -43,7 +43,7 @@ async function main() {
   for (const [reason, n] of Object.entries(summary.rejectedByReason)) {
     console.log(`  ${reason}: ${n}`);
   }
-  for (const e of summary.sourceErrors) console.log(`  source failed — ${e.name}: ${e.message}`);
+  for (const e of summary.sourceErrors) console.log(`  source failed - ${e.name}: ${e.message}`);
 }
 
 main()

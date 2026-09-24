@@ -89,11 +89,11 @@ const cand = await toPlanCandidate(plan, {
 console.log(`\n${planApprovalMessage(cand)}\n`);
 console.log('slides:');
 for (const size of ['tiktok', 'instagram']) {
-  for (const s of cand.deck[size]) console.log(`   ${size.padEnd(9)} ${s.nameHe || 'cover'} — ${s.file}`);
+  for (const s of cand.deck[size]) console.log(`   ${size.padEnd(9)} ${s.nameHe || 'cover'} - ${s.file}`);
 }
-console.log('\ncaption — instagram:');
+console.log('\ncaption - instagram:');
 console.log(cand.instagramCaption);
-console.log('\ncaption — tiktok:');
+console.log('\ncaption - tiktok:');
 console.log(cand.tiktokCaption);
 
 await closeBrowser();

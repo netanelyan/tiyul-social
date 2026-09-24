@@ -97,7 +97,7 @@ export async function buildClip(found, { outDir = clipOutputDir(), hook = null, 
   const clash = namesOtherCountry(line, placeHe);
   if (clash) {
     throw new Error(
-      `the line names ${clash} and this clip is ${placeHe || 'not placed'} — ` +
+      `the line names ${clash} and this clip is ${placeHe || 'not placed'} - ` +
         'pass place=<Country> to say the footage is somewhere else'
     );
   }
@@ -291,7 +291,7 @@ export function clipApprovalMessage(cand) {
     `🎬 קליפ · ${c.seconds}ש׳ · ${c.width}x${c.height}`,
     '',
     `✍️ השורה: ${cand.hook}`,
-    cand.hookWritten ? '   (נכתבה לקליפ הזה)' : `   ⚠️ מהמאגר — ${cand.hookNote || 'לא נכתבה שורה'}`,
+    cand.hookWritten ? '   (נכתבה לקליפ הזה)' : `   ⚠️ מהמאגר - ${cand.hookNote || 'לא נכתבה שורה'}`,
     '',
     `🏷️ ${cand.tiktokCaption || '(אין תיאור)'}`,
     '',
@@ -313,7 +313,7 @@ export function clipApprovalMessage(cand) {
     `   חיפוש: "${c.query}"`,
     c.spot
       ? `   טקסט: ${c.spot.onDark ? 'בהיר' : 'כהה'} · ניגודיות ${c.spot.worstContrast} · ${c.spot.agreed}/${c.spot.frames} פריימים`
-      : '   ⚠️ לא נמדד — מיקום ברירת מחדל',
+      : '   ⚠️ לא נמדד - מיקום ברירת מחדל',
     '',
     `🔗 ${c.page}`,
   ].join('\n');

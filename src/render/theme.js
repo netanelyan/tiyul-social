@@ -10,13 +10,13 @@ export const CARD_W = 1080;
 export const CARD_H = 1350;
 
 export const palette = {
-  ink: '#10201F', // near-black with a green cast — the base for text cards
+  ink: '#10201F', // near-black with a green cast - the base for text cards
   inkSoft: '#1B302E',
   paper: '#F2ECE0', // warm off-white, used as the text colour on dark cards
   paperDim: 'rgba(242, 236, 224, 0.62)',
   amber: '#E8A33D', // primary accent
-  clay: '#C8613C', // secondary accent — alerts, "avoid" months
-  sage: '#7FA88A', // tertiary — "good" months
+  clay: '#C8613C', // secondary accent - alerts, "avoid" months
+  sage: '#7FA88A', // tertiary - "good" months
   line: 'rgba(242, 236, 224, 0.14)',
 };
 

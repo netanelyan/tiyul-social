@@ -45,7 +45,7 @@ export function assertGenericAiPrompt(prompt, { place, country } = {}) {
   for (const term of [place, country].filter(Boolean)) {
     if (p.includes(String(term).toLowerCase())) {
       throw new ImagePolicyError(
-        `AI image prompt names the specific place ("${term}") — generic imagery only`
+        `AI image prompt names the specific place ("${term}") - generic imagery only`
       );
     }
   }
@@ -157,7 +157,7 @@ export async function findImage(draft, { order = ['catalogue', 'stock', 'ai'] } 
     // the next, and ultimately to a text card. A policy violation still throws.
     const got = await providers[name](draft).catch((e) => {
       if (e instanceof ImagePolicyError) throw e;
-      console.error(`images: ${name} failed — ${e.message}`);
+      console.error(`images: ${name} failed - ${e.message}`);
       return null;
     });
     if (got?.src) {

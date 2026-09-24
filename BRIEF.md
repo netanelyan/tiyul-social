@@ -22,7 +22,7 @@ That curve is not seven unlucky posts. A feed whose first video reaches 672
 people and whose seventh reaches 33 is a feed the ranker has stopped offering,
 and it stops for a measurable reason: nobody watched the early ones through.
 Each post inherits the last post's retention, so a run of weak openings
-compounds downward and no amount of posting fixes it — posting *more* of the
+compounds downward and no amount of posting fixes it, posting *more* of the
 same thing is what produced 33.
 
 Three causes, in the order they cost the most:
@@ -36,8 +36,8 @@ Three causes, in the order they cost the most:
 3. **Nothing shows the product and nothing asks for anything.** There is no
    reason to follow, so 672 impressions produced one follower.
 
-The control group is in the same hands. **@brickdealil** holds steady at 500–970
-views a video on hand-held product footage — worse-looking material, no stock
+The control group is in the same hands. **@brickdealil** holds steady at 500 to 970
+views a video on hand-held product footage, worse-looking material, no stock
 library, no measured type placement, and it does not decay. The difference is
 not production value. It is that something real is happening in the frame.
 
@@ -59,7 +59,7 @@ specific problem, in Hebrew, before anything pretty happens.
 
 ```
 ✅  3 טעויות שישראלים עושים בגאורגיה
-✅  טיול 5 ימים ברומא ב-2,000 ₪ — ככה
+✅  טיול 5 ימים ברומא ב-2,000 ₪, ככה
 ✅  אל תטוסו לתאילנד לפני שאתם יודעים את זה
 
 ❌  Beautiful Dolomites 🏔️
@@ -96,7 +96,7 @@ converts nothing however well it performs.
 ### 4. Real footage, not stock
 
 Real phone footage, a face or a voice to camera, or a screen recording. If stock
-is used at all it is **B-roll under a strong hook and real information** — never
+is used at all it is **B-roll under a strong hook and real information**, never
 the substance of the post.
 
 ### 5. Vary the format
@@ -114,7 +114,7 @@ Never the same template twice in a row. Five shapes, rotated:
 ### 6. Fifteen to thirty-five seconds
 
 Long enough to deliver something, short enough to finish. The ending loops back
-to the opening or leaves an open question — a video that resolves cleanly is a
+to the opening or leaves an open question, a video that resolves cleanly is a
 video nobody rewatches.
 
 ### 7. A reason to follow
@@ -126,14 +126,14 @@ Reach without follows is the seven-video problem in a better costume.
 
 ### 8. A soft call to action, at the end only
 
-**"תכננו טיול כזה בחינם — הלינק בביו"**
+**"תכננו טיול כזה בחינם, הלינק בביו"**
 
 At the end, once, after the value has already been delivered. Never make the
 whole video an advertisement.
 
 Note what this line does *not* contain: a domain. `assertNoUrl` in
 `src/format.js` still refuses anything carrying `http`, `www.`, `.com` or
-`.co.il`, and that rule has not moved — an external domain in a TikTok
+`.co.il`, and that rule has not moved, an external domain in a TikTok
 description is a demotion and the string was never tappable anyway. "הלינק
 בביו" is a pointer to the bio, which is the only tappable route either platform
 offers. The CTA is back; the URL is still banned.
@@ -144,7 +144,7 @@ offers. The CTA is back; the URL is still banned.
 
 - **Caption:** one short line in Hebrew, plus a question.
 - **Hashtags:** three to five, mixing broad and niche, with the destination in
-  Hebrew among them — `#טיול #טיסות #חופשה #<יעד> #טיפיםלטיול`. Not dozens, and
+  Hebrew among them, `#טיול #טיסות #חופשה #<יעד> #טיפיםלטיול`. Not dozens, and
   not a pile of unrelated ones.
 - **Sound:** a trending sound, quiet, under the voiceover.
 
@@ -156,7 +156,7 @@ offers. The CTA is back; the URL is still banned.
 itself a ranking input, and three weeks is the shortest run that produces enough
 data to read.
 
-**When:** 12:00–14:00 and 19:00–22:00 Israel time.
+**When:** 12:00 to 14:00 and 19:00 to 22:00 Israel time.
 
 **Not** from Friday evening to Saturday evening. The audience is Israeli and
 most of it is not on the app; a post that lands in that window spends its whole
@@ -175,7 +175,7 @@ Four numbers per video:
 - average watch time
 - percentage who watched to the end
 - followers gained
-- where the views came from — For You versus profile
+- where the views came from, For You versus profile
 
 And three rules for acting on them:
 
@@ -200,7 +200,7 @@ can do it and nothing in `bot.js` claims to.
 - several near-identical videos
 - **a stranger standing in front of the view.** Somebody filmed from outside,
   facing or walking for the camera, makes the post about that person instead of
-  about the place. A participant camera — hands, feet, handlebars — is the
+  about the place. A participant camera, hands, feet, handlebars, is the
   opposite thing and is wanted. Enforced by `rejectPersonSubject`.
 - **a line that trails off.** No `...` on screen. There is nothing to click for
   the rest, so half a sentence is all the viewer ever gets. Enforced by
@@ -213,17 +213,17 @@ can do it and nothing in `bot.js` claims to.
 This is the honest split, and it is the reason this file exists rather than a
 config change.
 
-Rules 3 and 4 — show the product, use real footage — require a camera, a voice
+Rules 3 and 4, show the product, use real footage, require a camera, a voice
 and a screen. No pipeline produces those. Rule 3 has since found a second route
-that does not need a camera at all — a **plan** draws the output rather than
-filming the screen it came from, see the table above — but rule 4 has none, and
+that does not need a camera at all, a **plan** draws the output rather than
+filming the screen it came from, see the table above, but rule 4 has none, and
 a drawn itinerary is not somebody using the app. What a pipeline *can* do is everything
 that surrounds them: choose the destination and the angle, rotate the format so
 two of the same shape never land back to back, write the hook and the caption
 and the tags, remember which part of which series is next, and refuse to ask for
 any of it during Shabbat.
 
-So the bot builds a **shoot** — a shot list, delivered to Telegram, that you
+So the bot builds a **shoot**, a shot list, delivered to Telegram, that you
 film and post by hand:
 
 ```
@@ -245,7 +245,7 @@ The existing three kinds are untouched:
 | **shoot** | **a shot list you film** | **the bot plans, you shoot** |
 | **plan** | **an AI itinerary as slides → TikTok + Instagram** | **the bot, on request** |
 
-A **plan** is rule 3 — show the product — reached by the one route a program
+A **plan** is rule 3, show the product, reached by the one route a program
 can take. It cannot film a screen, so it draws the output instead: "ביקשתי מ-AI
 לתכנן 4 ימים ברומא", then a photograph for every stop with its time and its
 price, the total, and then the ask. It is built as a deck and rendered by the
@@ -268,11 +268,10 @@ when a post goes wrong.
 ### The fare ban is lifted
 
 `src/verify.js` used to reject any amount of money sitting within 120 characters
-of a flight word, anywhere in a card. `src/video/hooks.js` went further —
-"תבנית השוואת המחיר בוטלה כליל" — and banned the price shape outright.
+of a flight word, anywhere in a card. `src/video/hooks.js` went further, "תבנית השוואת המחיר בוטלה כליל", and banned the price shape outright.
 
 Rule 2 requires the opposite. The reference account this brief was built against
-(`@clicktrip.il`, 2.5K followers, posts at 100–263K views) leads with prices in
+(`@clicktrip.il`, 2.5K followers, posts at 100, 263K views) leads with prices in
 four of its eight best hooks: ₪8,500 for Lisbon, ₪20,000 for New Year, ₪4,500
 for three days. It is the most reproducible thing about that account.
 
@@ -293,15 +292,15 @@ for three days. It is the most reproducible thing about that account.
 `post-config.json` recorded removing it: the caption was
 `למתכנן טיולים חכם בביו שלנו` over `www.tiyulplus.com`, and an external domain
 in a TikTok description is a demotion. That argument was about the **domain**,
-and it survives — `assertNoUrl` is unchanged and still throws at build time.
+and it survives, `assertNoUrl` is unchanged and still throws at build time.
 What is restored is the pointer with no domain in it, at the end of the caption,
 on a configurable share of posts rather than all of them.
 
 ### A clip grew a middle, and then gave it back
 
 Eight seconds was chosen because a loop is worth more than a watch, and that is
-true of a clip whose whole content is one sentence. Rule 6 asks for 15–35, and a
-longer video carrying the *same* single line would be strictly worse — more
+true of a clip whose whole content is one sentence. Rule 6 asks for 15 to 35, and a
+longer video carrying the *same* single line would be strictly worse, more
 seconds for the same information is exactly how average watch time falls below
 40%.
 
@@ -312,7 +311,7 @@ the length.
 **It was reverted on sight, and the reason is the footage rather than the
 writing.** Under those four changing lines is one stock shot that never cuts. A
 video that holds a single frozen composition for half a minute while the caption
-rewrites itself is a slideshow with a video background — the picture stops being
+rewrites itself is a slideshow with a video background, the picture stops being
 what the line answers and becomes wallpaper. Rule 6's length is for a video that
 keeps moving.
 

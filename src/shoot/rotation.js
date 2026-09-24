@@ -82,7 +82,7 @@ export function chooseFormat(history = [], { rand = Math.random } = {}) {
 
   return {
     format: pick(fresh.length ? fresh : formats, rand),
-    why: fresh.length ? null : 'אין פורמט אחר זמין — חזרה על הצורה',
+    why: fresh.length ? null : 'אין פורמט אחר זמין - חזרה על הצורה',
   };
 }
 

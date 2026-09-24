@@ -73,7 +73,7 @@ console.log(`  publish targets : ${publishTargets().join(' + ') || '(none)'}`);
 console.log(`  card  may go to : ${allowedForKind('card').join(', ')}`);
 console.log(`  deck  may go to : ${allowedForKind('deck').join(', ')}`);
 console.log(`  tiktokConfigured: ${tiktokConfigured()}`);
-if (!hosts.length) bad('no card host configured — nothing can publish to Instagram or TikTok');
+if (!hosts.length) bad('no card host configured - nothing can publish to Instagram or TikTok');
 if (!verified.length) bad('no TikTok-verified domain configured');
 
 /* ────────────────────────────────────────────────────────────────────────── */
@@ -84,14 +84,14 @@ head('2. The bug that stopped every post: which targets does each kind get?');
 // fail — that was the whole outage.
 const cardTargets = targetsForKind('card');
 if (cardTargets.includes('tiktok')) bad(`a card is being sent to TikTok: ${cardTargets.join(', ')}`);
-else ok(`a card publishes to ${cardTargets.join(' + ') || '(nothing)'} — never TikTok`);
+else ok(`a card publishes to ${cardTargets.join(' + ') || '(nothing)'} - never TikTok`);
 
 const deckTargets = targetsForKind('deck');
 if (deckTargets.includes('tiktok')) ok(`a deck publishes to ${deckTargets.join(' + ')}`);
-else info(`a deck publishes to ${deckTargets.join(' + ') || '(nothing)'} — TikTok not configured`);
+else info(`a deck publishes to ${deckTargets.join(' + ') || '(nothing)'} - TikTok not configured`);
 
 /* ────────────────────────────────────────────────────────────────────────── */
-head('3. Preflight — each refusal names the exact cause');
+head('3. Preflight - each refusal names the exact cause');
 
 const base = hosts[0] || 'https://cards.tiyulplus.com/cards';
 const goodUrl = `${base}/dryrun.jpg`;
@@ -125,15 +125,15 @@ const cases = [
 for (const [label, cand, expect] of cases) {
   try {
     const { images, notes } = preflight(cand);
-    if (expect) bad(`${label} — expected a refusal mentioning "${expect}", got ${images.length} images`);
+    if (expect) bad(`${label} - expected a refusal mentioning "${expect}", got ${images.length} images`);
     else {
       ok(`${label} → ${images.length} image(s)`);
       for (const n of notes) info(`note: ${n}`);
     }
   } catch (e) {
     const msg = describeError(e);
-    if (!expect) bad(`${label} — unexpected refusal: ${msg}`);
-    else if (!e.message.includes(expect)) bad(`${label} — refused, but not for "${expect}": ${msg}`);
+    if (!expect) bad(`${label} - unexpected refusal: ${msg}`);
+    else if (!e.message.includes(expect)) bad(`${label} - refused, but not for "${expect}": ${msg}`);
     else {
       ok(`${label} → refused`);
       info(msg.split('\n')[0]);
@@ -143,7 +143,7 @@ for (const [label, cand, expect] of cases) {
 }
 
 /* ────────────────────────────────────────────────────────────────────────── */
-head('4. Privacy resolution — never wider than what was shown');
+head('4. Privacy resolution - never wider than what was shown');
 
 const privacyCases = [
   ['the owner chose SELF_ONLY', { tiktok: { privacy: 'SELF_ONLY', options: ['SELF_ONLY'] } }],
@@ -159,23 +159,23 @@ for (const [label, cand] of privacyCases) {
   try {
     const r = await resolvePrivacy(cand, { allowRefetch: tiktokConfigured() });
     const wide = r.privacy === 'PUBLIC_TO_EVERYONE';
-    if (wide) bad(`${label} → ${r.privacy} — wider than SELF_ONLY while unaudited`);
+    if (wide) bad(`${label} → ${r.privacy} - wider than SELF_ONLY while unaudited`);
     else ok(`${label} → ${r.privacy} (${r.source})`);
     if (r.note) info(`says: ${r.note}`);
   } catch (e) {
-    bad(`${label} — threw: ${describeError(e)}`);
+    bad(`${label} - threw: ${describeError(e)}`);
   }
 }
 
 /* ────────────────────────────────────────────────────────────────────────── */
-head('5. Platform limits — counted, never bypassed');
+head('5. Platform limits - counted, never bypassed');
 
 const cap = TIKTOK_DAILY_CAP();
 const used = store.tiktokPostsInLast24h();
 console.log(`  TikTok posts in the last 24h: ${used}/${cap}`);
 if (used >= cap) {
   const freesAt = store.tiktokCapFreesAt();
-  info(`cap reached — frees at ${freesAt ? new Date(freesAt).toISOString() : 'unknown'}`);
+  info(`cap reached - frees at ${freesAt ? new Date(freesAt).toISOString() : 'unknown'}`);
 }
 
 // Prove the override cannot reach it: run the cap check inside an override.
@@ -186,7 +186,7 @@ await runOverridden('dry-run', async () => {
 });
 
 /* ────────────────────────────────────────────────────────────────────────── */
-head('6. Owner override — bypasses guards, and says so');
+head('6. Owner override - bypasses guards, and says so');
 
 await runOverridden('dry-run', async () => {
   const history = Array.from({ length: 12 }, () => ({
@@ -210,7 +210,7 @@ await runOverridden('dry-run', async () => {
   for (const r of describeRepeats(cand, history)) info(`discloses: ${r}`);
 
   const notes = overrideNotes();
-  if (!notes.length) bad('nothing was recorded — a silent override is the failure mode');
+  if (!notes.length) bad('nothing was recorded - a silent override is the failure mode');
   else {
     ok(`${notes.length} disclosure line(s) would reach Telegram before publishing:`);
     for (const n of notes) info(`• ${n}`);
@@ -222,7 +222,7 @@ if (overrideNotes().length) bad('override notes leaked outside runOverridden');
 else ok('outside an override, no guard is relaxed');
 
 /* ────────────────────────────────────────────────────────────────────────── */
-head('7. Live TikTok — read-only calls against the real account');
+head('7. Live TikTok - read-only calls against the real account');
 
 if (!tiktokConfigured()) {
   info('TikTok is not configured here; skipping the live half.');
@@ -234,9 +234,9 @@ if (!tiktokConfigured()) {
     ok(`creator_info → @${cinfo.username} (${cinfo.nickname})`);
     info(`privacy_level_options: ${JSON.stringify(cinfo.options)}`);
     if (cinfo.options.includes('PUBLIC_TO_EVERYONE')) {
-      bad('PUBLIC_TO_EVERYONE is offered — the account is PUBLIC, and an unaudited app cannot post to it');
+      bad('PUBLIC_TO_EVERYONE is offered - the account is PUBLIC, and an unaudited app cannot post to it');
     } else {
-      ok('PUBLIC_TO_EVERYONE is absent — the account is private, as an unaudited app requires');
+      ok('PUBLIC_TO_EVERYONE is absent - the account is private, as an unaudited app requires');
     }
   } catch (e) {
     bad(`creator_info failed: ${describeError(e)}`);
@@ -271,7 +271,7 @@ if (withQueue) {
     console.log(`  ${kind} "${String(cand.headline || cand.id).slice(0, 40)}"`);
     info(`stamped : ${JSON.stringify(cand.publishTargets)}`);
     info(`pending : ${JSON.stringify(cand.pendingTargets || null)}`);
-    info(`would publish to: ${owed.join(' + ') || '(nothing — already done or not allowed)'}`);
+    info(`would publish to: ${owed.join(' + ') || '(nothing - already done or not allowed)'}`);
     if (owed.includes('tiktok')) {
       try {
         const { images } = preflight(cand);
@@ -288,7 +288,7 @@ if (withQueue) {
 head('Result');
 console.log(
   failures === 0
-    ? '\x1b[32mno problems found — nothing was published, the live store was not touched\x1b[0m'
+    ? '\x1b[32mno problems found - nothing was published, the live store was not touched\x1b[0m'
     : `\x1b[31m${failures} problem(s) found\x1b[0m`
 );
 console.log(`(store copy used: ${scratch})`);

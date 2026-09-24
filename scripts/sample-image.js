@@ -91,7 +91,7 @@ export function sampleImage(name = 'coast') {
     // Deliberately labelled as what it is. A real image would carry 'stock',
     // 'catalogue' or 'ai' here, and src/images.js rejects anything else.
     provenance: 'stock',
-    credit: 'sample placeholder — not a real photo',
+    credit: 'sample placeholder - not a real photo',
   };
 }
 

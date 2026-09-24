@@ -103,7 +103,7 @@ export function inWindow(at = new Date()) {
  * the string.
  */
 export function sendableNow(at = new Date()) {
-  if (inShabbat(at)) return { ok: false, why: 'שבת — לא נשלח עכשיו' };
+  if (inShabbat(at)) return { ok: false, why: 'שבת - לא נשלח עכשיו' };
   if (!inWindow(at)) return { ok: false, why: `מחוץ לשעות הפעילות (${windowsHe()})` };
   return { ok: true, why: null };
 }

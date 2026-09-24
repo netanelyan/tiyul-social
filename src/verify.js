@@ -102,7 +102,7 @@ export async function verifySource(item) {
     page = await fetchReadable(item.url);
   } catch (e) {
     const code = e instanceof FetchError ? e.code : 'network';
-    throw new RejectedError('source_unreachable', `${code} — ${e.message}`);
+    throw new RejectedError('source_unreachable', `${code} - ${e.message}`);
   }
 
   // A redirect off the allowlisted domain means the thing we actually read is
@@ -284,7 +284,7 @@ export function noDecimalsUpFront(draft) {
     ['subhead', draft?.subhead],
   ]) {
     const m = DECIMAL_IN_COPY.exec(String(text || ''));
-    if (m) return `${field}: "${m[0]}" — round it`;
+    if (m) return `${field}: "${m[0]}" - round it`;
   }
   return null;
 }
@@ -452,7 +452,7 @@ const REASON_HE = {
   source_too_thin: 'בדף המקור אין מספיק תוכן',
   no_evidence: 'הטיוטה לא ציטטה שום מקור',
   unsupported_claim: 'ציטוט שלא נמצא בדף המקור',
-  flight_price_out_of_scope: 'מחיר טיסה — מחוץ לתחום בגרסה הזו',
+  flight_price_out_of_scope: 'מחיר טיסה - מחוץ לתחום בגרסה הזו',
   unrounded_number: 'מספר עשרוני בכותרת - צריך לעגל',
   repeated_word: 'מילה חוזרת בכותרת',
   headline_length: 'הכותרת ארוכה או קצרה מדי',

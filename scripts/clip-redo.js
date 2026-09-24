@@ -58,7 +58,7 @@ const placeArg = process.argv.slice(2).find((a) => /^-{0,2}place=/.test(a));
 const pinnedPlace = placeArg ? placeArg.replace(/^-{0,2}place=/, '').trim() : null;
 if (pinnedPlace && !postConfig().places[pinnedPlace.toLowerCase()]) {
   console.error(
-    `place=${pinnedPlace} has no Hebrew spelling in post-config.json (clips.places) — ` +
+    `place=${pinnedPlace} has no Hebrew spelling in post-config.json (clips.places) - ` +
       'add it there first, or the pin and the tag have nothing to print'
   );
   process.exit(1);
@@ -182,7 +182,7 @@ for (const { id, hook } of pairs) {
 
     if (toDraft) {
       if (!tiktokConfigured()) {
-        console.error('   ✗ TikTok is not configured here — run this on the box that holds the token');
+        console.error('   ✗ TikTok is not configured here - run this on the box that holds the token');
         continue;
       }
       try {

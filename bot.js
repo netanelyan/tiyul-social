@@ -122,7 +122,7 @@ if (!OWNER_ID) {
   process.exit(1);
 }
 if (!STAGING_CHAT_ID) {
-  console.error('Set STAGING_CHAT_ID in .env — nothing publishes without an approval tap, so there must be somewhere to send approvals.');
+  console.error('Set STAGING_CHAT_ID in .env - nothing publishes without an approval tap, so there must be somewhere to send approvals.');
   process.exit(1);
 }
 
@@ -281,7 +281,7 @@ async function stage(candidate) {
     // five cards sends five photos in a row, and 429 is not a rare answer to
     // that. Not worth failing the post over — the post is fine — so it says so
     // and /resend picks it up.
-    console.error(`stage: card did not reach you — ${e?.message || e}`);
+    console.error(`stage: card did not reach you - ${e?.message || e}`);
     await notify
       .send(bot.telegram, staging, `⚠️ פוסט נוצר אבל הכרטיס לא נשלח (${store.stagingSize()} ממתינים) · /resend`)
       .catch(() => {});
@@ -329,7 +329,7 @@ bot.action(/^ok:(.+)$/, async (ctx) => {
     ? queued.length
       ? `✅ טיוטה לטיקטוק · ${pos} בתור לאינסטגרם`
       : '✅ נשלח לטיוטות בטיקטוק'
-    : `✅ אושר — ${pos} בתור`;
+    : `✅ אושר - ${pos} בתור`;
 
   await ctx.answerCbQuery(said);
   await markDecided(ctx, said, cand);
@@ -436,9 +436,9 @@ bot.action(/^db:(.+):(instagram|tiktok|both)$/, async (ctx) => {
   const missing = targets.filter((t) => !configured.includes(t));
   await ctx.answerCbQuery(
     missing.length
-      ? `⏳ בונה — ${targetsHe(missing)} עוד לא מחובר, הפוסט ימתין`
+      ? `⏳ בונה - ${targetsHe(missing)} עוד לא מחובר, הפוסט ימתין`
       : draft
-        ? '⏳ בונה — טיקטוק יחכה לך בטיוטות'
+        ? '⏳ בונה - טיקטוק יחכה לך בטיוטות'
         : '⏳ בונה'
   );
   await ctx.editMessageReplyMarkup(undefined).catch(() => {});
@@ -574,7 +574,7 @@ async function handleEditReply(ctx, key) {
   // The old message carried the old image, so it can't be edited in place —
   // the card is re-sent with fresh buttons instead.
   await sendForApproval(bot.telegram, pending.chatId, updated, approvalMessage(updated), stagingButtons(key, updated));
-  await ctx.reply('✏️ הכותרת עודכנה והכרטיס רונדר מחדש — אשר/דחה למעלה');
+  await ctx.reply('✏️ הכותרת עודכנה והכרטיס רונדר מחדש - אשר/דחה למעלה');
 }
 
 // ---------------------------------------------------------------------------
@@ -731,7 +731,7 @@ async function publishNext(item = null) {
     .filter((t) => !allowed.includes(t));
   if (disallowed.length) {
     console.log(
-      `publish: ${disallowed.join(', ')} dropped for this ${cand.kind || 'card'} — not a destination this kind publishes to`
+      `publish: ${disallowed.join(', ')} dropped for this ${cand.kind || 'card'} - not a destination this kind publishes to`
     );
   }
 
@@ -750,7 +750,7 @@ async function publishNext(item = null) {
     // one slideshow at a time.
     if (!targetsForKind(cand.kind).length) {
       store.hold(cand, allowed, `no destination configured for a ${cand.kind || 'card'} yet`);
-      console.log(`publish: holding ${cand.kind || 'card'} — ${allowed.join(', ')} not configured yet`);
+      console.log(`publish: holding ${cand.kind || 'card'} - ${allowed.join(', ')} not configured yet`);
       await notify.send(
         bot.telegram,
         staging,
@@ -1087,7 +1087,7 @@ async function maybeRefreshTikTokToken() {
     await notify.send(
       bot.telegram,
       staging,
-      `🔑 טוקן הרענון של טיקטוק פג בעוד ${days} ימים — הרץ npm run tiktok-token כדי לחדש`
+      `🔑 טוקן הרענון של טיקטוק פג בעוד ${days} ימים - הרץ npm run tiktok-token כדי לחדש`
     );
   }
 }
@@ -1163,8 +1163,8 @@ bot.command('run', async (ctx) => {
 
   await ctx.reply(
     target
-      ? `⏳ מריץ סבב — עד ${target} פריטים (עוקף את המכסה היומית ${dailyTarget()})`
-      : `⏳ מריץ סבב — עד ${dailyTarget()} פריטים`
+      ? `⏳ מריץ סבב - עד ${target} פריטים (עוקף את המכסה היומית ${dailyTarget()})`
+      : `⏳ מריץ סבב - עד ${dailyTarget()} פריטים`
   );
 
   detach(
@@ -1186,7 +1186,7 @@ bot.command('redo', async (ctx) => {
   const cleared = store.clearStaging();
   const forgotten = store.forgetAllSeen();
   await ctx.reply(
-    `🔄 שכחתי ${forgotten} פריטים שכבר נראו${cleared ? ` וניקיתי ${cleared} ממתינים` : ''} — מריץ מחדש` +
+    `🔄 שכחתי ${forgotten} פריטים שכבר נראו${cleared ? ` וניקיתי ${cleared} ממתינים` : ''} - מריץ מחדש` +
       `\n(${store.publishedCount()} פוסטים שכבר פורסמו לא יחזרו)`
   );
   detach('סבב איסוף', () => runOverridden('/redo', () => doRun()), ctx.chat.id);
@@ -1237,7 +1237,7 @@ bot.command('resend', async (ctx) => {
           await sendForApproval(bot.telegram, staging, cand, approvalMessage(cand), stagingButtons(key, cand));
           sent += 1;
         } catch (e) {
-          console.error(`resend: ${cand.headline} — ${e?.message || e}`);
+          console.error(`resend: ${cand.headline} - ${e?.message || e}`);
         }
         // A second and a half between cards. The per-chat burst limit is what
         // is being worked around, and a deck is an album plus a message.
@@ -1307,7 +1307,7 @@ bot.command('post', async (ctx) => {
   const arg = (ctx.message.text || '').replace(/^\/post(@\S+)?\s*/, '').trim();
   const n = Number(arg);
   if (!arg || !Number.isInteger(n) || n < 1) {
-    return ctx.reply('שימוש: /post 2 — המספר מהרשימה ב-/queue');
+    return ctx.reply('שימוש: /post 2 - המספר מהרשימה ב-/queue');
   }
 
   // Taken out BEFORE publishing, so a slow publish cannot have the drip pick
@@ -1315,7 +1315,7 @@ bot.command('post', async (ctx) => {
   // the ordinary failure path — held or requeued — exactly as it would have
   // from the drip.
   const item = store.takeQueuedAt(n);
-  if (!item) return ctx.reply(`אין פריט ${n} בתור — /queue לרשימה`);
+  if (!item) return ctx.reply(`אין פריט ${n} בתור - /queue לרשימה`);
 
   await ctx.reply(`⏳ מפרסם: ${item.headline}`);
   const sinceLast = store.lastPublishedAt() ? Date.now() - store.lastPublishedAt() : null;
@@ -1329,7 +1329,7 @@ bot.command('post', async (ctx) => {
     }
     return publishNext(item);
   });
-  await ctx.reply(ok ? '📤 פורסם' : 'לא פורסם — ראו את ההודעה שלמעלה');
+  await ctx.reply(ok ? '📤 פורסם' : 'לא פורסם - ראו את ההודעה שלמעלה');
 });
 
 /**
@@ -1368,10 +1368,10 @@ bot.command('next', async (ctx) => {
 bot.command('draft', async (ctx) => {
   const arg = (ctx.message.text || '').replace(/^\/draft(@\S+)?\s*/, '').trim();
   const n = Number(arg);
-  if (!arg || !Number.isInteger(n) || n < 1) return ctx.reply('שימוש: /draft 2 — המספר מהרשימה ב-/queue');
+  if (!arg || !Number.isInteger(n) || n < 1) return ctx.reply('שימוש: /draft 2 - המספר מהרשימה ב-/queue');
 
   const item = store.takeQueuedAt(n);
-  if (!item) return ctx.reply(`אין פריט ${n} בתור — /queue לרשימה`);
+  if (!item) return ctx.reply(`אין פריט ${n} בתור - /queue לרשימה`);
 
   const targets = item.pendingTargets?.length ? item.pendingTargets : item.publishTargets || [];
   if (!targets.includes('tiktok')) {
@@ -1465,10 +1465,10 @@ bot.command('retry', async (ctx) => {
 
   for (const h of rows) store.enqueue({ ...h.cand, publishAttempts: 0, pendingTargets: h.targets });
 
-  if (!rows.length) return ctx.reply('אין מה להחזיר לתור. סימנתי את כל היעדים כתקינים — הפרסום הבא ינסה שוב.');
+  if (!rows.length) return ctx.reply('אין מה להחזיר לתור. סימנתי את כל היעדים כתקינים - הפרסום הבא ינסה שוב.');
   await ctx.reply(`🔁 ${rows.length} פוסטים חזרו לתור. מפרסם את הראשון...`);
   const ok = await publishNext();
-  await ctx.reply(ok ? '📤 עבד' : 'עדיין נכשל — /held לפרטים');
+  await ctx.reply(ok ? '📤 עבד' : 'עדיין נכשל - /held לפרטים');
 });
 
 bot.command('clear_pending', (ctx) => {
@@ -1493,7 +1493,7 @@ bot.command('sources', (ctx) => {
   if (verb === 'on' || verb === 'off') {
     if (!id) return ctx.reply(`שימוש: /sources ${verb} <id>`);
     const src = sources.find((s) => s.id === id);
-    if (!src) return ctx.reply(`אין מקור בשם "${id}" — /sources לרשימה`);
+    if (!src) return ctx.reply(`אין מקור בשם "${id}" - /sources לרשימה`);
     if (verb === 'on' && !src.enabled) {
       return ctx.reply(
         `"${id}" מוצהר כבוי ב-sources.json ולא ניתן להדליק אותו מכאן.\nהסיבה שנרשמה: ${src.note?.split('.')[0] || '—'}`
@@ -1534,11 +1534,11 @@ bot.command('sources', (ctx) => {
         : line;
     });
 
-  const off = sources.filter((s) => !s.enabled).map((s) => `⬜ ${s.id} — ${s.note?.split('.')[0] || 'כבוי'}`);
+  const off = sources.filter((s) => !s.enabled).map((s) => `⬜ ${s.id} - ${s.note?.split('.')[0] || 'כבוי'}`);
 
   ctx.reply(
     [
-      `📚 מקורות — ${enabledSources().length} פעילים מתוך ${sources.length} מוצהרים`,
+      `📚 מקורות - ${enabledSources().length} פעילים מתוך ${sources.length} מוצהרים`,
       ...on,
       '',
       'מוצהרים כבויים:',
@@ -1622,7 +1622,7 @@ bot.command('igquota', async (ctx) => {
     local.push(
       days > 0
         ? `🔑 הטוקן תקף עוד ${days} ימים (מתחדש אוטומטית)`
-        : `🔑 הטוקן פג לפני ${Math.abs(days)} ימים — npm run ig-token`
+        : `🔑 הטוקן פג לפני ${Math.abs(days)} ימים - npm run ig-token`
     );
   }
   if (health.lastOkAt) local.push(`✅ פורסם לאחרונה לפני ${notify.humanDuration(Date.now() - health.lastOkAt)}`);
@@ -1782,7 +1782,7 @@ bot.command('trip', async (ctx) => {
       const dest = asked ? findDestination(asked) : null;
       if (asked && !dest) {
         await notify
-          .send(bot.telegram, ctx.chat.id, `❌ ${asked} לא ב-destinations.json — הוסיפו אותו עם האיות בעברית`)
+          .send(bot.telegram, ctx.chat.id, `❌ ${asked} לא ב-destinations.json - הוסיפו אותו עם האיות בעברית`)
           .catch(() => {});
         return;
       }
@@ -1880,7 +1880,7 @@ bot.command('deck', async (ctx) => {
 
   if (!searchConfigured()) {
     await ctx.reply(
-      '⚠️ חיפוש לא מוגדר (GOOGLE_CSE_KEY, GOOGLE_CSE_CX) — נשתמש רק בעמוד הראשי של כל מקום, מה שבדרך כלל לא מספיק לעובדות'
+      '⚠️ חיפוש לא מוגדר (GOOGLE_CSE_KEY, GOOGLE_CSE_CX) - נשתמש רק בעמוד הראשי של כל מקום, מה שבדרך כלל לא מספיק לעובדות'
     );
   }
 
@@ -1984,7 +1984,7 @@ function proposalMessage(idea) {
       '────────────',
       ...idea.places.map((p, i) => `${i + 1}. ${p.nameHe}${p.noteHe ? ` (${p.noteHe})` : ''}`),
       '',
-      '(מצגת חופשית — שמות ותמונות בלבד, בלי שעות, מחירים או עובדות מאומתות)',
+      '(מצגת חופשית - שמות ותמונות בלבד, בלי שעות, מחירים או עובדות מאומתות)',
     ].join('\n');
   }
 
@@ -1997,7 +1997,7 @@ function proposalMessage(idea) {
     // when it is in fact the documented narrowing doing its job. Suppressed
     // when the request already names the region, where repeating it back costs
     // a line and says nothing.
-    narrowedFrom(idea) ? `🗣 ביקשת "${idea.asked}" — צומצם ל-${idea.where}, אזור שמפה יכולה לחפש בו` : null,
+    narrowedFrom(idea) ? `🗣 ביקשת "${idea.asked}" - צומצם ל-${idea.where}, אזור שמפה יכולה לחפש בו` : null,
     idea.whyNow ? `🗓 ${idea.whyNow}` : null,
     // The content, so the decision here is about the post rather than about a
     // headline. This is the PLAN: the build sources its own places from the
@@ -2012,8 +2012,8 @@ function proposalMessage(idea) {
     // before tapping, not after.
     idea.places?.length
       ? idea.freeform
-        ? '\n(שמות ותמונות בלבד — בלי שעות, מחירים או עובדות מאומתות)'
-        : '\n(רשימה מתוכננת — הבנייה מאתרת את המקומות בפועל ויכולה להחליף חלק)'
+        ? '\n(שמות ותמונות בלבד - בלי שעות, מחירים או עובדות מאומתות)'
+        : '\n(רשימה מתוכננת - הבנייה מאתרת את המקומות בפועל ויכולה להחליף חלק)'
       : null,
   ]
     .filter(Boolean)
@@ -2056,7 +2056,7 @@ async function pickIdea() {
   const fresh = ideas.filter((i) => !placeOverCap(i.where, history));
   const ordered = fresh.length ? [...fresh, ...ideas.filter((i) => !fresh.includes(i))] : ideas;
   if (fresh.length && fresh[0] !== ideas[0]) {
-    console.log(`deck: "${ideas[0].where}" is over its share — starting from "${fresh[0].where}" instead`);
+    console.log(`deck: "${ideas[0].where}" is over its share - starting from "${fresh[0].where}" instead`);
   }
   return {
     idea: ordered[0],
@@ -2155,14 +2155,14 @@ async function suggestClip() {
     const why = nowhere?.length
       ? `${considered} נבדקו, אף אחד לא עבר את סף היעד`
       : 'לא נמצאו קליפים מתאימים';
-    console.log(`clip: nothing to suggest — ${why}`);
+    console.log(`clip: nothing to suggest - ${why}`);
     return;
   }
 
   for (const clip of clips) await stage(clip);
   if (!written) {
     await notify
-      .send(bot.telegram, staging, '⚠️ שורת הקליפ נלקחה מהמאגר ולא נכתבה — בדוק את ANTHROPIC_API_KEY')
+      .send(bot.telegram, staging, '⚠️ שורת הקליפ נלקחה מהמאגר ולא נכתבה - בדוק את ANTHROPIC_API_KEY')
       .catch(() => {});
   }
 }
@@ -2322,7 +2322,7 @@ ${done}/${of} · ${ok ? '📷' : '✗'} ${name}`),
     const cand = await toDeckCandidate(built, { targets, tiktokDraft: draft });
 
     if (store.hasPublished(cand.id)) {
-      return say(`⏭️ המצגת הזו כבר פורסמה (${cand.id}) — /deck שוב לרעיון אחר`);
+      return say(`⏭️ המצגת הזו כבר פורסמה (${cand.id}) - /deck שוב לרעיון אחר`);
     }
 
     // The proposal message has done its job. Removing it means the deck arrives
@@ -2409,7 +2409,7 @@ bot.command('tiktok', async (ctx) => {
     local.push(
       hours > 0
         ? `🔑 טוקן הגישה תקף עוד ${hours} שעות (מתחדש אוטומטית)`
-        : `🔑 טוקן הגישה פג — יתחדש בפרסום הבא, או npm run tiktok-token`
+        : `🔑 טוקן הגישה פג - יתחדש בפרסום הבא, או npm run tiktok-token`
     );
   }
   if (refreshDays != null) local.push(`🔁 טוקן הרענון תקף עוד ${refreshDays} ימים`);
@@ -2425,7 +2425,7 @@ bot.command('tiktok', async (ctx) => {
     const missing = tiktokMissingScopes({ draft: true });
     if (missing.length) {
       local.push(
-        `🔴 חסר: ${missing.join(', ')} — פרסום ייכשל עד חיבור מחדש.`,
+        `🔴 חסר: ${missing.join(', ')} - פרסום ייכשל עד חיבור מחדש.`,
         '   רענון טוקן לא מוסיף הרשאות; צריך אישור חדש מול טיקטוק.'
       );
     }
@@ -2439,7 +2439,7 @@ bot.command('tiktok', async (ctx) => {
     const levels = info.options.map(privacyHe).join(', ') || 'לא התקבלו';
     const audit =
       info.options.length === 1 && info.options[0] === 'SELF_ONLY'
-        ? '\n⚠️ רק פרסום פרטי זמין — זה מה שאפליקציה לפני אישור (audit) מקבלת'
+        ? '\n⚠️ רק פרסום פרטי זמין - זה מה שאפליקציה לפני אישור (audit) מקבלת'
         : '';
     ctx.reply([`🎵 @${info.username || '?'}`, `🔒 רמות פרטיות זמינות: ${levels}${audit}`, ...local].join('\n'));
   } catch (e) {
@@ -2493,39 +2493,39 @@ bot.command('help', (ctx) =>
   ctx.reply(
     [
       'פקודות:',
-      '/run — סבב איסוף עכשיו',
-      '/run <מספר> — סבב עם יעד גדול יותר, עוקף מכסות (מדווח מה נעקף)',
-      '/redo — שכח מה כבר נראה והרץ שוב (לבדיקת שינויים בעיצוב/נוסח)',
-      '/status — סטטוס מלא',
-      '/health — בריאות כל יעד בנפרד, והשגיאה האחרונה',
-      '/pending — רשימת הממתינים לאישור',
-      '/resend — שולח שוב את כרטיסי האישור (אם לא הגיעו)',
-      '/queue — מה בתור, לפי הסדר, ממוספר',
-      '/next — מפרסם את הבא בתור',
-      '/post <מספר> — מפרסם אחד מסוים מהתור, מדלג על הסדר',
-      '/draft <מספר> — שולח את החצי של טיקטוק לטיוטות עכשיו',
-      '/held — פוסטים מאושרים שממתינים ליעד שנפל',
-      '/retry — אחרי שתיקנת: מחזיר אותם לתור',
-      '/clear_held — מוותר על המוחזקים ומסמן את היעדים כתקינים',
-      '/why [n] — מה נפסל ולמה',
-      '/mix — תמהיל הנושאים שפורסמו',
-      '/sources — רשימת המקורות',
-      '/igquota — מכסת אינסטגרם',
-      '/tiktok_connect — קישור חיבור לטיקטוק עם ההרשאות הנכונות',
-      '/deck — מציע רעיון למצגת',
-      '/deck 5 — חמישה רעיונות בבת אחת (עוקף את המכסה היומית)',
-      '/deck Kyoto temple — רעיון על יעד מסוים',
-      '/deck free <בקשה> — מצגת חופשית: שמות ותמונות, בלי עובדות מאומתות',
-      '/deck <מקום> <קטגוריה> — מצגת מוזמנת, למשל: /deck Prague museum',
-      '/tiktok — חיבור טיקטוק, טוקנים ורמות פרטיות',
-      '/shoot — תדריך צילום אחד: הוק, ביטים, מה לצלם וכיתוב מוכן',
-      '/shoot 3 — שלושה תדריכים',
-      '/trip — מסלול שנכתב ב-AI, כמצגת: יעד שלא היה לאחרונה',
-      '/trip רומא — מסלול ליעד מסוים',
-      '/trip רומא 5 — ולמספר ימים מסוים',
+      '/run - סבב איסוף עכשיו',
+      '/run <מספר> - סבב עם יעד גדול יותר, עוקף מכסות (מדווח מה נעקף)',
+      '/redo - שכח מה כבר נראה והרץ שוב (לבדיקת שינויים בעיצוב/נוסח)',
+      '/status - סטטוס מלא',
+      '/health - בריאות כל יעד בנפרד, והשגיאה האחרונה',
+      '/pending - רשימת הממתינים לאישור',
+      '/resend - שולח שוב את כרטיסי האישור (אם לא הגיעו)',
+      '/queue - מה בתור, לפי הסדר, ממוספר',
+      '/next - מפרסם את הבא בתור',
+      '/post <מספר> - מפרסם אחד מסוים מהתור, מדלג על הסדר',
+      '/draft <מספר> - שולח את החצי של טיקטוק לטיוטות עכשיו',
+      '/held - פוסטים מאושרים שממתינים ליעד שנפל',
+      '/retry - אחרי שתיקנת: מחזיר אותם לתור',
+      '/clear_held - מוותר על המוחזקים ומסמן את היעדים כתקינים',
+      '/why [n] - מה נפסל ולמה',
+      '/mix - תמהיל הנושאים שפורסמו',
+      '/sources - רשימת המקורות',
+      '/igquota - מכסת אינסטגרם',
+      '/tiktok_connect - קישור חיבור לטיקטוק עם ההרשאות הנכונות',
+      '/deck - מציע רעיון למצגת',
+      '/deck 5 - חמישה רעיונות בבת אחת (עוקף את המכסה היומית)',
+      '/deck Kyoto temple - רעיון על יעד מסוים',
+      '/deck free <בקשה> - מצגת חופשית: שמות ותמונות, בלי עובדות מאומתות',
+      '/deck <מקום> <קטגוריה> - מצגת מוזמנת, למשל: /deck Prague museum',
+      '/tiktok - חיבור טיקטוק, טוקנים ורמות פרטיות',
+      '/shoot - תדריך צילום אחד: הוק, ביטים, מה לצלם וכיתוב מוכן',
+      '/shoot 3 - שלושה תדריכים',
+      '/trip - מסלול שנכתב ב-AI, כמצגת: יעד שלא היה לאחרונה',
+      '/trip רומא - מסלול ליעד מסוים',
+      '/trip רומא 5 - ולמספר ימים מסוים',
       '/clear_pending',
       '',
-      'תדריך צילום לא מתפרסם על ידי הבוט — אתה מצלם ומעלה. /shoot מתעלם משעות',
+      'תדריך צילום לא מתפרסם על ידי הבוט - אתה מצלם ומעלה. /shoot מתעלם משעות',
       'הפעילות; הטיימר לא.',
       '',
       'מסלול AI הוא הצעה, לא עובדות מאומתות: אין ציטוטים מאחוריו והמחירים הם',
@@ -2758,7 +2758,7 @@ async function main() {
   // it would not say that a card and a deck go to different places.
   console.log(`   cards to: ${targetsForKind('card').join(' + ') || 'NOWHERE (Instagram not configured)'}`);
   console.log(`   decks to: ${targetsForKind('deck').join(' + ') || 'NOWHERE (TikTok not connected)'}`);
-  console.log('   telegram: approval only — nothing publishes to a channel');
+  console.log('   telegram: approval only - nothing publishes to a channel');
   console.log(`   images: ${imagesEnabled() ? 'a provider is configured' : 'text-led cards only'}`);
   // Connecting TikTok from a browser instead of pasting a code into a terminal.
   // In this process rather than a service of its own, so pm2 supervises it and
@@ -2770,7 +2770,7 @@ async function main() {
   // Said out loud at boot, because "shoots go nowhere" is the single most
   // surprising thing about this queue and the one most likely to be read as a
   // misconfiguration. It is the design: see BRIEF.md.
-  console.log(`   shoots to: YOU — a shot list to film by hand, ${windowsHe()} Israel time, not on Shabbat`);
+  console.log(`   shoots to: YOU - a shot list to film by hand, ${windowsHe()} Israel time, not on Shabbat`);
 
   // Checked at boot rather than discovered at the first clip of the day.
   // Without an encoder the clip half of this bot cannot work at all, and the
@@ -2785,7 +2785,7 @@ async function main() {
     } else {
       console.error(`   ⚠️ ffmpeg: ${ff.error}`);
       await notify
-        .send(bot.telegram, staging, `⚠️ קליפים מושבתים — ${ff.error}`)
+        .send(bot.telegram, staging, `⚠️ קליפים מושבתים - ${ff.error}`)
         .catch(() => {});
     }
   }

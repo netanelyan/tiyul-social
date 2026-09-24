@@ -34,7 +34,7 @@ process.env.MAX_DRAFT_CALLS ||= String(n * 6);
 
 async function main() {
   if (!hasApiKey()) {
-    console.error('ANTHROPIC_API_KEY is not set — drafting is required.');
+    console.error('ANTHROPIC_API_KEY is not set - drafting is required.');
     process.exitCode = 1;
     return;
   }
@@ -78,7 +78,7 @@ async function main() {
   for (const [reason, count] of Object.entries(summary.rejectedByReason)) {
     console.log(`  ${reason}: ${count}  (${reasonHe(reason)})`);
   }
-  for (const e of summary.sourceErrors) console.log(`  source failed — ${e.name}: ${e.message}`);
+  for (const e of summary.sourceErrors) console.log(`  source failed - ${e.name}: ${e.message}`);
   if (summary.budgetExhausted) {
     console.log('  ⚠ the drafting budget ran out before the target was met');
   }

@@ -104,7 +104,7 @@ Whatever the dashboard hands you — a 1-hour token or an already-long-lived one
     }
     token = refreshed.access_token;
     expiresIn = Number(refreshed.expires_in);
-    console.log('     token was already long-lived — refreshed it instead');
+    console.log('     token was already long-lived - refreshed it instead');
   }
 
   if (!token) throw new Error('no long-lived token came back');
@@ -158,7 +158,7 @@ pages_read_engagement -> Generate -> copy the EAAG... token.
   console.log('2/4  finding your Page...');
   const pages = await get(FB_HOST, 'me/accounts', { access_token: long.access_token });
   const list = pages.data || [];
-  if (!list.length) throw new Error('no Pages — the Instagram account is probably not linked to one');
+  if (!list.length) throw new Error('no Pages - the Instagram account is probably not linked to one');
   const page = list[0];
   console.log(`     ${page.name}`);
 
@@ -176,9 +176,9 @@ pages_read_engagement -> Generate -> copy the EAAG... token.
     access_token: `${appId}|${appSecret}`,
   });
   if (debug.data?.expires_at !== 0) {
-    throw new Error('that is a user token, not a Page token — it would die in ~60 days');
+    throw new Error('that is a user token, not a Page token - it would die in ~60 days');
   }
-  console.log('     ok — never expires');
+  console.log('     ok - never expires');
 
   return { igUserId, token: page.access_token, mode: 'facebook' };
 }
@@ -208,7 +208,7 @@ Then:  npm start   and send /igquota in the Telegram DM.
 main().catch((e) => {
   console.error(`\nFailed: ${e.message}\n`);
   if (/expired|invalid|OAuth/i.test(e.message)) {
-    console.error('That usually means the 1-hour token timed out — generate a fresh one and rerun.');
+    console.error('That usually means the 1-hour token timed out - generate a fresh one and rerun.');
   }
   process.exitCode = 1;
 });

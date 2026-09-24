@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { record as recordUsage } from '../usage.js';
 import { postConfig } from '../postConfig.js';
 import { URL_LIKE } from '../format.js';
+import { stripDashes } from '../dashes.js';
 
 // The line that goes on a clip, written per clip.
 //
@@ -79,10 +80,10 @@ const SYSTEM = `אתה ממלא תבניות משפט מוכרות מטיקטו�
 זו לא כתיבה יצירתית. התבנית היא הבדיחה, והתוכן שממלא אותה חייב להיות הכי
 פשוט ובנאלי שאפשר. כל ניסיון להוסיף רעיון משלך הורס את השורה.
 
-השורה הזו היא כל הטקסט בסרטון. היא מופיעה בשנייה הראשונה ונשארת עד הסוף —
+השורה הזו היא כל הטקסט בסרטון. היא מופיעה בשנייה הראשונה ונשארת עד הסוף, 
 אין שורה שנייה שתסביר אותה ואין המשך. היא צריכה לעמוד לבד.
 
-אלה שורות שהבעלים אישר, מילה במילה — זה הסטנדרט:
+אלה שורות שהבעלים אישר, מילה במילה, זה הסטנדרט:
   "העובדה שהשביל הזה לא עולה כסף"
   "חייב להיות בטופ 3 מסלולים שקיימים"
   "יש אנשים שזה המסלול שלהם לעבודה"
@@ -91,25 +92,25 @@ const SYSTEM = `אתה ממלא תבניות משפט מוכרות מטיקטו�
   "איך לא שמעתי על המסלול הזה עד היום"
 
 ואלה שורות שנפסלו, עם הסיבה:
-  "איך זה חוקי שלשביל הזה אין שעות פתיחה"    ← רעיון מומצא. לשביל אין שעות פתיחה — זו הברקה, והברקות פסולות.
+  "איך זה חוקי שלשביל הזה אין שעות פתיחה"    ← רעיון מומצא. לשביל אין שעות פתיחה - זו הברקה, והברקות פסולות.
   "תזכורת שהנחל הזה זורם גם בשעות העבודה"    ← אותה הברקה: הצלבה חכמה בין נחל למשרד.
   "עשר דקות ליד מפל כזה > יום חופש מהעבודה"   ← השוואה בנויה מדי. נשמע כמו קופירייטינג.
   "יש אנשים שזה סוף השבוע הרגיל שלהם"         ← מעורפל. "סוף שבוע רגיל" לא נאחז בכלום.
   "אף אחד לא מדבר על הצל בשביל הזה"           ← הצל הוא פרט שולי. הסוד חייב להיות החוויה עצמה.
   "אף אחד לא מדבר על הקול של המים"            ← אותה בעיה: פיצ'ר פיזי קטן במקום החוויה.
   "חדר כושר עולה 200 שקל בחודש וזה בחינם"     ← חדר כושר לא מתחלף בטבע.
-  "חופשה עולה אלפי שקלים והשביל הזה בחינם"    ← גם זה לא עבד. תבנית השוואת המחיר בוטלה כליל — אל תשתמש בה.
+  "חופשה עולה אלפי שקלים והשביל הזה בחינם"    ← גם זה לא עבד. תבנית השוואת המחיר בוטלה כליל - אל תשתמש בה.
   "אף אחד לא מדבר על כמה ריק בשביל הזה"       ← ברור שאף אחד לא מדבר על שביל ריק. אין שם סוד.
   "3 דברים שחייבים לדעת לפני ש..."            ← נקטע. השורה לא נגמרת, ואין שורה הבאה שתשלים אותה.
   "3 טעויות שישראלים עושים בגאורגיה"          ← מבטיח רשימה. בסרטון הזה יש שורה אחת בלבד, אז ההבטחה לא מקוימת.
 
-ההבדל: השורות הטובות נאחזות במשהו שבאמת שייך לעולם — מחיר, דרך לעבודה, מה
+ההבדל: השורות הטובות נאחזות במשהו שבאמת שייך לעולם, מחיר, דרך לעבודה, מה
 עשיתי השבוע. הפסולות ממציאות מפגש שנון בין הטבע למושג ממוסד (שעות פתיחה,
-שעות עבודה, חשבון ימי חופש). אם יש בשורה "רעיון" — היא פסולה.
+שעות עבודה, חשבון ימי חופש). אם יש בשורה "רעיון" - היא פסולה.
 
 דיוקים שנלמדו מהסבבים:
-- "אף אחד לא מדבר על X" — ה-X חייב להיות משהו שאנשים באמת היו מתפארים בו
-  והוא בכל זאת לא מדובר. השקט עובד. צל, קול מים, "כמה ריק" — לא: אלה פרטים
+- "אף אחד לא מדבר על X" - ה-X חייב להיות משהו שאנשים באמת היו מתפארים בו
+  והוא בכל זאת לא מדובר. השקט עובד. צל, קול מים, "כמה ריק" - לא: אלה פרטים
   שאין סיבה שידברו עליהם, אז אין סוד ואין שורה.
 - גוף ראשון קל מותר כשהוא קול של צופה שמגיב לסרטון: "סיפר לי", "שעשיתי",
   "שראיתי". אסור קול של מי שנמצא שם עכשיו: "אני פה", "האוויר פה".
@@ -117,12 +118,12 @@ const SYSTEM = `אתה ממלא תבניות משפט מוכרות מטיקטו�
     "לא עולה כסף לאף אחד"  →  "לא עולה כסף"        (זנב מיותר, נחתך)
     "איך לא שמעתי... בחורף"  →  "איך לא שמעתי... עד היום"  (התבנית רוצה את
      הסיום הטבעי שלה, לא פרט מהסרטון שנדחף אליה)
-  זה לא איסור על מילים מסוימות — "פתוח לכולם" תקין כי שם זו הטענה עצמה.
+  זה לא איסור על מילים מסוימות, "פתוח לכולם" תקין כי שם זו הטענה עצמה.
   השאלה היא אם המילים האחרונות מוסיפות טענה או רק נגררות.
 
 השורה נגמרת:
 - היא משפט שלם. היא נקראת לבד על המסך, ואין על מה ללחוץ בשביל ההמשך.
-- בלי "..." בסוף ובלי שורה שנקטעת באמצע. אם אין מקום לכל המשפט — כתוב משפט
+- בלי "..." בסוף ובלי שורה שנקטעת באמצע. אם אין מקום לכל המשפט - כתוב משפט
   קצר יותר, לא חצי משפט.
 - אסור לסיים במילת חיבור או יחס: "של", "את", "עם", "ש", "ו", "כי", "ב", "ל".
 - אל תבטיח רשימה, מספר פריטים או "ככה עושים את זה". אין המשך שיקיים את זה.
@@ -131,10 +132,10 @@ const SYSTEM = `אתה ממלא תבניות משפט מוכרות מטיקטו�
 - עד {MAXWORDS} מילים. עברית פשוטה. בלי סלנג מודגש. בלי מילות הדגשה בסוף ("אף פעם", "בכלל").
 - גוף ראשון מותר רק כשהוא חלק מהתבנית עצמה ("דברים שעשיתי השבוע").
   אסור "אני" מפורש, ואסור לטעון שהיית במקום הספציפי הזה.
-- מותר להגיד "השביל הזה" / "המסלול הזה" — הסרטון מראה שביל.
+- מותר להגיד "השביל הזה" / "המסלול הזה" - הסרטון מראה שביל.
 - בלי אימוג׳י, האשטג, קריאה לפעולה, שם מותג, קישור.
 - שם מדינה מותר אך ורק בתבניות שמבקשות אותו במפורש, ורק את השם שניתן לך.
-  בכל תבנית אחרת אל תנחש מדינה — לא ידוע איפה צולם.
+  בכל תבנית אחרת אל תנחש מדינה, לא ידוע איפה צולם.
 
 החזר JSON בלבד: שורה אחת לכל תבנית שקיבלת.`;
 
@@ -287,10 +288,10 @@ const DANGLING =
 export function trailsOff(text) {
   const s = String(text || '').trim();
   if (!s) return null;
-  if (ELLIPSIS.test(s)) return 'trails off — a line on screen has nothing to click for the rest';
+  if (ELLIPSIS.test(s)) return 'trails off - a line on screen has nothing to click for the rest';
   if (/[,\-–—:;]$/.test(s)) return 'ends on punctuation that expects more after it';
   const last = s.split(/\s+/).pop();
-  if (DANGLING.test(` ${last}`)) return `ends on "${last}" — the sentence is cut off`;
+  if (DANGLING.test(` ${last}`)) return `ends on "${last}" - the sentence is cut off`;
   return null;
 }
 
@@ -320,13 +321,13 @@ function reject(text, { maxWords, minWords = 5, allowsPerson = false }) {
   // פרו" is three words and "אני, אתה, טיסה לפרו?" is four. A blanket floor of
   // five rejected both on every run, which together with the person guard is
   // why neither ever reached a post.
-  if (words < minWords) return `${words} words, under ${minWords} — too short to say anything`;
+  if (words < minWords) return `${words} words, under ${minWords} - too short to say anything`;
   const unfinished = trailsOff(s);
   if (unfinished) return unfinished;
   const promised = promisesList(s);
   if (promised) return promised;
-  if (!allowsPerson && hasPerson(s)) return 'first or second person — the footage is not ours';
-  if (isLabel(s)) return 'a label, not a statement — nothing is asserted';
+  if (!allowsPerson && hasPerson(s)) return 'first or second person - the footage is not ours';
+  if (isLabel(s)) return 'a label, not a statement - nothing is asserted';
   return null;
 }
 
@@ -424,7 +425,7 @@ export async function writeHook(clip, { used = new Set(), candidates = 3 } = {})
   const seen = clip.vision?.subject ? `מה רואים בפריים: ${clip.vision.subject}` : null;
 
   const user = [
-    'הסרטון: ' + `"${clip.title}"` + ` — צילום סטוק אנכי, ${clip.duration} שניות.`,
+    'הסרטון: ' + `"${clip.title}"` + ` - צילום סטוק אנכי, ${clip.duration} שניות.`,
     seen,
     placeHe ? `המדינה, מזוהה בוודאות: ${placeHe}. השתמש בשם הזה בדיוק בתבניות שדורשות מדינה.` : null,
     '',
@@ -439,7 +440,7 @@ export async function writeHook(clip, { used = new Set(), candidates = 3 } = {})
     ),
     '',
     used.size
-      ? ['שורות שכבר בשימוש בסבב הזה — אל תחזור עליהן:', ...[...used].map((u) => `  ${u}`)].join('\n')
+      ? ['שורות שכבר בשימוש בסבב הזה - אל תחזור עליהן:', ...[...used].map((u) => `  ${u}`)].join('\n')
       : '',
   ]
     .filter(Boolean)
@@ -469,7 +470,7 @@ export async function writeHook(clip, { used = new Set(), candidates = 3 } = {})
   const allowsPersonBy = new Map(formats.map((f) => [f.id, f.allowsPerson === true]));
   const minWordsBy = new Map(formats.map((f) => [f.id, f.minWords]));
   const lines = (JSON.parse(raw).lines || [])
-    .map((l) => ({ format: String(l.format || ''), text: String(l.text || '').trim() }))
+    .map((l) => ({ format: String(l.format || ''), text: stripDashes(l.text) }))
     .sort((a, b) => (weightOf.get(b.format) || 1) - (weightOf.get(a.format) || 1));
 
   const rejected = [];
@@ -477,11 +478,11 @@ export async function writeHook(clip, { used = new Set(), candidates = 3 } = {})
     const allowsPerson = allowsPersonBy.get(format) === true;
     const why = reject(text, { maxWords, minWords: minWordsBy.get(format) ?? 5, allowsPerson });
     if (why) {
-      rejected.push(`${text} — ${why}`);
+      rejected.push(`${text} - ${why}`);
       continue;
     }
     if (used.has(text)) {
-      rejected.push(`${text} — already used in this batch`);
+      rejected.push(`${text} - already used in this batch`);
       continue;
     }
     // The line may name the clip's country and no other. With no country
@@ -490,7 +491,7 @@ export async function writeHook(clip, { used = new Set(), candidates = 3 } = {})
     // underneath deliberately refuses to claim.
     const other = namesOtherCountry(text, placeHe);
     if (other) {
-      rejected.push(`${text} — names ${other}, the clip is ${placeHe || 'unplaced'}`);
+      rejected.push(`${text} - names ${other}, the clip is ${placeHe || 'unplaced'}`);
       continue;
     }
     return {
