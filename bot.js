@@ -668,7 +668,13 @@ const publishedFacts = (cand) => ({
   // Which stock video a clip was built from, so the row can answer "have we
   // used this footage". It was read back by /clip long before anything wrote
   // it — see the note in store.recordPublished.
-  pexelsId: cand.clip?.pexelsId || null,
+  //
+  // Through store.clipPexelsId rather than off `clip.pexelsId` directly, so the
+  // clips that predate that field — whose candidate id IS the Pexels id, three
+  // of which are in staging right now — record what they were made from too. A
+  // published row that says null is a row that cannot stop a repeat, and it is
+  // a repeat of something real followers have already been shown.
+  pexelsId: store.clipPexelsId(cand),
   // So the row does not claim a post that has not been made. A draft reached
   // the inbox; whether it was ever posted happens in the app, where this
   // process cannot see it.
@@ -1655,12 +1661,13 @@ bot.command('igquota', async (ctx) => {
 function clipFootageSeen() {
   const seen = store.usedClipIds();
   const add = (cand) => {
-    if (cand?.kind !== 'clip') return;
     // Clips built before `clip.pexelsId` existed used the Pexels id AS the
     // candidate id. Three of those are in staging, and they are precisely the
-    // footage that must not be offered again.
-    const id = cand.clip?.pexelsId || (/^\d{1,9}$/.test(String(cand.id || '')) ? cand.id : null);
-    if (id) seen.add(String(id));
+    // footage that must not be offered again. store.clipPexelsId knows both
+    // shapes and checks the kind, and it is the same function the published log
+    // records through — one rule, not a copy per reader.
+    const id = store.clipPexelsId(cand);
+    if (id) seen.add(id);
   };
   for (const { cand } of store.stagingItems()) add(cand);
   for (const cand of store.queuedItems()) add(cand);

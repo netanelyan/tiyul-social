@@ -3625,6 +3625,25 @@ group('clips — participant or spectator, judged from the title');
     'an aerial of a real place still ranks, just lower',
     rankVision(V({ aerial: true })) < rankVision(V({})) && rankVision(V({ aerial: true })) !== null
   );
+
+  // A drone shot is priced out rather than banned, and the price is the whole
+  // point — a /clip batch shipped one when aerial cost 1, which a destination
+  // score of 9 pays without noticing. BRIEF.md files "another stock landscape"
+  // under Never and an aerial is the purest form of it.
+  //
+  // The two facts that have to hold together: the best possible drone shot
+  // loses to the worst clip that cleared the gate on the ground, so an aerial
+  // is only ever built when the ground returned nothing at all — and it is
+  // still buildable then, which is what separates this from rejectAerialOnly.
+  ok(
+    'the best drone shot loses to the weakest clip shot on the ground',
+    rankVision(V({ destination: 10, aerial: true }), vcfg) <
+      rankVision(V({ destination: vcfg.visionMinDestination }), vcfg)
+  );
+  ok(
+    'but it is still ranked, so it can carry a day the ground could not',
+    rankVision(V({ destination: 10, aerial: true }), vcfg) !== null
+  );
   eq('an unjudged clip never publishes', rankVision(null, vcfg), null);
 }
 
@@ -3849,6 +3868,22 @@ group('clip footage — the same video must never come back');
 
   eq('footage can be deliberately put back', store.forgetClip('31384734'), true);
   ok('and is then offered again', !store.clipUsed('31384734'));
+
+  // Both shapes a clip's footage id has had, read by ONE function.
+  //
+  // The rule lived in two places and was missing from a third, and the missing
+  // one is what leaks: a clip built before `clip.pexelsId` existed carries the
+  // Pexels id as its candidate id, and the published log recorded null for it.
+  // A row that says null cannot stop a repeat of footage real followers have
+  // already been shown, which is the complaint this whole ledger answers.
+  eq('the current shape', store.clipPexelsId({ kind: 'clip', id: 'ab12cd34', clip: { pexelsId: '35714980' } }), '35714980');
+  eq('the shape that predates the field', store.clipPexelsId({ kind: 'clip', id: '35714980' }), '35714980');
+  eq('a card has no footage', store.clipPexelsId({ kind: 'card', id: '35714980' }), null);
+  // Bounded, so a candidate id that happens to be all digits is not mistaken
+  // for a Pexels id — a sha1 slice can be, and a wrong id spends footage that
+  // was never used while leaving the real one on offer.
+  eq('and a long all-digit candidate id is not one', store.clipPexelsId({ kind: 'clip', id: '1234567890123' }), null);
+
   store.forgetPublished('clip-ledger-probe');
   store.forgetClip('35714980');
 }

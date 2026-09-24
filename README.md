@@ -542,6 +542,27 @@ already filtered against it — but the set was mapped off `p.pexelsId` on rows
 that had never stored one, so it was empty on every run since the feature
 shipped. The filter looked right, ran every time, and did nothing.
 
+**What the ledger cannot know is what it never built.** It is fed by the
+pipeline, so it has a birthday, and everything this account posted before that
+day left no record of which Pexels video it was — the published log did not
+carry the field, and it prunes at 30 days regardless. Anything uploaded by hand
+is invisible to it for the same reason. So a repeat of *older* footage is not a
+filter that failed; it is a question nothing in the store can answer.
+
+The remedy is `clips.search.denyIds` in `post-config.json`, which is checked
+before anything is built and outranks every score. The Pexels id is printed
+plainly on the approval card so there is something to paste. It is a file edit
+on the server rather than a tap in the chat, which is the deliberate trade: the
+deny list is small, permanent and reviewable, and footage you have already
+posted is exactly the kind of decision that should be written down.
+
+**The approval card shows what the judge thought.** `יעד n/10` is the gate,
+`דירוג` is the rank it was chosen by, and `רחפן`, `גוף ראשון` and `עירוני` are
+the flags that moved it. This was missing and it cost a batch: a drone shot went
+out and the card gave no way to tell whether the judge had seen an aerial and
+the penalty was too small, or whether it had misread the frame. Two faults, two
+different fixes, and no way to tell them apart from the message.
+
 **Clips need ffmpeg.** `sudo apt install -y ffmpeg` on the VPS. The bot checks
 at boot and warns once rather than failing at the first clip of the day; cards
 and decks are unaffected. The text is composited as an image rather than drawn
@@ -606,6 +627,16 @@ instead returns Gullfoss, Tre Cime, Oia. `src/video/vision.js` then judges the
 thumbnail, and `destination >= 7` is a **gate**, not a score term: a beautifully
 shot POV of nowhere is still nowhere, and folding it into a weighted sum would
 let the POV bonus buy a road back in.
+
+**A drone shot is priced out, not banned.** BRIEF.md files "another stock
+landscape" under Never and an aerial is the purest form of it, but a drone of
+Lauterbrunnen is still somewhere worth going — so `rejectAerialOnly` stays off
+and `aerialPenalty` does the work. At 4 the arithmetic is the rule: the gate is
+7 and the scale ends at 10, so the best imaginable aerial ranks 6 and loses to
+the weakest clip that cleared the gate on the ground. It is built only on a day
+the ground returned nothing at all, which is the one case where it beats no clip
+at all. It used to cost 1, which a destination score of 9 pays without noticing,
+and that is how an aerial reached the approval chat.
 
 **The line fills a known format, and the format is now a promise.** It used to
 be a meme template — "top 5 X oat", "Average X in Y" — on the reasoning that

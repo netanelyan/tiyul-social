@@ -162,8 +162,14 @@ function pruneClipsUsed(s) {
  * exactly the footage that must not come back, so the old shape is read rather
  * than written off — bounded to a plausible id so a 12-hex candidate id that
  * happens to be all digits cannot be mistaken for one.
+ *
+ * Exported because there were three copies of this rule — here, in the /clip
+ * dedupe set, and nowhere at all in what the published log records — and the
+ * copy that did not exist is the one that mattered: a legacy clip published
+ * with `pexelsId: null`, so the row that is supposed to answer "have we used
+ * this footage" answered no about the footage it had just spent.
  */
-function clipPexelsId(cand) {
+export function clipPexelsId(cand) {
   if (!cand || cand.kind !== 'clip') return null;
   const direct = cand.clip?.pexelsId;
   if (direct) return String(direct);

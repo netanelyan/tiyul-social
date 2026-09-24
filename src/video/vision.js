@@ -171,8 +171,14 @@ export function rankVision(v, cfg = postConfig().clips.search) {
   // destination — enough to break a tie, never enough to rescue nowhere.
   if (cfg.preferPov && v.pov) score += 1.5;
   // An aerial of Lauterbrunnen is still Lauterbrunnen; it just reads more like
-  // stock than a shot taken from inside the place.
-  if (v.aerial) score -= 1;
+  // stock than a shot taken from inside the place — which is the thing BRIEF.md
+  // lists under Never. The penalty is a dial rather than the 1 it used to be,
+  // and at its configured 4 the arithmetic is deliberate: the gate is 7 and the
+  // scale ends at 10, so the best possible drone shot ranks 6 and loses to the
+  // weakest clip that cleared the gate on the ground. A drone shot is therefore
+  // built only when nothing on the ground survived at all, which is the whole
+  // point of penalising rather than vetoing — see rejectAerialOnly.
+  if (v.aerial) score -= cfg.aerialPenalty;
   if (v.urban) score -= 0.5;
   return score;
 }

@@ -560,6 +560,7 @@
       "preferPov": true,
       "rejectStaged": true,
       "rejectAerialOnly": false,
+      "aerialPenalty": 4,
       "_vision_comment": [
         "The judge runs on the Pexels thumbnail, which the API already returns - no",
         "download, one cheap call per candidate.",
@@ -568,9 +569,19 @@
         "and Gullfoss; it rejects an empty road, which scores 0-3. The owner rejected",
         "two clips by eye and the judge had independently scored them 0 and 3.",
         "",
-        "rejectAerialOnly is false on purpose: a drone shot of Lauterbrunnen is still",
-        "somewhere worth going. Aerial is scored down as a preference, not vetoed,",
-        "because vetoing it would throw away most of the best destinations."
+        "rejectAerialOnly is still false, and aerialPenalty is why. A drone shot went",
+        "out on a /clip batch and should not have: BRIEF.md lists 'another stock",
+        "landscape' under Never, and an aerial is the purest form of it. But a drone",
+        "of Lauterbrunnen is still somewhere worth going, and vetoing the vantage",
+        "outright throws away most of the best destinations on the days nothing else",
+        "clears the gate - so it is priced out rather than banned.",
+        "",
+        "4 is arithmetic, not taste. The gate is destination >= 7 and the scale ends",
+        "at 10, so the best imaginable drone shot ranks 6 and loses to the weakest",
+        "ground clip that got through at 7. An aerial is therefore built only when",
+        "the ground returned nothing at all, which is the one case where it is still",
+        "better than no clip. It used to cost 1, which a destination score of 9",
+        "shrugged off - that is how the batch happened."
       ],
       "placeMinConfidence": 7
     },

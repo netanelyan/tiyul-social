@@ -246,6 +246,9 @@ function clips(raw) {
       preferPov: s.preferPov !== false,
       rejectStaged: s.rejectStaged !== false,
       rejectAerialOnly: s.rejectAerialOnly === true,
+      // What a drone shot costs when it is not vetoed outright. Large enough
+      // that it cannot outrank anything shot on the ground — see rankVision.
+      aerialPenalty: num(s.aerialPenalty, 4),
       minHeight: num(s.minHeight, 1600),
       minDuration: num(s.minDuration, 5),
       maxDuration: num(s.maxDuration, 30),

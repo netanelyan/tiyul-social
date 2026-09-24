@@ -279,6 +279,16 @@ export async function buildClips({ count = 5, seen = new Set(), outDir = clipOut
 export function clipApprovalMessage(cand) {
   const c = cand.clip || {};
   const beats = cand.beats || [];
+  // What the judge thought, in the two lines it takes to say it.
+  //
+  // This was the one thing the card did not carry, and its absence cost a
+  // batch. A drone shot went out and there was no way to tell from the message
+  // whether the judge had seen an aerial and the penalty was too small, or
+  // whether it had misread the frame — two different faults with two different
+  // fixes, and the card showed neither. `ציון` is the title-keyword score,
+  // which orders the queue and decides nothing; `יעד` is the gate that does.
+  const v = c.vision || null;
+  const flags = v ? [v.aerial && 'רחפן', v.pov && 'גוף ראשון', v.urban && 'עירוני'].filter(Boolean) : [];
   return [
     `🎬 קליפ · ${c.seconds}ש׳ · ${c.width}x${c.height}`,
     '',
@@ -295,7 +305,20 @@ export function clipApprovalMessage(cand) {
     `🏷️ ${cand.tiktokCaption || '(אין תיאור)'}`,
     '',
     `🎥 מקור: ${c.title}`,
-    `   Pexels · ${c.credit || 'ללא שם'} · ציון ${c.score}`,
+    // The Pexels id, printed plainly rather than left to be read out of the
+    // URL at the bottom. It is the string you paste into clips.search.denyIds
+    // to make sure footage never comes back — which is the whole remedy for a
+    // video this account has already posted, because the ledger only knows
+    // what the pipeline itself has built.
+    //
+    // Falling back to the candidate id covers the clips built before
+    // `clip.pexelsId` existed, whose candidate id IS the Pexels id. Without it
+    // a re-rendered legacy clip prints "Pexels undefined" on the one line whose
+    // entire job is to be copied somewhere.
+    `   Pexels ${c.pexelsId || cand.id} · ${c.credit || 'ללא שם'} · ציון ${c.score}`,
+    v
+      ? `   שיפוט: יעד ${v.destination}/10${c.rank != null ? ` · דירוג ${c.rank}` : ''}${flags.length ? ` · ${flags.join(' · ')}` : ''}`
+      : '   ⚠️ לא נשפט',
     `   חיפוש: "${c.query}"`,
     c.spot
       ? `   טקסט: ${c.spot.onDark ? 'בהיר' : 'כהה'} · ניגודיות ${c.spot.worstContrast} · ${c.spot.agreed}/${c.spot.frames} פריימים`
