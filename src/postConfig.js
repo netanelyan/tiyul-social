@@ -106,6 +106,7 @@ export function postConfig() {
     },
     clips: clips(raw.clips || {}),
     shoot: shoot(raw.shoot || {}),
+    plans: plans(raw.plans || {}),
     schedule: schedule(raw.schedule || {}),
     // English country name from the vision judge -> Hebrew, for the place
     // formats. Keyed on free text a model produced, which is why it is separate
@@ -183,13 +184,6 @@ function clips(raw) {
       // number in shekels is the POINT of this format rather than something it
       // is merely permitted to mention.
       allowsPrice: f.allowsPrice === true,
-      // What the lines AFTER the hook are, for this shape. A hook promising
-      // three mistakes and beats listing three destinations is a post that
-      // broke its own promise in the first four seconds.
-      beatsAre: String(f.beatsAre || '').trim(),
-      beatExamples: (Array.isArray(f.beatExamples) ? f.beatExamples : [])
-        .map((e) => String(e).trim())
-        .filter(Boolean),
       // How often this format is offered relative to the others. The owner
       // graded the shapes good/fine, and the grade is a weight, not a cut.
       weight: Math.max(1, Math.round(num(f.weight, 1))),
@@ -208,19 +202,10 @@ function clips(raw) {
     .filter((f) => f.id && f.desc);
 
   const h = raw.hooks || {};
-  // Two is the floor because one beat is a hook with a punchline rather than a
-  // post that delivered anything; four is the ceiling because the finished clip
-  // is capped at secondsMax and a beat needs about five seconds to be read once,
-  // in Hebrew, on a moving background.
-  const beatsMin = Math.max(0, Math.round(num(h.beatsMin, 2)));
-  const beatsMax = Math.max(beatsMin, Math.round(num(h.beatsMax, 4)));
 
   return {
     hooks,
-    hooksMaxWords: Math.max(3, Math.round(num(h.maxWords, 12))),
-    beatsMin,
-    beatsMax,
-    beatMaxWords: Math.max(3, Math.round(num(h.beatMaxWords, 11))),
+    hooksMaxWords: Math.max(3, Math.round(num(h.maxWords, 9))),
     formats,
     search: {
       queries,
@@ -261,20 +246,12 @@ function clips(raw) {
     video: {
       width: Math.round(num(v.width, 1080)),
       height: Math.round(num(v.height, 1920)),
-      // The floor, and what a clip with no beats gets. Kept as `seconds` so
-      // every existing caller — measureClip, pickWindow, the approval card —
-      // keeps working on a clip that never grew a middle.
+      // How long the finished clip is, start to finish. One number again: the
+      // whole video carries one line, so there is nothing to compute it from.
       seconds: num(v.seconds, 8),
-      // The brief's 15-35 (rule 6). secondsMax is a hard ceiling rather than a
-      // target: four beats at 4.5s plus a 3.5s hook is 21.5, and the clamp is
-      // what stops a config edit turning a clip into a minute of stock.
-      secondsMin: Math.max(1, num(v.secondsMin, 15)),
-      secondsMax: Math.max(1, num(v.secondsMax, 35)),
-      hookSeconds: Math.max(0.5, num(v.hookSeconds, 3.5)),
-      secondsPerBeat: Math.max(0.5, num(v.secondsPerBeat, 4.5)),
       // Repeat the source until the requested length is filled. Off means a
-      // short source is simply trimmed to what it has, which is the old
-      // behaviour and produces a clip shorter than its own beats need.
+      // short source is simply trimmed to what it has, which on a five-second
+      // Pexels clip ships three seconds under length.
       loopSource: v.loopSource !== false,
       startAt: Math.max(0, num(v.startAt, 0.6)),
       fps: Math.round(num(v.fps, 30)),
@@ -377,6 +354,79 @@ function shoot(raw) {
       nextHe: String(series.nextHe || 'עקבו לחלק {n} מחר'),
     },
     formats,
+  };
+}
+
+/**
+ * The AI-itinerary slideshow's settings.
+ *
+ * Two of these are load-bearing rather than editorial, and both are about a
+ * promise being kept.
+ *
+ * `giveaway.on` is a promise to strangers: the post says five commenters get a
+ * month of premium, and nothing in this program can deliver that. Off means the
+ * ask is not written at all — which is the correct way to stop making it, and
+ * the reason it is a switch rather than an empty string somewhere.
+ *
+ * `stopsMax` is a layout constraint pretending to be taste. Past four stops the
+ * day slide stops being readable at the size it is actually seen, and an
+ * itinerary nobody can read at a glance is a screenshot of a spreadsheet.
+ */
+function plans(raw) {
+  const g = raw.giveaway || {};
+  const daysMin = Math.max(1, Math.round(num(raw.daysMin, 3)));
+  const daysMax = Math.max(daysMin, Math.round(num(raw.daysMax, 5)));
+  const stopsMin = Math.max(1, Math.round(num(raw.stopsMin, 3)));
+  const stopsMax = Math.max(stopsMin, Math.round(num(raw.stopsMax, 4)));
+
+  // Checked here, like caption.cta, so a domain typed into the ask fails once
+  // at startup instead of once per post from inside a build. Every string in
+  // this block can reach a published caption or a rendered slide.
+  for (const [where, s] of [
+    ['giveaway.captionHe', g.captionHe],
+    ['giveaway.titleHe', g.titleHe],
+    ['hookHe', raw.hookHe],
+    ['askHe', raw.askHe],
+    ...list(g.stepsHe).map((step, i) => [`giveaway.stepsHe[${i}]`, step]),
+  ]) {
+    if (s && URL_LIKE.test(String(s))) {
+      throw new Error(`post-config.json: plans.${where} contains a URL — the link lives in the bio, the post says so in words`);
+    }
+  }
+
+  return {
+    // Clamped into its own range, so a config edit cannot ask for a nine-day
+    // itinerary that the writer would produce and the carousel could not hold:
+    // Instagram takes ten images and a nine-day plan is eleven slides.
+    days: Math.min(daysMax, Math.max(daysMin, Math.round(num(raw.days, 4)))),
+    daysMin,
+    daysMax,
+    stopsMin,
+    stopsMax,
+    currencyHe: String(raw.currencyHe || '₪'),
+    askHe: String(raw.askHe || 'תכנן לי {days} ימים ב{dest}'),
+    askWhoHe: String(raw.askWhoHe || 'הבקשה שלי'),
+    hookHe: String(raw.hookHe || 'ביקשתי מ-AI לתכנן {days} ימים ב{dest}'),
+    hookSubHe: String(raw.hookSubHe || 'זה מה שהוא נתן לי'),
+    dayLabelHe: String(raw.dayLabelHe || 'יום {n}'),
+    totalLabelHe: String(raw.totalLabelHe || 'הכל ביחד'),
+    perPersonHe: String(raw.perPersonHe || 'לאדם'),
+    // What the total on the slide actually covers. Defaulted rather than
+    // optional: the sum is stop prices only, and a four-figure number under
+    // "4 ימים ברומא" with nothing qualifying it reads as the price of the trip.
+    totalNoteHe: String(
+      raw.totalNoteHe === undefined ? 'כניסות ואטרקציות בלבד — בלי טיסה ולינה' : raw.totalNoteHe
+    ).trim(),
+    giveaway: {
+      on: g.on === true,
+      winners: Math.max(1, Math.round(num(g.winners, 5))),
+      premiumDays: Math.max(1, Math.round(num(g.premiumDays, 30))),
+      keywordHe: String(g.keywordHe || '{dest}'),
+      titleHe: String(g.titleHe || 'חודש פרימיום במתנה'),
+      stepsHe: list(g.stepsHe),
+      captionHe: String(g.captionHe || '').trim(),
+      footHe: String(g.footHe || '').trim(),
+    },
   };
 }
 

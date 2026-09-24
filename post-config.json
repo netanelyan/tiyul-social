@@ -207,182 +207,144 @@
     ],
     "hooks": {
       "_comment": [
-        "THIS LIST WAS REPLACED. The old one is worth knowing about, because the",
-        "argument for it was good and it was still wrong for this account.",
+        "Lines are written per clip by src/video/hooks.js by FILLING A KNOWN FORMAT,",
+        "not by free composition. That distinction took four rejected rounds to find.",
         "",
-        "It held nine MEME TEMPLATES — \"חייב להיות בטופ 3 מסלולים שקיימים\", \"יש",
-        "אנשים שזה המסלול שלהם לעבודה\" — lifted from five reference posts ranging",
-        "from 122 likes to 284K. The reasoning was sound: every one of those posts",
-        "is a recognisable format filled with banal content, none is an original",
-        "sentence, and free composition returns clever originals with metaphors in",
-        "them, which is the wrong TYPE however casual the wording.",
+        "Every reference post the owner supplied is a recognizable meme template:",
+        "\"has to be top 5 X oat\" (284K), \"one of the coolest feelings...\" (229K, also",
+        "a ranking), \"Average X in Y\" (130K), \"Fuck X go to Y\" (1.5K). None is an",
+        "original sentence. The virality lives in the FORMAT - the viewer recognizes",
+        "it instantly, and the joke is applying it to this footage.",
         "",
-        "What it produced here was seven videos decaying 672 → 33. A meme template",
-        "over stock scenery promises nothing, so nobody stays, so the next video",
-        "starts lower. The references it was copied from were not selling anything",
-        "and were not competing for an Israeli travel audience.",
+        "Free composition produces the opposite type: clever observations with",
+        "metaphors and personification, which read as copywriting however casual the",
+        "wording is. The formats below are the menu; edit them, add new ones lifted",
+        "from real posts, delete ones that stop working. This list IS the voice of",
+        "the account.",
         "",
-        "So the formats below are the brief's five shapes (BRIEF.md, rule 5): a",
-        "specific problem, a specific number, a specific destination, in the first",
-        "two seconds. The rule that survives from the old list is the one that was",
-        "never about memes — FILL A FORMAT, do not compose freely. A model asked",
-        "to be interesting writes copy; a model asked to fill \"3 טעויות שישראלים",
-        "עושים ב<מדינה>\" writes the post.",
+        "THIS LIST CAME BACK, and what replaced it is worth knowing about.",
         "",
-        "Each format also declares what its BEATS are — the two to four lines that",
-        "come after the hook and actually deliver what it promised. A hook with no",
-        "beats behind it is the old format with a better first line, and it is the",
-        "reason the clip grew from eight seconds to fifteen."
+        "For a while the formats here were the brief's advice shapes - \"3 טעויות",
+        "שישראלים עושים בגאורגיה\", \"5 ימים ברומא ב-2,000 ₪ - ככה\" - and each hook",
+        "came with two to five BEATS under it: the lines that deliver what the hook",
+        "promised, burned in one after another over a twenty-six second clip.",
+        "",
+        "The writing did what it was asked. The VIDEO did not. Underneath those",
+        "four changing lines is one stock shot that never cuts, so the footage stops",
+        "being the post and becomes wallpaper for a caption rewriting itself - a",
+        "slideshow with a video background, which is a different and worse format",
+        "than the one this account is.",
+        "",
+        "The advice shapes are not deleted for being bad. They belong to a post type",
+        "where every line change is a CUT, with new footage under each beat, and",
+        "that type does not exist yet. Until it does a clip is one line held for its",
+        "whole length, which is what these formats are built for.",
+        "",
+        "git show 97ec1c1 has the whole of it: the advice formats, their beat",
+        "examples, the prompt, the per-beat guards and the timeline that spaced",
+        "them. Lift it from there rather than writing it again."
       ],
       "lines": [
-        "3 טעויות שישראלים עושים בטיול הזה",
-        "אל תטוסו לשם לפני שאתם יודעים את זה",
-        "3 דברים לבדוק לפני שסוגרים את הטיול",
-        "המקום שאף אחד לא מספר לכם עליו",
-        "ככה מתכננים את הטיול הזה נכון"
+        "העובדה שהשביל הזה לא עולה כסף",
+        "חייב להיות בטופ 3 מסלולים שקיימים",
+        "יש אנשים שזה המסלול שלהם לעבודה",
+        "חייב להיות בטופ 3 דברים שעשיתי השבוע",
+        "למה אף אחד לא סיפר לי על השביל הזה",
+        "איך לא שמעתי על המסלול הזה עד היום",
+        "אני, אתה, טיול בהרים?"
       ],
-      "maxWords": 12,
-      "beatsMin": 2,
-      "beatsMax": 5,
-      "beatMaxWords": 11,
-      "_beats_comment": [
-        "How many lines come after the hook, and how long each may be.",
-        "",
-        "Two is the floor because one beat is a hook with a punchline, not a post",
-        "that delivered anything.",
-        "",
-        "FIVE IS THE CEILING BECAUSE THE BRIEF'S OWN EXAMPLE NEEDS FIVE. It was",
-        "four, on the reasoning that a beat needs about five seconds to be read in",
-        "Hebrew on a moving background and four of them plus a hook is already 21",
-        "seconds. That is sound, and it made '5 יעדים לאוקטובר בלי ויזה' — a hook",
-        "printed verbatim in the brief — impossible to satisfy: beatCountMismatch",
-        "in video/hooks.js requires a hook promising five items to deliver five,",
-        "and the ceiling said four. Every run of the list format would have been",
-        "rejected by one guard for obeying another.",
-        "",
-        "Five beats at secondsPerBeat plus hookSeconds is 26 seconds, which is",
-        "inside the brief's 15-35. The ceiling is now set by what the format can",
-        "promise rather than by what felt long.",
-        "",
-        "beatMaxWords is shorter than the hook's ceiling on purpose. The hook is",
-        "read deliberately; a beat is read while the picture moves underneath it."
-      ],
+      "maxWords": 9,
       "formats": [
         {
-          "id": "mistakes",
-          "he": "טעויות שישראלים עושים",
-          "shape": "A",
-          "weight": 3,
+          "id": "vocative",
+          "he": "קריאה בשם המקום",
+          "weight": 2,
           "needsPlace": true,
-          "desc": "\"<מספר> טעויות שישראלים עושים ב<מדינה>\". מספר קטן — 3 או 4. הטעויות עצמן נמסרות בביטים, לא בהוק.",
+          "desc": "שם המדינה, פסיק, שוב שם המדינה. תגובה, לא כותרת. בלי שום מילה נוספת מעבר לתבנית.",
           "examples": [
-            "3 טעויות שישראלים עושים בגאורגיה",
-            "4 טעויות שישראלים עושים באיטליה"
-          ],
-          "beatsAre": "טעות אחת לכל ביט, בגוף שני או בלי גוף. קונקרטית ומעשית — מה עושים במקום. בלי הכללות.",
-          "beatExamples": [
-            "שוכרים רכב רק בשדה התעופה — יקר בהרבה",
-            "מגיעים באוגוסט, כשכולם שם",
-            "לא מזמינים מראש ומשלמים כפול"
-          ],
-          "minWords": 4
-        },
-        {
-          "id": "warning",
-          "he": "אזהרה לפני טיסה",
-          "shape": "A",
-          "weight": 3,
-          "needsPlace": true,
-          "desc": "\"אל תטוסו ל<מדינה> לפני שאתם יודעים את זה\". אזהרה אחת גדולה שהביטים מפרקים.",
-          "examples": [
-            "אל תטוסו לתאילנד לפני שאתם יודעים את זה",
-            "אל תטוסו ליוון לפני שאתם יודעים את זה"
-          ],
-          "beatsAre": "מה בדיוק צריך לדעת. עובדה מעשית לכל ביט — עונה, מסמך, מרחק, שעה.",
-          "beatExamples": [
-            "העונה הגשומה נמשכת עד נובמבר",
-            "הדרכון חייב להיות בתוקף חצי שנה",
-            "המעבר מהאי לאי לוקח יום שלם"
+            "פרו אחי, פרו",
+            "יוון אחי, יוון"
           ],
           "allowsPerson": true,
-          "minWords": 5
+          "minWords": 3
         },
         {
-          "id": "budget",
-          "he": "פירוק תקציב",
-          "shape": "B",
+          "id": "invite",
+          "he": "אני, אתה, טיסה?",
           "weight": 2,
           "needsPlace": true,
-          "allowsPrice": true,
-          "desc": "\"<מספר> ימים ב<מדינה> ב-<סכום> ₪ — ככה\". סכום עגול ואמין לאדם. הביטים מפרקים אותו לסעיפים.",
+          "desc": "\"אני, אתה, טיסה ל<מדינה>?\" — הזמנה קצרה בלי להזמין. כשאין מדינה: \"אני, אתה, טיול בהרים?\"",
           "examples": [
-            "5 ימים ברומא ב-2,000 ₪ — ככה",
-            "4 ימים בגאורגיה ב-1,500 ₪ — ככה"
+            "אני, אתה, טיסה לפרו?",
+            "אני, אתה, טיול בהרים?"
           ],
-          "beatsAre": "סעיף אחד לכל ביט, עם סכום. טיסה, לינה, אוכל, אטרקציות. הסכומים חייבים להסתכם בערך להוק.",
-          "beatExamples": [
-            "טיסה הלוך ושוב — 700 ₪",
-            "לינה 4 לילות — 800 ₪",
-            "אוכל ותחבורה — 500 ₪"
-          ],
+          "allowsPerson": true,
           "minWords": 4
         },
         {
-          "id": "list",
-          "he": "רשימת יעדים",
-          "shape": "D",
-          "weight": 2,
-          "needsPlace": false,
-          "desc": "\"<מספר> יעדים ל<חודש> <תנאי>\". התנאי הוא מה שמצמצם — בלי ויזה, עד 4 שעות טיסה, מתחת ל-2,000 ₪.",
-          "examples": [
-            "5 יעדים לאוקטובר בלי ויזה",
-            "4 יעדים עד 4 שעות טיסה מתל אביב"
-          ],
-          "beatsAre": "יעד אחד לכל ביט, עם הסיבה שהוא ברשימה. שם מקום ועובדה אחת.",
-          "beatExamples": [
-            "בטומי — טיסה ישירה, 3 שעות",
-            "לרנקה — 45 דקות, בלי ויזה",
-            "סלוניקי — זול באוקטובר"
-          ],
-          "minWords": 4
-        },
-        {
-          "id": "myth",
-          "he": "מה שחושבים מול האמת",
-          "shape": "E",
-          "weight": 2,
-          "needsPlace": true,
-          "desc": "\"כולם חושבים ש<X> ב<מדינה> — האמת אחרת\". אמונה רווחת אחת, והביטים סותרים אותה.",
-          "examples": [
-            "כולם חושבים ששווייץ יקרה מדי — האמת אחרת",
-            "כולם חושבים שיפן רחוקה מדי — האמת אחרת"
-          ],
-          "beatsAre": "מה באמת קורה. עובדה שסותרת את האמונה, קונקרטית ובלי התלהבות.",
-          "beatExamples": [
-            "לינה בהוסטל הרים — 180 ₪ ללילה",
-            "כרטיס הרכבת השבועי מחזיר את עצמו ביומיים",
-            "רוב המסלולים לא עולים כלום"
-          ],
-          "minWords": 5
-        },
-        {
-          "id": "hidden",
-          "he": "המקום שלא מגיעים אליו",
-          "shape": "E",
+          "id": "top",
+          "he": "דירוג מוגזם",
           "weight": 1,
-          "needsPlace": true,
-          "desc": "\"המקום ב<מדינה> שאף ישראלי לא מגיע אליו\". מקום אחד, לא רשימה. הביטים אומרים למה כדאי ואיך מגיעים.",
+          "desc": "טענת דירוג מוגזמת ובטוחה בעצמה. התוכן הכי בנאלי שאפשר — בלי הברקות.",
           "examples": [
-            "המקום בפורטוגל שאף ישראלי לא מגיע אליו",
-            "העיר באיטליה שכולם מפספסים"
-          ],
-          "beatsAre": "למה שווה, כמה רחוק, מתי ללכת. עובדה מעשית לכל ביט.",
-          "beatExamples": [
-            "שעה וחצי ברכבת מהעיר הראשית",
-            "בבוקר אין שם אף אחד",
-            "הכניסה חינם כל השנה"
-          ],
-          "minWords": 5
+            "חייב להיות בטופ 3 מסלולים שקיימים",
+            "חייב להיות בטופ 3 דברים שעשיתי השבוע"
+          ]
+        },
+        {
+          "id": "someones",
+          "he": "אצל מישהו זו שגרה",
+          "weight": 1,
+          "desc": "\"יש אנשים ש...\" — הקנאה היבשה במי שזה היומיום שלו. עוגן קונקרטי: עבודה, בוקר.",
+          "examples": [
+            "יש אנשים שזה המסלול שלהם לעבודה"
+          ]
+        },
+        {
+          "id": "fact",
+          "he": "העובדה ש",
+          "weight": 1,
+          "desc": "\"העובדה ש...\" — עובדה פשוטה שנגמרת בלי מסקנה. בלי רעיונות מומצאים.",
+          "examples": [
+            "העובדה שהשביל הזה לא עולה כסף"
+          ]
+        },
+        {
+          "id": "nobody",
+          "he": "אף אחד לא מדבר",
+          "weight": 1,
+          "desc": "\"אף אחד לא מדבר על...\" — רק כשה-X באמת שווה דיבור ולא מדובר. השקט עובד; צל, קול מים, כמה ריק — לא.",
+          "examples": [
+            "אף אחד לא מדבר על השקט הזה"
+          ]
+        },
+        {
+          "id": "reminder",
+          "he": "תזכורת",
+          "weight": 1,
+          "desc": "\"תזכורת ש...\" — עובדה פשוטה שקיימת. אסור להצליב עם מושגים ממוסדים (שעות פתיחה, שעות עבודה).",
+          "examples": [
+            "תזכורת שמקומות כאלה קיימים כל השנה"
+          ]
+        },
+        {
+          "id": "gt",
+          "he": "השוואה עם >",
+          "weight": 1,
+          "desc": "X > Y — קצר ופסקני. בלי חשבונאות (עשר דקות מול יום חופש) — השוואה ישירה בלבד.",
+          "examples": [
+            "מסלול כזה > כל יום בעיר"
+          ]
+        },
+        {
+          "id": "question",
+          "he": "שאלה רטורית",
+          "weight": 1,
+          "desc": "שאלה שהיא התפעלות. בלי מושגים מומצאים — רק פליאה ישירה.",
+          "examples": [
+            "למה אף אחד לא סיפר לי על השביל הזה",
+            "איך לא שמעתי על המסלול הזה עד היום"
+          ]
         }
       ]
     },
@@ -611,31 +573,31 @@
         "which is over Telegram's upload limit and far more than 1080 needs. 23 is",
         "about half that and the difference is not visible at this size.",
         "",
-        "`seconds` USED TO BE 8, and the argument for it was that a loop is worth",
-        "more than a watch. That is true of a video whose entire content is one",
-        "sentence — there is nothing to stay for, so the best outcome is a second",
-        "lap. It is the wrong target for a post that has something to say.",
+        "`seconds` IS 8 AGAIN, and this number has been both things now, so the",
+        "argument on each side is worth keeping.",
         "",
-        "The brief asks for 15-35 (BRIEF.md, rule 6). A longer video carrying the",
-        "SAME single line would be strictly worse: more seconds for the same",
-        "information is exactly how average watch time falls under 40%, which is",
-        "the number the brief says to act on. So the length rose and the content",
-        "rose with it — a clip is now a hook plus two to four beats, and the",
-        "finished length is COMPUTED from how many beats there are:",
+        "It went to 15-35 for the brief (BRIEF.md, rule 6), on sound reasoning: a",
+        "longer video carrying the SAME single line is strictly worse - more",
+        "seconds for the same information is how average watch time falls under",
+        "40%. So the length rose and the content rose with it, a hook plus two to",
+        "five beats, computed as hookSeconds + beats × secondsPerBeat.",
         "",
-        "    hookSeconds + beats × secondsPerBeat, clamped to [secondsMin, secondsMax]",
+        "What that shipped was twenty-six seconds of ONE unchanging stock shot with",
+        "the text swapping above it. The brief's length is for a video that keeps",
+        "moving; held on a single frozen composition it is half a minute of",
+        "wallpaper, and the line stops being the thing the footage answers.",
         "",
-        "A clip that falls back to the pool line has no beats, gets hookSeconds +",
-        "secondsMin's worth of nothing, and is clamped to secondsMin. That is the",
-        "honest floor: it is a worse post and it is 15 seconds of a worse post.",
+        "So a clip is one line over eight seconds again, and eight is the length a",
+        "single line can carry: there is nothing to stay for after it is read, so",
+        "the best outcome is a second lap rather than a slow one. The brief's",
+        "15-35 comes back with the post type that earns it - new footage under",
+        "every line, which is a cut rather than a caption change.",
         "",
-        "`loopSource` is what makes any of this possible. Pexels holds clips of 5",
-        "to 30 seconds and the finished video is now often longer than the source,",
-        "which used to be an impossible request. ffmpeg's -stream_loop repeats the",
-        "input until -t is satisfied; on scenery with no cut in it the seam is",
-        "invisible, and it decouples what the library happens to hold from what",
-        "the format needs. Turn it off and a short source is simply trimmed to",
-        "whatever it has.",
+        "`loopSource` outlived the beats and is worth keeping. Pexels serves clips",
+        "from five seconds up and search.minDuration lets them in; -stream_loop",
+        "repeats the input until -t is satisfied, so a five-second source still",
+        "fills eight. On scenery with no cut in it the seam is invisible. Turn it",
+        "off and a short source is simply trimmed to whatever it has.",
         "",
         "`startAt` is a FALLBACK only - overlay.js picks the best window by",
         "measuring frames, and uses this when measurement is unavailable."
@@ -643,10 +605,6 @@
       "width": 1080,
       "height": 1920,
       "seconds": 8,
-      "secondsMin": 15,
-      "secondsMax": 35,
-      "hookSeconds": 3.5,
-      "secondsPerBeat": 4.5,
       "loopSource": true,
       "startAt": 0.6,
       "fps": 30,
@@ -973,6 +931,92 @@
         ]
       }
     ]
+  },
+  "plans": {
+    "_comment": [
+      "THE FOURTH PUBLISHED KIND: an itinerary an AI wrote, shown as a slideshow.",
+      "",
+      "\"ביקשתי מ-AI לתכנן לי 4 ימים ברומא — הנה מה שיצא\", and then the plan",
+      "itself, one slide per day, drawn as the product rather than as another",
+      "photograph with a caption on it. It is the only post this account makes",
+      "where the thing being shown IS the thing being sold, which is rule 3 of the",
+      "brief and the rule no other pipeline here can obey.",
+      "",
+      "WHAT IS TRUE ABOUT IT, EXACTLY.",
+      "",
+      "The itinerary is written by Claude, not fetched from the product. The post",
+      "says an AI planned it, an AI did plan it, and that is the whole of the",
+      "claim. What the post must never do is show a screenshot of the app and",
+      "imply the app produced this particular plan - so the slides are drawn in",
+      "the account's own design language, plainly ours, and no slide imitates a",
+      "screen the product actually has. Wire the real product in and this comment",
+      "is what has to change first.",
+      "",
+      "The costs are the same bargain the fare ban made (BRIEF.md): a number here",
+      "is nobody's published figure, it is a plan's estimate, and every one of",
+      "them is printed on the approval card before you tap. The total is SUMMED",
+      "from the stops rather than written by the model - a plan whose own",
+      "arithmetic disagrees with itself on screen is the broken-promise failure",
+      "that cost the clip format its beats.",
+      "",
+      "`giveaway` is the follow ask, and it is the reason this kind exists at all",
+      "rather than being a nicer deck. A plan is worth saving and worth asking a",
+      "question under; the month of premium is what turns a save into a comment",
+      "and a comment into a follow. The bot writes the ask and prints who it",
+      "promised what - it cannot read comments and does not pick winners. That",
+      "part is yours, and it is a real promise to real people: switch `on` to",
+      "false the day you stop wanting to keep it."
+    ],
+    "days": 4,
+    "daysMin": 3,
+    "daysMax": 5,
+    "stopsMin": 3,
+    "stopsMax": 4,
+    "_stops_comment": [
+      "Three stops is a day somebody could actually do; five is a screenshot of a",
+      "spreadsheet. The ceiling is also a layout constraint - at four stops the",
+      "day slide is still readable at thumbnail size on a 1080x1920 frame, and",
+      "the first thing a viewer does with an itinerary is judge whether it looks",
+      "like work."
+    ],
+    "currencyHe": "₪",
+    "askHe": "תכנן לי {days} ימים ב{dest}",
+    "askWhoHe": "הבקשה שלי",
+    "hookHe": "ביקשתי מ-AI לתכנן {days} ימים ב{dest}",
+    "hookSubHe": "זה מה שהוא נתן לי",
+    "dayLabelHe": "יום {n}",
+    "totalLabelHe": "הכל ביחד",
+    "perPersonHe": "לאדם",
+    "totalNoteHe": "כניסות ואטרקציות בלבד — בלי טיסה ולינה",
+    "_totalNote_comment": [
+      "THIS LINE IS NOT DECORATION. The total on the slide is the sum of the stop",
+      "prices and nothing else, so a viewer reading \"2,340 ₪ ל-4 ימים ברומא\"",
+      "would otherwise be reading it as the price of the trip — which it is not,",
+      "by an order of magnitude once a flight and four nights are in it.",
+      "",
+      "A number that invites the wrong reading is the same defect as a wrong",
+      "number. Empty this string and the slide stops saying what its own total",
+      "covers."
+    ],
+    "giveaway": {
+      "on": true,
+      "winners": 5,
+      "premiumDays": 30,
+      "keywordHe": "{dest}",
+      "titleHe": "חודש פרימיום במתנה",
+      "stepsHe": [
+        "עקבו אחרינו",
+        "תגיבו \"{keyword}\"",
+        "{winners} מכם מקבלים {premiumDays} יום פרימיום עלינו"
+      ],
+      "captionHe": "עקבו ותגיבו \"{keyword}\" — {winners} מכם מקבלים {premiumDays} יום פרימיום עלינו",
+      "footHe": "הזוכים ייבחרו מהתגובות",
+      "_comment": [
+        "The keyword is the destination on purpose. A comment that says \"רומא\"",
+        "is a comment the next viewer reads as a vote for the place rather than",
+        "as a raffle entry, and it costs the commenter nothing to mean it."
+      ]
+    }
   },
   "schedule": {
     "_comment": [

@@ -5,6 +5,7 @@ import { targetsHe } from './publish/targets.js';
 import { privacyHe } from './publish/tiktok.js';
 import { KINDS } from './sources/places.js';
 import { clipApprovalMessage } from './video/clip.js';
+import { planApprovalMessage } from './plan/candidate.js';
 import { postConfig } from './postConfig.js';
 import { hashtagLine } from './hashtags.js';
 import { URL_LIKE } from './urlLike.js';
@@ -350,6 +351,10 @@ export function approvalMessage(cand) {
   // A clip has a third one: no quotes to check, no slides to drop, and the one
   // thing that cannot be seen in the video is why this footage was chosen.
   if (cand.kind === 'clip') return clipApprovalMessage(cand);
+  // And a plan has a fourth: forty small assertions, none of them sourced and
+  // none of them visible on the cover image, so the card prints the itinerary
+  // itself. See the note above planApprovalMessage.
+  if (cand.kind === 'plan') return planApprovalMessage(cand);
 
   const lines = [];
 

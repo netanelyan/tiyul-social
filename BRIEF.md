@@ -214,7 +214,10 @@ This is the honest split, and it is the reason this file exists rather than a
 config change.
 
 Rules 3 and 4 — show the product, use real footage — require a camera, a voice
-and a screen. No pipeline produces those. What a pipeline *can* do is everything
+and a screen. No pipeline produces those. Rule 3 has since found a second route
+that does not need a camera at all — a **plan** draws the output rather than
+filming the screen it came from, see the table above — but rule 4 has none, and
+a drawn itinerary is not somebody using the app. What a pipeline *can* do is everything
 that surrounds them: choose the destination and the angle, rotate the format so
 two of the same shape never land back to back, write the hook and the caption
 and the tags, remember which part of which series is next, and refuse to ask for
@@ -238,8 +241,17 @@ The existing three kinds are untouched:
 |---|---|---|
 | card | one verified claim, 1080×1350 → Instagram | the bot |
 | deck | a slideshow of places → TikTok + Instagram | the bot |
-| clip | stock video, hook and beats → TikTok drafts | the bot |
+| clip | stock video, one burned-in line → TikTok drafts | the bot |
 | **shoot** | **a shot list you film** | **the bot plans, you shoot** |
+| **plan** | **an AI itinerary as slides → TikTok + Instagram** | **the bot, on request** |
+
+A **plan** is rule 3 — show the product — reached by the one route a program
+can take. It cannot film a screen, so it draws the output instead: "ביקשתי מ-AI
+לתכנן 4 ימים ברומא", a slide per day, the total, and then the ask. It is also
+the only post here that asks for a follow outright, which is why it is the only
+one with no timer: the last slide promises five commenters a month of premium,
+and a promise made on a schedule accumulates on a schedule. `/trip` when you are
+ready to keep it.
 
 ---
 
@@ -282,7 +294,7 @@ and it survives — `assertNoUrl` is unchanged and still throws at build time.
 What is restored is the pointer with no domain in it, at the end of the caption,
 on a configurable share of posts rather than all of them.
 
-### A clip is no longer eight seconds with one line
+### A clip grew a middle, and then gave it back
 
 Eight seconds was chosen because a loop is worth more than a watch, and that is
 true of a clip whose whole content is one sentence. Rule 6 asks for 15–35, and a
@@ -290,11 +302,21 @@ longer video carrying the *same* single line would be strictly worse — more
 seconds for the same information is exactly how average watch time falls below
 40%.
 
-So the clip format grew a middle. A clip is now a **hook plus two to four
-beats**, each burned in over its own window, so the extra seconds carry extra
-information rather than extra silence. The source is looped to fill the length
-when the stock clip is shorter than the finished video, which decouples what
-Pexels happens to hold from what the format needs.
+So the clip format grew a middle: a **hook plus two to five beats**, each burned
+in over its own window, twenty-six seconds of it, with the source looped to fill
+the length.
+
+**It was reverted on sight, and the reason is the footage rather than the
+writing.** Under those four changing lines is one stock shot that never cuts. A
+video that holds a single frozen composition for half a minute while the caption
+rewrites itself is a slideshow with a video background — the picture stops being
+what the line answers and becomes wallpaper. Rule 6's length is for a video that
+keeps moving.
+
+A clip is eight seconds with one line again. The beats are not thrown away: they
+are the right shape for a post type where **every line change is a cut**, with
+new footage under each one, and they come back when that type is built.
+`git show 97ec1c1` has all of it.
 
 This is still stock footage, and Rule 4 still says stock is B-roll. An automated
 clip is the weakest thing this account posts and it is not the thing that will

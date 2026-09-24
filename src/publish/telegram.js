@@ -149,7 +149,13 @@ export async function sendClipForApproval(telegram, chatId, cand, approvalText, 
 
 /** The staging card: the rendered image plus the approval text and buttons. */
 export async function sendForApproval(telegram, chatId, cand, approvalText, keyboard) {
-  if (cand.kind === 'deck') return sendDeckForApproval(telegram, chatId, cand, approvalText, keyboard);
+  // A plan is a slideshow and arrives the way a deck does — the album above the
+  // text, so the slides and the itinerary printed underneath are read together.
+  // That pairing is the whole review: the card lists forty numbers and the album
+  // is the only way to see whether they fit on the slide.
+  if (cand.kind === 'deck' || cand.kind === 'plan') {
+    return sendDeckForApproval(telegram, chatId, cand, approvalText, keyboard);
+  }
   if (cand.kind === 'clip') return sendClipForApproval(telegram, chatId, cand, approvalText, keyboard);
 
   const file = cand.card?.file;

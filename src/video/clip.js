@@ -38,12 +38,8 @@ export const clipId = (pexelsId, hook) =>
  * post, and it is reported rather than hidden so a quietly broken API key does
  * not look like an editorial choice.
  */
-export async function buildClip(found, { outDir = clipOutputDir(), hook = null, beats = null, used = new Set(), keepSource = false } = {}) {
+export async function buildClip(found, { outDir = clipOutputDir(), hook = null, used = new Set(), keepSource = false } = {}) {
   let line = hook;
-  // A hand-pinned hook may arrive with hand-pinned beats or with none. Both are
-  // legitimate — clip-redo exists to re-render one line over known footage —
-  // so an explicit empty array means "no beats" and null means "write them".
-  let lines = Array.isArray(beats) ? beats : null;
   let written = Boolean(hook);
   let hookNote = null;
 
@@ -53,7 +49,6 @@ export async function buildClip(found, { outDir = clipOutputDir(), hook = null, 
         const res = await writeHook(found, { used });
         if (res.text) {
           line = res.text;
-          lines = res.beats || [];
           written = true;
           if (res.rejected?.length) hookNote = `${res.rejected.length} candidate(s) rejected`;
         } else {
@@ -67,14 +62,11 @@ export async function buildClip(found, { outDir = clipOutputDir(), hook = null, 
     }
   }
   if (!line) line = clipHook();
-  if (!lines) lines = [];
 
-  // The same guard the captions run, on the hook AND on every beat. A beat is
-  // burned into the video exactly as the hook is, so "no published string
-  // carries a domain" has to mean all of them — and the cheapest place to find
-  // out is before the encode, not after.
+  // The same guard the captions run. The line is burned into the video, so "no
+  // published string carries a domain" has to cover it too — and the cheapest
+  // place to find out is before the encode, not after.
   assertNoUrl(line, 'the clip hook');
-  lines.forEach((b, i) => assertNoUrl(b, `clip beat ${i + 1}`));
 
   // And nothing half-written gets encoded, whoever wrote it.
   //
@@ -84,10 +76,8 @@ export async function buildClip(found, { outDir = clipOutputDir(), hook = null, 
   // copied off a previous run's output and is exactly where a "..." survives a
   // round trip. Burned into the video it costs the whole clip — a re-encode is
   // the cheapest possible remedy and this is the last moment it is still cheap.
-  for (const [what, s] of [['hook', line], ...lines.map((b, i) => [`beat ${i + 1}`, b])]) {
-    const unfinished = trailsOff(s);
-    if (unfinished) throw new Error(`the ${what} ${unfinished}: "${s}"`);
-  }
+  const unfinished = trailsOff(line);
+  if (unfinished) throw new Error(`the hook ${unfinished}: "${line}"`);
 
   // One country per clip, checked here because here is where the two halves
   // meet. The line is burned into the video and the pin is printed underneath
@@ -104,17 +94,12 @@ export async function buildClip(found, { outDir = clipOutputDir(), hook = null, 
   const placeHe = found.vision?.place
     ? postConfig().places[String(found.vision.place).toLowerCase()] || null
     : null;
-  // Checked across the hook and every beat, because a beat is as visible as the
-  // hook and "one country per clip" is a property of the finished video rather
-  // than of its first line.
-  for (const [what, s] of [['line', line], ...lines.map((b, i) => [`beat ${i + 1}`, b])]) {
-    const clash = namesOtherCountry(s, placeHe);
-    if (clash) {
-      throw new Error(
-        `the ${what} names ${clash} and this clip is ${placeHe || 'not placed'} — ` +
-          'pass place=<Country> to say the footage is somewhere else'
-      );
-    }
+  const clash = namesOtherCountry(line, placeHe);
+  if (clash) {
+    throw new Error(
+      `the line names ${clash} and this clip is ${placeHe || 'not placed'} — ` +
+        'pass place=<Country> to say the footage is somewhere else'
+    );
   }
 
   const id = clipId(found.id, line);
@@ -129,7 +114,6 @@ export async function buildClip(found, { outDir = clipOutputDir(), hook = null, 
   try {
     ({ spot, startAt, seconds } = await burnClip(source, {
       text: line,
-      beats: lines,
       outFile: file,
       pngFile: png,
       id,
@@ -148,11 +132,6 @@ export async function buildClip(found, { outDir = clipOutputDir(), hook = null, 
     kind: 'clip',
     id,
     hook: line,
-    // The lines that deliver what the hook promised, in order. Carried on the
-    // candidate rather than only inside the video so the approval card can show
-    // them: the whole failure this format was built to fix is a hook that
-    // promises three things, and you cannot check that from a thumbnail.
-    beats: lines,
     headline: line,
     // Whether the line was written for this clip or came out of the fallback
     // pool. Printed on the approval card, because those are two different
@@ -181,9 +160,9 @@ export async function buildClip(found, { outDir = clipOutputDir(), hook = null, 
     notes: [],
     clip: {
       file,
-      // What the encode actually produced, not what the config's floor says.
-      // The length is computed from the beat count now, so a configured number
-      // here would be wrong on every clip that has any.
+      // What the encode actually produced rather than what the config asks
+      // for. They agree today — every clip is cfg.seconds long — and the
+      // fallback is what a clip built before the encoder reported it gets.
       seconds: seconds ?? cfg.seconds,
       width: cfg.width,
       height: cfg.height,
@@ -291,7 +270,6 @@ export async function buildClips({ count = 5, seen = new Set(), outDir = clipOut
  */
 export function clipApprovalMessage(cand) {
   const c = cand.clip || {};
-  const beats = cand.beats || [];
   // What the judge thought, in the two lines it takes to say it.
   //
   // This was the one thing the card did not carry, and its absence cost a
@@ -312,15 +290,8 @@ export function clipApprovalMessage(cand) {
   return [
     `🎬 קליפ · ${c.seconds}ש׳ · ${c.width}x${c.height}`,
     '',
-    `✍️ ההוק: ${cand.hook}`,
-    cand.hookWritten ? '   (נכתב לקליפ הזה)' : `   ⚠️ מהמאגר — ${cand.hookNote || 'לא נכתבה שורה'}`,
-    // Printed in full, one per line, because the question this card has to let
-    // you answer is "did the hook's promise get kept" — and that is a
-    // comparison between the line above and the lines below it. A count would
-    // not let you make it, and the video is 26 seconds long.
-    ...(beats.length
-      ? ['', '📋 הביטים:', ...beats.map((b, i) => `   ${i + 1}. ${b}`)]
-      : ['', '   ⚠️ בלי ביטים — הוק בלבד']),
+    `✍️ השורה: ${cand.hook}`,
+    cand.hookWritten ? '   (נכתבה לקליפ הזה)' : `   ⚠️ מהמאגר — ${cand.hookNote || 'לא נכתבה שורה'}`,
     '',
     `🏷️ ${cand.tiktokCaption || '(אין תיאור)'}`,
     '',

@@ -248,3 +248,71 @@ export function clipCaption(cand, opts) {
   const tags = clipHashtags(cand, opts).join(' ');
   return parts.length ? `${parts.join('\n\n')}\n\n${tags}` : tags;
 }
+
+/**
+ * A plan's country, as a hashtag.
+ *
+ * The third source for the same slot, and the simplest of the three: a deck
+ * derives its country from Wikidata P17, a clip from the vision judge's reading
+ * of a frame, and a plan simply knows — its destination came out of
+ * destinations.json, where the Hebrew country name is written down next to it.
+ *
+ * The CITY is the better tag when it differs, because a plan is about one city
+ * and #רומא is what somebody planning Rome types. The country is the fallback
+ * for the destinations that are one.
+ */
+export function planDestinationTag(plan) {
+  const he = plan?.dest?.he || plan?.dest?.country || null;
+  if (!he) return null;
+  const word = String(he).replace(/\s+/g, '').replace(/[^\p{L}\p{N}׳״'"]/gu, '');
+  return word.length >= 2 ? `#${word}` : null;
+}
+
+/** The five tags under a plan. Same count, same split, third source for the slot. */
+export function planHashtags(plan, { rand = Math.random } = {}) {
+  const cfg = postConfig().hashtags;
+  const taken = new Set();
+
+  const broad = draw(cfg.broad, cfg.broadCount, taken, rand);
+
+  const niche = [];
+  const dest = cfg.useDestination ? planDestinationTag(plan) : null;
+  if (dest) {
+    taken.add(dest);
+    niche.push(dest);
+  }
+  niche.push(...draw(cfg.niche, cfg.nicheCount - niche.length, taken, rand));
+
+  return [...broad, ...niche];
+}
+
+/**
+ * The description under an AI-itinerary slideshow.
+ *
+ * ONE ASK PER POST, and that is the rule this function exists to hold. The
+ * giveaway is already the ask — follow, comment a word, five of you get a month
+ * — and appending "the link is in the bio" underneath it turns a post that
+ * wants a comment into a post that wants two different things. The bio CTA is
+ * therefore drawn ONLY when the giveaway is off, which is also the case where
+ * the post would otherwise ask for nothing at all.
+ *
+ * The question survives alongside the giveaway, because it is not an ask. It is
+ * what a comment can be an answer to, and the giveaway's keyword gives somebody
+ * a reason to be in the comments in the first place.
+ *
+ * `titled` is for Instagram, which has no title field on a carousel: its
+ * caption has to open with the hook or the post has none. TikTok carries the
+ * title separately, so repeating it there would spend the first line on
+ * something already on screen — the same split a deck's two captions make.
+ */
+export function planCaption(plan, { text, giveaway = null, titled = false, ...opts } = {}) {
+  const parts = [
+    titled ? text.hookHe : null,
+    `📍 ${plan.dest.he}${plan.dest.country && plan.dest.country !== plan.dest.he ? `, ${plan.dest.country}` : ''} · ${plan.days.length} ימים`,
+    captionQuestion(opts),
+    giveaway?.captionHe || null,
+    giveaway ? null : captionCta(opts),
+  ].filter(Boolean);
+  const tags = planHashtags(plan, opts).join(' ');
+  return `${parts.join('\n\n')}\n\n${tags}`;
+}

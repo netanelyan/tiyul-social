@@ -3944,70 +3944,84 @@ group('one country per clip — the line, the pin and the tag are one fact');
 }
 
 /* -------------------------------------------------------------------------- */
-group('clip lines — the brief’s own hooks must survive their own guards');
+group('clip lines — the owner-approved shapes must survive their own guards');
 
 // The rule this group has always encoded: A GUARD THAT REJECTS A CANONICAL LINE
 // IS A BROKEN GUARD. Three separate guards silently ate the owner's approved
-// lines under the previous format, each time looking like the writer had
-// failed, and the fix was to lock the canonical lines into the tests.
+// lines, each time looking like the writer had failed, and the fix was to lock
+// the canonical lines into the tests.
 //
-// The canon changed with the brief; the rule did not. Every hook printed
-// verbatim in BRIEF.md must pass every check in video/hooks.js, and the two
-// guards that were RELAXED for it must still catch what they were built for.
+// The canon has been both things now — these meme shapes, then the brief's
+// advice hooks with beats under them, then these again — and the rule survived
+// every swap. What is locked here is the shapes that are actually burned into
+// videos today.
 {
-  const { hasPerson, isLabel, beatCountMismatch, trailsOff } = await import('../src/video/hooks.js');
+  const { hasPerson, isLabel, promisesList, trailsOff } = await import('../src/video/hooks.js');
   const cfg = postConfig().clips;
   const fmt = (id) => cfg.formats.find((f) => f.id === id);
 
-  // The five shapes of the brief's rule 5, as clip formats.
-  for (const [id, shape] of [
-    ['mistakes', 'A'],
-    ['warning', 'A'],
-    ['budget', 'B'],
-    ['list', 'D'],
-    ['myth', 'E'],
-  ]) {
+  // The two place formats are built out of pronouns. hasPerson bans אני, אתה
+  // and אחי — correctly, in general: it stops the account claiming to have
+  // stood somewhere it has not. A vocative and an invitation make no such
+  // claim, so they carry an explicit exemption rather than weakening the rule.
+  for (const id of ['vocative', 'invite']) {
     ok(`${id} exists`, Boolean(fmt(id)));
-    eq(`${id} declares its shape`, fmt(id)?.shape, shape);
-    ok(`${id} says what its beats are`, Boolean(fmt(id)?.beatsAre));
+    ok(`${id} is exempt from the person guard`, fmt(id).allowsPerson === true);
+    ok(`${id} only fires when the country is known`, fmt(id).needsPlace === true);
   }
-  ok('the budget shape is the one allowed a price', fmt('budget').allowsPrice === true);
+  ok('the guard still bans the on-location voice', hasPerson('אני נשבע שהאוויר פה אחר'));
+  ok('and the past tense of it', hasPerson('כשהייתי שם לא היה אף אחד'));
+  ok('but not the viewer voice the owner approved', !hasPerson('למה אף אחד לא סיפר לי על השביל הזה'));
+  // Second person is back on the list with the formats that need it gone. The
+  // advice voice — "אל תטוסו... לפני שאתם יודעים" — is the shape that owed the
+  // viewer beats, and beats are what a single held line cannot deliver.
+  ok('and the advice voice is refused again', hasPerson('אל תטוסו לשם לפני שאתם יודעים את זה'));
 
-  // THE PERSON GUARD WAS SPLIT, and this is the pair that proves the split is
-  // real rather than a weakening. Presence — a claim to have stood there — is
-  // still banned over stock footage. Address — speaking to the viewer — is the
-  // voice of four of the five formats and is now allowed outright.
-  ok('presence is still banned', hasPerson('אני נשבע שהאוויר פה אחר'));
-  ok('and so is the past tense of it', hasPerson('כשהייתי שם לא היה אף אחד'));
-  ok('address is not presence', !hasPerson('אל תטוסו לשם לפני שאתם יודעים את זה'));
-  ok('nor is the second-person possessive', !hasPerson('הדרכון שלכם חייב להיות בתוקף'));
-  ok('the viewer voice still survives', !hasPerson('למה אף אחד לא סיפר לי על השביל הזה'));
+  // Both place shapes are short by design — three and four words. A blanket
+  // five-word floor rejected both on every single run.
+  ok('the vocative may be three words', fmt('vocative').minWords <= 3);
+  ok('the invite may be four', fmt('invite').minWords <= 4);
 
-  // isLabel gained a PROMISE arm for the same reason. "3 טעויות שישראלים עושים
-  // בגאורגיה" asserts nothing grammatically and the old check rejected it as a
-  // caption — which is backwards: the digit is what makes it a hook.
+  // The label check has to let nature vocabulary through. Its first version
+  // rejected any line containing יער / הר / שביל, which would have thrown out
+  // the 229K reference post the whole format is modelled on.
   ok('a bare noun phrase is still a label', isLabel('שביל יפה ביער'));
   ok('and so is a caption of the picture', isLabel('הדולומיטים, איטליה'));
-  ok('a statement is still not a label', !isLabel('יש רגע בהליכה שבו הראש מתרוקן'));
+  ok('but a statement about nature is not', !isLabel('יש רגע בהליכה שבו הראש מתרוקן'));
 
-  // Every hook printed in BRIEF.md, verbatim.
-  const canon = [
-    '3 טעויות שישראלים עושים בגאורגיה',
-    'אל תטוסו לתאילנד לפני שאתם יודעים את זה',
-    '5 ימים ברומא ב-2,000 ₪ — ככה',
-    '5 יעדים לאוקטובר בלי ויזה',
-    'כולם חושבים ששווייץ יקרה מדי — האמת אחרת',
-    'המקום בפורטוגל שאף ישראלי לא מגיע אליו',
+  // A PROMISE THE CLIP CANNOT KEEP. One line is held for the whole eight
+  // seconds, so a hook that opens on a count owes the viewer a list that never
+  // arrives — the exact failure the beats were built to prevent, and the one
+  // thing that came out of that format rather than going back with it.
+  ok('a list promise is refused', Boolean(promisesList('3 טעויות שישראלים עושים בגאורגיה')));
+  ok('and so is a list of destinations', Boolean(promisesList('5 יעדים לאוקטובר בלי ויזה')));
+  // The false positives it is not allowed to have. A ranking is not a list:
+  // "בטופ 3 דברים" is an owner-approved line whose digit enumerates nothing,
+  // and a duration is not a count either.
+  eq('a ranking is not a promise', promisesList('חייב להיות בטופ 3 דברים שעשיתי השבוע'), null);
+  eq('nor is the other one', promisesList('חייב להיות בטופ 3 מסלולים שקיימים'), null);
+  eq('nor is a duration', promisesList('5 ימים בלי טלפון בהרים'), null);
+
+  // Every line the owner approved verbatim must pass every check. If one of
+  // these fails, the guards have drifted away from the taste they encode.
+  const approved = [
+    'העובדה שהשביל הזה לא עולה כסף',
+    'חייב להיות בטופ 3 מסלולים שקיימים',
+    'יש אנשים שזה המסלול שלהם לעבודה',
+    'חייב להיות בטופ 3 דברים שעשיתי השבוע',
+    'למה אף אחד לא סיפר לי על השביל הזה',
+    'איך לא שמעתי על המסלול הזה עד היום',
   ];
-  for (const line of canon) {
-    ok(`brief hook survives: ${line}`, !hasPerson(line) && !isLabel(line) && !trailsOff(line));
+  for (const line of approved) {
+    ok(`approved line survives: ${line}`, !hasPerson(line) && !isLabel(line) && !trailsOff(line) && !promisesList(line));
   }
 
   // A LINE THAT DOES NOT FINISH ITS OWN SENTENCE, which is what shipped: text
   // burned into a video with "..." after it. On a screen there is nothing to
   // click for the rest, so a teaser is simply half a sentence — and it passed
   // every other guard in this file, because it carries no URL, no emoji, no
-  // claim of presence, and it is not a label.
+  // claim of presence, and it is not a label. It matters more now than when it
+  // was written: this line is the whole text of the post.
   ok('an ellipsis is unfinished', Boolean(trailsOff('3 דברים שחייבים לדעת לפני ש...')));
   ok('and so is the typographic one', Boolean(trailsOff('המקום שאף אחד לא מספר לכם עליו…')));
   ok('two dots count', Boolean(trailsOff('הדרכון חייב להיות בתוקף..')));
@@ -4023,73 +4037,210 @@ group('clip lines — the brief’s own hooks must survive their own guards');
     'טיסה לשם זולה יותר בנובמבר',
     'מזמינים את הכרטיס חודש לפני',
     'הכניסה חינם עד השעה תשע',
-    'טיסה הלוך ושוב — 700 ₪',
-    '5 ימים ברומא ב-2,000 ₪ — ככה',
+    'העובדה שהשביל הזה לא עולה כסף',
   ]) {
     eq(`a finished line passes: ${line}`, trailsOff(line), null);
   }
 
-  // The promise check, and the false positive that shaped it. A number is only
-  // a beat count when a LIST noun follows it — "5 ימים" is how long the trip
-  // is, and reading it as a promise of five beats rejected the budget format on
-  // every single run.
-  eq('a kept promise passes', beatCountMismatch('3 טעויות שישראלים עושים בגאורגיה', ['a', 'b', 'c']), null);
-  ok('a broken one does not', Boolean(beatCountMismatch('3 טעויות שישראלים עושים בגאורגיה', ['a', 'b'])));
-  eq('a duration is not a count', beatCountMismatch('5 ימים ברומא ב-2,000 ₪ — ככה', ['a', 'b', 'c']), null);
-  eq('nor is a price', beatCountMismatch('טיול ב-2,000 ₪ — ככה', ['a', 'b']), null);
-
-  // The list format promises five, so the ceiling has to allow five. It was
-  // four, which made the brief's own example impossible to satisfy: one guard
-  // rejected every run for obeying another.
-  ok('the beat ceiling can satisfy the list format', cfg.beatsMax >= 5, `beatsMax=${cfg.beatsMax}`);
-  ok('and the floor is at least two', cfg.beatsMin >= 2);
-
-  // The fallback pool degrades to the same shapes rather than to the old memes.
-  for (const line of cfg.hooks) {
-    ok(`fallback line is a promise: ${line}`, !hasPerson(line) && !isLabel(line) && !trailsOff(line));
-  }
+  // And the fallback pool is drawn from those approved lines, so a failed API
+  // call degrades to something already judged rather than to something invented.
+  ok(
+    'the fallback pool is owner-approved copy',
+    cfg.hooks.every((l) => approved.includes(l) || /אני, אתה/.test(l)),
+    cfg.hooks.find((l) => !approved.includes(l) && !/אני, אתה/.test(l))
+  );
 }
 
 /* -------------------------------------------------------------------------- */
-group('clip length — the beats have to fit inside the brief’s 15-35 seconds');
+group('clip length — one line, one length, and a source long enough to fill it');
 
 {
-  const { timeline } = await import('../src/video/overlay.js');
   const cfg = postConfig().clips;
 
-  // Rule 6 is a range, and every beat count the writer may return has to land
-  // inside it. The ceiling is the interesting end: five beats at 4.5 seconds
-  // plus a hook is 26, and a config edit that pushed it past 35 would ship a
-  // video the brief says is too long without anything noticing.
-  for (let n = cfg.beatsMin; n <= cfg.beatsMax; n++) {
-    const plan = timeline(Array.from({ length: n }, (_, i) => `beat ${i + 1}`));
-    ok(
-      `${n} beats fits the brief: ${plan.seconds}s`,
-      plan.seconds >= cfg.video.secondsMin && plan.seconds <= cfg.video.secondsMax,
-      `${plan.seconds}s outside [${cfg.video.secondsMin}, ${cfg.video.secondsMax}]`
-    );
-    eq(`${n} beats gets ${n + 1} windows`, plan.windows.length, n + 1);
+  // Eight seconds and no arithmetic. The length was briefly COMPUTED from how
+  // many beats a hook had, which is the right rule for a video that cuts and
+  // the wrong one for a single held shot — see the note in post-config.json.
+  eq('a clip is one fixed length', typeof cfg.video.seconds, 'number');
+  ok('and it is short enough to loop', cfg.video.seconds <= 12, `${cfg.video.seconds}s`);
+
+  // The length has to be reachable from the shortest footage the search will
+  // accept. Pexels serves clips from five seconds; without looping, everything
+  // between minDuration and `seconds` ships under length and nothing says so.
+  ok(
+    'the shortest allowed source can still fill it',
+    cfg.search.minDuration >= cfg.video.seconds || cfg.video.loopSource === true,
+    `minDuration=${cfg.search.minDuration}s, seconds=${cfg.video.seconds}s, loop=${cfg.video.loopSource}`
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+group('AI itineraries — the plan has to survive its own shape check');
+
+{
+  const { shapePlan, planTotal } = await import('../src/plan/write.js');
+  const cfg = postConfig().plans;
+
+  const stop = (nameHe, costIls, extra = {}) => ({
+    timeHe: '09:00',
+    nameHe,
+    noteHe: 'מגיעים מוקדם ונכנסים בלי תור',
+    costIls,
+    ...extra,
+  });
+  const day = (titleHe, stops) => ({ titleHe, stops });
+  const shape = (raw, opts = {}) =>
+    shapePlan(raw, { days: 2, stopsMin: cfg.stopsMin, stopsMax: cfg.stopsMax, ...opts });
+
+  const good = {
+    days: [
+      day('העיר העתיקה', [stop('קולוסיאום', 80), stop('הפורום הרומי', 0), stop('טרסטוורה', 120)]),
+      day('וותיקן', [stop('מוזיאוני הוותיקן', 90), stop('כנסיית פטרוס', 40), stop('טירת סנט אנג׳לו', 55)]),
+    ],
+  };
+  eq('a clean plan keeps both days', shape(good).days.length, 2);
+  eq('and drops nothing', shape(good).dropped.length, 0);
+
+  // THE TOTAL IS SUMMED, NEVER WRITTEN. A model asked for an itinerary and a
+  // total returns two numbers that disagree about one plan, and the viewer can
+  // see both on the same slideshow — which is the broken-promise failure that
+  // cost the clip format its beats, arrived at by arithmetic instead.
+  eq('the total is the sum of the stops', planTotal(shape(good).days), 385);
+
+  // A Latin place name is ONE bullet dropped, not a lost plan. The slides are
+  // RTL and a Latin run inside a Hebrew line is this project's oldest rendering
+  // bug — but losing a whole itinerary to it would be the guard costing more
+  // than the defect.
+  const latin = { days: [day('העיר העתיקה', [stop('Colosseum', 80), stop('הפורום הרומי', 0), stop('טרסטוורה', 120), stop('פנתאון', 0)])] };
+  const afterLatin = shape(latin, { days: 1 });
+  eq('a Latin name costs its own stop', afterLatin.days[0].stops.length, 3);
+  ok('and says so', afterLatin.dropped.some((d) => /Colosseum/.test(d)));
+
+  // A day that loses too many stops is dropped whole: three bullets and then
+  // one is a slideshow that looks like it ran out of material.
+  const thin = { days: [day('העיר העתיקה', [stop('קולוסיאום', 80), stop('Forum', 0)])] };
+  eq('a day under the floor is dropped', shape(thin, { days: 1 }).days.length, 0);
+
+  // Prices are the one field nothing sourced, so the check on them is a sanity
+  // bound rather than a fact check — a four-figure "entry fee" is the model
+  // having answered a different question.
+  const silly = { days: [day('יום', [stop('קולוסיאום', 80), stop('טיסה פנימית', 4000), stop('טרסטוורה', 120), stop('פנתאון', 0)])] };
+  ok('an implausible stop price is refused', shape(silly, { days: 1 }).dropped.some((d) => /4000/.test(d)));
+
+  // A time that did not parse is dropped rather than printed. "בערך" where a
+  // time should be makes the whole column look invented.
+  const when = { days: [day('יום', [stop('קולוסיאום', 80, { timeHe: 'בבוקר' }), stop('הפורום', 0), stop('טרסטוורה', 120)])] };
+  eq('an unparseable time is dropped, not printed', shape(when, { days: 1 }).days[0].stops[0].timeHe, null);
+  eq('but the stop survives it', shape(when, { days: 1 }).days[0].stops.length, 3);
+
+  // Instagram takes ten images in a carousel and a plan is days + 3 slides.
+  // A config that allowed seven days would build a post Instagram rejects at
+  // publish time, hours after it was approved.
+  ok('the day ceiling fits a carousel', cfg.daysMax + 3 <= 10, `daysMax=${cfg.daysMax}`);
+}
+
+/* -------------------------------------------------------------------------- */
+group('the itinerary slideshow — what it says, and what it promises');
+
+{
+  const { planSlides, stopCount, dayTotal, renderPlanSlideHtml } = await import('../src/render/planSlides.js');
+  const { planText, planGiveaway } = await import('../src/plan/text.js');
+  const { planCaption } = await import('../src/hashtags.js');
+  const cfg = postConfig().plans;
+
+  const plan = {
+    id: 'testplan0001',
+    dest: { id: 'rome', he: 'רומא', en: 'Rome', country: 'איטליה' },
+    days: [
+      { n: 1, titleHe: 'העיר העתיקה', stops: [
+        { timeHe: '09:00', nameHe: 'קולוסיאום', noteHe: 'מזמינים מראש', costIls: 80 },
+        { timeHe: '13:00', nameHe: 'הפורום', noteHe: 'הכניסה מהצד', costIls: 0 },
+      ] },
+      { n: 2, titleHe: 'וותיקן', stops: [
+        { timeHe: '08:00', nameHe: 'מוזיאוני הוותיקן', noteHe: 'הכניסה הראשונה', costIls: 90 },
+      ] },
+    ],
+    total: 170,
+  };
+  const text = planText(plan);
+  const give = planGiveaway(plan);
+
+  // The cover promises a count and the slides have to deliver it, which is the
+  // same rule as a hook that says "3 טעויות".
+  eq('the stop count is the slides own', stopCount(plan.days), 3);
+  eq('a day total is its own stops', dayTotal(plan.days[0]), 80);
+
+  const slides = planSlides(plan, { giveaway: give });
+  eq('cover, days, total and the ask', slides.length, plan.days.length + (give ? 3 : 2));
+  eq('the cover opens', slides[0].type, 'cover');
+  eq('the total comes after the days', slides[plan.days.length + 1].type, 'total');
+
+  // THE ASK IS ALL OR NOTHING. `giveaway.on: false` is how somebody stops
+  // promising strangers a month of premium, and a slide that survived the
+  // switch would keep making the promise after it was withdrawn.
+  eq('with the giveaway off there is no ask slide', planSlides(plan, { giveaway: null }).length, plan.days.length + 2);
+
+  // The templates are filled with the plan's own facts — an ask naming a
+  // different city than the slides is the contradiction this kind is most
+  // likely to ship, because both strings come from different places.
+  ok('the hook names the destination', text.hookHe.includes('רומא'));
+  ok('and the day count', text.hookHe.includes(String(plan.days.length)));
+  ok('no placeholder survives filling', !/[{}]/.test([text.hookHe, text.askHe, text.dayLabelFor(1)].join(' ')));
+
+  if (give) {
+    ok('the keyword is the destination', give.keyword.includes('רומא'));
+    ok('every step is filled', give.stepsHe.every((s) => !/[{}]/.test(s)));
+    ok('the steps name the prize', give.stepsHe.join(' ').includes(String(give.premiumDays)));
+    // The same numbers on the slide and in the caption. A post whose last frame
+    // says five winners and whose description says three is a broken promise to
+    // whoever commented for the third one.
+    const caption = planCaption(plan, { text, giveaway: give });
+    ok('the caption repeats the keyword', caption.includes(give.keyword));
+    ok('and the same winner count', caption.includes(String(give.winners)));
+    // ONE ASK PER POST: the bio CTA stands down while the giveaway is running.
+    const cta = postConfig().caption.cta;
+    ok('the bio CTA stands aside for it', !cta || !caption.includes(cta));
   }
 
-  // No gaps and no overlaps. A gap is a frame with no text on it in the middle
-  // of a video whose whole point is that the text keeps arriving.
-  const plan = timeline(['a', 'b', 'c']);
-  eq('the first window opens at zero', plan.windows[0].from, 0);
-  eq('the last closes at the end', plan.windows.at(-1).to, plan.seconds);
-  ok(
-    'every window is contiguous with the next',
-    plan.windows.every((w, i) => i === 0 || Math.abs(w.from - plan.windows[i - 1].to) < 0.002)
-  );
+  // The caption is a published string like any other.
+  const captions = [
+    planCaption(plan, { text, giveaway: give, titled: true }),
+    planCaption(plan, { text, giveaway: give, titled: false }),
+  ];
+  for (const c of captions) ok('no domain in the caption', !/(https?:\/\/|www\.|\.com\b)/i.test(c));
+  ok('instagram opens with the hook', captions[0].startsWith(text.hookHe));
+  ok('tiktok does not repeat it', !captions[1].startsWith(text.hookHe));
 
-  // The no-beats case is the fallback pool, and it must not produce a
-  // zero-length or unclamped video.
-  const bare = timeline([]);
-  eq('no beats still clamps to the floor', bare.seconds, cfg.video.secondsMin);
-  eq('and is a single window', bare.windows.length, 1);
+  // The total slide has to say what its own number covers. A four-figure sum
+  // under "4 ימים ברומא" reads as the price of the trip unless something says
+  // it is entrance fees — and that misreading is as bad as a wrong number.
+  ok('the total is qualified', Boolean(cfg.totalNoteHe), 'plans.totalNoteHe is empty');
+  const totalHtml = renderPlanSlideHtml({ type: 'total' }, plan, { size: 'tiktok', text, giveaway: give });
+  ok('and the slide carries the qualification', totalHtml.includes(cfg.totalNoteHe));
 
-  // The looping switch is what made the length rise possible at all: Pexels
-  // holds 5-30 second clips and the finished video is routinely longer.
-  ok('the source loops to fill the length', cfg.video.loopSource === true);
+  // Every slide type renders at both sizes without throwing. Cheap, and it is
+  // the check that catches a template referring to a field a slide type does
+  // not have — which is invisible until the one post that uses it.
+  for (const size of ['tiktok', 'instagram']) {
+    for (const slide of slides) {
+      const html = renderPlanSlideHtml(slide, plan, { size, text, giveaway: give });
+      ok(`${slide.type} renders at ${size}`, html.includes('<div class="frame">'));
+      // The font guard in render/index.js refuses any page whose declared faces
+      // did not parse, and it can only refuse faces the page DECLARED. A slide
+      // that forgot @font-face draws Hebrew in whatever Chromium falls back to.
+      ok(`${slide.type} declares Heebo at ${size}`, html.includes("font-family:'Heebo'"));
+    }
+  }
+
+  // Markup cannot come in through a destination name. The keyword is drawn
+  // from the plan and painted into the ask slide, which is the one place a
+  // string from a data file reaches the page as something other than text.
+  const evil = { ...plan, dest: { ...plan.dest, he: '<script>x</script>' } };
+  const evilHtml = renderPlanSlideHtml({ type: 'day', day: plan.days[0] }, evil, {
+    size: 'tiktok',
+    text: planText(evil),
+    giveaway: give,
+  });
+  ok('a name cannot inject markup', !evilHtml.includes('<script>x</script>'));
 }
 
 /* -------------------------------------------------------------------------- */

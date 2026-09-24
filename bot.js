@@ -193,7 +193,8 @@ bot.use(async (ctx, next) => {
 // ---------------------------------------------------------------------------
 
 /** One glyph per kind, used everywhere a list of pending items is printed. */
-const kindIcon = (kind) => (kind === 'deck' ? '🎞️' : kind === 'clip' ? '🎬' : '📰');
+const kindIcon = (kind) =>
+  kind === 'deck' ? '🎞️' : kind === 'clip' ? '🎬' : kind === 'plan' ? '🗺️' : '📰';
 
 function stagingButtons(key, cand) {
   const rows = [
@@ -206,7 +207,13 @@ function stagingButtons(key, cand) {
   // printed on the approval message with the confidence it was named at. So
   // there is nothing to show behind an evidence button and nothing to edit: the
   // line is one field and a wrong one is a re-run, exactly like a deck's title.
-  if (cand?.kind !== 'clip') {
+  //
+  // A PLAN carries no quotes either, and for a different reason worth being
+  // blunt about: nothing in it was sourced. It is a proposal, not a set of
+  // facts, so an evidence button would open on an empty list and imply the
+  // opposite. What replaces it is that the approval card prints the whole
+  // itinerary — see planApprovalMessage.
+  if (cand?.kind !== 'clip' && cand?.kind !== 'plan') {
     rows.push(
       cand?.kind === 'deck'
         ? [Markup.button.callback('📎 ציטוטים', `ev:${key}`)]
@@ -794,8 +801,12 @@ async function publishNext(item = null) {
   const limited = [];
 
   const publishers = {
+    // A slideshow goes to the channel as an album whichever kind made it. Only
+    // reached when CHANNEL_ID is set AND the kind's targets include telegram —
+    // neither a deck nor a plan routes there today — so this is the branch that
+    // keeps a future channel from receiving an itinerary as one cover image.
     telegram: () =>
-      cand.kind === 'deck'
+      cand.kind === 'deck' || cand.kind === 'plan'
         ? publishTelegramDeck(bot.telegram, CHANNEL_ID, cand)
         : publishTelegram(bot.telegram, CHANNEL_ID, cand),
     instagram: () => publishInstagram(cand),
@@ -1737,6 +1748,63 @@ ${why}`).catch(() => {});
 });
 
 /**
+ * `/trip` — an AI-written itinerary, as a slideshow.
+ *
+ * `/trip` picks a destination the feed has not just used, `/trip רומא` names
+ * one, and `/trip רומא 5` names the length too. The argument order is "where,
+ * then how long" because that is the order the sentence goes in, and the number
+ * is the only part that can be a bare digit — so `/trip 5` is five DAYS
+ * somewhere chosen, not five itineraries. That differs from /clip and /deck on
+ * purpose: one plan is a post, and five plans is five posts nobody asked to
+ * review at once.
+ *
+ * One model call, one browser, one staged candidate with the whole itinerary
+ * printed under the album. An approved plan goes to the TikTok inbox as a draft
+ * and to Instagram as a carousel.
+ */
+bot.command('trip', async (ctx) => {
+  const arg = (ctx.message.text || '').replace(/^\/trip(@\S+)?\s*/, '').trim();
+  const m = /^(.*?)\s*(\d+)?$/.exec(arg) || [];
+  const asked = (m[1] || '').trim();
+  const days = m[2] ? Number(m[2]) : null;
+
+  await ctx.reply(`⏳ מתכנן ${asked ? asked : 'יעד'}${days ? ` · ${days} ימים` : ''}...`);
+  detach(
+    'מסלול',
+    async () => {
+      const { writePlan, findDestination } = await import('./src/plan/write.js');
+      const { toPlanCandidate } = await import('./src/plan/candidate.js');
+
+      // A destination typed by hand that is not in destinations.json is a
+      // refusal rather than a guess. The file is where the Hebrew spelling
+      // lives, and inventing one here is how the same city reaches the feed
+      // under two names.
+      const dest = asked ? findDestination(asked) : null;
+      if (asked && !dest) {
+        await notify
+          .send(bot.telegram, ctx.chat.id, `❌ ${asked} לא ב-destinations.json — הוסיפו אותו עם האיות בעברית`)
+          .catch(() => {});
+        return;
+      }
+
+      // Which destinations the feed has just been about, so the picker can skip
+      // them. The same history the deck's repeat notes are counted from.
+      const recent = store.recentPublished().slice(0, 12).map((p) => p.place);
+      const plan = await writePlan({ dest, days, recent });
+      const cand = await toPlanCandidate(plan);
+      await stage(cand);
+
+      if (plan.dropped?.length) {
+        await notify
+          .send(bot.telegram, ctx.chat.id, `⚠️ ${plan.dropped.length} שורות נפסלו בבנייה`)
+          .catch(() => {});
+      }
+    },
+    ctx.chat.id
+  );
+});
+
+/**
  * A shot list, now.
  *
  * `/shoot` for one, `/shoot 3` for three, the same convention /clip and /deck
@@ -2452,10 +2520,16 @@ bot.command('help', (ctx) =>
       '/tiktok — חיבור טיקטוק, טוקנים ורמות פרטיות',
       '/shoot — תדריך צילום אחד: הוק, ביטים, מה לצלם וכיתוב מוכן',
       '/shoot 3 — שלושה תדריכים',
+      '/trip — מסלול שנכתב ב-AI, כמצגת: יעד שלא היה לאחרונה',
+      '/trip רומא — מסלול ליעד מסוים',
+      '/trip רומא 5 — ולמספר ימים מסוים',
       '/clear_pending',
       '',
       'תדריך צילום לא מתפרסם על ידי הבוט — אתה מצלם ומעלה. /shoot מתעלם משעות',
       'הפעילות; הטיימר לא.',
+      '',
+      'מסלול AI הוא הצעה, לא עובדות מאומתות: אין ציטוטים מאחוריו והמחירים הם',
+      'הערכה. הכרטיס מדפיס את כל המסלול כדי שאפשר יהיה לקרוא לפני שמאשרים.',
       '',
       'אפשר גם להדביק כתובת של מקור ראשוני והיא תיבדק ותיכתב.',
     ].join('\n')

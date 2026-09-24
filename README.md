@@ -31,9 +31,11 @@ cards   sources → rank → draft (Claude) → verify → render → Telegram �
 
 decks   idea (Claude) → you tap בנה → places → facts → photographs → render ×2 → ✅ → TikTok + Instagram
 
-clips   destinations → Pexels → vision judge → hook + beats → trim + burn in → ✅ → TikTok drafts
+clips   destinations → Pexels → vision judge → one line → trim + burn in → ✅ → TikTok drafts
 
 shoots  rotation → angle + destination → hook + beats + caption (Claude) → Telegram → YOU FILM IT
+
+plans   destination → itinerary (Claude) → render ×2 → ✅ → TikTok drafts + Instagram
 ```
 
 The fourth one is new and is not like the others: a **shoot** is a shot list,
@@ -57,7 +59,7 @@ and the reason a fourth kind exists at all.
    for decks. One post drips out every four hours; a destination that fails is
    retried on its own, without re-posting to the one that worked.
 
-## Three kinds of post
+## Five kinds of post
 
 A **card** is one verified claim from one source, 1080×1350, and it goes to
 Instagram. That is the loop above.
@@ -75,11 +77,22 @@ same wordmark, the same accent rule, the same type scale as the news cards, so a
 slideshow in the grid looks like the account that posted it. Same words, same
 photographs, two designs — one deck published twice, never two decks.
 
-A **clip** is 15–35 seconds of vertical stock video carrying a Hebrew hook and
-the two to five beats that deliver what the hook promised, and it goes to TikTok
-only. There is no Instagram artefact for it the way a deck has a carousel, and
-posting the same seconds to two places is how every account becomes a copy of
-the others.
+A **clip** is eight seconds of vertical stock video carrying one Hebrew line,
+held for its whole length, and it goes to TikTok only. There is no Instagram
+artefact for it the way a deck has a carousel, and posting the same seconds to
+two places is how every account becomes a copy of the others. It briefly carried
+a hook plus beats over twenty-six seconds; that is the right shape for footage
+that cuts and the wrong one for a single held shot — see
+[`BRIEF.md`](BRIEF.md#a-clip-grew-a-middle-and-then-gave-it-back).
+
+A **plan** is an itinerary an AI wrote, drawn as a slideshow: `ביקשתי מ-AI לתכנן
+4 ימים ברומא`, then one slide per day with the stops, their times and their
+prices, then the total, then the ask. It is the only post here where the thing
+being shown is the thing being sold, and the only one with no source behind a
+single line of it — an itinerary is a proposal rather than a set of facts, which
+is why the approval card prints the whole thing instead of hiding quotes behind
+a button. `/trip` builds one, `/trip רומא 5` names the destination and the
+length. Nothing sends one unasked.
 
 A **shoot** is a shot list. It is the one kind the bot does not make: it picks
 the destination, the angle and the shape, writes the hook, the beats and the
@@ -102,6 +115,13 @@ under it. A shoot has nothing to approve at all.
 | deck | `DECKS_PER_DAY` (2) | a line of text | TikTok + Instagram |
 | clip | `CLIPS_PER_DAY` (3) | the finished video | TikTok drafts |
 | shoot | `SHOOTS_PER_DAY` (1) | a shot list | nothing — you film it |
+| plan | none — `/trip` only | the slides + the itinerary in full | TikTok drafts + Instagram |
+
+**A plan has no timer, and that is a decision rather than an omission.** Its
+last slide promises five commenters a month of premium, and nothing in this
+program can keep that promise — somebody has to read the comments and hand out
+the accounts. A post that makes a promise on a schedule would accumulate
+promises on a schedule. Ask for one when you are ready to keep it.
 
 The shoot timer is the only one that is not governed by `RUN_HOUR`. A shot list
 is acted on within the hour, so it arrives when the audience it is being filmed
@@ -356,6 +376,49 @@ approval card after the build is the real list.
 Only the size that will be posted is rendered. Choosing Instagram does not pay
 for the TikTok crop of itself.
 
+## How an AI itinerary gets made
+
+`/trip` picks a destination the feed has not just used — or takes one:
+`/trip רומא 5`. One model call returns the days, each with three or four stops
+carrying a time, a name, one line of what to do there and a price. Then the
+slides: a cover with the ask on it, one per day, the total, and the follow ask.
+Both sizes, no photographs, no measurement — the layout is fixed on purpose, so
+a run of slides reads as one screen being scrolled rather than as five different
+posts.
+
+**Nothing behind it was sourced, and the design follows from that.** A card
+quotes an authority and a deck quotes Wikidata; an itinerary names places, puts
+them in an order and prices them, and none of that is fetched from anywhere. It
+survives that for one reason: a plan is a *proposal*, not a claim about the
+world. "יום 2: וותיקן, ואז טרסטוורה" cannot be false, only bad.
+
+So what the guards check is shape rather than truth — real Hebrew, the right
+number of days, stops that fit on a slide, times that parse — and three things
+carry the honesty instead:
+
+- **The total is summed, never written.** The model is told not to produce one.
+  A plan whose own arithmetic disagrees with itself is the one defect a viewer
+  can catch from the screen alone.
+- **The total says what it covers.** `כניסות ואטרקציות בלבד — בלי טיסה ולינה`,
+  on the slide and again on the approval card. A four-figure number under
+  "4 ימים ברומא" reads as the price of the trip unless something says otherwise,
+  and a number that invites the wrong reading is a wrong number.
+- **The approval card prints the whole itinerary.** Forty small assertions, none
+  of them visible on the cover image. There is no evidence button, because there
+  is no evidence — the only way to disagree with a plan is to read it.
+
+**The slides are ours, not a screenshot.** They carry the account's wordmark and
+palette and never draw a control the product does not have. The post says an AI
+planned the trip, an AI did, and that is the whole claim; wiring the real product
+in is a change to `src/plan/write.js` and to the note at the top of it.
+
+**The giveaway is a promise to strangers.** The last slide asks for a follow and
+a comment and offers five of them a month of premium. The bot writes the ask,
+prints who was promised what, and cannot read a single comment — picking and
+granting is yours. `plans.giveaway.on: false` removes the slide, the caption line
+and the promise together, which is why it is one switch and not three strings.
+While it is on, the bio CTA stands down: one ask per post.
+
 ## Why TikTok posts are drafts
 
 TikTok's photo API has no field for a sound. `auto_add_music` is a boolean — on,
@@ -453,14 +516,19 @@ message says when the slot frees.
 | `src/postConfig.js` | reads and checks the above; the only module that knows the path |
 | `src/hashtags.js` | the five tags under a slideshow, one of them the deck's own country |
 | `src/video/vision.js` | judges a clip's thumbnail: is this somewhere worth going |
-| `src/video/hooks.js` | the Hebrew hook and its beats, by filling a configured format |
-| `src/video/overlay.js` | ffmpeg, the beat timeline, and text rendered through Chromium for bidi |
+| `src/video/hooks.js` | the Hebrew line on a clip, by filling a configured format |
+| `src/video/overlay.js` | ffmpeg, the measured placement, and text rendered through Chromium for bidi |
 | `src/schedule.js` | Israel's posting windows and Shabbat, in Israel's time zone |
 | `src/shoot/rotation.js` | which shape is next, the product floor, which part of the series |
 | `src/shoot/plan.js` | the shot list: hook, beats, caption, what to film |
 | `src/shoot/message.js` | what a shoot looks like on a phone, standing up |
+| `src/plan/write.js` | the itinerary: days, stops, times and prices, shaped and checked |
+| `src/plan/text.js` | every word on a plan that the model did not write, filled once |
+| `src/plan/candidate.js` | renders the slides and prints the whole plan for approval |
+| `src/render/planSlides.js` | the slideshow itself — the one renderer that measures nothing |
 | `src/urlLike.js` | the link pattern, where three import chains can all reach it |
 | `src/models.js` | which model does which job, and the effort-parameter guard |
+| `scripts/plan-lab.js` | build one itinerary and render it; `fake` skips the model entirely |
 | `scripts/clip-lab.js` | build a batch of clips to look at |
 | `scripts/clip-redo.js` | re-render specific clips with footage and line pinned |
 | `scripts/` | selftest, source probe, card-hosting check, one-off runs |
@@ -659,34 +727,32 @@ writer had been asked to fill a format and wrote the first half of one. A teaser
 works in a caption somebody can scroll; on screen there is nothing to click for
 the rest, so half a sentence is all the viewer ever gets. `trailsOff` in
 `src/video/hooks.js` refuses an ellipsis, trailing punctuation and a line ending
-on a connector — `של`, `את`, `ש`, `ב` — on the hook and on every beat, and the
-prompt says it first so the guard is a backstop rather than the mechanism. The
+on a connector — `של`, `את`, `ש`, `ב` — and the prompt says it first so the
+guard is a backstop rather than the mechanism. The
 words it deliberately does *not* list are the ones a real line ends on: `יותר`
 ("זול יותר"), `לפני` ("מזמינים חודש לפני"). The same check runs again in
 `buildClip`, which is the path a line pinned by hand in `clip-redo` takes.
 
-**The line fills a known format, and the format is now a promise.** It used to
-be a meme template — "top 5 X oat", "Average X in Y" — on the reasoning that
-free composition returns clever originals with metaphors and clever is the wrong
-*type*. That reasoning is still right and the target was wrong: those references
-belong to accounts selling nothing, in English, and applied here they produced
-seven videos decaying 672 → 33 views. A meme template over stock scenery
-promises the viewer nothing, so nobody watches to the end, so the next video
-starts lower.
+**The line fills a known format, and it is one line.** The formats in
+`clips.hooks.formats` are meme templates — "top 5 X oat", "Average X in Y",
+`פרו אחי, פרו` — on the reasoning that free composition returns clever originals
+with metaphors, and clever is the wrong *type* however casual the wording.
 
-The six formats in `clips.hooks.formats` are the brief's five shapes — mistakes,
-a warning, a budget, a list, a myth — and what survives from the old file is the
-rule that was never about memes: **fill a format, do not compose freely.**
+They were replaced for a while by the brief's advice shapes — mistakes, a
+warning, a budget, a list, a myth — each hook carrying two to five **beats**
+underneath it, burned in one after another over twenty-six seconds, because "3
+טעויות שישראלים עושים בגאורגיה" over eight seconds of scenery is a promise the
+video does not keep.
 
-**And the hook now has beats under it.** "3 טעויות שישראלים עושים בגאורגיה" over
-eight seconds of scenery is a promise the video does not keep, and a broken
-promise costs more than a dull one — the viewer who stayed for the answer and
-did not get it is the one who scrolls past the next post. So the writer returns
-the hook *and* the two to five lines that deliver it, `overlay.js` burns each
-over its own window, and `beatCountMismatch` refuses a hook promising three
-things that arrives with two. The source is looped to fill the length, which is
-what lets a 26-second clip be built from the 5–30 second videos Pexels actually
-holds.
+That is true, and the fix was still wrong here: the footage under those changing
+lines is a single stock shot that never cuts, so half a minute of it is wallpaper
+behind a caption rewriting itself. **A clip is one line held for eight seconds
+again.** What survives from both rounds is the rule that was never about memes —
+*fill a format, do not compose freely* — and one guard that came out of the beats
+rather than going back with them: `promisesList` refuses a line that opens on a
+count, because "3 טעויות" with nothing behind it is the broken promise the beats
+existed to prevent. `git show 97ec1c1` has the beats machinery whole, for the
+post type where each line change is also a cut.
 
 **The type is 52px, `#FFF4B3`, no stroke, two rows, and it moves.** The block is
 narrow (46% of the frame) *so that it wraps* — at 72% no position on a picture

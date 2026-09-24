@@ -690,10 +690,16 @@ export function preflight(cand) {
   // that was never built for TikTok, and posting the wrong shape is worse than
   // not posting. The card fallback stays for a single card, which is the case
   // it was written for.
+  //
+  // A PLAN is held to the same rule, and by the same field. It is a slideshow
+  // that fills `deck.urls` exactly as a deck does — which is why it can share
+  // this publisher at all — so the kinds are listed rather than the one kind
+  // named. Leaving 'plan' out of this check is how a 4:5 itinerary would reach
+  // a 9:16 feed, top-anchored, with its own total under the search bar.
   const deckImages = cand.deck?.urls?.tiktok || [];
-  if (cand.kind === 'deck' && !deckImages.length) {
+  if (['deck', 'plan'].includes(cand.kind) && !deckImages.length) {
     throw new TikTokError(
-      'this deck has no 1080x1920 renders — it was built for another destination. ' +
+      `this ${cand.kind} has no 1080x1920 renders — it was built for another destination. ` +
         'Rebuild it with TikTok among its targets rather than posting the 4:5 crop.',
       { step: 'config' }
     );
