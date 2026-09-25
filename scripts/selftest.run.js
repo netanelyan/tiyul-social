@@ -14,7 +14,7 @@ import * as store from '../src/store.js';
 import { candidateId, tripGap } from '../src/candidate.js';
 import { renderHtml, LAYOUTS, PHOTO_LAYOUTS, isPhotoLayout, SCRIM_FALLBACK } from '../src/render/templates.js';
 import { assertGenericAiPrompt, ImagePolicyError, imageQueries } from '../src/images.js';
-import { approvalMessage, instagramCaption, tiktokCaption, deckCaption, deckTiktokCaption, evidenceReport, deckApprovalMessage, captionHook, assertNoUrl, URL_LIKE } from '../src/format.js';
+import { approvalMessage, instagramCaption, tiktokCaption, publishedDescriptions, deckCaption, deckTiktokCaption, evidenceReport, deckApprovalMessage, captionHook, assertNoUrl, URL_LIKE } from '../src/format.js';
 import { postConfig, byWeight, destinationWeight } from '../src/postConfig.js';
 import { hashtagsFor, destinationTag } from '../src/hashtags.js';
 import { renderSlideHtml, SIZES, sizeClass, INK_LUMINANCE, FACES } from '../src/render/deckTemplates.js';
@@ -52,6 +52,7 @@ import {
   targetAbandoned as notifyTargetAbandoned,
   publishWaitingForSetup,
   published,
+  descriptionToPaste,
   platformLimited,
   withDetail,
 } from '../src/notify.js';
@@ -738,6 +739,90 @@ ok('and still says it is a draft', only.includes('טיוטה'));
 const plain = published({ headline: 'כרטיס', succeeded: ['instagram'] });
 ok('a normal publish still reads as published', plain.includes('📤 אינסטגרם'));
 ok('with no draft line', !plain.includes('טיוטות'));
+
+// A THIRD STATE: a destination this program cannot reach and never tried to.
+//
+// A clip's Instagram half. Its API has no draft endpoint, no scheduling and no
+// hand-off to the app, so the copy is one you make. The two wrong things to say
+// about it are that it published and nothing at all, and the second is the one
+// that actually happens: a message listing only TikTok reads as a post that is
+// finished, and the Instagram copy silently never gets made.
+{
+  const handed = published({
+    headline: 'שווייץ',
+    succeeded: ['tiktok'],
+    drafted: ['tiktok'],
+    manual: ['instagram'],
+    manualUrl: 'https://cards.example/clip-abc.mp4',
+  });
+  ok('a hand-off is named', handed.includes('📲'));
+  ok('and says which destination it is', handed.includes('אינסטגרם'));
+  ok('and that it is yours to do', handed.includes('ידנית'));
+  // The URL is the point of the line. The mp4 is already hosted because TikTok
+  // pulls video by URL, so the file is one tap away and byte-exact rather than
+  // whatever a chat app decided to re-encode.
+  ok('with the file to post', handed.includes('clip-abc.mp4'));
+  // It must never be counted as published. That is the whole distinction.
+  ok('a hand-off is not reported as published', !handed.includes('📤'));
+
+  // A post with nothing to hand off says nothing about one.
+  ok('an ordinary post carries no hand-off line', !plain.includes('📲'));
+  const noUrl = published({ headline: 'x', succeeded: ['tiktok'], manual: ['instagram'] });
+  ok('and a hand-off with no hosted file still names the destination', noUrl.includes('אינסטגרם'));
+
+  // It points at the message that follows, so a block of Hebrew and five
+  // hashtags arriving on its own reads as the caption rather than as one more
+  // notification to work out.
+  ok('a hand-off points at the description below it', handed.includes('👇'));
+  ok('and an ordinary post does not', !plain.includes('👇'));
+
+  // A HAND-OFF WITH NOTHING PUBLISHED AT ALL is the case on a box where TikTok
+  // is not connected, which is the box this was written on. The mp4 is
+  // rendered and hosted and the only step left was always you opening an app,
+  // so the post is complete rather than waiting for setup, and the message has
+  // to stand on its own with no posted or drafted half in front of it.
+  const handOnly = published({
+    headline: 'שווייץ',
+    succeeded: [],
+    drafted: [],
+    manual: ['instagram'],
+    manualUrl: 'https://cards.example/clip-abc.mp4',
+  });
+  ok('a hand-off alone still names the destination', handOnly.includes('אינסטגרם'));
+  ok('and still carries the file', handOnly.includes('clip-abc.mp4'));
+  ok('and still points at the description', handOnly.includes('👇'));
+  ok('and claims nothing was published', !handOnly.includes('📤') && !handOnly.includes('📥'));
+  ok('and is not an empty message', handOnly.trim().length > 'שווייץ'.length);
+}
+
+// THE DESCRIPTION, ALONE, TO BE COPIED WHOLE.
+//
+// Telegram's copy takes a whole message, so the test worth having is about what
+// is NOT in it. Anything added here is a character that has to be deleted by
+// hand in the Instagram composer every time, and the one deletion that gets
+// forgotten is a post that goes out with a glyph in front of its first line.
+{
+  const caption = '📍 שווייץ\n\nמי היה שם? כמה יצא לכם ליום?\n\nשלחו את זה למי שאתם טסים איתו\n\n#טיול #חופשה #שווייץ';
+  const cand = { headline: 'אני, אתה, טיסה לשוויץ?', instagramCaption: caption, tiktokCaption: caption };
+
+  eq('the paste message is the caption, byte for byte', descriptionToPaste(cand), caption);
+  ok('no label in front of it', !descriptionToPaste(cand).startsWith('🏷️'));
+  // The headline is burned into the video. Repeating it is the caption's most
+  // common way of wasting its first line, and here it would also be a line to
+  // delete before pasting.
+  ok('the headline is not in it', !descriptionToPaste(cand).includes(cand.headline));
+  // Nothing published carries a domain, and this string goes straight into a
+  // composer without passing assertNoUrl again.
+  ok('and no URL', !URL_LIKE.test(descriptionToPaste(cand)));
+
+  // An empty message is worse than an absent one, so the caller sends nothing.
+  eq('no caption means no message', descriptionToPaste({ headline: 'x' }), null);
+  eq('nor does a whitespace-only one', descriptionToPaste({ instagramCaption: '   \n ' }), null);
+
+  // A clip sets both to the same text; anything that only set TikTok's still
+  // has something to paste.
+  eq('it falls back to the TikTok description', descriptionToPaste({ tiktokCaption: caption }), caption);
+}
 
 // The 24h cap counts posts PUBLISHED through the API. A draft publishes
 // nothing, so charging it against the cap would spend a limit never touched.
@@ -1665,8 +1750,16 @@ ok(
 
 // One description, one review. A second wording would be a second thing to
 // approve, and the approval message only ever shows you one.
+//
+// Through publishedDescriptions, which is now the only way to get both. The
+// close is a question and sometimes an ask, drawn per call, so calling the two
+// builders in sequence draws twice and the identity this asserts is exactly what
+// breaks. The build path was changed to match; this is what holds it there.
 const bothCand = { headline: 'כותרת', subhead: 'תת כותרת', caption: 'גוף הטקסט.', sourceUrl: 'https://gov.uk/x' };
-eq('the TikTok description is the same text as the Instagram one', tiktokCaption(bothCand), instagramCaption(bothCand));
+{
+  const both = publishedDescriptions(bothCand);
+  eq('the TikTok description is the same text as the Instagram one', both.tiktok, both.instagram);
+}
 
 /* -------------------------------------------------------------------------- */
 group('decks - a slideshow is not a card, and goes somewhere else');
@@ -1856,6 +1949,47 @@ group('a publish that reports failure on a post that is live');
   globalThis.fetch = graphStub({ publishFails: false, containerStatus: 'PUBLISHED' });
   const live = await publishInstagram({ ...igCand }).catch((e) => e);
   ok('an already-published container is not waited on', !(live instanceof Error));
+
+  // A CLIP takes the reel path, and the fields are the whole of what separates a
+  // reel from a post that fails a minute later saying nothing useful. A clip
+  // candidate carries `card.file` pointing at the same mp4, that is how it
+  // reached Telegram's video sender, so the image path is reachable from here
+  // and `media_type=REELS` is the only thing keeping it out.
+  {
+    let params = null;
+    globalThis.fetch = async (url, opts = {}) => {
+      const u = String(url);
+      if (u.includes('/media_publish')) return { ok: true, json: async () => ({ id: 'media-reel' }) };
+      if (u.includes('status_code')) return { ok: true, json: async () => ({ status_code: 'FINISHED' }) };
+      params = new URLSearchParams(opts.body);
+      return { ok: true, json: async () => ({ id: 'container-reel' }) };
+    };
+
+    const clip = {
+      kind: 'clip',
+      clip: { file: '/var/www/tiyul/cards/clip-abc.mp4' },
+      card: { file: '/var/www/tiyul/cards/clip-abc.mp4' },
+      instagramCaption: 'מה אתם עושים ראשון?',
+    };
+    const reel = await publishInstagram(clip);
+    eq('a clip publishes as a reel', params?.get('media_type'), 'REELS');
+    eq('by video_url, not image_url', params?.get('video_url'), 'https://x/c/clip-abc.mp4');
+    ok('and never as an image', !params?.has('image_url'));
+    eq('the caption travels with it', params?.get('caption'), 'מה אתם עושים ראשון?');
+    // Stated rather than left to Instagram's default: it is the difference
+    // between a reel in the profile grid and one that only exists in the Reels
+    // tab, and the grid is where a profile visitor decides whether to follow.
+    eq('it is shared to the feed, so it lands in the grid', params?.get('share_to_feed'), 'true');
+    eq('and it reports the published media', reel?.mediaId, 'media-reel');
+    ok('flagged as a reel, so the notification can say so', reel?.reel === true);
+
+    // A clip with no host configured must refuse here rather than hand Instagram
+    // a URL it cannot fetch, the same rule the card path has always had.
+    const noHost = await withEnv({ CARD_PUBLIC_BASE_URL: undefined, CARD_PUBLIC_BASE_URLS: undefined }, () =>
+      publishInstagram(clip).catch((e) => e)
+    );
+    ok('a clip with no public URL is refused, not attempted', noHost instanceof Error);
+  }
 
   globalThis.fetch = realFetch;
   for (const [k, v] of Object.entries(savedEnv)) {
@@ -2087,19 +2221,42 @@ ok('the Instagram caption is the title', dcap.startsWith('המוזיאונים �
 ok('and does not list the places', !dcap.includes('1. המוזיאון'));
 ok('and drops the angle', !dcap.includes('מה פתוח'));
 
-// NOTHING published under a slideshow carries a URL, and this is the assertion
-// that used to say the opposite.
-//
-// The old caption was "למתכנן טיולים חכם בביו שלנו" over "www.tiyulplus.com",
-// and the domain was defended here as being worth carrying for recall. It is
-// not: an external domain in a TikTok description is a demotion, the string was
-// never tappable on either platform, and the bio link is reachable from the
-// post regardless. The card signature still prints a URL — a card's caption is
-// read somewhere a URL is worth printing — which is why this rule is enforced
-// per deck rather than globally.
+// NOTHING published carries a URL, and this used to be enforced per deck
+// because a card's signature still printed one. The signature is gone, so the
+// rule is now global and this is one of several places it holds.
 ok('a deck caption carries no domain', !dcap.includes('tiyulplus.com'));
 ok('nor does the TikTok description', !dtik.includes('tiyulplus.com'));
-ok('and neither asks for anything', !dcap.includes('בביו') && !dtik.includes('בביו'));
+
+// A DECK NOW CLOSES LIKE A CLIP: a question, and on some posts one ask.
+//
+// It used to carry an opening line and five tags, with nothing to answer and
+// nothing to do next, which on a slideshow is the whole caption spent on mood.
+// "No ask at all" was asserted here, and it was the wrong rule, the argument
+// that removed the old CTA was about the DOMAIN, and it took the ask with it.
+{
+  const closed = deckCaption(deckFixture.deck, { hook: HOOK, rand: () => 0 });
+  const q = postConfig().caption.questions[0];
+  const ask = postConfig().caption.ctas[0];
+  ok('a deck caption asks something', closed.includes(q));
+  ok('and names a next thing to do', closed.includes(ask));
+  // The tags stay last whatever is added above them: a tag block is where a
+  // reader stops reading, and anything under it is unread.
+  ok('the tags are still last', /#\S+$/.test(closed.trim()));
+  ok('the ask sits above the tags', closed.indexOf(ask) < closed.indexOf('#'));
+
+  // Both halves of ONE deck close the same way. Drawn twice they would not, and
+  // the approval card prints one description.
+  const tik = deckTiktokCaption(deckFixture.deck, { hook: HOOK, question: q, cta: ask });
+  const ig = deckCaption(deckFixture.deck, { hook: HOOK, question: q, cta: ask });
+  ok('the TikTok half carries the same question', tik.includes(q));
+  ok('and the same ask', tik.includes(ask));
+  ok('the Instagram half too', ig.includes(q) && ig.includes(ask));
+
+  // null means "the caller drew and got nothing", which is the normal case by
+  // ctaShare and must not be re-rolled into a yes by the builder.
+  const noAsk = deckTiktokCaption(deckFixture.deck, { hook: HOOK, question: q, cta: null });
+  ok('a null ask stays null', !postConfig().caption.ctas.some((c) => noAsk.includes(c)));
+}
 ok('nor names the brand', !dcap.includes('טיול+') && !dtik.includes('טיול+'));
 
 // The "always" in "always ends with the hashtags", which the old version could
@@ -2654,12 +2811,43 @@ ok('stays short', cap.length < 400, `${cap.length} chars`);
 ok('carries the subhead, which the card no longer shows', cap.includes(capCand.subhead));
 ok('the subhead comes first', cap.indexOf(capCand.subhead) < cap.indexOf('שאר השנה'));
 
-// One fixed sign-off under every post, and no other link anywhere.
-ok('carries the sign-off line', cap.includes('לסוכן הטיולים החכם שלנו'));
-ok('carries the site', cap.includes('www.tiyulplus.com'));
-ok('the sign-off is last', cap.trim().endsWith('www.tiyulplus.com'));
-eq('exactly one link in the whole caption', (cap.match(/tiyulplus\.com/g) || []).length, 1);
+// THE SIGN-OFF IS GONE. It was `לסוכן הטיולים החכם שלנו` over
+// `www.tiyulplus.com` under every card, which is the one published string this
+// pipeline still shipped a domain in, unclickable on both platforms, and a post
+// that opens by pointing off the app neither app has a reason to distribute.
+ok('no sign-off line', !cap.includes('לסוכן הטיולים החכם שלנו'));
+ok('and no domain at all', !/tiyulplus\.com/.test(cap));
 ok('no scheme-prefixed URL anywhere', !/https?:\/\//.test(cap));
+
+// What replaced it: the close every other kind already had. A question, and on
+// ctaShare of posts one ask naming the next thing to do here. Forced rather than
+// drawn, because a test that depends on Math.random passes four times in five.
+{
+  const closed = instagramCaption(capCand, { rand: () => 0 });
+  const q = postConfig().caption.questions[0];
+  const ask = postConfig().caption.ctas[0];
+  ok('the caption closes on a question', closed.includes(q));
+  ok('and then the ask', closed.includes(ask));
+  ok('the question comes before the ask', closed.indexOf(q) < closed.indexOf(ask));
+  ok('the ask is last', closed.trim().endsWith(ask));
+
+  // ctaShare is what makes it soft. A draw above the share appends no ask, and
+  // the question still closes the caption on its own.
+  const noAsk = instagramCaption(capCand, { rand: () => 0.99 });
+  ok('most posts carry no ask', !postConfig().caption.ctas.some((c) => noAsk.includes(c)));
+  ok('but every post carries a question', /\?/.test(noAsk));
+}
+
+// Both descriptions from ONE draw. Called separately they each draw their own
+// question and ask, and the approval card, which prints one description -
+// stops being a preview of either.
+{
+  const { publishedDescriptions } = await import('../src/format.js');
+  let n = 0;
+  // A rand that walks, so two independent draws would land on different entries.
+  const both = publishedDescriptions(capCand, { rand: () => (n++ % 10) / 10 });
+  eq('the Instagram and TikTok descriptions match', both.instagram, both.tiktok);
+}
 
 /* -------------------------------------------------------------------------- */
 group('pexels stock provider');
@@ -2973,7 +3161,17 @@ for (const [mod, expected] of [
   ['../src/render/deckTemplates.js', ['renderSlideHtml', 'SIZES', 'FACES', 'INK_LUMINANCE', 'typeScale']],
   ['../src/postConfig.js', ['postConfig', 'destinationWeight', 'byWeight']],
   ['../src/hashtags.js', ['hashtagsFor', 'hashtagLine', 'destinationTag']],
-  ['../src/format.js', ['captionHook', 'assertNoUrl', 'URL_LIKE', 'deckCaption', 'deckTiktokCaption']],
+  ['../src/format.js', ['captionHook', 'assertNoUrl', 'URL_LIKE', 'deckCaption', 'deckTiktokCaption', 'publishedDescriptions']],
+  ['../src/video/cuts.js', ['pickCuts', 'oneCountry', 'cutLabel', 'writeCutsHook', 'beatCountMismatch', 'hasApiKey']],
+  ['../src/video/clip.js', ['buildClip', 'buildCutClip', 'buildClips', 'clipApprovalMessage', 'cutApprovalMessage', 'clipId', 'audioLine']],
+  ['../src/video/overlay.js', ['burnClip', 'burnCuts', 'ffmpegReady', 'clipOutputDir', 'download']],
+  ['../src/publish/imageHosts.js', ['cardBaseUrls', 'cardHostConfigured', 'publicUrlFor', 'clipPublicUrl', 'isVerifiedForTikTok']],
+  ['../src/store.js', ['clipPexelsId', 'clipPexelsIds', 'markClipUsed', 'usedClipIds']],
+  ['../src/angles.js', ['angles', 'pickAngle', 'anglePrompt']],
+  ['../src/video/tracks.js', ['tracks', 'pickTrack', 'trackOffset', 'audioConfigured', 'audioDir', 'forgetTracks']],
+  ['../src/notify.js', ['send', 'published', 'descriptionToPaste', 'publishHeld', 'publishRetrying']],
+  ['../src/publish/targets.js', ['targetsForKind', 'allowedForKind', 'manualForKind', 'liveTargets', 'publishTargets', 'targetsHe']],
+  ['../src/shoot/rotation.js', ['chooseFormat', 'nextSeries', 'seriesLabels', 'pickAngle']],
   ['../src/deck/attempt.js', ['buildWithFallback', 'describeAttempt']],
   ['../src/deck/request.js', ['resolveRequest', 'parseLocally']],
   ['../src/deck/hebrew.js', ['hebrewNames', 'isHebrew']],
@@ -3390,17 +3588,43 @@ group('post-config - the caption, the tags, and where the account leans');
 
 const pcfg = postConfig();
 
-// The caption pool. Short, emotional, asking for nothing — and above all not a
-// template, because one opening line across twenty posts IS a template and the
-// template is what the old signature was.
+// The caption pool, and above all not a template: one opening line across
+// twenty posts IS a template, and the template is what the old signature was.
+//
+// "Short, emotional, asking for nothing" was the rule and the pool obeyed it:
+// `נראה כמו ציור`, `הנוף עוצר נשימה`. Every one was a reaction to the picture,
+// which is the one thing the viewer already had, faster, from the picture. The
+// pool now names who the post is for or what it is worth keeping for, which is
+// what a first line can buy that an admiring adjective cannot.
 ok('there is a pool, not a line', pcfg.caption.lines.length >= 10);
+
+// EIGHT WORDS, NOT SIX. The ceiling moved with the job: six is the length of a
+// fragment, and a line that names an audience ("למי שיש כמה ימים ולא יודע לאן")
+// is a clause and cannot be one. Eight is still far inside the ~125 characters
+// Instagram shows before "more", which is the only hard limit there is.
 ok(
   'every line is short enough to read before the picture does',
-  pcfg.caption.lines.every((l) => l.split(/\s+/).length <= 6),
-  pcfg.caption.lines.find((l) => l.split(/\s+/).length > 6)
+  pcfg.caption.lines.every((l) => l.split(/\s+/).length <= 8),
+  pcfg.caption.lines.find((l) => l.split(/\s+/).length > 8)
 );
 ok('and none of them carries a URL', pcfg.caption.lines.every((l) => !URL_LIKE.test(l)));
 ok('nor the brand name', pcfg.caption.lines.every((l) => !l.includes('טיול+') && !l.includes('tiyulplus')));
+
+// AND NONE OF THEM CLAIMS A FACT.
+//
+// The angle rules apply to a caption exactly as they apply to a slide: the
+// pipeline does not know that a flight is four hours, that anywhere is kosher,
+// or what a trip costs in shekels, and an opening line is the easiest place in
+// the whole project for one of those to be typed in by hand and never checked.
+// Framing is ours to write; facts are not.
+{
+  const claims = /(\d+\s*(שעות|שעה|ש״ח|₪|שקל)|טיסה ישירה|כשר|ללא ויזה|בלי ויזה)/;
+  ok(
+    'no opening line states something nothing sourced',
+    pcfg.caption.lines.every((l) => !claims.test(l)),
+    pcfg.caption.lines.find((l) => claims.test(l))
+  );
+}
 
 // Randomness is the point of a pool. Drawn from a fixed sequence rather than
 // from Math.random, because a test that samples a real random source either
@@ -3738,19 +3962,297 @@ group('clip candidate - the fields the publish path reads');
 {
   const { targetsForKind, allowedForKind } = await import('../src/publish/targets.js');
 
-  // A clip is a vertical scroll post: TikTok only. Not Instagram, because
-  // eight seconds of video has no carousel equivalent, and posting the same
-  // seconds to two places is how every account becomes a copy of the others.
-  eq('a clip goes to TikTok and nowhere else', allowedForKind('clip').join(','), 'tiktok');
-  ok('and never to Instagram', !allowedForKind('clip').includes('instagram'));
+  // A clip is PUBLISHED to TikTok alone, and belongs on Instagram anyway.
+  //
+  // Both halves matter and they are separate assertions on purpose.
+  //
+  // The editorial rule is unchanged: a clip should reach Instagram, because
+  // every other Instagram post this account makes is a photograph or a carousel
+  // and those are the formats with the least reach to non-followers. What
+  // changed is that this program cannot deliver it. The owner picks the sound
+  // in each app by hand; TikTok supports that through MEDIA_UPLOAD, and
+  // Instagram's Content Publishing API has no draft state, no scheduling and no
+  // hand-off, so its only options are "publish now" or "do not call". A reel's
+  // audio cannot be changed after posting, so publishing now means publishing
+  // silent for ever.
+  const { manualForKind } = await import('../src/publish/targets.js');
+  eq('a clip publishes to TikTok alone', allowedForKind('clip').join(','), 'tiktok');
+  eq('and Instagram is still where it belongs, by hand', manualForKind('clip').join(','), 'instagram');
+
+  // A hand-off is NOT a publish target. Nothing calls it, nothing can fail on
+  // it, and nothing records it as published; adding it to one is how a copy
+  // nobody made gets logged as a post.
+  ok('a manual destination never appears in the publish list',
+    manualForKind('clip').every((t) => !allowedForKind('clip').includes(t)));
+  eq('nothing else has one', manualForKind('deck').length + manualForKind('card').length, 0);
 
   // targetsForKind filters by what is CONFIGURED, so this is empty on a box
-  // with no TikTok credentials. That is the correct answer and the publish
-  // path holds rather than failing — but the editorial rule above must hold
-  // regardless of what happens to be configured.
+  // with no credentials. That is the correct answer and the publish path holds
+  // rather than failing, but the editorial rule above must hold regardless of
+  // what happens to be configured.
   ok('the rule does not depend on configuration', allowedForKind('clip').length === 1);
   ok('targetsForKind is a subset of what is allowed',
     targetsForKind('clip').every((t) => allowedForKind('clip').includes(t)));
+}
+
+/* -------------------------------------------------------------------------- */
+group('the Israeli angle - moved out of shoot, and what it may not become');
+
+{
+  const { angles, pickAngle, anglePrompt } = await import('../src/angles.js');
+  const cfg = postConfig();
+
+  // It used to live under `shoot` and reach exactly one kind of post: the one
+  // the bot cannot make. Both keys now read the same list, so a reader here and
+  // a reader there cannot drift apart.
+  ok('there is a pool', angles().length >= 6);
+  eq('the top-level key and shoot.angles are the same list', cfg.angles, cfg.shoot.angles);
+  ok('and the shoot did not lose its own', cfg.shoot.angles.length > 0);
+
+  // Recently used angles are excluded outright rather than weighted down: the
+  // pool is a dozen long and the window is five, so exclusion always leaves
+  // something, and "kosher food" twice in a week is what a viewer notices.
+  {
+    const recent = angles().slice(0, 5).map((a) => ({ angle: a }));
+    const drawn = new Set();
+    for (let i = 0; i < 40; i++) drawn.add(pickAngle(recent, { rand: () => i / 40 }));
+    ok('nothing from the recent window comes back', recent.every((r) => !drawn.has(r.angle)),
+      [...drawn].find((d) => recent.some((r) => r.angle === d)));
+    ok('and something does', drawn.size > 1);
+  }
+
+  // A history with no angles on it is the normal case for every kind that has
+  // never recorded one, and it must not empty the pool.
+  ok('a history of postless rows still yields an angle', Boolean(pickAngle([{}, {}, {}])));
+  ok('so does an empty one', Boolean(pickAngle([])));
+
+  // THE WARNING IS THE LOAD-BEARING HALF.
+  //
+  // On a shoot the angle is the content: you are the source and you know whether
+  // the flight is direct. Nothing automated knows any of that, so on a deck the
+  // angle steers WHICH destination and never becomes a line on a slide. A model
+  // handed "kosher food" and no warning will helpfully write that a place is
+  // kosher, which is a fabricated claim of exactly the kind an Israeli traveller
+  // is most likely to act on.
+  {
+    const p = anglePrompt('אוכל כשר, ומה עושים כשאין');
+    ok('the prompt names the angle', p.includes('אוכל כשר'));
+    ok('and says it chooses the destination, not the words', /קובעת איזה יעד/.test(p));
+    ok('and forbids printing it on a slide', /אל תדפיס/.test(p));
+    ok('and names the specific claims it must not invent', /טיסה ישירה/.test(p) && /ויזה/.test(p));
+    eq('no angle means no paragraph at all', anglePrompt(null), null);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+group('the music bed - a reel cannot be given a sound after it is posted');
+
+{
+  const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  const t = await import('../src/video/tracks.js');
+  const { audioLine } = await import('../src/video/clip.js');
+
+  const dir = mkdtempSync(join(tmpdir(), 'tiyul-audio-'));
+  const saved = process.env.AUDIO_DIR;
+  process.env.AUDIO_DIR = dir;
+
+  const manifest = (tracks) => {
+    writeFileSync(join(dir, 'tracks.json'), JSON.stringify({ tracks }));
+    t.forgetTracks();
+  };
+  const declared = (over = {}) => ({
+    file: 'bed.mp3', title: 'A Bed', credit: 'Somebody', licence: 'CC0', source: 'https://example.invalid/x', ...over,
+  });
+  writeFileSync(join(dir, 'bed.mp3'), 'not really an mp3, but it exists');
+  writeFileSync(join(dir, 'stray.mp3'), 'a file nobody declared');
+
+  // THE MANIFEST IS THE ALLOWLIST, NOT THE DIRECTORY.
+  //
+  // The one thing that can go badly wrong with a music bed is publishing
+  // something we do not have the right to publish, and "whatever is in the
+  // folder" is exactly the rule that lets a file somebody dropped in to listen
+  // to become the soundtrack of a post. Same argument imageHosts.js makes about
+  // verified domains: a check derived from what is present agrees with every
+  // mistake it was written to catch.
+  manifest([declared()]);
+  eq('only declared tracks are tracks', t.tracks().length, 1);
+  ok('a file in the folder that nobody declared is not one',
+    !t.tracks().some((x) => x.name === 'stray.mp3'));
+  ok('and audio counts as configured', t.audioConfigured());
+
+  // Each of these is somebody meaning to do something and not finishing, and
+  // the cost of guessing is a post carrying music whose terms nobody can state.
+  for (const field of ['title', 'credit', 'licence', 'source']) {
+    manifest([declared({ [field]: '' })]);
+    let threw = null;
+    try { t.tracks(); } catch (e) { threw = e.message; }
+    ok(`a track with no ${field} is refused by name`, threw?.includes('bed.mp3') && threw?.includes(field), threw);
+  }
+
+  // Declared and absent throws too. Skipping it silently would leave a silent
+  // post, which is indistinguishable from the bug this exists to fix.
+  manifest([declared({ file: 'missing.mp3' })]);
+  {
+    let threw = null;
+    try { t.tracks(); } catch (e) { threw = e.message; }
+    ok('a declared track that is not on disk is refused', threw?.includes('missing.mp3'), threw);
+  }
+
+  // NO MANIFEST IS NOT AN ERROR. It is where this project starts: the repo
+  // ships no audio, clips render silent exactly as before, and bot.js says so
+  // at boot rather than letting it be discovered after publishing.
+  rmSync(join(dir, 'tracks.json'));
+  t.forgetTracks();
+  eq('no manifest means no tracks', t.tracks().length, 0);
+  ok('and audio is not configured', !t.audioConfigured());
+  eq('picking from nothing gives nothing, rather than throwing', t.pickTrack(), null);
+
+  // Exclusion, not weighting: with a handful of tracks the thing a viewer
+  // notices is the same bed twice running, and a weight permits exactly that.
+  manifest([declared(), declared({ file: 'bed.mp3', title: 'Two' })]);
+  writeFileSync(join(dir, 'bed.mp3'), 'x');
+  {
+    const all = t.tracks();
+    const used = new Set([all[0].name]);
+    // Both entries point at the same filename here, so "everything is used" is
+    // the fallback case: a repeat beats publishing silence to avoid one.
+    ok('a fully-spent pool still returns something', Boolean(t.pickTrack(used)));
+  }
+
+  // The offset exists because eight seconds from the top of the same file is
+  // the most automated-sounding thing a feed can do. Derived from the id so a
+  // re-render sounds the same and this can be asserted at all.
+  eq('the same clip always starts in the same place', t.trackOffset('abc', 45), t.trackOffset('abc', 45));
+  ok('different clips do not', t.trackOffset('abc', 45) !== t.trackOffset('zzz', 45));
+  ok('and it stays inside the bound', t.trackOffset('anything', 45) < 45);
+  eq('a zero bound means start at the beginning', t.trackOffset('abc', 0), 0);
+
+  // THE CARD SAYS SO EITHER WAY, because a silent file and a sounded one are
+  // indistinguishable in a Telegram video preview unless the volume is up, and
+  // which one it is changes what you do next.
+  ok('a sounded clip names the track and its licence',
+    audioLine({ clip: { audio: { title: 'A Bed', credit: 'Somebody', licence: 'CC0', offset: 12 } } }).includes('CC0'));
+
+  // NO TRACK IS NOT A WARNING ANY MORE, and that is a real change rather than a
+  // softened string. It read "⚠️ אין פסקול - יעלה אילם לרילס", which was true
+  // while a clip published to Instagram unattended: a reel's audio is fixed at
+  // upload, so a silent file meant a permanently silent post. Nothing publishes
+  // a reel now, so silence is the plan, and a warning against the intended
+  // workflow is what teaches somebody to skim the card.
+  ok('a silent clip says where its sound comes from', /באפליקציה/.test(audioLine({ clip: {} })));
+  ok('and does not warn about the normal case', !audioLine({ clip: {} }).includes('⚠️'));
+
+  // The mix itself is config, and the ceiling exists so a typo of 35 for 0.35
+  // cannot ship a clip that clips. Asserted whatever `on` says, because the
+  // numbers have to still be right on the day it is switched back on.
+  const acfg = postConfig().clips.audio;
+  ok('the bed sits under the line rather than over it', acfg.volume > 0 && acfg.volume <= 1, `volume=${acfg.volume}`);
+  ok('it fades out, so an eight-second loop does not click', acfg.fadeOutSeconds > 0);
+  // Off by default: the sound is chosen by hand in each app, and a bed under a
+  // track added in the Instagram app MIXES with it rather than being replaced.
+  ok('and it is off, because the sound is chosen in the app', acfg.on === false);
+
+  if (saved === undefined) delete process.env.AUDIO_DIR;
+  else process.env.AUDIO_DIR = saved;
+  t.forgetTracks();
+  rmSync(dir, { recursive: true, force: true });
+}
+
+/* -------------------------------------------------------------------------- */
+group('cuts - the second clip shape, where every line change is a cut');
+
+{
+  const { pickCuts, oneCountry, cutLabel, beatCountMismatch } = await import('../src/video/cuts.js');
+  const { clipPexelsIds, clipPexelsId } = await import('../src/store.js');
+  const cfg = postConfig().clips.cuts;
+
+  // A shot the vision judge could place, in the form findClips returns.
+  const shot = (id, place, site) => ({
+    id: String(id),
+    title: `shot ${id}`,
+    vision: { place, site: site || '', siteHe: '', placeConfidence: 10 },
+  });
+
+  eq('a shot is labelled with its place', cutLabel(shot(1, 'Switzerland')), 'שווייץ');
+  eq('an unplaceable shot has no label', cutLabel(shot(2, null)), null);
+
+  // Rule 1: a shot with no name cannot be in a list of places. The viewer
+  // counting against the hook's number will not count it.
+  const withBlank = [shot(1, 'Switzerland'), shot(2, null), shot(3, 'Iceland'), shot(4, 'Italy'), shot(5, 'Japan')];
+  const picked = pickCuts(withBlank, cfg);
+  ok('an unnamed shot is left out', !picked.some((c) => c.id === '2'));
+  eq('and the rest are taken in rank order', picked.map((c) => c.id).join(','), '1,3,4,5');
+
+  // Rule 2, and it is the one a count guard cannot see: four shots of four
+  // corners of Switzerland all label "שווייץ", so the hook's number matches and
+  // the post is still a list of one place four times.
+  const sameCountry = [
+    shot(1, 'Switzerland'),
+    shot(2, 'Switzerland'),
+    shot(3, 'Switzerland'),
+    shot(4, 'Switzerland'),
+  ];
+  eq('four shots of one unnamed country are not a list', pickCuts(sameCountry, cfg).length, 0);
+
+  // ...unless the judge named the SITE, which is what makes them four places.
+  const sites = [
+    shot(1, 'Switzerland', 'Lauterbrunnen'),
+    shot(2, 'Switzerland', 'Zermatt'),
+    shot(3, 'Switzerland', 'Grindelwald'),
+    shot(4, 'Switzerland', 'Interlaken'),
+  ];
+  eq('four named sites in one country are', pickCuts(sites, cfg).length, 4);
+  eq('and the hook may name that country', oneCountry(pickCuts(sites, cfg)), 'שווייץ');
+  eq('a mixed list names none', oneCountry(picked), null);
+
+  ok('too few shots build nothing', pickCuts([shot(1, 'Italy'), shot(2, 'Japan')], cfg).length === 0);
+  ok('and never more than the ceiling', pickCuts(
+    ['Italy', 'Japan', 'Iceland', 'Peru', 'Norway', 'Greece'].map((p, i) => shot(i + 1, p)),
+    cfg
+  ).length <= cfg.cutsMax);
+
+  // THE RULE THAT CANNOT BE WAIVED. A hook promising five places over four cuts
+  // breaks its promise in the last two seconds, which BRIEF.md identifies as
+  // worse than a dull hook and is what cost the beats their first outing.
+  const four = [1, 2, 3, 4];
+  eq('a hook that counts right passes', beatCountMismatch('4 מקומות שלא נראים אמיתיים', four), null);
+  ok('one that over-promises does not', beatCountMismatch('5 מקומות שלא נראים אמיתיים', four));
+  ok('nor does one that under-promises', beatCountMismatch('3 מקומות שלא נראים אמיתיים', four));
+  // A number that is not a count is not a promise. Reading every digit as one is
+  // the false positive that made promisesList an allowlist.
+  eq('a hook with no leading number is not counted', beatCountMismatch('מקומות שלא נראים אמיתיים', four), null);
+
+  // THE FOOTAGE LEDGER. A cuts clip spends four or five shots, and recording
+  // one of them would quietly re-offer the other four on the next batch, the
+  // repeat the ledger exists to stop, through the shape that spends the most.
+  const cutsCand = {
+    kind: 'clip',
+    id: 'abc123def456',
+    clip: { shape: 'cuts', cuts: [{ pexelsId: '11' }, { pexelsId: '22' }, { pexelsId: '33' }, { pexelsId: '44' }] },
+  };
+  eq('every shot of a cuts clip is spent', clipPexelsIds(cutsCand).join(','), '11,22,33,44');
+  eq('and the singular field still answers with the first', clipPexelsId(cutsCand), '11');
+  eq('a held clip still spends one', clipPexelsIds({ kind: 'clip', clip: { pexelsId: '99' } }).join(','), '99');
+  // Clips built before clip.pexelsId existed used the Pexels id AS the
+  // candidate id, and three of them are in staging.
+  eq('and a legacy clip still resolves', clipPexelsIds({ kind: 'clip', id: '35714980' }).join(','), '35714980');
+  eq('a card spends nothing', clipPexelsIds({ kind: 'card', id: '123' }).length, 0);
+
+  // THE PIN AND THE COUNTRY TAG on a shape that has several of both.
+  //
+  // Both read clip.vision and both turn it into a published claim, so handing
+  // either the first shot's reading labels the whole post with one of its four
+  // places. The country survives only when every shot shares it; the site never
+  // does, because one named place out of four is the same error smaller.
+  const { clipPlaceLine, clipDestinationTag } = await import('../src/hashtags.js');
+  const swiss = { clip: { shape: 'cuts', vision: { place: 'Switzerland', site: '', siteHe: '' } } };
+  eq('a one-country cut pins the country', clipPlaceLine(swiss), '📍 שווייץ');
+  eq('and tags it', clipDestinationTag(swiss), '#שווייץ');
+  const mixed = { clip: { shape: 'cuts', vision: null } };
+  eq('a cut spanning countries pins nothing', clipPlaceLine(mixed), null);
+  eq('and spends no tag slot on a country', clipDestinationTag(mixed), null);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -4574,18 +5076,37 @@ group('the caption - a question, sometimes a CTA, and never a URL');
   ok('every one of them asks something', cfg.questions.every((q) => q.includes('?')));
   ok('a question comes back', Boolean(captionQuestion({ rand: () => 0.1 })));
 
-  // THE CTA CAME BACK AND THE URL DID NOT. This is the pair that keeps the two
-  // apart: post-config.json's own argument for removing the CTA was about the
-  // DOMAIN, and "הלינק בביו" carries none.
-  ok('the CTA exists', Boolean(cfg.cta));
-  ok('and mentions the bio', /ביו/.test(cfg.cta));
-  ok('and carries no domain', (() => { try { assertNoUrl(cfg.cta); return true; } catch { return false; } })());
+  // THE CTA CAME BACK AND THE URL DID NOT, AND THEN IT BECAME A POOL. One
+  // closing line across every post is a signature however soft the wording is,
+  // which is the argument that made `lines` a pool in the first place.
+  ok('there are several asks to draw from', cfg.ctas.length > 1);
+  ok('none of them carries a domain',
+    cfg.ctas.every((c) => { try { assertNoUrl(c); return true; } catch { return false; } }));
+
+  // What the asks ask for. A send is the highest-weighted signal either platform
+  // has for reaching somebody who does not follow you, and a follow is what
+  // turns this post's reach into the next post's baseline, so the pool has to
+  // contain both, not four rewordings of one.
+  ok('at least one asks for a send', cfg.ctas.some((c) => /שלחו|תייגו/.test(c)));
+  ok('at least one asks for a follow', cfg.ctas.some((c) => /עקבו|עוקבים/.test(c)));
+  // The bio pointer survives as ONE entry: it is the only tappable route to the
+  // product either platform offers, and a pipeline that never mentions it never
+  // sends anybody anywhere.
+  ok('and exactly one still points at the bio', cfg.ctas.filter((c) => /ביו/.test(c)).length === 1);
 
   // Soft means "not on every post". ctaShare is what makes that true, and the
   // two ends of the random range are what prove it is wired up at all.
-  ok('below the share, the CTA appears', Boolean(captionCta({ rand: () => 0 })));
+  ok('below the share, an ask appears', Boolean(captionCta({ rand: () => 0 })));
   eq('above it, nothing', captionCta({ rand: () => 0.999 }), null);
   ok('and the share is under one', cfg.ctaShare < 1, `ctaShare=${cfg.ctaShare}`);
+  // Two independent draws: one for whether, one for which. Tied together the
+  // rarest asks would get rarer as the share fell.
+  const asks = new Set();
+  for (let i = 0; i < cfg.ctas.length; i++) {
+    const at = i / cfg.ctas.length;
+    asks.add(captionCta({ rand: () => at }));
+  }
+  ok('the whole pool is reachable', asks.size > 1, `${asks.size} distinct`);
 
   const cand = { clip: { vision: { place: 'Italy', site: 'Cinque Torri', siteHe: 'צ׳ינקווה טורי' } } };
   const caption = clipCaption(cand, { rand: () => 0.1 });
@@ -4599,6 +5120,19 @@ group('the caption - a question, sometimes a CTA, and never a URL');
   const tags = postConfig().hashtags;
   ok('no English tags remain', [...tags.broad, ...tags.niche].every((t) => !/[A-Za-z]/.test(t)), [...tags.broad, ...tags.niche].find((t) => /[A-Za-z]/.test(t)));
   ok('between three and five tags go out', tags.broadCount + tags.nicheCount >= 3 && tags.broadCount + tags.nicheCount <= 5);
+
+  // AND THEN #פוריו AND #ויראלי WENT TOO.
+  //
+  // Removing #fyp was right and stopped one step short. A broad tag is supposed
+  // to buy the first impressions from a pool this post could plausibly win in;
+  // #פוריו is #fyp with Hebrew letters, which is the same non-pool, and #ויראלי
+  // names a hoped-for outcome rather than a subject, so there is no audience on
+  // the other side of it at all. Broad now means broad WITHIN TRAVEL.
+  ok('no for-you tag survives', tags.broad.every((t) => !/פוריו|פוריואו|foryou|fyp/i.test(t)), tags.broad.find((t) => /פוריו/.test(t)));
+  ok('and no outcome tag', [...tags.broad, ...tags.niche].every((t) => !/ויראלי/.test(t)));
+  // A tag in both pools is a slot that silently becomes a different tag: draw()
+  // shares one `taken` set across the two, so the niche draw skips it.
+  eq('the two pools do not overlap', tags.broad.filter((t) => tags.niche.includes(t)).join(','), '');
 
   // A shot list is the one message in this bot that ends at a person rather
   // than at a button, and it has to say so.

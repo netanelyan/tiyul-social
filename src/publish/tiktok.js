@@ -1,6 +1,10 @@
 import * as store from '../store.js';
-import { cardHostConfigured, tiktokVerifiedDomains, unverifiedTikTokHosts } from './imageHosts.js';
-import { cardPublicUrl } from '../render/index.js';
+import {
+  cardHostConfigured,
+  tiktokVerifiedDomains,
+  unverifiedTikTokHosts,
+  clipPublicUrl,
+} from './imageHosts.js';
 
 // TikTok publishing, through the official Content Posting API only.
 //
@@ -767,22 +771,6 @@ export function preflight(cand) {
 }
 
 /**
- * The public URL of a finished clip.
- *
- * TikTok pulls video the same way it pulls photos, so this reuses the card
- * host: the file has to sit under a base URL on a domain verified in the
- * developer console. Returns null when nothing is configured, and the caller
- * refuses rather than posting a broken pull.
- */
-function clipUrl(cand) {
-  const file = cand.clip?.file;
-  if (!file) return null;
-  if (cand.clip?.url) return cand.clip.url;
-  const name = String(file).split(/[\/]/).pop();
-  return cardPublicUrl(name);
-}
-
-/**
  * Publish one approved card as a photo post.
  *
  * `dryRun` runs every check, refreshes the token and asks TikTok who we are —
@@ -823,7 +811,7 @@ export async function publishTikTok(cand, { dryRun = false, draft = false } = {}
   // verification for every image URL, none of which describes a single mp4.
   const isClip = cand.kind === 'clip';
   const { images, notes } = isClip ? { images: [], notes: [] } : preflight(cand);
-  const videoUrl = isClip ? clipUrl(cand) : null;
+  const videoUrl = isClip ? clipPublicUrl(cand) : null;
   if (isClip && !videoUrl) {
     throw new TikTokError(
       'the clip has no public URL - TikTok pulls video by URL, so CARD_PUBLIC_BASE_URL must be set and the file hosted under it',

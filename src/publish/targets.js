@@ -39,10 +39,38 @@ const ALLOWED_BY_KIND = {
   // Same words, same photographs, two designs. Instagram first, because it is
   // the one that has worked for months.
   deck: ['instagram', 'tiktok'],
-  // A clip is eight seconds of vertical video under one line. TikTok only:
-  // there is no Instagram artefact for it the way a deck has a carousel, and
-  // posting the same eight seconds to two places is how every account becomes a
-  // copy of the others — the rule stated at the top of this file.
+  // A clip belongs on both platforms, and only ONE of them can be reached from
+  // here. See MANUAL_BY_KIND below for the other.
+  //
+  // The editorial rule did not change and is worth restating, because the list
+  // above no longer shows it: a clip should reach Instagram. Every Instagram
+  // post this account makes is otherwise a photograph or a carousel, the two
+  // formats with the least reach to people who do not already follow it, while
+  // the one format built for the surface where non-follower reach lives goes
+  // only to the other app. The rule at the top of this file, that posting the
+  // same seconds twice makes every account a copy of the others, is about one
+  // FEED looking duplicated; a viewer on Instagram cannot see the TikTok copy.
+  //
+  // WHAT CHANGED IS THE DELIVERY, AND IT CHANGED BECAUSE OF SOUND.
+  //
+  // The owner chooses the track in each app, by hand, which is the one part of
+  // a post this pipeline was never going to do better. TikTok supports that:
+  // `post_mode: MEDIA_UPLOAD` hands the video to the account's inbox and the
+  // creator finishes it, so TikTok stays a publish target and `tiktokDraft`
+  // describes what kind of publish it is.
+  //
+  // INSTAGRAM HAS NO EQUIVALENT AND THIS IS NOT AN OVERSIGHT AT OUR END. Its
+  // Content Publishing API creates a container and then publishes it; there is
+  // no draft state, no scheduling, and no hand-off to the app. An unpublished
+  // container is not a draft in any sense the owner would recognise, it is a
+  // server-side staging object that never appears in the Instagram app and
+  // EXPIRES AFTER 24 HOURS. So the only two things this code can do to
+  // Instagram are publish a reel immediately or not call it at all, and
+  // publishing immediately means publishing whatever audio the file happens to
+  // carry, for ever, because a reel's audio cannot be changed after posting.
+  //
+  // So it does not call it. The Instagram copy is a hand-off, and the publisher
+  // being honest that it cannot make it is better than it making a silent one.
   clip: ['tiktok'],
   // An AI-written itinerary, drawn as slides. Both places, like a deck, and for
   // a reason the deck's note does not cover: this is the one kind whose content
@@ -52,6 +80,27 @@ const ALLOWED_BY_KIND = {
   // only thing that changes is how much vertical room the layout has.
   plan: ['instagram', 'tiktok'],
 };
+
+/**
+ * Where a kind belongs that this program cannot deliver it.
+ *
+ * Kept here, next to ALLOWED_BY_KIND, rather than as a line in a notification,
+ * because it is the same editorial decision and it has to stay visible. Delete
+ * it and the knowledge that a clip should reach Instagram disappears from the
+ * codebase entirely, and in a month somebody reads targets.js, sees a clip
+ * going to TikTok alone, and concludes that was the intent.
+ *
+ * It is NOT a publish target and must never be added to one. Nothing here is
+ * called, nothing here can fail, and nothing here is recorded as published. The
+ * only thing it produces is a line in the notification telling you the copy is
+ * yours to make, with the file's URL on it.
+ */
+const MANUAL_BY_KIND = {
+  clip: ['instagram'],
+};
+
+/** Destinations for this kind that you post by hand. Never published to. */
+export const manualForKind = (kind = 'card') => [...(MANUAL_BY_KIND[kind] || [])];
 
 /**
  * Where this kind of post is permitted, regardless of what is configured.

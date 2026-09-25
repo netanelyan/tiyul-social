@@ -241,7 +241,7 @@ The existing three kinds are untouched:
 |---|---|---|
 | card | one verified claim, 1080×1350 → Instagram | the bot |
 | deck | a slideshow of places → TikTok + Instagram | the bot |
-| clip | stock video, one burned-in line → TikTok drafts | the bot |
+| clip | stock video, held or cut → TikTok drafts, Instagram by hand | the bot |
 | **shoot** | **a shot list you film** | **the bot plans, you shoot** |
 | **plan** | **an AI itinerary as slides → TikTok + Instagram** | **the bot, on request** |
 
@@ -319,6 +319,32 @@ A clip is eight seconds with one line again. The beats are not thrown away: they
 are the right shape for a post type where **every line change is a cut**, with
 new footage under each one, and they come back when that type is built.
 `git show 97ec1c1` has all of it.
+
+**That type is now built, and it did not bring the advice formats with it.**
+
+A clip has two shapes and they alternate. A **held** clip is the eight seconds
+above, unchanged. A **cuts** clip is four or five shots of four seconds each,
+joined with a cut at every line change, which is sixteen to twenty seconds and
+inside rule 6's range for the first time honestly: the length is earned by the
+footage moving rather than spent holding one frame longer.
+
+What did not come back is what the beats used to SAY. "3 טעויות שישראלים עושים
+בגאורגיה" needs three mistakes nobody reported, and "5 ימים ברומא ב-2,000 ₪"
+needs a figure nobody published. The fare ban section above counted that cost
+once, deliberately, for a price the owner personally stands behind on a shoot.
+Paying it four more times per video, unattended, on a format that runs on a
+timer, is not the same bargain and was never agreed to.
+
+So a beat in a cuts clip is a **label**: the place in that shot, named by the
+vision judge, which is the same fact the pin under the post already prints and
+the country hashtag is already generated from. The hook is the only written line
+in the video, and it is the only one that can be wrong, which is what
+`beatCountMismatch` is for. A hook promising five places over four cuts is the
+broken promise that cost the beats their first outing, and it is the one rule in
+that file that cannot be waived.
+
+The advice formats stay parked. They belong to a post where somebody with a
+camera knows the answer, which is a shoot.
 
 This is still stock footage, and Rule 4 still says stock is B-roll. An automated
 clip is the weakest thing this account posts and it is not the thing that will

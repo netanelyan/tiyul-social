@@ -170,11 +170,38 @@ function pruneClipsUsed(s) {
  * this footage" answered no about the footage it had just spent.
  */
 export function clipPexelsId(cand) {
-  if (!cand || cand.kind !== 'clip') return null;
+  return clipPexelsIds(cand)[0] ?? null;
+}
+
+/**
+ * EVERY stock video one clip was built from.
+ *
+ * A held clip spends one. A cuts clip spends four or five, it is several shots
+ * joined, and each one is footage this account has now shown. The ledger was
+ * built when there was only ever one, and left that way a cuts clip would
+ * record its first shot and quietly re-offer the other four on the next batch:
+ * the exact repeat the ledger exists to stop, arriving through the one clip
+ * shape that spends the most footage per post.
+ *
+ * The singular `clipPexelsId` is kept and now reads the first of these, so the
+ * published row's own `pexelsId` field and every older caller keep working.
+ */
+export function clipPexelsIds(cand) {
+  if (!cand || cand.kind !== 'clip') return [];
+
+  const cuts = cand.clip?.cuts;
+  if (Array.isArray(cuts) && cuts.length) {
+    return [...new Set(cuts.map((c) => c?.pexelsId).filter(Boolean).map(String))];
+  }
+
   const direct = cand.clip?.pexelsId;
-  if (direct) return String(direct);
+  if (direct) return [String(direct)];
+  // Clips built before `clip.pexelsId` existed used the Pexels id AS the
+  // candidate id, and three of them are in staging. Bounded to a plausible id so
+  // a 12-hex candidate id that happens to be all digits cannot be mistaken for
+  // one.
   const legacy = String(cand.id || '');
-  return /^\d{1,9}$/.test(legacy) ? legacy : null;
+  return /^\d{1,9}$/.test(legacy) ? [legacy] : [];
 }
 
 function load() {
@@ -229,11 +256,21 @@ function load() {
     s.clipsUsed = {};
     migrated = true;
   }
+  // Through clipPexelsIds rather than the singular, so a cuts clip contributes
+  // every shot it was built from instead of only its first.
+  const at = (c) => Date.parse(c?.createdAt || '') || Date.now();
   const spent = [
-    ...Object.values(s.staging || {}).map((c) => [clipPexelsId(c), Date.parse(c?.createdAt || '') || Date.now()]),
-    ...(s.queue || []).map((c) => [clipPexelsId(c), Date.parse(c?.createdAt || '') || Date.now()]),
-    ...(s.held || []).map((h) => [clipPexelsId(h?.cand), Date.parse(h?.cand?.createdAt || '') || Date.now()]),
-    ...(s.published || []).map((p) => [p?.pexelsId ? String(p.pexelsId) : null, p?.ts || Date.now()]),
+    ...Object.values(s.staging || {}).flatMap((c) => clipPexelsIds(c).map((id) => [id, at(c)])),
+    ...(s.queue || []).flatMap((c) => clipPexelsIds(c).map((id) => [id, at(c)])),
+    ...(s.held || []).flatMap((h) => clipPexelsIds(h?.cand).map((id) => [id, at(h?.cand)])),
+    ...(s.published || []).flatMap((p) => {
+      const ids = Array.isArray(p?.pexelsIds) && p.pexelsIds.length
+        ? p.pexelsIds
+        : p?.pexelsId
+          ? [p.pexelsId]
+          : [];
+      return ids.map((id) => [String(id), p?.ts || Date.now()]);
+    }),
   ];
   for (const [id, ts] of spent) {
     if (id && !s.clipsUsed[id]) {
@@ -687,16 +724,23 @@ export function recordPublished({
   headline = null,
   place = null,
   pexelsId = null,
+  pexelsIds = [],
+  angle = null,
   telegram,
   instagram,
   tiktok,
   tiktokDraft = false,
 }) {
   // A clip's footage is spent for good the moment it goes out. Normally it was
-  // already marked at build time; this covers the paths that do not build —
+  // already marked at build time; this covers the paths that do not build,
   // a re-render, a restore, anything that hands a finished candidate straight
-  // to the publisher — so the ledger can never be behind the feed.
-  if (pexelsId) markClipUsed(pexelsId);
+  // to the publisher, so the ledger can never be behind the feed.
+  //
+  // EVERY shot, not the first. A cuts clip is built from four or five and the
+  // singular field can only carry one; marking that one leaves the rest looking
+  // unspent to the next batch, which is the repeat this ledger exists to stop.
+  const spent = pexelsIds.length ? pexelsIds : pexelsId ? [pexelsId] : [];
+  for (const one of spent) markClipUsed(one);
   if (id) state.publishedIds[id] = Date.now();
   state.lastPublishedAt = Date.now();
 
@@ -751,6 +795,16 @@ export function recordPublished({
       // the search was empty on every single run and the filter it fed was
       // doing nothing at all.
       pexelsId: pexelsId ? String(pexelsId) : null,
+      // And all of them, for a cuts clip. The singular field above is kept
+      // because every older row has one and several readers still ask for it;
+      // this is the one the dedupe reads when it is present.
+      pexelsIds: spent.map(String),
+      // WHICH ISRAELI ANGLE this post was chosen for, on the kinds that choose
+      // one. Recorded for the same reason `topic` is: it is the axis the next
+      // choice is made against, and pickAngle excludes what was used recently.
+      // Held only in memory it would reset on every restart, and a bot that
+      // restarts daily would keep proposing the same angle.
+      angle: angle ? String(angle) : null,
       telegram: Boolean(telegram),
       instagram: Boolean(instagram),
       tiktok: Boolean(tiktok),

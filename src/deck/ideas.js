@@ -6,6 +6,7 @@ import { loadDestinations } from '../sources/climate.js';
 import { byWeight, postConfig } from '../postConfig.js';
 import { modelFor, outputConfig } from '../models.js';
 import { stripDashes as clean } from '../dashes.js';
+import { anglePrompt } from '../angles.js';
 
 // What deck to make. The step before any data is fetched.
 //
@@ -547,7 +548,7 @@ export const hasApiKey = () =>
  * prompt, because the model has no clock and a deck about cherry blossom in
  * October is the kind of mistake that reads as automation.
  */
-export async function proposeIdeas({ count = 4, recent = [], today = new Date() } = {}) {
+export async function proposeIdeas({ count = 4, recent = [], angle = null, today = new Date() } = {}) {
   if (!hasApiKey()) throw new Error('ANTHROPIC_API_KEY is not set - idea generation is required');
 
   const month = today.toLocaleString('en-GB', { month: 'long' });
@@ -555,6 +556,21 @@ export async function proposeIdeas({ count = 4, recent = [], today = new Date() 
     `TODAY: ${today.toISOString().slice(0, 10)} (${month})`,
     `PROPOSE: ${count} deck ideas, ranked best first.`,
     '',
+    // THE ISRAELI ANGLE, and it is a selection rule rather than a subject.
+    //
+    // The system prompt has always mentioned this audience in passing: "Direct
+    // flights, kosher-adjacent practicality, school holidays and the Jewish
+    // calendar are all legitimate reasons to choose a destination". A mention
+    // is not a decision, and a model given a list of destinations and a passing
+    // note picks the photogenic one every time. Naming ONE angle per request
+    // makes it the reason this destination and not another.
+    //
+    // anglePrompt carries the warning with it, in Hebrew, and the warning is
+    // the load-bearing half: the angle must not become a line on a slide. See
+    // src/angles.js.
+    // Trailing newline inside the string, because the array is filter(Boolean)
+    // joined and a bare '' separator would be dropped.
+    angle ? `${anglePrompt(angle)}\n` : null,
     'CATEGORIES AVAILABLE (a deck must be exactly one of these):',
     ...Object.entries(KINDS).map(([id, k]) => `  ${id} - ${k.he}`),
     '',

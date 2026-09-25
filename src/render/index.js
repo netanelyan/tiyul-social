@@ -2,7 +2,7 @@ import { chromium } from 'playwright';
 import { mkdirSync, writeFileSync, renameSync } from 'node:fs';
 import path from 'node:path';
 import { renderHtml, CARD_W, CARD_H } from './templates.js';
-import { primaryCardBaseUrl } from '../publish/imageHosts.js';
+import { publicUrlFor } from '../publish/imageHosts.js';
 
 // Card rendering: HTML -> JPEG, via headless Chromium.
 //
@@ -96,9 +96,10 @@ export function cardPublicUrl(filename) {
   // The first entry is the one cards are published under; the rest exist so a
   // second domain can be verified with TikTok and swapped to without a code
   // change.
-  const base = primaryCardBaseUrl();
-  if (!base) return null;
-  return `${base}/${encodeURIComponent(filename)}`;
+  //
+  // The address-building itself lives in imageHosts.js now, because a clip's
+  // mp4 needs the same URL from a path that never touched this renderer.
+  return publicUrlFor(filename);
 }
 
 /**

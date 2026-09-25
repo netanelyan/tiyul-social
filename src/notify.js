@@ -102,7 +102,7 @@ export function targetAbandoned(headline, abandoned = []) {
   return `⤫ ויתרנו: ${why} - ${headline}`;
 }
 
-export function published({ headline, succeeded, failed = [], drafted = [] }) {
+export function published({ headline, succeeded, failed = [], drafted = [], manual = [], manualUrl = null }) {
   // A destination that took a DRAFT did not publish, and must not be listed as
   // though it did. This reported per POST rather than per destination, so a
   // deck sent to both said "פורסם לאינסטגרם וטיקטוק" — half true, and false in
@@ -116,8 +116,53 @@ export function published({ headline, succeeded, failed = [], drafted = [] }) {
   const parts = [];
   if (posted.length) parts.push(`📤 ${targetsHe(posted)}`);
   if (drafted.length) parts.push(`📥 ${targetsHe(drafted)} טיוטה`);
+  // A destination this program cannot reach, and never tried to.
+  //
+  // A THIRD STATE, and it exists for the same reason `drafted` does: the two
+  // wrong things to say about a copy that has not been made are that it was
+  // published and nothing at all. Instagram has no draft endpoint, so a clip's
+  // Instagram half is a thing you do, and a notification that lists only TikTok
+  // reads as a post that is finished.
+  //
+  // The URL is the point of the line rather than decoration. The mp4 is already
+  // hosted, because TikTok pulls video by URL, so the file you need is one tap
+  // away and byte-exact rather than whatever a chat app decided to re-encode.
+  if (manual.length) {
+    parts.push(`📲 ${targetsHe(manual)} ידנית${manualUrl ? `: ${manualUrl}` : ''}`);
+    // Points at the message that follows, so the next thing in the chat reads
+    // as the caption rather than as another notification. Without it a bare
+    // block of Hebrew and five hashtags arriving on its own is one more thing
+    // to work out every time.
+    parts.push('👇 התיאור');
+  }
   for (const f of failed) parts.push(`⚠️ ${TARGET_HE[f.target] || f.target}: ${f.message}`);
   return `${parts.join(' · ')} - ${headline}`;
+}
+
+/**
+ * The description, on its own, to be copied and pasted whole.
+ *
+ * THE POINT OF THIS FUNCTION IS EVERYTHING IT DOES NOT DO.
+ *
+ * It returns the published description and nothing else: no emoji, no label, no
+ * headline, no URL, no quotes around it, no trailing brand line. Telegram's copy
+ * takes a whole message, so anything added here is something that has to be
+ * deleted by hand in the Instagram composer, every single time, and the one
+ * deletion that gets forgotten is a post that goes out with `🏷️` in front of
+ * its first line.
+ *
+ * That is also why it is a SEPARATE message rather than a section of the
+ * publish notification. The notification is one line by design and says what
+ * happened; this is a payload. Joined, neither can be copied without editing.
+ *
+ * Sent as plain text with no parse_mode, like every other message from here, so
+ * the hashtags and the Hebrew arrive exactly as they were written. Returns null
+ * when there is no description, and the caller then sends nothing: an empty
+ * message is worse than an absent one.
+ */
+export function descriptionToPaste(cand) {
+  const text = String(cand?.instagramCaption || cand?.tiktokCaption || '').trim();
+  return text || null;
 }
 
 /**

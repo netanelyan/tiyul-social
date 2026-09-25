@@ -7,7 +7,7 @@ import { KINDS } from './sources/places.js';
 import { clipApprovalMessage } from './video/clip.js';
 import { planApprovalMessage } from './plan/candidate.js';
 import { postConfig } from './postConfig.js';
-import { hashtagLine } from './hashtags.js';
+import { hashtagLine, captionQuestion, captionCta } from './hashtags.js';
 import { URL_LIKE } from './urlLike.js';
 
 // Two different texts, for two different readers.
@@ -54,10 +54,28 @@ export function channelCaption(cand) {
  * every time. That rule is about what YOU see before tapping, not about what
  * gets published.
  */
-// The one line that appears under every post. No source URL, no photographer,
-// no library — just this. Written out rather than assembled from SITE_URL so
-// the wording is fixed and reviewable in one place.
-const SIGNATURE = ['לסוכן הטיולים החכם שלנו:', 'www.tiyulplus.com'].join('\n');
+// THE SIGNATURE IS GONE, AND WITH IT THE LAST URL THIS PIPELINE PUBLISHED.
+//
+// It was two lines under every card: `לסוכן הטיולים החכם שלנו:` over
+// `www.tiyulplus.com`. Three things were wrong with it, and they are the same
+// three the deck's caption note already worked through, the difference is that
+// a card never got the fix, so the one kind that publishes most often to
+// Instagram was also the only kind still shipping a domain.
+//
+// The URL is the expensive part. It is not tappable in an Instagram caption or
+// a TikTok description, so it bought no traffic; what it did buy is a post that
+// opens by pointing away from the app it is published on, which neither app has
+// a reason to distribute. `assertNoUrl` has refused this string in every other
+// kind since it was written. It was never pointed at a card.
+//
+// The second is that it was fixed. One closing line across every post is a
+// signature, and a signature is a template, the argument that replaced the
+// fixed caption with `caption.lines`.
+//
+// And the third is that it asked for nothing a viewer could do without leaving.
+// What replaces it is what the clip format already closes with: a question
+// worth answering and, on some posts, one ask naming the next thing to do here.
+// See `_ctas_comment` in post-config.json for which asks and in what order.
 
 // A slideshow carries NO signature, no call to action and no URL.
 //
@@ -128,7 +146,7 @@ export function assertNoUrl(caption, where = 'caption') {
 // Instagram's caption limit, and the shortest of the three a deck publishes to.
 const CAPTION_LIMIT = 2200;
 
-function publishedDescription(cand, limit) {
+function publishedDescription(cand, limit, opts = {}) {
   // The subhead is deliberately absent from the rendered card, so this is the
   // only place it appears. Putting it first means the description opens by
   // answering the headline rather than repeating it.
@@ -139,10 +157,21 @@ function publishedDescription(cand, limit) {
   if (sub) parts.push(sub);
   if (body) parts.push(body);
 
-  return [parts.join('\n\n'), '', SIGNATURE].join('\n').trim().slice(0, limit);
+  // The close, in the order the clip format settled on: the question above the
+  // ask, because a viewer who reads to the end of a caption should reach the
+  // thing that costs them nothing before the thing that asks them to act.
+  parts.push(...captionClose(opts));
+
+  // Checked, now that there is nothing here that is supposed to carry a domain.
+  // This was the ONE published string with no such guard on it, for the good
+  // reason that it deliberately ended in one; with the signature gone the
+  // exemption has nothing left to protect and a `www.` reaching a caption from
+  // anywhere, a model, an edited headline, a future signature, should fail
+  // where every other kind already fails.
+  return assertNoUrl(parts.join('\n\n').trim().slice(0, limit), 'the card description');
 }
 
-export const instagramCaption = (cand) => publishedDescription(cand, 2200); // IG caption limit
+export const instagramCaption = (cand, opts) => publishedDescription(cand, 2200, opts); // IG caption limit
 
 /**
  * The TikTok description. Deliberately the same text as Instagram's.
@@ -152,7 +181,28 @@ export const instagramCaption = (cand) => publishedDescription(cand, 2200); // I
  * difference is the ceiling, and the headline, which travels separately as the
  * post title rather than being repeated here.
  */
-export const tiktokCaption = (cand) => publishedDescription(cand, 4000); // TikTok description limit
+export const tiktokCaption = (cand, opts) => publishedDescription(cand, 4000, opts); // TikTok description limit
+
+/**
+ * Both of a card's descriptions, from ONE draw of the question and the ask.
+ *
+ * The identity above is a decision, not an accident: the approval message shows
+ * you one description, so two wordings would mean approving text that is not
+ * what publishes. That held for free while the close was a fixed signature.
+ * With a question and an ask drawn per call it stopped holding, calling the two
+ * builders in sequence draws twice and the two platforms get different closes.
+ *
+ * So the draw happens here, once, and is handed to both. Callers that want both
+ * captions must use this rather than calling the two exports back to back;
+ * the exports stay for the single-caption callers and for the labs.
+ */
+export function publishedDescriptions(cand, opts = {}) {
+  const close = { question: captionQuestion(opts), cta: captionCta(opts) };
+  return {
+    instagram: instagramCaption(cand, { ...opts, ...close }),
+    tiktok: tiktokCaption(cand, { ...opts, ...close }),
+  };
+}
 
 /**
  * The caption under a published deck.
@@ -175,10 +225,32 @@ export const tiktokCaption = (cand) => publishedDescription(cand, 4000); // TikT
  *
  * Checked before it is returned, not after it is staged: see assertNoUrl.
  */
+/**
+ * How a published caption ends: a question, then sometimes one ask.
+ *
+ * Shared by every kind. `opts.question` and `opts.cta` are drawn once per POST
+ * by the caller and handed to each builder, so the Instagram and TikTok halves
+ * of one post close the same way, which is what makes the single description on
+ * the approval card a true preview of both.
+ *
+ * The undefined/null distinction is load-bearing. `undefined` means nothing was
+ * handed over and one is drawn here, which is what the labs and the tests do.
+ * `null` means the caller drew and got nothing, which on the ask is the normal
+ * case by ctaShare and must not be re-rolled into a yes.
+ */
+function captionClose(opts = {}) {
+  const question = opts.question === undefined ? captionQuestion(opts) : opts.question;
+  const cta = opts.cta === undefined ? captionCta(opts) : opts.cta;
+  return [question, cta].filter(Boolean);
+}
+
 export function deckTiktokCaption(deck, opts = {}) {
   const hook = opts.hook || captionHook(opts);
   const tags = hashtagLine(deck, opts);
-  return assertNoUrl([hook, '', tags].join('\n').trim(), 'the TikTok description');
+  // The tags stay last. Everything added here goes ABOVE them, because a tag
+  // block is where a reader stops reading and anything under it is unread.
+  const parts = [hook, ...captionClose(opts), tags];
+  return assertNoUrl(parts.join('\n\n').trim(), 'the TikTok description');
 }
 
 export function deckCaption(deck, opts = {}) {
@@ -197,7 +269,11 @@ export function deckCaption(deck, opts = {}) {
   // deck the last thing was the part that fell off the end — and the last thing
   // is now what the post is filed under.
   const hook = opts.hook || captionHook(opts);
-  const tail = `\n\n${hook}\n\n${hashtagLine(deck, opts)}`;
+  // The close sits between the line and the tags, and is RESERVED out of the
+  // limit along with them for the same reason: built into the string and sliced
+  // afterwards, the last thing added is the first thing to fall off, and the
+  // last things here are the question and the tags.
+  const tail = `\n\n${[hook, ...captionClose(opts), hashtagLine(deck, opts)].join('\n\n')}`;
   const body = String(deck.titleHe || '').trim().slice(0, CAPTION_LIMIT - tail.length);
   return assertNoUrl(`${body}${tail}`.trim(), 'the Instagram caption');
 }
@@ -228,6 +304,14 @@ export function deckApprovalMessage(cand) {
   lines.push('');
   lines.push(`🖼️ על השער: ${clean(deck.titleHe)}`);
   if (deck.idea?.emphasisHe) lines.push(`   בצבע: ${clean(deck.idea.emphasisHe)}`);
+  // The Israeli angle this destination was chosen for.
+  //
+  // Printed because it is a decision made before you see anything and it is
+  // otherwise invisible: the angle never appears on a slide by design, so a
+  // rotation that has quietly been proposing beach destinations under "חנוכה
+  // בחו״ל" for a fortnight looks, on every card, exactly like one that is
+  // working. Same reason the shot list prints it.
+  if (deck.idea?.angle) lines.push(`   🇮🇱 הזווית: ${clean(deck.idea.angle)}`);
   lines.push('');
 
   // The description, shown before you approve it.

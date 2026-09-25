@@ -8,11 +8,13 @@ import * as notify from './src/notify.js';
 import { runOnce, dailyTarget } from './src/pipeline.js';
 import { toCandidate, RejectedError } from './src/candidate.js';
 import { primaryAuthority, enabledSources, registry } from './src/sources/index.js';
-import { approvalMessage, decidedMessage, evidenceReport, channelCaption, instagramCaption, tiktokCaption } from './src/format.js';
+import { approvalMessage, decidedMessage, evidenceReport, channelCaption, publishedDescriptions } from './src/format.js';
 import { sendableNow, windowsHe } from './src/schedule.js';
 import { renderCard, closeBrowser } from './src/render/index.js';
 import { publishTelegram, publishTelegramDeck, sendForApproval } from './src/publish/telegram.js';
 import { proposeIdeas, titleForRequest, reviseIdea, freeformIdea, freeformFromIdea } from './src/deck/ideas.js';
+import { pickAngle } from './src/angles.js';
+import { clipPublicUrl } from './src/publish/imageHosts.js';
 import { buildDeck } from './src/deck/build.js';
 import { toDeckCandidate, deckTopic } from './src/deck/candidate.js';
 import { placeOverCap } from './src/pillars.js';
@@ -58,6 +60,7 @@ import {
   targetsHe,
   TARGET_HE,
   allowedForKind,
+  manualForKind,
 } from './src/publish/targets.js';
 import { imagesEnabled } from './src/images.js';
 import { runOverridden, noteOverride, overrideNotes } from './src/override.js';
@@ -81,7 +84,19 @@ const {
   CHANNEL_ID,
   STAGING_CHAT_ID,
   OWNER_ID,
-  POST_INTERVAL_MINUTES = '240',
+  // SIX HOURS, NOT FOUR. Four spaced the drip to six publishes a day, and with
+  // the old budgets, three cards, two decks, Instagram was receiving five
+  // image posts a day from an account with single-figure followers. Volume is
+  // not penalised on its own, but a run of posts that underperform drags the
+  // account-level quality signal that decides how the NEXT one is distributed,
+  // so five weak posts a day is a machine for producing that run.
+  //
+  // Six hours is four publishes a day, which is exactly what the daily budgets
+  // below now add up to. That equality is load-bearing rather than tidy: the
+  // drip is one queue shared by every kind, so budgets that sum to more than
+  // the drip can publish do not post more, they grow a backlog for ever. See
+  // the boot check in main().
+  POST_INTERVAL_MINUTES = '360',
   RUN_HOUR = '8',
   // Gather repeatedly through the day, not once. Cards should arrive when the
   // news does; the daily cap is what keeps that honest.
@@ -567,8 +582,12 @@ async function handleEditReply(ctx, key) {
     return ctx.reply(notify.withDetail('❌ רינדור הכרטיס נכשל', e));
   }
   updated.channelCaption = channelCaption(updated);
-  updated.instagramCaption = instagramCaption(updated);
-  updated.tiktokCaption = tiktokCaption(updated);
+  // One draw for both, like the build path. Editing a headline re-draws the
+  // question and the ask, which is harmless, the re-rendered card comes back
+  // for approval with the new description printed on it.
+  const editedDesc = publishedDescriptions(updated);
+  updated.instagramCaption = editedDesc.instagram;
+  updated.tiktokCaption = editedDesc.tiktok;
   store.updateStaging(key, updated);
 
   // The old message carried the old image, so it can't be edited in place —
@@ -682,6 +701,13 @@ const publishedFacts = (cand) => ({
   // published row that says null is a row that cannot stop a repeat, and it is
   // a repeat of something real followers have already been shown.
   pexelsId: store.clipPexelsId(cand),
+  // And all of them, because a cuts clip is built from four or five shots and
+  // the singular field above can only hold the first. Recording one of five
+  // would leave the other four looking unspent to the next batch.
+  pexelsIds: store.clipPexelsIds(cand),
+  // Which Israeli angle this deck was chosen for, so the next draw can exclude
+  // it. Only decks carry one today; everything else records null.
+  angle: cand.deck?.idea?.angle || null,
   // So the row does not claim a post that has not been made. A draft reached
   // the inbox; whether it was ever posted happens in the app, where this
   // process cannot see it.
@@ -749,6 +775,40 @@ async function publishNext(item = null) {
     // record each one as published and drop it. Silently, at the drip interval,
     // one slideshow at a time.
     if (!targetsForKind(cand.kind).length) {
+      // ...UNLESS EVERYTHING LEFT TO DO IS YOURS ANYWAY.
+      //
+      // A clip publishes to TikTok and is handed to you for Instagram. With
+      // TikTok not connected the first half is genuinely waiting for setup, but
+      // the second half is not waiting for anything: the mp4 is rendered, it is
+      // hosted, and the only step left was always going to be you opening an
+      // app. Holding it would mean the hand-off never fires on a box with no
+      // TikTok, which is this box, so the feature would have shipped doing
+      // nothing.
+      //
+      // Completed rather than held, and recorded with every destination false,
+      // which is the honest row: this program published it nowhere. What the
+      // record buys is that the footage is spent and the clip is not offered
+      // again, both of which are true the moment you have the file.
+      const manual = manualForKind(cand.kind);
+      if (manual.length) {
+        store.recordPublished(publishedFacts(cand));
+        await notify.send(
+          bot.telegram,
+          staging,
+          notify.published({
+            headline: cand.headline,
+            succeeded: [],
+            failed: [],
+            drafted: [],
+            manual,
+            manualUrl: clipPublicUrl(cand),
+          })
+        );
+        const paste = notify.descriptionToPaste(cand);
+        if (paste) await notify.send(bot.telegram, staging, paste);
+        return true;
+      }
+
       store.hold(cand, allowed, `no destination configured for a ${cand.kind || 'card'} yet`);
       console.log(`publish: holding ${cand.kind || 'card'} - ${allowed.join(', ')} not configured yet`);
       await notify.send(
@@ -954,11 +1014,39 @@ async function publishNext(item = null) {
       // through rather than decided here, so a deck that went to both is
       // reported honestly on each: Instagram published, TikTok is waiting.
       const drafted = cand.tiktokDraft && succeeded.includes('tiktok') ? ['tiktok'] : [];
+      // And where this post belongs that nothing here can put it. A clip's
+      // Instagram half: the API has no draft state, so the copy is yours to
+      // make and the message says so with the mp4's own URL on it rather than
+      // listing TikTok alone and reading as finished. See targets.js.
+      const manual = manualForKind(cand.kind);
       await notify.send(
         bot.telegram,
         staging,
-        notify.published({ headline: cand.headline, succeeded, failed: [], drafted })
+        notify.published({
+          headline: cand.headline,
+          succeeded,
+          failed: [],
+          drafted,
+          manual,
+          manualUrl: manual.length ? clipPublicUrl(cand) : null,
+        })
       );
+
+      // And then the description, alone, in a message of its own.
+      //
+      // Only when there is something to post by hand. Telegram's copy takes a
+      // whole message, so this one holds the caption and nothing else: a label
+      // or an emoji in front of it is a character that has to be deleted in the
+      // Instagram composer every time, and the time it is not deleted is a post
+      // that goes out with a glyph in front of its first line.
+      //
+      // Second rather than first, because the line above is what says whether
+      // anything needs doing at all, and it is the one that should be readable
+      // at a glance in a chat full of them.
+      if (manual.length) {
+        const paste = notify.descriptionToPaste(cand);
+        if (paste) await notify.send(bot.telegram, staging, paste);
+      }
     }
     return true;
   }
@@ -1677,19 +1765,25 @@ function clipFootageSeen() {
     // footage that must not be offered again. store.clipPexelsId knows both
     // shapes and checks the kind, and it is the same function the published log
     // records through — one rule, not a copy per reader.
-    const id = store.clipPexelsId(cand);
-    if (id) seen.add(id);
+    // Plural: a cuts clip is several shots and every one of them is footage
+    // this account has shown.
+    for (const id of store.clipPexelsIds(cand)) seen.add(id);
   };
   for (const { cand } of store.stagingItems()) add(cand);
   for (const cand of store.queuedItems()) add(cand);
   for (const h of store.heldItems()) add(h.cand);
-  for (const p of store.recentPublished()) if (p.pexelsId) seen.add(String(p.pexelsId));
+  for (const p of store.recentPublished()) {
+    // Rows written before `pexelsIds` existed carry only the singular field.
+    for (const id of p.pexelsIds?.length ? p.pexelsIds : p.pexelsId ? [p.pexelsId] : []) {
+      seen.add(String(id));
+    }
+  }
   return seen;
 }
 
-/** Spend the footage a finished batch was built from. */
+/** Spend the footage a finished batch was built from, every shot of every clip. */
 const spendClipFootage = (clips) => {
-  for (const c of clips) store.markClipUsed(c.clip?.pexelsId);
+  for (const c of clips) for (const id of store.clipPexelsIds(c)) store.markClipUsed(id);
 };
 
 /**
@@ -2049,17 +2143,30 @@ const proposalButtons = (key) =>
  * sourcing, no renders — which is what makes suggesting a few a day reasonable.
  */
 async function pickIdea() {
-  const ideas = await proposeIdeas({ count: 3, recent: store.recentTitles() });
+  const history = store.recentPublished();
+
+  // ONE ISRAELI ANGLE PER REQUEST, drawn against what recently went out.
+  //
+  // The angle decides which destination is worth a deck this week; it never
+  // becomes a line on a slide, and src/angles.js carries that warning into the
+  // prompt. Drawn from the published log rather than held in memory so the
+  // exclusion window survives a restart, which on a bot that restarts daily is
+  // the difference between a rotation and the same angle every morning.
+  const angle = pickAngle(history);
+
+  const ideas = await proposeIdeas({ count: 3, recent: store.recentTitles(), angle });
   if (!ideas.length) return null;
 
-  const history = store.recentPublished();
   const fresh = ideas.filter((i) => !placeOverCap(i.where, history));
   const ordered = fresh.length ? [...fresh, ...ideas.filter((i) => !fresh.includes(i))] : ideas;
   if (fresh.length && fresh[0] !== ideas[0]) {
     console.log(`deck: "${ideas[0].where}" is over its share - starting from "${fresh[0].where}" instead`);
   }
   return {
-    idea: ordered[0],
+    // Carried on the idea so it reaches the candidate, the approval card and
+    // the published row. Without the last of those the next draw cannot
+    // exclude it and the rotation is a coin toss.
+    idea: { ...ordered[0], angle },
     alternatives: ordered.slice(1).map((i) => ({ where: i.where, kind: i.kind })),
   };
 }
@@ -2076,7 +2183,14 @@ async function pickIdea() {
  * the same reasoning as the daily card cap, which exists because an approval
  * queue you cannot face is a queue you stop reading.
  */
-const DECKS_PER_DAY = Math.max(0, Number(process.env.DECKS_PER_DAY ?? '2'));
+// ONE A DAY, NOT TWO. A deck reaches Instagram as a carousel, and a carousel of
+// stock photographs is the format Instagram is least willing to recommend to
+// people who do not already follow the account, since April 2026 its
+// unoriginal-content rule covers photos and carousels, not only reels, and the
+// penalty it carries is exactly "not shown to non-followers". Two a day of the
+// weakest format was the largest single share of this account's output. It is
+// still worth making; it is not worth making twice a day.
+const DECKS_PER_DAY = Math.max(0, Number(process.env.DECKS_PER_DAY ?? '1'));
 const DECK_BACKLOG_MAX = Math.max(1, Number(process.env.DECK_BACKLOG_MAX ?? '3'));
 let deckDay = null;
 let decksToday = 0;
@@ -2101,14 +2215,21 @@ let lastDeckSuggestAt = 0;
  * what is already waiting stops a week away from returning fourteen videos —
  * an approval queue you cannot face is a queue you stop reading.
  *
- * THREE A DAY, and the number came from measuring the supply rather than from
- * caution. The 26 destination queries return 1479 unique vertical clips in the
- * allowed duration range; even assuming only half clear the destination gate,
- * that is well over a year of unique footage at three a day. The catalogue is
- * not the constraint — how many you are willing to look at is, which is what
- * CLIP_BACKLOG_MAX is for.
+ * It was THREE A DAY, and the number came from measuring the supply rather than
+ * from caution: the 26 destination queries return 1479 unique vertical clips in
+ * the allowed duration range, which is well over a year of unique footage at
+ * three a day. The catalogue was never the constraint.
+ *
+ * TWO A DAY NOW, and the reason is that a clip stopped being a TikTok-only
+ * artefact. It publishes to Instagram as a reel as well (see targets.js), so
+ * three a day went from three TikTok posts to three TikTok posts AND three
+ * reels, and the point of slowing the drip was to put LESS on Instagram, not
+ * to hold the card and the deck back while the clip quietly took their places.
+ *
+ * Two is also what makes the budgets add up to the drip. One card, one deck and
+ * two clips is four, which is what a six-hour interval publishes in a day.
  */
-const CLIPS_PER_DAY = Math.max(0, Number(process.env.CLIPS_PER_DAY ?? '3'));
+const CLIPS_PER_DAY = Math.max(0, Number(process.env.CLIPS_PER_DAY ?? '2'));
 const CLIP_BACKLOG_MAX = Math.max(1, Number(process.env.CLIP_BACKLOG_MAX ?? '3'));
 let clipDay = null;
 let clipsToday = 0;
@@ -2766,6 +2887,31 @@ async function main() {
   startOAuthServer();
   console.log(`   daily run at ${RUN_HOUR}:00 · target ${dailyTarget()} · drip every ${POST_INTERVAL_MINUTES} min`);
   console.log(`   suggestions per day: ${dailyTarget()} cards · ${DECKS_PER_DAY} decks · ${CLIPS_PER_DAY} clips · ${SHOOTS_PER_DAY} shoots`);
+
+  // Do the budgets fit down the drip?
+  //
+  // Every kind that publishes shares ONE queue, drained one post every
+  // POST_INTERVAL_MINUTES. So the daily budgets are a production rate and the
+  // interval is a drain rate, and if production exceeds drain the difference
+  // does not become more posts, it becomes a queue that grows by the
+  // difference every day, for ever, publishing steadily staler things.
+  //
+  // Nothing enforces this and nothing should: a day of /run or /clip
+  // deliberately steps over the budgets, and a backlog you asked for is not a
+  // misconfiguration. What was missing is that the standing rates could
+  // disagree with each other silently, and a drip that is permanently four
+  // posts behind looks exactly like a drip that is working. A shoot is not
+  // counted: it never publishes.
+  {
+    const perDay = dailyTarget() + DECKS_PER_DAY + CLIPS_PER_DAY;
+    const drainPerDay = Math.floor(1440 / Math.max(1, Number(POST_INTERVAL_MINUTES)));
+    if (perDay > drainPerDay) {
+      console.log(
+        `   ⚠️ budgets produce ${perDay}/day and the drip publishes ${drainPerDay}/day - ` +
+          `the queue will grow by ${perDay - drainPerDay} a day. Lower a budget or shorten POST_INTERVAL_MINUTES.`
+      );
+    }
+  }
   console.log(`   clips to: ${targetsForKind('clip').join(' + ') || 'NOWHERE (TikTok not connected)'}`);
   // Said out loud at boot, because "shoots go nowhere" is the single most
   // surprising thing about this queue and the one most likely to be read as a
@@ -2777,6 +2923,36 @@ async function main() {
   // failure otherwise surfaces hours later as one line in a log nobody is
   // reading — on a box where clips have never run, which is exactly when it
   // happens.
+  // Where the sound comes from.
+  //
+  // Only a warning when the config ASKS for a bed and there is nothing to play.
+  // With the bed off, which is the default, a silent render is the intended
+  // workflow: nothing publishes a reel, so the sound is chosen by hand in each
+  // app and a warning against the plan is noise. See clips.audio in
+  // post-config.json for what would bring the bed back.
+  if (CLIPS_PER_DAY > 0) {
+    const { tracks, audioDir } = await import('./src/video/tracks.js');
+    const { postConfig } = await import('./src/postConfig.js');
+    const wantsAudio = postConfig().clips.audio.on;
+    try {
+      const found = tracks();
+      if (!wantsAudio) {
+        console.log('   audio: no bed mixed in - the sound is chosen by hand in each app');
+      } else if (found.length) {
+        console.log(`   audio: ${found.length} track(s) declared in ${audioDir()}`);
+      } else {
+        console.log(
+          `   ⚠️ audio: clips.audio.on is true but no tracks are declared in ${audioDir()}/tracks.json`
+        );
+      }
+    } catch (e) {
+      // A manifest that names a missing file, or a track with no licence, is a
+      // deliberate throw. Reported here rather than at the first clip of the
+      // day, which is hours later and in a log nobody is reading.
+      console.log(`   ⚠️ audio: ${e.message}`);
+    }
+  }
+
   if (CLIPS_PER_DAY > 0) {
     const { ffmpegReady } = await import('./src/video/overlay.js');
     const ff = await ffmpegReady();

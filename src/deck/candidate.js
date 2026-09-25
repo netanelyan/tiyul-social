@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { renderDeck } from '../render/deck.js';
 import { deckCaption, deckTiktokCaption, captionHook } from '../format.js';
+import { captionQuestion, captionCta } from '../hashtags.js';
 import { targetsForKind } from '../publish/targets.js';
 import { overrideActive, overrideNotes } from '../override.js';
 import { recentPublished } from '../store.js';
@@ -185,11 +186,23 @@ export async function toDeckCandidate(
   // the build, which is upstream of everything: it never becomes a candidate,
   // never reaches the queue, and never becomes something that can be approved
   // by tapping without reading the last line.
+  // The question and the ask are drawn ONCE here for the same reason the hook
+  // is. They are new to a deck: a deck's caption used to be an opening line and
+  // five tags, with nothing in it to answer and nothing to do next, which on a
+  // slideshow is the whole caption spent on mood. The clip format has closed
+  // with a question and a sometimes-ask since it was written; a deck reaches a
+  // scroll the same way and had no reason to be the exception.
+  //
+  // `cta` is null on most posts, by ctaShare, and null is a real answer that
+  // has to survive the handover, so it is passed explicitly rather than left
+  // undefined, which the builders would read as "not drawn yet, draw one".
   const hook = captionHook();
-  const caption = deckCaption(deck, { hook });
+  const question = captionQuestion();
+  const cta = captionCta();
+  const caption = deckCaption(deck, { hook, question, cta });
   cand.channelCaption = [deck.titleHe, '', caption].join('\n');
   cand.instagramCaption = caption;
-  cand.tiktokCaption = deckTiktokCaption(deck, { hook });
+  cand.tiktokCaption = deckTiktokCaption(deck, { hook, question, cta });
 
   // A deck publishes from its slide URLs, but Telegram uploads bytes and the
   // held/retry paths look for a file — the cover stands in as "the card".

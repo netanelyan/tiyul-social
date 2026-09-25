@@ -74,6 +74,42 @@ export const primaryCardBaseUrl = (env = process.env) => cardBaseUrls(env)[0] ||
 export const cardHostConfigured = (env = process.env) => cardBaseUrls(env).length > 0;
 
 /**
+ * Public HTTPS URL for one rendered file, by bare filename.
+ *
+ * The primitive both publishers need and neither owns. It used to live in
+ * src/render/index.js as part of cardPublicUrl, which meant the publish layer
+ * could only ask for a URL by importing the renderer, and the renderer imports
+ * Playwright. Instagram's reel path needs a URL for an mp4 that Chromium had
+ * nothing to do with, so the address-building moved down here and
+ * cardPublicUrl now delegates to it.
+ */
+export function publicUrlFor(filename, env = process.env) {
+  const base = primaryCardBaseUrl(env);
+  if (!base) return null;
+  return `${base}/${encodeURIComponent(filename)}`;
+}
+
+/**
+ * The public URL of a clip's mp4, or null.
+ *
+ * BOTH publishers pull video by URL, TikTok's `source_info.video_url` and
+ * Instagram's `video_url` on a REELS container, and neither receives the
+ * bytes from us. So a clip on local disk is unpublishable to either, and this
+ * returning null is why both refuse up front instead of failing mid-handshake.
+ *
+ * `cand.clip.url` wins when the render already recorded one; otherwise the
+ * filename is taken off the path and resolved against the primary host, which
+ * is why clipOutputDir() defaults to the card directory rather than out/clips.
+ */
+export function clipPublicUrl(cand, env = process.env) {
+  const file = cand?.clip?.file;
+  if (!file) return null;
+  if (cand.clip?.url) return cand.clip.url;
+  const name = String(file).split(/[/\\]/).pop();
+  return publicUrlFor(name, env);
+}
+
+/**
  * Domains TikTok has been told we own.
  *
  * Declared in TIKTOK_VERIFIED_DOMAINS. When it is unset we fall back to the

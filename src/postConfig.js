@@ -31,6 +31,12 @@ export function postConfig() {
   const caption = raw.caption || {};
   const hashtags = raw.hashtags || {};
   const overlay = raw.overlay || {};
+
+  // The Israeli angle pool, read before anything that needs it. `shoot.angles`
+  // is where this list used to live and is still folded in, so an untouched
+  // post-config.json keeps working; the shoot block is then handed this same
+  // list back, so the two can never disagree.
+  const angles = [...new Set([...list(raw.angles), ...list(raw.shoot?.angles)])];
   const destinations = raw.destinations || {};
 
   const lines = (caption.lines || []).map((s) => String(s).trim()).filter(Boolean);
@@ -41,12 +47,33 @@ export function postConfig() {
   // off — a caption pool with no questions in it is the old behaviour and is a
   // perfectly valid thing to go back to.
   const questions = (caption.questions || []).map((s) => String(s).trim()).filter(Boolean);
-  const cta = String(caption.cta || '').trim();
+
+  // A POOL of closing asks, not one line.
+  //
+  // It was one string, `caption.cta`, and one string is a signature however
+  // soft the wording is: twenty posts carrying the identical last line is the
+  // template this pool already replaced once for `lines`. The singular key is
+  // still read and folded in, so an existing post-config.json keeps working.
+  //
+  // What changed alongside the shape is what the asks SAY. The single CTA
+  // pointed at the bio, which is the only tappable route either platform
+  // offers and is therefore worth keeping in the mix, but a pointer to a link
+  // is not the ask that grows an account. A viewer who answers a question has
+  // engaged; a viewer who follows comes back. So the pool leans on asks that
+  // name the next thing to do here, and the bio pointer is one entry in it
+  // rather than the whole of it.
+  const ctas = [...(caption.ctas || []), caption.cta]
+    .map((s) => String(s || '').trim())
+    .filter(Boolean);
   // Checked HERE rather than at build time. A CTA with a domain in it would
   // otherwise throw once per post, from assertNoUrl, deep inside a build — and
   // the thing that is actually broken is this file.
-  if (cta && URL_LIKE.test(cta)) {
-    throw new Error(`post-config.json: caption.cta contains a URL - the link lives in the bio, the caption says so in words`);
+  for (const c of ctas) {
+    if (URL_LIKE.test(c)) {
+      throw new Error(
+        `post-config.json: caption ask "${c}" contains a URL - the link lives in the bio, the caption says so in words`
+      );
+    }
   }
 
   const broad = tags(hashtags.broad, 'hashtags.broad');
@@ -60,9 +87,12 @@ export function postConfig() {
     caption: {
       lines,
       questions,
-      cta,
-      // How often the CTA is appended. Clamped rather than trusted: a share
-      // above 1 is a CTA on every post, which the brief calls the opposite of
+      ctas,
+      // Kept so anything still reading the singular key sees the first ask
+      // rather than undefined. Nothing in src/ reads it now.
+      cta: ctas[0] || '',
+      // How often an ask is appended. Clamped rather than trusted: a share
+      // above 1 is an ask on every post, which the brief calls the opposite of
       // soft, and a negative one silently turns the feature off.
       ctaShare: Math.max(0, Math.min(1, num(caption.ctaShare, 0))),
     },
@@ -104,8 +134,24 @@ export function postConfig() {
       defaultWeight: num(destinations.defaultWeight, 1),
       weights: { ...(destinations.weights || {}) },
     },
+    // THE ISRAELI ANGLE, top level now, because more than one kind draws on it.
+    //
+    // It lived in `shoot.angles` and reached exactly one kind of post: the
+    // shoot, which is the one thing here the bot cannot make. Every format that
+    // actually runs unattended chose its subject with no angle at all. See
+    // src/angles.js for what an angle may and may not do once a pipeline has
+    // one, which is the part that matters.
+    //
+    // `shoot.angles` is still read and folded in, so an untouched
+    // post-config.json keeps working and a deployment migrates by moving the
+    // list up rather than by editing two places.
+    angles,
     clips: clips(raw.clips || {}),
-    shoot: shoot(raw.shoot || {}),
+    // The shoot is handed the SHARED pool rather than its own. Its `angles`
+    // key is the same list the deck now draws from, so anything still reading
+    // `postConfig().shoot.angles` keeps working and cannot drift from what
+    // `postConfig().angles` says.
+    shoot: shoot(raw.shoot || {}, angles),
     plans: plans(raw.plans || {}),
     schedule: schedule(raw.schedule || {}),
     // English country name from the vision judge -> Hebrew, for the place
@@ -130,6 +176,70 @@ export function postConfig() {
   };
 
   return cached;
+}
+
+/**
+ * The music bed's mix, not which tracks exist.
+ *
+ * Which tracks exist is assets/audio/tracks.json, because that is a licensing
+ * question and it belongs next to the files rather than in the block of numbers
+ * that gets retuned after a week of watching. This is only how loud, how it
+ * enters and leaves, and how far into it a clip may start.
+ *
+ * `volume` is clamped to 2 rather than to 1: going above unity is a legitimate
+ * thing to want from a quiet source file, and the ceiling exists only so a typo
+ * of 35 for 0.35 cannot ship a clip that clips.
+ */
+function audioConfig(raw) {
+  return {
+    on: raw.on !== false,
+    volume: Math.max(0, Math.min(2, num(raw.volume, 0.35))),
+    fadeInSeconds: Math.max(0, num(raw.fadeInSeconds, 0.4)),
+    fadeOutSeconds: Math.max(0, num(raw.fadeOutSeconds, 0.8)),
+    maxOffsetSeconds: Math.max(0, Math.round(num(raw.maxOffsetSeconds, 45))),
+    bitrate: String(raw.bitrate || '128k'),
+  };
+}
+
+/**
+ * The second clip shape: several shots, cut, a line on each.
+ *
+ * `cutsMin` is floored at 2 rather than at whatever is configured, because one
+ * cut is not a cut, it is a held clip with a different code path, and the
+ * renderer refuses it. The ceiling is floored at the minimum for the same
+ * reason a range always is: a max below the min is a config that asks for an
+ * empty set and would otherwise surface as "no clips found".
+ */
+function cutsConfig(raw) {
+  const cutsMin = Math.max(2, Math.round(num(raw.cutsMin, 4)));
+  const cutsMax = Math.max(cutsMin, Math.round(num(raw.cutsMax, 5)));
+
+  const hookFormats = (Array.isArray(raw.hookFormats) ? raw.hookFormats : [])
+    .map((f) => ({
+      id: String(f.id || '').trim(),
+      he: String(f.he || '').trim(),
+      desc: String(f.desc || '').trim(),
+      weight: Math.max(1, Math.round(num(f.weight, 1))),
+      minWords: f.minWords === undefined ? undefined : Math.max(2, Math.round(num(f.minWords, 3))),
+    }))
+    .filter((f) => f.id && f.desc);
+
+  // Fatal only when the shape is ON. A cut with no hook format has nothing to
+  // fill and would fall through to a video whose first line is a place name,
+  // which is a deck slide that moves rather than a post with an opening.
+  const on = raw.on !== false;
+  if (on && !hookFormats.length) {
+    throw new Error('post-config.json: clips.cuts.on is true but clips.cuts.hookFormats is empty');
+  }
+
+  return {
+    on,
+    cutsMin,
+    cutsMax,
+    secondsPerCut: Math.max(2, num(raw.secondsPerCut, 4)),
+    hookMaxWords: Math.max(3, Math.round(num(raw.hookMaxWords, 9))),
+    hookFormats,
+  };
 }
 
 /**
@@ -259,6 +369,8 @@ function clips(raw) {
       preset: String(v.preset || 'medium'),
       keepAudio: v.keepAudio === true,
     },
+    audio: audioConfig(raw.audio || {}),
+    cuts: cutsConfig(raw.cuts || {}),
     overlay: {
       sizePct: num(o.sizePct, 0.052),
       sizeBasis: o.sizeBasis === 'height' ? 'height' : 'width',
@@ -310,7 +422,7 @@ function clips(raw) {
  * saying "film something", and the whole point of this queue is that it does
  * not say that.
  */
-function shoot(raw) {
+function shoot(raw, sharedAngles = []) {
   const formats = (Array.isArray(raw.formats) ? raw.formats : [])
     .map((f) => ({
       id: String(f.id || '').trim(),
@@ -346,7 +458,10 @@ function shoot(raw) {
     // any weighting, so this is enforced over a window instead.
     productShare: Math.max(0, Math.min(1, num(raw.productShare, 0.5))),
     productWindow: Math.max(1, Math.round(num(raw.productWindow, 6))),
-    angles: list(raw.angles),
+    // The shared pool, not a private one. This key used to BE the pool; it is
+    // now a view onto postConfig().angles so a reader here and a reader there
+    // cannot drift apart. See the note at the top-level `angles`.
+    angles: sharedAngles,
     series: {
       every: Math.max(0, Math.round(num(series.every, 0))),
       length: Math.max(2, Math.round(num(series.length, 3))),

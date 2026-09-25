@@ -152,16 +152,11 @@ export function seriesLabels(series) {
   };
 }
 
-/** One angle from the pool, or null when none are configured. */
-export function pickAngle(history = [], { rand = Math.random } = {}) {
-  const { angles } = postConfig().shoot;
-  if (!angles.length) return null;
-  // Angles used recently are excluded outright rather than weighted down. The
-  // pool is a dozen long and the window is short, so exclusion always leaves
-  // something — and "kosher food" twice in one week is the repetition the
-  // viewer actually notices, far more than a repeated format.
-  const used = new Set(history.slice(0, Math.min(5, angles.length - 1)).map((h) => h?.angle).filter(Boolean));
-  const left = angles.filter((a) => !used.has(a));
-  const pool = left.length ? left : angles;
-  return pool[Math.floor(rand() * pool.length)];
-}
+// One angle from the pool, or null when none are configured.
+//
+// The implementation moved to src/angles.js when a deck started drawing from
+// the same pool, and this is a re-export rather than a second copy: the
+// exclusion window is the interesting part and two copies of it is one that
+// will be tuned and one that will not. Re-exported rather than deleted because
+// shoot/plan.js and the tests both import it from here.
+export { pickAngle } from '../angles.js';

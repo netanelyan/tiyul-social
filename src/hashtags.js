@@ -187,12 +187,29 @@ export function clipSiteName(v) {
  * it is worse than no pin.
  */
 export function clipPlaceLine(cand) {
+  const label = clipPlaceLabel(cand);
+  return label ? `📍 ${label}` : null;
+}
+
+/**
+ * The same place, without the pin.
+ *
+ * Split out because the cuts format burns this string INTO the frame, one per
+ * shot, and a pin glyph belongs in a description rather than on a video: the
+ * emoji is how a caption says "this is a location", and on screen the fact that
+ * it is a location is not in question.
+ *
+ * One function for both, so the label on the fourth cut and the pin under the
+ * post cannot disagree about where the footage is, which they would, eventually
+ * and invisibly, as two copies of the site-name rules drifted apart.
+ */
+export function clipPlaceLabel(cand) {
   const v = cand?.clip?.vision || cand?.vision || null;
   if (!v?.place) return null;
   const countryHe = postConfig().places[String(v.place).toLowerCase()];
   if (!countryHe) return null;
   const site = clipSiteName(v);
-  return site ? `📍 ${site}, ${countryHe}` : `📍 ${countryHe}`;
+  return site ? `${site}, ${countryHe}` : countryHe;
 }
 
 /**
@@ -213,21 +230,28 @@ export function captionQuestion({ rand = Math.random } = {}) {
 }
 
 /**
- * The soft call to action, on `ctaShare` of posts.
+ * The soft closing ask, on `ctaShare` of posts, drawn from the pool.
  *
  * NOT on every post, and that is the whole of what "soft" means here. The
  * brief's rule 8 says a soft CTA at the end and never make the whole video an
- * advertisement; a pointer to the bio under every single caption is not soft,
- * it is a signature. Half is the configured default.
+ * advertisement; the same line under every single caption is not soft, it is a
+ * signature.
  *
- * The string is checked for a domain when post-config.json is read rather than
- * here, so a CTA with a URL in it fails once, loudly, at startup — instead of
+ * TWO random draws, and they are independent on purpose. The first decides
+ * WHETHER this post closes with an ask, which is what keeps it soft; the second
+ * decides WHICH ask, which is what keeps it from being a signature on the half
+ * of posts that do carry one. Collapsing them into one draw would tie the
+ * choice of ask to the frequency and make the rarest asks rarer again.
+ *
+ * Each string is checked for a domain when post-config.json is read rather than
+ * here, so an ask with a URL in it fails once, loudly, at startup, instead of
  * once per post from inside a build.
  */
 export function captionCta({ rand = Math.random } = {}) {
-  const { cta, ctaShare } = postConfig().caption;
-  if (!cta || ctaShare <= 0) return null;
-  return rand() < ctaShare ? cta : null;
+  const { ctas, ctaShare } = postConfig().caption;
+  if (!ctas.length || ctaShare <= 0) return null;
+  if (rand() >= ctaShare) return null;
+  return ctas[Math.floor(rand() * ctas.length)];
 }
 
 /**

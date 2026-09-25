@@ -29,3 +29,12 @@ backups/
 # and never imported from at runtime. It was committed here by accident; it
 # stays on disk as a local reference and out of this repository.
 brickdeal-automation-main/
+
+# Music beds. The MANIFEST is committed - assets/audio/tracks.json is the
+# allowlist and reviewing what changed in it is the point - but the audio files
+# themselves are not ours to redistribute. A CC0 licence permits use; it is not
+# a reason to vendor somebody else's masters into a repository. Drop the files
+# on the box, name them in the manifest, and src/video/tracks.js refuses any
+# declared track it cannot find.
+assets/audio/*
+!assets/audio/tracks.json

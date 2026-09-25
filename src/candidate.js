@@ -6,7 +6,7 @@ import { noteOverride, overrideActive, overrideNotes } from './override.js';
 import { findImage, imageQueries, imagesEnabled } from './images.js';
 import { renderCard } from './render/index.js';
 import { isPhotoLayout, PHOTO_FALLBACK } from './render/templates.js';
-import { channelCaption, instagramCaption, tiktokCaption } from './format.js';
+import { channelCaption, publishedDescriptions } from './format.js';
 import { targetsForKind } from './publish/targets.js';
 import { recordWasted } from './usage.js';
 
@@ -225,8 +225,12 @@ async function build(item, { render = true } = {}) {
   }
 
   cand.channelCaption = channelCaption(cand);
-  cand.instagramCaption = instagramCaption(cand);
-  cand.tiktokCaption = tiktokCaption(cand);
+  // Both from one draw of the question and the ask, see publishedDescriptions.
+  // Called separately these would each draw their own, and the approval card,
+  // which shows one description, would stop being a preview of either.
+  const desc = publishedDescriptions(cand);
+  cand.instagramCaption = desc.instagram;
+  cand.tiktokCaption = desc.tiktok;
 
   return cand;
   }

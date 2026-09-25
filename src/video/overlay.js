@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { getBrowser, cardOutputDir } from '../render/index.js';
 import { analyseSlides } from '../render/photo.js';
 import { postConfig } from '../postConfig.js';
+import { trackOffset } from './tracks.js';
 import { heeboDataUri, assistantDataUri, arimoDataUri, tiktokSansDataUri, escapeHtml } from '../render/theme.js';
 
 const run = promisify(execFile);
@@ -456,6 +457,61 @@ const coverFilter = (w, h, fps) =>
   `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},fps=${fps},setsar=1`;
 
 /**
+ * The music bed, as the three things ffmpeg needs to mix one in.
+ *
+ * Returns `null` when there is no track, and every caller treats that as "carry
+ * on and write a silent file" rather than as an error. That is the state this
+ * project starts in: the repository ships no audio and none can be added for
+ * you, so silence stays the default until assets/audio/tracks.json names
+ * something.
+ *
+ * `inputIndex` is which ffmpeg input the track will be, which only the caller
+ * knows: burnClip has two inputs before it and burnCuts has 2N.
+ *
+ * THE LOOP IS WHAT MAKES THE OFFSET FREE. `-stream_loop -1` on the audio input
+ * means the decoder never runs out, so `atrim` can start anywhere without
+ * anybody knowing how long the file is. That is the whole reason this needs no
+ * ffprobe call and no declared duration in the manifest, and it is why a
+ * thirty-second bed can carry a twenty-second cuts clip starting at 0:44.
+ *
+ * `asetpts=PTS-STARTPTS` rebases the trimmed segment to zero. Without it the
+ * audio carries the timestamps it had inside the loop and starts `offset`
+ * seconds after the picture, which on an eight-second clip is a silent post
+ * with a track appended to nothing.
+ */
+function audioChain(track, { inputIndex, seconds, id }) {
+  const cfg = postConfig().clips.audio;
+  if (!cfg.on || !track) return null;
+
+  const offset = trackOffset(id, cfg.maxOffsetSeconds);
+  const fadeIn = Math.min(cfg.fadeInSeconds, seconds / 2);
+  const fadeOut = Math.min(cfg.fadeOutSeconds, seconds / 2);
+
+  const steps = [
+    `atrim=start=${offset}:end=${offset + seconds}`,
+    'asetpts=PTS-STARTPTS',
+    `volume=${cfg.volume}`,
+  ];
+  if (fadeIn > 0) steps.push(`afade=t=in:st=0:d=${fadeIn}`);
+  // Faded out rather than cut. On an eight-second clip the whole value of the
+  // length is that it loops, and a bed chopped mid-bar at the loop point is an
+  // audible click on every lap.
+  if (fadeOut > 0) steps.push(`afade=t=out:st=${(seconds - fadeOut).toFixed(3)}:d=${fadeOut}`);
+  // 44.1kHz stereo, stated rather than inherited. A mono 22kHz source is a
+  // legal mp3 and produces an AAC stream both platforms accept and neither
+  // plays the way the file sounded on disk.
+  steps.push('aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo');
+
+  return {
+    input: ['-stream_loop', '-1', '-i', track.file],
+    filter: `[${inputIndex}:a]${steps.join(',')}[aout]`,
+    map: ['-map', '[aout]', '-c:a', 'aac', '-b:a', cfg.bitrate],
+    track,
+    offset,
+  };
+}
+
+/**
  * One finished post: trimmed, cropped, with the line burned in.
  *
  * ONE LINE, HELD FOR THE WHOLE CLIP. This function briefly took `beats` and
@@ -479,7 +535,7 @@ const coverFilter = (w, h, fps) =>
  * from five seconds up, so without it the shortest sources ship two seconds
  * under length.
  */
-export async function burnClip(source, { text, outFile, pngFile, id = '', duration = null }) {
+export async function burnClip(source, { text, outFile, pngFile, id = '', duration = null, track = null }) {
   const cfg = postConfig().clips.video;
   const { width: w, height: h, seconds, fps, crf, preset, keepAudio, loopSource } = cfg;
 
@@ -498,6 +554,9 @@ export async function burnClip(source, { text, outFile, pngFile, id = '', durati
   const spot = await measureClip(source, { startAt, seconds: span }).catch(() => null);
   await renderOverlayPng(text, { width: w, height: h, file: pngFile, spot, id });
 
+  // The bed, if there is one. Input 2, after the source and the overlay PNG.
+  const audio = audioChain(track, { inputIndex: 2, seconds, id });
+
   const args = [
     '-y',
     '-hide_banner',
@@ -507,26 +566,159 @@ export async function burnClip(source, { text, outFile, pngFile, id = '', durati
     '-t', String(seconds),
     '-i', source,
     '-i', pngFile,
-    '-filter_complex', `[0:v]${coverFilter(w, h, fps)}[v];[v][1:v]overlay=0:0:format=auto[out]`,
+    ...(audio?.input || []),
+    '-filter_complex',
+    [`[0:v]${coverFilter(w, h, fps)}[v];[v][1:v]overlay=0:0:format=auto[out]`, audio?.filter]
+      .filter(Boolean)
+      .join(';'),
     '-map', '[out]',
-    // Stock audio is almost always a library music bed that will be replaced by
-    // whatever sound is chosen in the TikTok app, so it is dropped by default:
-    // shipping a track nobody chose is worse than shipping silence.
-    ...(keepAudio ? ['-map', '0:a?', '-c:a', 'aac', '-b:a', '128k'] : ['-an']),
+    // A CHOSEN TRACK BEATS BOTH OF THE OLD ANSWERS.
+    //
+    // Stock audio is almost always a library bed the uploader chose, so it was
+    // dropped: shipping a track nobody picked is worse than shipping silence.
+    // That reasoning holds and is now beside the point, because there is a
+    // third option. When a track is mixed in the source audio goes regardless
+    // of keepAudio, since the alternative is two music beds at once.
+    ...(audio ? audio.map : keepAudio ? ['-map', '0:a?', '-c:a', 'aac', '-b:a', '128k'] : ['-an']),
     '-c:v', 'libx264',
     '-profile:v', 'high',
     '-pix_fmt', 'yuv420p',
     '-crf', String(crf),
     '-preset', preset,
     // The index at the front, so the file starts playing before it has finished
-    // downloading — which is what every player and every upload path wants.
+    // downloading, which is what every player and every upload path wants.
     '-movflags', '+faststart',
     outFile,
   ];
 
   await run(ffmpegPath(), args, { maxBuffer: 1 << 24 });
   if (!existsSync(outFile)) throw new Error('ffmpeg reported success but wrote no file');
-  return { file: outFile, spot, startAt, seconds };
+  return { file: outFile, spot, startAt, seconds, audio: audioNote(audio) };
+}
+
+/**
+ * What went onto the clip, for the candidate and the approval card.
+ *
+ * Null when nothing did, which the card prints as a warning rather than as an
+ * absence: a silent clip and a sounded one look identical in a Telegram video
+ * preview, and the silent one is the bug this was built to close.
+ */
+const audioNote = (audio) =>
+  audio
+    ? {
+        name: audio.track.name,
+        title: audio.track.title,
+        credit: audio.track.credit,
+        licence: audio.track.licence,
+        offset: audio.offset,
+      }
+    : null;
+
+/**
+ * Several shots, cut together, each carrying its own line.
+ *
+ * THE FORMAT THE BEATS WERE ALWAYS FOR. `burnClip` tried holding four lines
+ * over one unbroken shot and the note above it records why that failed: the
+ * picture stopped being what the line answered and became wallpaper for a
+ * caption rewriting itself. The fix was never to write fewer lines. It was that
+ * every line change has to be a CUT, with new footage under it, which needs
+ * several sources and could not be done by a function that takes one.
+ *
+ * ONE ffmpeg CALL, ONE ENCODE. The obvious build is a segment per source
+ * followed by a concat, and it is worse twice over: every segment is encoded
+ * and then re-encoded by the concat, and `-c copy` concat depends on the
+ * segments' bitstreams being splice-compatible, which is true until one source
+ * makes the encoder choose differently and then produces a file that plays
+ * until the first cut. A filter graph avoids both, each input is seeked,
+ * looped, covered and overlaid in place, and `concat` joins the results before
+ * anything is written.
+ *
+ * `segments` is [{ source, text, pngFile, duration }] in cut order. Each one is
+ * measured and rendered on its OWN window, because where the words go and what
+ * colour they are are properties of that shot and nothing else: a light line
+ * placed for a dark forest is unreadable over the snow that follows it.
+ */
+export async function burnCuts(segments, { outFile, id = '', track = null } = {}) {
+  const cfg = postConfig().clips.video;
+  const { width: w, height: h, fps, crf, preset, loopSource } = cfg;
+  const perCut = postConfig().clips.cuts.secondsPerCut;
+
+  if (segments.length < 2) throw new Error(`a cut needs at least two shots (got ${segments.length})`);
+
+  // Measured and rendered per segment, in order, before ffmpeg is called at
+  // all. Sequential rather than parallel on purpose: each one launches a
+  // Chromium context, and five at once on a 1GB VPS is how the render step
+  // starts failing on the box it works on locally.
+  const spots = [];
+  for (const [i, seg] of segments.entries()) {
+    const startAt = await pickWindow(seg.source, seg.duration).catch(() => cfg.startAt);
+    const span = seg.duration ? Math.min(perCut, Math.max(1, seg.duration - startAt)) : perCut;
+    const spot = await measureClip(seg.source, { startAt, seconds: span }).catch(() => null);
+    await renderOverlayPng(seg.text, { width: w, height: h, file: seg.pngFile, spot, id: `${id}-${i}` });
+    spots.push({ startAt, spot });
+  }
+
+  const args = ['-y', '-hide_banner', '-loglevel', 'error'];
+  // The video inputs first, then the PNGs, so input index i is segment i and
+  // index segments.length + i is its overlay. The filter graph below indexes
+  // both by arithmetic and a mixed order would be unreadable and wrong.
+  for (const [i, seg] of segments.entries()) {
+    args.push('-ss', String(spots[i].startAt));
+    if (loopSource) args.push('-stream_loop', '-1');
+    args.push('-t', String(perCut), '-i', seg.source);
+  }
+  for (const seg of segments) args.push('-i', seg.pngFile);
+
+  // The bed, if there is one. It is input 2N: N sources, then N overlays.
+  //
+  // ONE track across the whole video, deliberately. The cuts are in the
+  // picture; a bed that changed with them would turn four shots into four
+  // posts played in a row, and continuous audio over a cut is the oldest thing
+  // in editing for making a sequence read as one piece.
+  const seconds = segments.length * perCut;
+  const audio = audioChain(track, { inputIndex: segments.length * 2, seconds, id });
+
+  const chains = segments.map(
+    (_, i) =>
+      `[${i}:v]${coverFilter(w, h, fps)}[v${i}];[v${i}][${segments.length + i}:v]overlay=0:0:format=auto[o${i}]`
+  );
+  const joined = segments.map((_, i) => `[o${i}]`).join('');
+  const filter = [
+    `${chains.join(';')};${joined}concat=n=${segments.length}:v=1:a=0[out]`,
+    audio?.filter,
+  ]
+    .filter(Boolean)
+    .join(';');
+
+  if (audio) args.push(...audio.input);
+
+  args.push(
+    '-filter_complex', filter,
+    '-map', '[out]',
+    // The sources' own audio is never kept here, whatever keepAudio says, and
+    // on this shape it is not even a judgement call: they are unrelated shots
+    // from unrelated uploaders, so concatenating their beds would produce a
+    // track that changes on every cut.
+    ...(audio ? audio.map : ['-an']),
+    '-c:v', 'libx264',
+    '-profile:v', 'high',
+    '-pix_fmt', 'yuv420p',
+    '-crf', String(crf),
+    '-preset', preset,
+    '-movflags', '+faststart',
+    outFile
+  );
+
+  await run(ffmpegPath(), args, { maxBuffer: 1 << 24 });
+  if (!existsSync(outFile)) throw new Error('ffmpeg reported success but wrote no file');
+  return {
+    file: outFile,
+    cuts: segments.length,
+    seconds,
+    spots: spots.map((s) => s.spot),
+    startAts: spots.map((s) => s.startAt),
+    audio: audioNote(audio),
+  };
 }
 
 /** Pull the source clip down to disk. Pexels serves these straight from its CDN. */

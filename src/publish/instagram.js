@@ -1,5 +1,5 @@
 import * as store from '../store.js';
-import { cardHostConfigured } from './imageHosts.js';
+import { cardHostConfigured, clipPublicUrl } from './imageHosts.js';
 
 // Instagram publishing, through the official Graph API only.
 //
@@ -227,6 +227,16 @@ export async function remainingQuota() {
   return Math.max(0, cap - (row.quota_usage ?? 0));
 }
 
+// How long to wait for a container to finish, by what is in it.
+//
+// An image container is FINISHED in a few seconds; a reel is not. Instagram
+// transcodes the video after fetching it, and on a 1080x1920 h264 file that is
+// tens of seconds before it is anything, so the image timeout applied to a reel
+// reports a timeout on a post that was simply still being made, and the clip
+// goes back on the queue to be uploaded a second time.
+const VIDEO_TIMEOUT_MS = 300_000;
+const VIDEO_INTERVAL_MS = 5_000;
+
 // Instagram fetches and processes the image asynchronously, so a creation_id is
 // not immediately publishable. Publishing too early fails with a generic error;
 // polling status_code turns that into an answer we can act on.
@@ -386,6 +396,63 @@ async function publishInstagramCarousel(cand, images) {
   return { ...published, creationId: parent.id, slides: images.length, images };
 }
 
+/**
+ * Publish a clip as a REEL.
+ *
+ * The one destination this pipeline was missing, and the reason it mattered:
+ * every Instagram post this account had ever made was a photograph or a
+ * carousel, which on Instagram in 2026 are the two formats with the least
+ * reach to people who do not already follow you. Reels are where non-follower
+ * distribution lives, and the clip renderer was already producing exactly the
+ * artefact a reel wants, 1080x1920, h264, faststart, and throwing it away
+ * because targets.js said a clip was TikTok's alone.
+ *
+ * Mechanically it is the single-image path with two differences, and both are
+ * places it goes wrong if they are guessed:
+ *
+ *   - `media_type=REELS` with `video_url`, not `image_url`. A video handed to
+ *     the image field is not a type error at our end, it is a container that
+ *     goes to ERROR a minute later with no useful detail.
+ *   - The container takes far longer to finish, because Instagram transcodes
+ *     what it fetched. See VIDEO_TIMEOUT_MS.
+ *
+ * `share_to_feed` is set rather than left to default. It is the difference
+ * between a reel that appears in the profile grid and one that only exists in
+ * the Reels tab, and the grid is where somebody who lands on the profile
+ * decides whether to follow. A default that Instagram is free to change is not
+ * a decision, so it is stated.
+ *
+ * No `cover_url` and no `thumb_offset`. The clip's first frame is chosen by
+ * pickWindow() to be the steadiest moment in the source and it already carries
+ * the burned-in line, so it is a better cover than any frame we would pick by
+ * offset, and a cover image would be a second asset to host for no gain.
+ */
+async function publishInstagramReel(cand, videoUrl) {
+  const igUser = process.env.IG_USER_ID;
+
+  if (!videoUrl.startsWith('https://')) {
+    throw new InstagramError(`clip URL must be https (got ${videoUrl})`, { step: 'config' });
+  }
+
+  const created = await graph(`${igUser}/media`, {
+    method: 'POST',
+    params: {
+      media_type: 'REELS',
+      video_url: videoUrl,
+      caption: cand.instagramCaption || '',
+      share_to_feed: 'true',
+    },
+    step: 'create_reel_container',
+  });
+  if (!created.id) throw new InstagramError('no creation_id returned for the reel', { step: 'create_reel_container' });
+
+  await waitForContainer(created.id, { timeoutMs: VIDEO_TIMEOUT_MS, intervalMs: VIDEO_INTERVAL_MS });
+
+  const published = await publishContainer(igUser, created.id);
+
+  return { ...published, creationId: created.id, videoUrl, reel: true };
+}
+
 export async function publishInstagram(cand) {
   if (!instagramConfigured()) {
     throw new InstagramError(
@@ -407,6 +474,21 @@ export async function publishInstagram(cand) {
       creationId: cand.instagramCreationId,
       notes: ['כבר היה מפורסם מהניסיון הקודם - לא פורסם שוב'],
     };
+  }
+
+  // A clip is a reel. Checked before the deck branch and before the single
+  // image, because a clip candidate carries `card.file` pointing at the same
+  // mp4, that was how it reached Telegram's video sender, and a video handed
+  // to the image path is a container that fails a minute later saying nothing.
+  if (cand.kind === 'clip') {
+    const videoUrl = clipPublicUrl(cand);
+    if (!videoUrl) {
+      throw new InstagramError(
+        'the clip has no public URL - Instagram pulls video by URL, so CARD_PUBLIC_BASE_URL must be set and the mp4 hosted under it',
+        { step: 'config' }
+      );
+    }
+    return publishInstagramReel(cand, videoUrl);
   }
 
   // A deck arrives here with its Instagram-sized slides already rendered, and

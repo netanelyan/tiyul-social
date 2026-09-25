@@ -13,7 +13,22 @@ import { noteOverride, overrideActive } from './override.js';
 // reading is worse than a short one — twenty cards a day is how a human gate
 // quietly turns into a rubber stamp.
 
-export const dailyTarget = () => Math.max(1, Number(process.env.DAILY_TARGET ?? '3'));
+/**
+ * How many cards a day.
+ *
+ * ONE, NOT THREE. A card is a single 1080x1350 image and it goes to Instagram
+ * alone, which makes it the lowest-reach thing this pipeline publishes to the
+ * destination that matters most, a static image reaches a fraction of what a
+ * reel does, and almost none of it to people who do not already follow.
+ *
+ * Three a day was most of the account's output and produced twelve image posts
+ * in its first three days. The volume is not what is penalised; what is
+ * penalised is a sustained run of posts that underperform on watch time and
+ * sends, because that is an account-level signal and it decides how the next
+ * post is distributed. One a day keeps the format, which is good at what it is
+ * for, a verified claim, legibly set, without letting it be the account.
+ */
+export const dailyTarget = () => Math.max(1, Number(process.env.DAILY_TARGET ?? '1'));
 
 /**
  * Ceiling on drafting calls per run — the only thing here that costs money.

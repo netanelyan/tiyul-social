@@ -77,13 +77,49 @@ same wordmark, the same accent rule, the same type scale as the news cards, so a
 slideshow in the grid looks like the account that posted it. Same words, same
 photographs, two designs: one deck published twice, never two decks.
 
-A **clip** is eight seconds of vertical stock video carrying one Hebrew line,
-held for its whole length, and it goes to TikTok only. There is no Instagram
-artefact for it the way a deck has a carousel, and posting the same seconds to
-two places is how every account becomes a copy of the others. It briefly carried
-a hook plus beats over twenty-six seconds; that is the right shape for footage
-that cuts and the wrong one for a single held shot. See
+A **clip** is vertical stock video with Hebrew burned into it, and it comes in
+**two shapes that alternate**.
+
+A **held** clip is the original: eight seconds, one shot, one line, held for its
+whole length. A **cuts** clip is four or five shots of four seconds each, joined
+with a cut at every line change, so the written hook opens it and each shot after
+that carries the name of the place it was filmed in. A clip briefly tried holding
+four lines over ONE unbroken shot and that was reverted on sight, the footage
+became wallpaper for a caption rewriting itself. The fix was never fewer lines;
+it was that every line change has to be a cut, which is what this shape is. See
 [`BRIEF.md`](BRIEF.md#a-clip-grew-a-middle-and-then-gave-it-back).
+
+**A beat in a cuts clip is a label, not a claim.** The parked advice formats
+("3 טעויות שישראלים עושים בגאורגיה") put four unsourced facts on screen per
+video; here each beat is the place the vision judge named, which is the same fact
+the pin under the post already prints and the country hashtag is already
+generated from. The only written line is the hook, and `beatCountMismatch`
+refuses one that promises five places over four cuts.
+
+A clip belongs on **both** platforms, and only one of them can be reached from
+here. TikTok gets it through the API, as a draft. **The Instagram copy is one you
+post yourself**, and the notification hands you the mp4's URL to do it with.
+
+That split is what the two APIs offer, not a preference. The sound is chosen by
+hand in each app, which is the one part of a post this pipeline was never going
+to do better, and TikTok supports exactly that: `post_mode: MEDIA_UPLOAD`
+delivers the video to the account's inbox and you finish it. **Instagram has no
+equivalent, and that is a fact about its API rather than a gap here.** Its
+Content Publishing API creates a container and publishes it; there is no draft
+state, no scheduling and no hand-off to the app. An unpublished container is not
+a draft in any sense you would recognise, it never appears in the Instagram app
+and it expires after 24 hours. So the only two things this code can do to
+Instagram are publish a reel immediately or not call it at all, and publishing
+immediately means publishing whatever audio the file happens to carry, for ever,
+because a reel's audio cannot be changed after posting.
+
+So it does not call it. `src/publish/instagram.js` still has a working, tested
+reel path and `targets.js` simply does not route to it, which is one line away
+if the Instagram half is ever worth automating. The editorial rule lives in
+`MANUAL_BY_KIND` rather than being deleted, because it still holds: a clip
+should reach Instagram, and every other Instagram post this account makes is a
+photograph or a carousel, the two formats Instagram is least willing to show to
+people who do not already follow it.
 
 A **plan** is an itinerary an AI wrote, drawn as a deck: `ביקשתי מ-AI לתכנן 4
 ימים ברומא`, then a photograph for every stop with its time, its price and one
@@ -109,9 +145,9 @@ under it. A shoot has nothing to approve at all.
 
 | | per day | arrives as | approve → |
 |---|---|---|---|
-| card | `DAILY_TARGET` (3) | the rendered card | Instagram |
-| deck | `DECKS_PER_DAY` (2) | a line of text | TikTok + Instagram |
-| clip | `CLIPS_PER_DAY` (3) | the finished video | TikTok drafts |
+| card | `DAILY_TARGET` (1) | the rendered card | Instagram |
+| deck | `DECKS_PER_DAY` (1) | a line of text | TikTok + Instagram |
+| clip | `CLIPS_PER_DAY` (2) | the finished video | TikTok drafts + a link to post to Instagram yourself |
 | shoot | `SHOOTS_PER_DAY` (1) | a shot list | nothing: you film it |
 | plan | none: `/trip` only | the slides + the itinerary in full | TikTok drafts + Instagram |
 
@@ -352,9 +388,30 @@ idea (text)  →  ✅ בנה  →  source + draft + render  →  album + card  �
    ~1 call                  minutes, search budget                     publishes
 ```
 
-The first card is the **proposal**: a title, the region, the category, and the
-list of places it intends to carry. Nothing has been sourced or rendered yet, so
-rejecting it costs one message rather than a full build. Three answers:
+**One Israeli angle is drawn before the idea is asked for**, and it is the
+reason this destination rather than another. Direct flights from Ben Gurion,
+kosher food, what is open on Shabbat, whether an Israeli passport needs a visa,
+what a week costs in shekels. The pool used to sit under `shoot` and reach
+exactly one kind of post: the shot list, which is the one thing here the bot
+cannot make, while every format that actually runs unattended chose its subject
+with no angle at all.
+
+**The angle steers the choice and never becomes a line on a slide.** On a shoot
+the angle is the content, because you are the source and you know whether the
+flight is direct. Nothing automated knows any of that, so a deck that printed
+`טיסה ישירה מנתב״ג` would be inventing a fact of exactly the kind an Israeli
+traveller is most likely to act on. `src/angles.js` carries that warning into
+the prompt, in Hebrew, every time. `חופשת סוכות` makes an October-good
+destination the one that gets proposed; it does not put the word Sukkot
+anywhere. The angle is printed on the approval card, because a rotation quietly
+proposing beach destinations under `חנוכה בחו״ל` otherwise looks exactly like
+one that is working, and it is recorded on the published row so the next draw
+can exclude it across a restart.
+
+The first card is the **proposal**: a title, the region, the category, the angle
+it was chosen for, and the list of places it intends to carry. Nothing has been
+sourced or rendered yet, so rejecting it costs one message rather than a full
+build. Three answers:
 
 | | |
 |---|---|
@@ -586,16 +643,101 @@ live in `post-config.json`:
   really buys is order: the favoured places get posted early in the year and the
   cold and long-haul ones get whatever is left.
 
-The news **card** path is deliberately untouched. A card never publishes to
-TikTok, and its caption is read somewhere a URL is worth printing.
+The news **card** path is deliberately untouched, except that its caption no
+longer ends in a URL. `לסוכן הטיולים החכם שלנו` over `www.tiyulplus.com` was
+defended for years on the grounds that a card's caption is read somewhere a URL
+is worth printing. It is not tappable on either platform, so it bought no
+traffic, and it made the card the only kind still publishing a domain after
+`assertNoUrl` had refused one everywhere else. A card now closes the way a clip
+does: a question, and on some posts one ask.
 
 ### Clips, a stock video with one Hebrew line on it
 
-Three arrive a day by default (`CLIPS_PER_DAY`), built and sent as playable
-videos with approve and reject under them; `/clip` builds one on demand and
-`/clip 3` builds three. An approved clip goes to the account's **TikTok
-drafts** rather than straight out: the API has no field for choosing a sound,
-and sound is the one thing that cannot be changed after publishing.
+Two arrive a day by default (`CLIPS_PER_DAY`), **alternating shapes, starting on
+cuts**, built and sent as playable videos with approve and reject under them;
+`/clip` builds one on demand and `/clip 3` builds three. The alternation is
+strict rather than weighted, for the reason the shoot rotation gives: a weight is
+a tendency, and a tendency permits a run of five of the same thing.
+
+An approved clip goes to the account's **TikTok drafts** rather than straight
+out: TikTok's API has no field for choosing a sound, and sound is the one thing
+that cannot be changed after publishing. The Instagram half is a **hand-off**,
+not a publish, for the reason above, and the notification says so:
+
+```
+📥 טיקטוק טיוטה · 📲 אינסטגרם ידנית: https://cards.tiyulplus.com/cards/clip-5b1b.mp4 · 👇 התיאור
+
+📍 שוויץ
+
+מי היה שם? כמה יצא לכם ליום?
+
+שלחו את זה למי שאתם טסים איתו
+
+#טיול #חופשה #שוויץ #יעדים #טיולים
+```
+
+**Two messages, and the second one is the caption and nothing else.** No label,
+no emoji in front, no headline, no URL, no brand line. Telegram's copy takes a
+whole message, so anything added there is a character to delete by hand in the
+Instagram composer every single time, and the one deletion that gets forgotten
+is a post that goes out with `🏷️` in front of its first line. That is also why
+it is a separate message rather than a section of the first: the notification is
+one line by design and says what happened, this is a payload, and joined neither
+can be copied without editing.
+
+A hand-off is a third state alongside published and drafted, and it exists
+because the two wrong things to say about a copy nobody has made are that it
+published and nothing at all. The second is the one that actually happens: a
+message listing only TikTok reads as a post that is finished, and the Instagram
+copy silently never gets made.
+
+The URL is the point of that line rather than decoration. The mp4 is already
+hosted, because TikTok pulls video by URL, so the file is one tap away and
+byte-exact rather than whatever a chat app decided to re-encode on the way.
+
+**A clip is not held when TikTok is not connected.** Everything else is: an
+unconfigured destination is a fact about the install rather than about the post,
+so a deck waits for TikTok to arrive rather than being consumed by its absence.
+A clip is the exception because the only step left is one you were always going
+to take by hand, and the mp4 is rendered and hosted already. It is recorded with
+every destination false, which is the honest row (this program published it
+nowhere), and what the record buys is that the footage is spent and the clip is
+never offered again.
+
+### The music bed, and why it is off
+
+There is a working music-bed path, `clips.audio` in `post-config.json`, and it
+is switched **off**. Both halves of that are worth knowing.
+
+It was built for a real problem. When a clip published to Instagram unattended,
+whatever audio the file carried was permanent, because a reel's audio cannot be
+changed after posting - so a silent render meant a silent post, for ever, with
+no step at which anybody could have noticed. Mixing a track in at render time
+was the fix.
+
+It is off because the delivery changed. The sound is chosen by hand in each app
+now, and nothing publishes a reel, so no silent file reaches a feed unattended.
+A bed would actively get in the way rather than merely being redundant: adding a
+sound in the Instagram app to a video that already has audio **mixes** the two,
+so every post would need the original muted by hand before the chosen track
+sounded right.
+
+It is kept, working and tested, because of what would bring it back. If posting
+the Instagram half by hand every day turns out to be the thing that does not
+happen - which is the honest risk, and it is the same risk that left TikTok at
+seven videos - then automating that half means a silent reel unless this is on,
+and it is one flag rather than a rebuild.
+
+When it is on: which tracks exist is `assets/audio/tracks.json`, a declared list
+rather than a directory listing, naming each track with its credit, its licence
+and the page it came from. A file in the folder the manifest does not name is
+not a track. It is the same argument
+[`src/publish/imageHosts.js`](src/publish/imageHosts.js) makes about TikTok's
+verified domains: a check derived from what happens to be present agrees with
+every mistake it was written to catch, and here the mistake is publishing music
+we cannot account for. A declared track with no licence, or one that is not on
+disk, throws by name rather than being skipped. The repository ships the
+manifest and no audio, because the files are not ours to redistribute.
 
 For working on the format rather than posting: `npm run clip-lab -- 4` builds a
 batch to look at, and `npm run clip-redo -- <pexelsId>="the line"` re-renders
@@ -604,7 +746,7 @@ styling change without three variables moving at once. Add `place=Switzerland`
 when the judge got the country wrong: it sets the country for the line, the pin
 and the tag together, which is the only way they cannot end up disagreeing.
 
-Three a day is measured rather than cautious: the 26 destination queries return
+Two a day is measured rather than cautious: the 26 destination queries return
 **1479 unique vertical clips** in the allowed duration range, so even assuming
 only half clear the destination gate that is over eight months of unique
 footage. The catalogue is not the constraint, how many you are willing to look
@@ -652,18 +794,32 @@ at boot and warns once rather than failing at the first clip of the day; cards
 and decks are unaffected. The text is composited as an image rather than drawn
 by ffmpeg, because `drawtext` has no bidi support and renders Hebrew reversed.
 
-**The description is a pin, a question, sometimes the bio pointer, and five
-tags.**
+**The description is a pin, a question, sometimes one ask, and five tags.**
 
 ```
 📍 צ׳ינקווה טורי, איטליה
 
-לאן אתם טסים הבא?
+מי היה שם? כמה יצא לכם ליום?
 
-תכננו טיול כזה בחינם, הלינק בביו
+שלחו את זה למי שאתם טסים איתו
 
-#פוריו #ויראלי #איטליה #טיולים #טיפיםלטיול
+#טיול #חופשה #איטליה #טיולים #טיפיםלטיול
 ```
+
+The question asks for something only a particular reader has, a price or a
+choice, rather than something anybody can answer in one word: an empty comment
+thread under a post that asked `לאן אתם טסים הבא?` is what that looked like.
+The ask is drawn from a pool that leans on sends and follows, with the bio
+pointer as one entry rather than the whole of it, and it appears on
+`caption.ctaShare` of posts rather than all of them.
+
+`#פוריו` and `#ויראלי` are gone. Removing `#fyp` was right and stopped a step
+short: `#פוריו` is `#fyp` with Hebrew letters, which is the same non-pool, and
+`#ויראלי` names a hoped-for outcome rather than a subject, so there is no
+audience on the other side of it. Broad now means broad *within travel*.
+Instagram has said plainly that hashtags do not improve reach; they still
+classify a video on TikTok, which is why five topical ones stay rather than
+none, and why this is the last block in `post-config.json` worth tuning.
 
 The hook is not repeated there, it is burned into the video, and printing it
 again spends the description on something the viewer read two seconds ago. The
