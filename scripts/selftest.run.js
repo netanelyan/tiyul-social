@@ -5398,6 +5398,64 @@ try {
 }
 
 /* -------------------------------------------------------------------------- */
+group('the cover is made to fit - nothing publishes with its title cut');
+
+// The size a cover is set at is chosen by COUNTING CHARACTERS (sizeClass,
+// thresholds 20/30/42) and the block is clamped to overlay.maxLines, so a line
+// the count guessed wrong about came out with "…" on the end of it. A published
+// post with a cut title is not a signal anybody can act on, and the clip writer
+// already treats that character as a defect (ELLIPSIS in video/hooks.js).
+//
+// So the renderer asks Chromium, which has actually laid the page out, and
+// steps the size down until it fits. Rendered for real here rather than
+// asserted against the HTML, because the whole point is that the HTML cannot
+// answer this question - only layout can.
+try {
+  const { renderToJpeg } = await import('../src/render/index.js');
+  const os = await import('node:os');
+  const nodePath = await import('node:path');
+  const outDir = nodePath.join(os.tmpdir(), 'tiyul-selftest-fit');
+  const cover = (titleHe, emphasisHe) =>
+    renderSlideHtml({ titleHe, emphasisHe }, { size: 'tiktok', cover: true, style: 'minimal' });
+  const draw = (name, html) =>
+    renderToJpeg(html, { stem: name, width: SIZES.tiktok.w, height: SIZES.tiktok.h, outDir });
+
+  // THE CONTROL, AND IT IS THE HALF THAT MATTERS MOST. This is the real
+  // Helsinki cover, which published correctly. Two earlier versions of the
+  // overflow test shrank it from 55px to 34px - once by measuring width on a
+  // clamped block, once by calling a 3px ascender overshoot an overflow - and
+  // either would have quietly restyled every post in the account.
+  for (const [what, title, emph] of [
+    ['a short cover', '4 ימים בהלסינקי', '4 ימים'],
+    ['the real Helsinki cover', 'ביקשתי מ-AI לתכנן 4 ימים בהלסינקי', '4 ימים בהלסינקי'],
+    ['a longer one that still fits', 'ביקשתי מ-AI לתכנן 7 ימים בסנט פטרסבורג', '7 ימים'],
+  ]) {
+    const r = await draw(`fit-ok-${title.length}`, cover(title, emph));
+    eq(`${what} is left exactly as it was`, r.fitted.length, 0);
+  }
+
+  // Past what the character ladder can handle: this is the shape that used to
+  // publish with its title cut.
+  const long = 'ביקשתי מ-AI לתכנן 5 ימים בקופנהגן ובמלמו שמעבר לגשר';
+  const shrunk = await draw('fit-long', cover(long, '5 ימים'));
+  ok('a cover the ladder set too large is shrunk', shrunk.fitted.length === 1, JSON.stringify(shrunk.fitted));
+  ok('smaller than it was set at', shrunk.fitted[0]?.to < shrunk.fitted[0]?.from, JSON.stringify(shrunk.fitted[0]));
+  ok('and it ends up fitting, whole', shrunk.fitted[0]?.fits === true, JSON.stringify(shrunk.fitted[0]));
+
+  // And the floor holds. A title long enough that no readable size fits is not
+  // shrunk into illegibility to hide the problem - it is reported instead.
+  const absurd = 'ביקשתי מ-AI לתכנן 7 ימים בסנט פטרסבורג ובסביבותיה הרחוקות והקרות מאוד';
+  const floored = await draw('fit-absurd', cover(absurd, '7 ימים'));
+  ok('an impossible title stops at the floor', floored.fitted[0]?.to / floored.fitted[0]?.from >= 0.6, JSON.stringify(floored.fitted[0]));
+  eq('and says so rather than pretending', floored.fitted[0]?.fits, false);
+
+  const { closeBrowser } = await import('../src/render/index.js');
+  await closeBrowser().catch(() => {});
+} catch (e) {
+  console.log(`  ⚠ skipped (Playwright unavailable: ${e.message})`);
+}
+
+/* -------------------------------------------------------------------------- */
 console.log(`\n${'─'.repeat(56)}`);
 if (fail) {
   console.log(`${pass} passed, ${fail} FAILED\n`);

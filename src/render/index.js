@@ -84,6 +84,19 @@ export const cardOutputDir = () =>
   process.env.CARD_OUTPUT_DIR || path.join(process.cwd(), 'out', 'cards');
 
 /**
+ * How far the fit pass may shrink a line that does not fit its clamp.
+ *
+ * 0.62 of the size it was set at, which is one step below the smallest the
+ * character-count ladder can choose on its own (`xlong` is 0.76). That is a
+ * deliberate ordering: the ladder still decides the look of a normal cover, and
+ * this only goes past it for the lines the ladder got wrong.
+ *
+ * A floor rather than no limit, because a title small enough to always fit is a
+ * title nobody reads on a phone. Overridable for the lab.
+ */
+const FIT_FLOOR_SCALE = Math.min(1, Math.max(0.3, Number(process.env.RENDER_FIT_FLOOR || '0.62')));
+
+/**
  * Public HTTPS URL for a rendered card.
  *
  * Instagram's `POST /{ig-user-id}/media` takes an `image_url` that *Instagram's
@@ -238,6 +251,90 @@ export async function renderToJpeg(html, { stem, width = CARD_W, height = CARD_H
       );
     }
 
+    // NOTHING GOES OUT WITH AN ELLIPSIS ON IT.
+    //
+    // Every text block on a slide is clamped to overlay.maxLines, and the clamp
+    // is what puts "…" on the end of a line that did not fit. The size that line
+    // was set at had been chosen by COUNTING CHARACTERS - sizeClass() in
+    // deckTemplates.js, thresholds at 20/30/42 - which is a fair proxy and blind
+    // to the three things that actually decide whether it fits: how wide the
+    // text box is at that size, which glyphs the words happen to use, and an
+    // emphasis span inside the line.
+    //
+    // The comment on .cover argued the truncation was a SIGNAL - "a cover that
+    // needs three lines is a cover that needs rewriting". The signal is real and
+    // the delivery was wrong: it arrives as a published post with its title cut,
+    // which nobody can act on afterwards, and the clip writer already takes the
+    // opposite view of the same character (see ELLIPSIS in video/hooks.js: a
+    // line that ends in one is a line that was cut).
+    //
+    // So ask the only authority there is. Chromium has laid the page out; a
+    // clamped block that overflows is scrollHeight > clientHeight, and the
+    // answer is to set it smaller and ask again. Down to a floor, because type
+    // too small to read on a phone is not an improvement on a cut line - and if
+    // it still does not fit there, the line really is too long and THAT is worth
+    // a word in the log.
+    //
+    // Only blocks that overflow are touched, so a slide that already fits comes
+    // out byte-identical to before.
+    const fitted = await page.evaluate((floorScale) => {
+      const clamped = [...document.querySelectorAll('*')].filter(
+        (el) => getComputedStyle(el).webkitLineClamp !== 'none'
+      );
+      // VERTICAL, BY THE LINE, AND NOT BY THE PIXEL.
+      //
+      // Two wrong versions of this check shipped in the same hour, and both had
+      // the same tell: they shrank a fifteen-character cover that fits on one
+      // line, from 55px to 34px.
+      //
+      //   scrollWidth > clientWidth   - a clamped block reports a scrollWidth
+      //     wider than its client box whatever the text says, so everything
+      //     matched. The clamp cuts by LINE; width was never the question.
+      //
+      //   scrollHeight - clientHeight > 1   - a single line measured 64px
+      //     client against 67px scroll. The 3px is the font's ascender and
+      //     descender overshooting the line box, present on text that fits
+      //     perfectly, and a one-pixel tolerance calls it an overflow.
+      //
+      // A line that did not fit costs a whole lineHeight, so anything under a
+      // third of one is the typeface breathing. Measured, not assumed: those
+      // numbers are from the Helsinki cover that published correctly.
+      const over = (el) => {
+        const cs = getComputedStyle(el);
+        const line = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2;
+        return el.scrollHeight - el.clientHeight > Math.max(2, line * 0.3);
+      };
+
+      const out = [];
+      for (const el of clamped) {
+        if (!over(el)) continue;
+        const from = parseFloat(getComputedStyle(el).fontSize);
+        const floor = Math.max(12, from * floorScale);
+        let px = from;
+        // 2% a step: small enough that it stops at the first size that fits
+        // rather than overshooting into type smaller than it needed to be.
+        while (over(el) && px > floor) {
+          px = Math.max(floor, px * 0.98);
+          el.style.fontSize = `${px}px`;
+        }
+        out.push({
+          text: (el.textContent || '').trim().slice(0, 48),
+          from: Math.round(from),
+          to: Math.round(px),
+          fits: !over(el),
+        });
+      }
+      return out;
+    }, FIT_FLOOR_SCALE);
+
+    for (const f of fitted) {
+      console.log(
+        f.fits
+          ? `render: fitted "${f.text}" ${f.from}px -> ${f.to}px`
+          : `render: "${f.text}" does not fit even at ${f.to}px - it is too long for the slide`
+      );
+    }
+
     const buf = await page.screenshot({ type: 'jpeg', quality: 92 });
 
     mkdirSync(outDir, { recursive: true });
@@ -249,7 +346,10 @@ export async function renderToJpeg(html, { stem, width = CARD_W, height = CARD_H
     writeFileSync(tmp, buf);
     renameSync(tmp, file);
 
-    return { file, filename, url: cardPublicUrl(filename), bytes: buf.length };
+    // `fitted` is empty on every slide that laid out as written, which is the
+    // normal case. A non-empty one is the signal the clamp used to deliver by
+    // cutting the line: this cover is longer than the format wants.
+    return { file, filename, url: cardPublicUrl(filename), bytes: buf.length, fitted };
   } finally {
     await context.close().catch(() => {});
     scheduleIdleShutdown();
