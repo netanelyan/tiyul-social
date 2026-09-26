@@ -27,6 +27,13 @@ const ttlMs = () => Math.max(0, Number(process.env.SEEN_TTL_DAYS ?? '45')) * DAY
 const publishedWindowMs = () =>
   Math.max(1, Number(process.env.QUOTA_WINDOW_DAYS ?? '30')) * DAY_MS;
 
+// How many clip shapes are remembered. Only the first is ever read — see
+// lastClipShape — and the rest is there to be looked at when a feed feels
+// repetitive, which is the one moment the sequence is worth more than the last
+// value. Declared up here rather than beside its functions because load() reads
+// it while backfilling, and load() runs before anything below this point.
+const CLIP_SHAPES_KEPT = 12;
+
 const empty = {
   seen: {},
   queue: [],
@@ -67,6 +74,10 @@ const empty = {
   // unique verticals behind the configured queries, so spending one on a
   // rejected clip costs nothing next to being offered it twice.
   clipsUsed: {},
+  // The shapes of the clips already built, most recent first. What makes the two
+  // shapes alternate across days rather than only inside one batch — see
+  // lastClipShape further down.
+  clipShapes: [],
   // { date: 'YYYY-MM-DD', count: n, rejected: n } — the daily cap, survives restart.
   stagedDay: null,
   // When a card last reached the approval chat, and when something last went
@@ -223,6 +234,11 @@ function load() {
   // rules (never the same shape twice in a row, the product in at least half, a
   // series that reaches part 3) are all questions about what was sent last.
   if (!Array.isArray(s.shoots)) s.shoots = [];
+  // A history too, and for the same reason: what the clip shapes have to
+  // alternate against is what was built last. Backfilled below from the clips
+  // the store already holds, so a box that has been running does not restart the
+  // alternation from nothing.
+  if (!Array.isArray(s.clipShapes)) s.clipShapes = [];
 
   // Migration for stores written before publishedIds existed. Backfill from the
   // quota window — it is the only record of what went out, and recovering the
@@ -275,6 +291,33 @@ function load() {
   for (const [id, ts] of spent) {
     if (id && !s.clipsUsed[id]) {
       s.clipsUsed[id] = ts;
+      migrated = true;
+    }
+  }
+
+  // And the shape history, from the clips the store still holds.
+  //
+  // Worth doing rather than starting empty, because an empty history makes
+  // nextShapes open on cuts — and on the box this shipped to, the clip the owner
+  // was unhappy with was a cuts clip. Starting from nothing would hand them
+  // another one, which is the complaint rather than the fix.
+  //
+  // Newest first, matching the live order. Only candidates still on the box are
+  // readable: the published log records no shape, so a clip that went out and
+  // aged past the quota window is not recoverable and does not need to be — one
+  // entry is all the alternation reads.
+  if (!s.clipShapes.length) {
+    const clips = [
+      ...Object.values(s.staging || {}),
+      ...(s.queue || []),
+      ...(s.held || []).map((h) => h?.cand),
+    ].filter((c) => c?.kind === 'clip');
+    const shapes = clips
+      .sort((a, b) => at(b) - at(a))
+      .map((c) => (c.clip?.shape === 'cuts' ? 'cuts' : 'held'))
+      .slice(0, CLIP_SHAPES_KEPT);
+    if (shapes.length) {
+      s.clipShapes = shapes;
       migrated = true;
     }
   }
@@ -397,6 +440,33 @@ export function forgetClip(pexelsId) {
   return had;
 }
 export const usedClipCount = () => Object.keys(state.clipsUsed).length;
+
+// --- which clip shape was built last ----------------------------------------
+//
+// The two clip shapes alternate, and the alternation needs a memory. It used to
+// be the batch index, which is right for `/clip 4` and wrong for the path that
+// actually runs unattended: one clip a day is index 0 every day, so every clip
+// the timer ever built was a cuts clip and the held shape was reachable only by
+// hand. See nextShapes in video/clip.js.
+//
+// A short HISTORY rather than one field, for the same reason `clipsUsed` records
+// a clip when it is BUILT and not when it publishes: what has to alternate is
+// what the account has produced, and a rejected clip was produced. A rejected
+// cuts clip that left no trace would be replaced by another cuts clip, which is
+// the run of identical posts the alternation exists to prevent.
+/** The shape of the last clip built, or null on a box that has built none. */
+export const lastClipShape = () => state.clipShapes?.[0] || null;
+
+/** The shapes built, most recent first. */
+export const clipShapeHistory = () => (state.clipShapes || []).slice();
+
+/** Record one. Called when the clip is built, like the footage ledger. */
+export function noteClipShape(shape) {
+  const s = String(shape || '').trim();
+  if (s !== 'cuts' && s !== 'held') return;
+  state.clipShapes = [s, ...(state.clipShapes || [])].slice(0, CLIP_SHAPES_KEPT);
+  save();
+}
 
 // --- how many were staged today --------------------------------------------
 //

@@ -1839,6 +1839,11 @@ function clipFootageSeen() {
 /** Spend the footage a finished batch was built from, every shot of every clip. */
 const spendClipFootage = (clips) => {
   for (const c of clips) for (const id of store.clipPexelsIds(c)) store.markClipUsed(id);
+  // And which SHAPE each one was, in build order, which is what makes the two
+  // shapes alternate across days instead of only inside one batch. Recorded here
+  // beside the footage because it is the same moment and the same rule: a clip
+  // that was built is spent, whatever is done with it next.
+  for (const c of clips) store.noteClipShape(c.clip?.shape || 'held');
 };
 
 /**
@@ -1857,16 +1862,25 @@ const spendClipFootage = (clips) => {
  */
 bot.command('clip', async (ctx) => {
   const arg = (ctx.message.text || '').replace(/^\/clip(@\S+)?\s*/, '').trim();
-  const count = Math.min(5, Math.max(1, Number(arg) || 1));
+  const { clipShapeArg, buildClips } = await import('./src/video/clip.js');
+  const { postConfig } = await import('./src/postConfig.js');
+  // The number wherever it is in the argument, so `/clip cuts 2` and `/clip 2
+  // cuts` mean the same thing. A bare `/clip cuts` is one clip.
+  const count = Math.min(5, Math.max(1, Number((arg.match(/\d+/) || [])[0]) || 1));
+  const shape = clipShapeArg(arg);
 
-  await ctx.reply(`⏳ בונה ${count} קליפ${count === 1 ? '' : 'ים'}...`);
+  await ctx.reply(
+    `⏳ בונה ${count} קליפ${count === 1 ? '' : 'ים'}${shape ? ` · ${shape === 'cuts' ? 'חתוך' : 'שוט אחד'}` : ''}...`
+  );
   detach(
     'קליפים',
     async () => {
-      const { buildClips } = await import('./src/video/clip.js');
-      const { clips, considered, nowhere, failed, written } = await buildClips({
+      const { clips, considered, nowhere, failed, written, asked, shapes: got } = await buildClips({
         count,
         seen: clipFootageSeen(),
+        // Named, or the next in the alternation from whatever was built last.
+        shapes: shape ? Array.from({ length: count }, () => shape) : null,
+        after: store.lastClipShape(),
       });
       // Before they are staged, and before anything can fail. A clip that was
       // built exists — the encode happened and you are about to be shown it —
@@ -1889,7 +1903,21 @@ ${why}`).catch(() => {});
 
       const notes = [];
       if (written < clips.length) notes.push(`⚠️ ${clips.length - written} שורות מהמאגר ולא נכתבו`);
-      if (failed?.length) notes.push(`⚠️ ${failed.length} נכשלו בבנייה`);
+      // A cuts clip that could not be assembled falls through to a single shot,
+      // so a "failed" line can sit under a clip that arrived perfectly well. Said
+      // plainly, with the reason, because it is the one report that tells you the
+      // judge is naming countries and not places — which is a query to fix, not a
+      // bug to chase.
+      const fellBack = (asked || []).filter((s) => s === 'cuts').length - (got || []).filter((s) => s === 'cuts').length;
+      if (fellBack > 0) {
+        notes.push(
+          `ℹ️ ${fellBack} קליפ${fellBack === 1 ? '' : 'ים'} ירדו מחתוך לשוט אחד - לא נמצאו ${
+            postConfig().clips.cuts.cutsMin
+          } מקומות ספציפיים שונים`
+        );
+      }
+      const real = (failed || []).filter((f) => !/^cuts: need /.test(f));
+      if (real.length) notes.push(`⚠️ ${real.length} נכשלו בבנייה: ${real[0]}`);
       if (notes.length) await notify.send(bot.telegram, ctx.chat.id, notes.join('\n')).catch(() => {});
     },
     ctx.chat.id
@@ -2329,6 +2357,11 @@ async function suggestClip() {
   const { clips, considered, nowhere, written } = await buildClips({
     count: 1,
     seen: clipFootageSeen(),
+    // THE ALTERNATION LIVES OR DIES ON THIS LINE. This builds ONE clip, so the
+    // batch index is 0 every day, and the shapes used to be chosen by that index
+    // — which made every unattended clip this account ever produced a cuts clip
+    // and left the held shape reachable only by typing /clip. See nextShapes.
+    after: store.lastClipShape(),
   });
   spendClipFootage(clips);
 

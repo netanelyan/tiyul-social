@@ -221,6 +221,12 @@ function cutsConfig(raw) {
       desc: String(f.desc || '').trim(),
       weight: Math.max(1, Math.round(num(f.weight, 1))),
       minWords: f.minWords === undefined ? undefined : Math.max(2, Math.round(num(f.minWords, 3))),
+      // Only offered when every shot turned out to be in the same country, which
+      // is the only case where the writer is allowed to name one. On a mixed cut
+      // the user turn forbids naming a country at all, so a format built around
+      // the name is a candidate spent on a line that cannot be written - the
+      // same withdrawal `needsPlace` performs for the held clip's formats.
+      needsCountry: f.needsCountry === true,
     }))
     .filter((f) => f.id && f.desc);
 
@@ -232,12 +238,29 @@ function cutsConfig(raw) {
     throw new Error('post-config.json: clips.cuts.on is true but clips.cuts.hookFormats is empty');
   }
 
+  const secondsPerCut = Math.max(2, num(raw.secondsPerCut, 4));
+
   return {
     on,
     cutsMin,
     cutsMax,
-    secondsPerCut: Math.max(2, num(raw.secondsPerCut, 4)),
-    hookMaxWords: Math.max(3, Math.round(num(raw.hookMaxWords, 9))),
+    secondsPerCut,
+    // How long the OPENING cut is held, which is the one cut carrying no place.
+    //
+    // Its own number because it is doing a different job. Every other cut has to
+    // be long enough to read a name and watch the shot move; this one has to be
+    // long enough to read the hook and no longer, and four seconds of a line the
+    // viewer finished in one is a quarter of the video spent on a title card.
+    // The owner's note on the first cuts video was "hook is too long".
+    //
+    // Floored at 1.5 rather than at secondsPerCut's 2, because shorter is the
+    // direction this dial is for and a hook can legitimately be a flash.
+    hookSeconds: Math.max(1.5, num(raw.hookSeconds, 3)),
+    hookMaxWords: Math.max(3, Math.round(num(raw.hookMaxWords, 6))),
+    // Whether a cut's label must be a specific place rather than a country. See
+    // pickCuts: on is the owner's rule, off is the escape hatch for a day when
+    // the judge named no sites at all and a country list beats no post.
+    labelNeedsSite: raw.labelNeedsSite !== false,
     hookFormats,
   };
 }

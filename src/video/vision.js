@@ -59,20 +59,22 @@ const SCHEMA = {
     place: {
       type: 'string',
       description:
-        'The country, in English, ONLY if the frame is unmistakably identifiable - a famous landmark, or architecture and landscape that could not be anywhere else. Empty string when unsure. A guess here becomes a factual claim on a published post.',
+        'The country, in English. The search phrase and title below usually name it; your job is to confirm the frame is consistent with what they say, not to identify it unaided. Empty string when they name no country and the frame is not unmistakable, or when the frame contradicts them.',
     },
     placeConfidence: {
       type: 'integer',
-      description: '0-10 certainty in `place`. Below the configured floor the name is discarded.',
+      description:
+        '0-10 certainty in `place`. Score the CONSISTENCY between the name and the frame, not your ability to recognise the country unaided. Below the configured floor the name is discarded.',
     },
     site: {
       type: 'string',
       description:
-        'The specific place and NOTHING ELSE - "Lago di Braies", "Cinque Torri", "Lauterbrunnen". No region, no country, no comma: the country is a separate field and gets added separately. ONLY when the frame is unmistakably that place; a generic mountain valley has no site name and gets an empty string.',
+        'The specific place and NOTHING ELSE - "Lago di Braies", "Lauterbrunnen", "Dolomites", "Cinque Terre". A landmark, a town, a valley or a named region all count; a country does not, and neither does a comma - the country is a separate field and gets added separately. Empty string when the frame is a generic valley or coastline that the search phrase and title do not pin down.',
     },
     siteConfidence: {
       type: 'integer',
-      description: '0-10 certainty in `site`. Below the configured floor the name is discarded.',
+      description:
+        '0-10 certainty in `site`. Score the CONSISTENCY between the name and the frame, not your ability to recognise the place unaided: a search phrase and title naming the Dolomites over a frame of limestone spires is a 9, the same words over a frame of a tropical beach is a 0.',
     },
     siteHe: {
       type: 'string',
@@ -96,12 +98,31 @@ const PROMPT =
   'them - and the post is then about that person rather than about the place. Judge it by who the shot is ' +
   'OF: a figure the frame is built around is true; a hand on a railing, a boot on a step or two walkers the ' +
   'size of a thumbnail on a ridge are not.\n\n' +
-  'Name `place` and `site` only if you are certain. Both are printed on a published post, and a confident ' +
-  'guess that is wrong is worse than saying nothing - leave them empty and set the confidence low whenever ' +
-  'there is doubt. `site` is the harder one: most footage is a generic valley or coastline with no name.\n\n' +
+  'WHERE IT IS: YOU ARE CONFIRMING A LEAD, NOT GUESSING.\n\n' +
+  'The search phrase and title below come from the stock library. The phrase is what was asked for and the ' +
+  'title is what the person who uploaded the clip called it, so between them they usually name the place ' +
+  'already. Your job is to say whether the FRAME IS CONSISTENT with what they say - which is a question ' +
+  'about the picture in front of you, and a far more answerable one than naming a valley from memory.\n\n' +
+  'So: if they name a place and the frame fits it, use that name and score the confidence high. If they ' +
+  'name a place and the frame contradicts it - the phrase says Iceland and this is a palm beach - leave ' +
+  'both fields empty and the confidence at 0; the library is wrong and a wrong pin is worse than no pin. ' +
+  'If they name nothing specific, name only what the frame itself makes unmistakable, and leave it empty ' +
+  'otherwise. Never invent a name to fill the field.\n\n' +
+  '`site` is the one that matters most and it is not only for landmarks. A town, a valley or a named ' +
+  'region - "Lauterbrunnen", "Dolomites", "Cinque Terre" - all count. What does not count is a country, ' +
+  'because that goes in `place` and a post labelled with nothing but a country is the thing this field ' +
+  'exists to avoid.\n\n' +
   'When you do name a `site`, also write it in Hebrew letters in `siteHe`. The post is published in Hebrew ' +
   'and the name is read aloud by an Israeli audience, so transliterate the SOUND of it - never translate ' +
   'the words, and never leave a Latin letter in that field.';
+
+/** What the stock library already says about this clip, as a block for the prompt. */
+const leadFor = ({ query, title }) => {
+  const lines = [];
+  if (query) lines.push(`Search phrase it was returned for: "${query}"`);
+  if (title) lines.push(`Title the uploader gave it: "${title}"`);
+  return lines.length ? `\n\nWHAT THE LIBRARY SAYS:\n${lines.join('\n')}` : '';
+};
 
 /**
  * Judge one clip from its thumbnail.
@@ -109,8 +130,29 @@ const PROMPT =
  * Returns null rather than throwing. A judge that fails should cost that one
  * candidate, not the batch — and a null is filtered out downstream, which is
  * the safe direction: an unjudged clip is never published.
+ *
+ * `query` AND `title` ARE WHY THE PLACE FIELDS WORK AT ALL.
+ *
+ * This used to be the thumbnail and nothing else, and it named a place on about
+ * one candidate in fifteen — measured, on a batch where the search had asked
+ * Pexels for "dolomites italy" and got back a clip its uploader had titled
+ * "scenic mountainous pathway in dolomites". The judge was being asked to
+ * recognise a valley from a bare picture, which is the hardest possible version
+ * of the question, and it was answering honestly: not sure. Meanwhile the answer
+ * was sitting in two strings nobody passed it.
+ *
+ * So the lead goes in and the question changes from "what is this" to "is this
+ * consistent with what the library says". The claim is then SOURCED — our own
+ * search phrase plus the uploader's title, checked against the frame — which is
+ * the same standard every other published fact in this pipeline is held to, and
+ * a considerably better one than a model's unaided recall.
+ *
+ * It also makes the contradiction case reachable: a phrase saying Iceland over a
+ * frame of palm trees now scores 0 and discards the name, where before the judge
+ * would simply have said "unsure" about a mislabelled clip and looked identical
+ * to the fifteen it was unsure about for good reason.
  */
-export async function judgeThumb(url, { timeoutMs = 20_000 } = {}) {
+export async function judgeThumb(url, { timeoutMs = 20_000, query = null, title = null } = {}) {
   if (!hasApiKey()) return null;
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
@@ -126,7 +168,7 @@ export async function judgeThumb(url, { timeoutMs = 20_000 } = {}) {
           role: 'user',
           content: [
             { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } },
-            { type: 'text', text: PROMPT },
+            { type: 'text', text: PROMPT + leadFor({ query, title }) },
           ],
         },
       ],

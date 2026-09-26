@@ -633,15 +633,28 @@ const audioNote = (audio) =>
  * looped, covered and overlaid in place, and `concat` joins the results before
  * anything is written.
  *
- * `segments` is [{ source, text, pngFile, duration }] in cut order. Each one is
- * measured and rendered on its OWN window, because where the words go and what
- * colour they are are properties of that shot and nothing else: a light line
- * placed for a dark forest is unreadable over the snow that follows it.
+ * `segments` is [{ source, text, pngFile, duration, seconds }] in cut order.
+ * Each one is measured and rendered on its OWN window, because where the words
+ * go and what colour they are are properties of that shot and nothing else: a
+ * light line placed for a dark forest is unreadable over the snow that follows
+ * it.
+ *
+ * `seconds` is how long THAT cut is held, and it is per segment rather than one
+ * number for the video because the opening cut is not doing the same job as the
+ * rest. It carries the hook and no place name, so it needs long enough to read
+ * one line and nothing more, while every other cut has a name to read and a shot
+ * to watch move. Held at the same length as the others, the opening was a
+ * quarter of the video spent on a title card. Defaults to secondsPerCut, so a
+ * caller that passes nothing renders exactly what it rendered before.
  */
 export async function burnCuts(segments, { outFile, id = '', track = null } = {}) {
   const cfg = postConfig().clips.video;
   const { width: w, height: h, fps, crf, preset, loopSource } = cfg;
   const perCut = postConfig().clips.cuts.secondsPerCut;
+  const secondsOf = (seg) => {
+    const n = Number(seg?.seconds);
+    return Number.isFinite(n) && n > 0 ? n : perCut;
+  };
 
   if (segments.length < 2) throw new Error(`a cut needs at least two shots (got ${segments.length})`);
 
@@ -651,8 +664,9 @@ export async function burnCuts(segments, { outFile, id = '', track = null } = {}
   // starts failing on the box it works on locally.
   const spots = [];
   for (const [i, seg] of segments.entries()) {
+    const hold = secondsOf(seg);
     const startAt = await pickWindow(seg.source, seg.duration).catch(() => cfg.startAt);
-    const span = seg.duration ? Math.min(perCut, Math.max(1, seg.duration - startAt)) : perCut;
+    const span = seg.duration ? Math.min(hold, Math.max(1, seg.duration - startAt)) : hold;
     const spot = await measureClip(seg.source, { startAt, seconds: span }).catch(() => null);
     await renderOverlayPng(seg.text, { width: w, height: h, file: seg.pngFile, spot, id: `${id}-${i}` });
     spots.push({ startAt, spot });
@@ -665,7 +679,7 @@ export async function burnCuts(segments, { outFile, id = '', track = null } = {}
   for (const [i, seg] of segments.entries()) {
     args.push('-ss', String(spots[i].startAt));
     if (loopSource) args.push('-stream_loop', '-1');
-    args.push('-t', String(perCut), '-i', seg.source);
+    args.push('-t', String(secondsOf(seg)), '-i', seg.source);
   }
   for (const seg of segments) args.push('-i', seg.pngFile);
 
@@ -675,7 +689,12 @@ export async function burnCuts(segments, { outFile, id = '', track = null } = {}
   // picture; a bed that changed with them would turn four shots into four
   // posts played in a row, and continuous audio over a cut is the oldest thing
   // in editing for making a sequence read as one piece.
-  const seconds = segments.length * perCut;
+  //
+  // SUMMED rather than segments × perCut, because the cuts are no longer all the
+  // same length. Multiplying would ask `atrim` for more audio than the picture
+  // holds and the fade-out would land after the last frame, which is a bed that
+  // stops mid-note on a video whose whole value is that it loops.
+  const seconds = segments.reduce((t, seg) => t + secondsOf(seg), 0);
   const audio = audioChain(track, { inputIndex: segments.length * 2, seconds, id });
 
   const chains = segments.map(

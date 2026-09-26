@@ -4,7 +4,7 @@ import { postConfig } from '../postConfig.js';
 import { stripDashes } from '../dashes.js';
 import { URL_LIKE } from '../urlLike.js';
 import { hasPerson, trailsOff } from './hooks.js';
-import { clipPlaceLabel } from '../hashtags.js';
+import { clipPlaceLabel, clipSiteName } from '../hashtags.js';
 
 // The second clip shape: several shots, cut, a line on each.
 //
@@ -97,7 +97,12 @@ const SYSTEM = `אתה כותב שורת פתיחה אחת לסרטון טיקט
 - בלי גוף ראשון או שני: לא "אני", לא "הייתי", לא "שלי". הצילום הוא סטוק,
   אף אחד מאיתנו לא היה שם.
 - השורה נגמרת. משפט שלם, בלי "..." ובלי להיעצר על מילת חיבור.
-- עד {MAXWORDS} מילים. עברית פשוטה, בלי קופירייטינג ובלי מטאפורות.
+- עד {MAXWORDS} מילים, וכמה שפחות. היא נקראת בשנייה אחת על מסך טלפון, לפני
+  שהצופה החליט אם להישאר. שורה ארוכה נגמרת אחרי שהוא כבר גלל.
+- בלי שבחים כלליים: לא "מדהימים", לא "מרהיבים", לא "עוצרי נשימה", לא "חלומיים".
+  זה מה שכל חשבון טיולים כותב וזה לא אומר כלום. התכונה חייבת להיות משהו שרואים
+  בפריים ושאפשר לחלוק עליו - אין בהם אף אחד, נראים מצוירים, המים בצבע הזה.
+- עברית פשוטה, כמו שמדברים. בלי קופירייטינג ובלי מטאפורות.
 
 החזר JSON בלבד: שורה אחת לכל תבנית שקיבלת.`;
 
@@ -136,33 +141,76 @@ const SCHEMA = {
  */
 export const cutLabel = (clip) => clipPlaceLabel({ clip });
 
+/** The specific place in one shot, or null when only its country is known. */
+export const cutSite = (clip) => clipSiteName(clip?.vision || null);
+
 /**
  * Choose the shots for one cut video, in the order they will play.
  *
- * Two rules, and the second is the one that makes this a post rather than a
- * reel of stock:
+ * Three rules, and the last two are what make this a post rather than a reel of
+ * stock:
  *
  *   1. Every shot must be nameable. See cutLabel.
- *   2. No two shots may carry the SAME label. Four cuts of four different
+ *   2. THE NAME MUST BE A SPECIFIC PLACE, not a country. `clipPlaceLabel` falls
+ *      back to the bare country when the judge could not name the site, which is
+ *      correct for the pin under a post and wrong burned onto a cut: a list of
+ *      countries is a geography lesson, and the owner's note on the first cuts
+ *      video was exactly this — "places should be specific, not a whole
+ *      country". Off via clips.cuts.labelNeedsSite for a day when nothing else
+ *      will build.
+ *   3. No two shots may carry the same place. Four cuts of four different
  *      corners of Switzerland all labelled "שווייץ" is a hook promising four
  *      places over one place, which is the count guard's failure arriving by a
- *      route the count guard cannot see, the number matches and the post is
+ *      route the count guard cannot see: the number matches and the post is
  *      still a lie.
+ *
+ * Rule 3 is checked on the SITE rather than on the whole label, which is what
+ * lets a video be four places in one country. That is not a relaxation, it is
+ * the point: deduplicating the label meant "שווייץ" collided with itself, so
+ * every cut had to come from a different country, so `oneCountry` never found
+ * one, so the hook was never allowed to name it. Four named Swiss valleys under
+ * "4 מקומות בשווייץ" is a better post than four countries under "4 מקומות שלא
+ * נראים אמיתיים", and it was unreachable by construction.
  *
  * Best-ranked first, because `findClips` has already sorted by what the vision
  * judge thought of each frame and there is no second opinion worth having here.
  */
-export function pickCuts(clips, { cutsMin, cutsMax } = postConfig().clips.cuts) {
+export function pickCuts(clips, cfg = postConfig().clips.cuts) {
+  const { cutsMin, cutsMax, labelNeedsSite } = cfg;
   const taken = new Set();
   const out = [];
   for (const c of clips) {
     if (out.length >= cutsMax) break;
     const label = cutLabel(c);
-    if (!label || taken.has(label)) continue;
-    taken.add(label);
-    out.push({ ...c, label });
+    if (!label) continue;
+    const site = cutSite(c);
+    if (labelNeedsSite !== false && !site) continue;
+    // The site when there is one, so two shots of the same valley collide even
+    // if one of them resolved a country the other did not.
+    const key = site || label;
+    if (taken.has(key)) continue;
+    taken.add(key);
+    out.push({ ...c, label, site: site || null });
   }
   return out.length >= cutsMin ? out : [];
+}
+
+/**
+ * Why a cuts clip could not be built from these shots.
+ *
+ * Three numbers, because they are three different fixes. Nothing judged at all
+ * is a search problem; placed but unsited is `placeMinConfidence` or a query
+ * pointed at generic scenery; enough sites but too few DISTINCT ones is a batch
+ * that found the same valley four times. "found 3" said none of that.
+ */
+export function cutsReason(clips, cfg = postConfig().clips.cuts) {
+  const placed = clips.filter((c) => cutLabel(c));
+  const sited = placed.filter((c) => cutSite(c));
+  const distinct = new Set(sited.map((c) => cutSite(c))).size;
+  return (
+    `need ${cfg.cutsMin} shots with different specific places - ` +
+    `${clips.length} available, ${placed.length} placed, ${sited.length} with a named site, ${distinct} distinct`
+  );
 }
 
 /**
@@ -191,6 +239,17 @@ function pickFormats(all, seed, n) {
   return out.sort((a, b) => (b.weight || 1) - (a.weight || 1));
 }
 
+// Generic praise, which is the register the owner called "not that good" on the
+// first cuts video. Matched on the STEM so every inflection is covered, and kept
+// as a guard rather than left to the prompt for the reason every other rule here
+// is: the prompt is a request, and this one is asked of a model whose training
+// data is full of exactly these words.
+//
+// It is a small list on purpose. The failure is not the adjectives, it is a line
+// that says nothing about the footage - and a long denylist starts rejecting
+// lines that happen to contain a word rather than lines that are empty.
+const BLAND = /מדהים|מרהיב|עוצר[יית]? ?נשימה|חלומי|מושל[םמ]|גן עדן/;
+
 /** Everything that disqualifies an opening line, in the order it is cheapest to check. */
 function reject(text, { cuts, maxWords, minWords }) {
   const s = String(text || '').trim();
@@ -204,6 +263,8 @@ function reject(text, { cuts, maxWords, minWords }) {
   const unfinished = trailsOff(s);
   if (unfinished) return unfinished;
   if (hasPerson(s)) return 'first or second person - the footage is not ours';
+  const bland = s.match(BLAND);
+  if (bland) return `generic praise ("${bland[0]}") - the trait has to be visible in the frame`;
   const miscount = beatCountMismatch(s, cuts);
   if (miscount) return miscount;
   return null;
@@ -226,7 +287,12 @@ export async function writeCutsHook(cuts, { candidates = 3, used = new Set() } =
   if (!hasApiKey()) return { text: null, error: 'ANTHROPIC_API_KEY is not set', rejected: [] };
 
   const country = oneCountry(cuts);
-  const formats = pickFormats(cfg.hookFormats, cuts.map((c) => c.id).join('|'), candidates);
+  // A format built around the country name is unfillable on a mixed cut: the
+  // user turn tells the writer not to name a country at all, so offering it
+  // there spends a candidate on a line that cannot be written. The same rule
+  // `needsPlace` applies to the held clip's formats, for the same reason.
+  const pool = country ? cfg.hookFormats : cfg.hookFormats.filter((f) => !f.needsCountry);
+  const formats = pickFormats(pool, cuts.map((c) => c.id).join('|'), candidates);
   if (!formats.length) return { text: null, error: 'no cut hook formats configured', rejected: [] };
 
   const user = [

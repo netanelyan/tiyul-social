@@ -5,7 +5,7 @@ import { findClips } from './pexels.js';
 import { burnClip, burnCuts, download, clipOutputDir, ffmpegReady } from './overlay.js';
 import { clipHook, postConfig } from '../postConfig.js';
 import { writeHook, hasApiKey, namesOtherCountry, trailsOff } from './hooks.js';
-import { pickCuts, cutLabel, writeCutsHook, beatCountMismatch } from './cuts.js';
+import { pickCuts, cutLabel, cutsReason, writeCutsHook, beatCountMismatch } from './cuts.js';
 import { pickTrack, audioConfigured } from './tracks.js';
 import { assertNoUrl } from '../format.js';
 import { clipCaption } from '../hashtags.js';
@@ -26,6 +26,39 @@ import { targetsForKind } from '../publish/targets.js';
 /** Stable per Pexels clip + line, so the same pairing cannot be staged twice. */
 export const clipId = (pexelsId, hook) =>
   createHash('sha1').update(`${pexelsId}|${hook}`).digest('hex').slice(0, 12);
+
+/**
+ * What the frames measured, rounded, for the candidate and the approval card.
+ *
+ * ONE function because there are two shapes and they were doing it differently.
+ * A held clip rounded its numbers inline here; a cuts clip stored the raw object
+ * `measureClip` returns, whose worst contrast lives at `spread.worst` — so the
+ * card, which prints `spot.worstContrast`, printed "ניגודיות undefined" on every
+ * cuts clip ever built. The one line on the card whose job is to tell you whether
+ * the text is readable, reading undefined on the shape that has four of them.
+ *
+ * Kept as numbers rather than strings: `toFixed` returns a string and JSON would
+ * then store "7.15" where the held shape stores 7.15, which is the kind of
+ * difference that surfaces a year later as a comparison that is always false.
+ */
+export function spotNote(spot) {
+  if (!spot) return null;
+  return {
+    x: Number(spot.x.toFixed(3)),
+    y: Number(spot.y.toFixed(3)),
+    color: spot.color,
+    onDark: spot.onDark,
+    contrast: Number(spot.contrast.toFixed(2)),
+    worstContrast: Number(spot.spread.worst.toFixed(2)),
+    assist: Number(spot.assist.toFixed(2)),
+    // How much of the block landed on sky/water rather than on the subject. The
+    // number that says whether the line looks placed or dumped — a straddle
+    // reads as unprofessional however legible it is.
+    onBackground: Number((spot.onBackground ?? 0).toFixed(2)),
+    frames: spot.frames,
+    agreed: spot.agreed,
+  };
+}
 
 /**
  * Build one clip from one search result.
@@ -166,6 +199,11 @@ export async function buildClip(found, { outDir = clipOutputDir(), hook = null, 
     overrides: [],
     notes: [],
     clip: {
+      // Named rather than left implied by the absence of 'cuts'. The rotation
+      // that alternates the two shapes reads this off the last clip built, and
+      // "no shape field" has to mean "built before there were two shapes" for
+      // the older candidates in staging, not "held".
+      shape: 'held',
       file,
       // What was mixed in, or null for a silent clip. Recorded rather than
       // inferred from the config, because "there was a track configured" and
@@ -193,23 +231,7 @@ export async function buildClip(found, { outDir = clipOutputDir(), hook = null, 
       // What the frames measured, kept for the same reason a slide keeps its
       // spot: "the text is in the wrong place" is much easier to argue about
       // with the numbers that put it there than from memory.
-      spot: spot
-        ? {
-            x: Number(spot.x.toFixed(3)),
-            y: Number(spot.y.toFixed(3)),
-            color: spot.color,
-            onDark: spot.onDark,
-            contrast: Number(spot.contrast.toFixed(2)),
-            worstContrast: Number(spot.spread.worst.toFixed(2)),
-            assist: Number(spot.assist.toFixed(2)),
-            // How much of the block landed on sky/water rather than on the
-            // subject. The number that says whether the line looks placed or
-            // dumped — a straddle reads as unprofessional however legible it is.
-            onBackground: Number((spot.onBackground ?? 0).toFixed(2)),
-            frames: spot.frames,
-            agreed: spot.agreed,
-          }
-        : null,
+      spot: spotNote(spot),
     },
     card: { file },
   };
@@ -255,13 +277,7 @@ export async function buildCutClip(found, { outDir = clipOutputDir(), used = new
   if (!cfg.on) throw new Error('the cuts shape is off (clips.cuts.on)');
 
   const cuts = pickCuts(found, cfg);
-  if (!cuts.length) {
-    throw new Error(
-      `need ${cfg.cutsMin} shots with different named places, found ${
-        new Set(found.map((f) => cutLabel(f)).filter(Boolean)).size
-      }`
-    );
-  }
+  if (!cuts.length) throw new Error(cutsReason(found, cfg));
 
   const res = await writeCutsHook(cuts, { used });
   // NO FALLBACK POOL, and that is the difference from a held clip.
@@ -297,6 +313,10 @@ export async function buildCutClip(found, { outDir = clipOutputDir(), used = new
         text: i === 0 ? line : c.label,
         pngFile: pngs[i],
         duration: c.duration,
+        // The opening cut is held for its own length. It carries one line and no
+        // place, so it is over the moment the line is read; every cut after it
+        // has a name to read and a shot to watch move. See burnCuts.
+        seconds: i === 0 ? cfg.hookSeconds : cfg.secondsPerCut,
       })),
       { outFile: file, id, track }
     );
@@ -342,13 +362,20 @@ export async function buildCutClip(found, { outDir = clipOutputDir(), used = new
         pexelsId: c.id,
         title: c.title,
         label: c.label,
+        // The specific place on its own, which is what the label is now required
+        // to contain. Kept beside the label because "the pin says Switzerland"
+        // and "the judge could not name the valley" are the same fault seen from
+        // two ends, and only one of them is visible in the label.
+        site: c.site ?? null,
         query: c.query,
         credit: c.credit,
         page: c.page,
         vision: c.vision || null,
         rank: c.rank ?? null,
         startAt: burned.startAts[i] ?? null,
-        spot: burned.spots[i] || null,
+        // Through spotNote, like the held shape. Stored raw, the card printed
+        // "ניגודיות undefined" on every cut of every cuts clip.
+        spot: spotNote(burned.spots[i]),
       })),
       // THE COUNTRY ONLY, AND ONLY WHEN THERE IS ONE.
       //
@@ -371,7 +398,7 @@ export async function buildCutClip(found, { outDir = clipOutputDir(), used = new
       // they are burned onto the shots they belong to, which is the whole
       // format.
       vision: res.country ? { ...cuts[0].vision, site: '', siteHe: '' } : null,
-      spot: burned.spots[0] || null,
+      spot: spotNote(burned.spots[0]),
       title: cuts.map((c) => c.label).join(' · '),
       query: cuts[0].query,
       score: cuts[0].score,
@@ -390,6 +417,59 @@ export async function buildCutClip(found, { outDir = clipOutputDir(), used = new
 }
 
 /**
+ * The shapes to build next, in order.
+ *
+ * THE TWO SHAPES ALTERNATE, and `after` is what the last clip built was.
+ *
+ * Not weighted, alternated, for the reason the shoot rotation gives about
+ * formats: a weight is a tendency, and a tendency permits a run of five of the
+ * same thing, which is well within normal for any weighting and is exactly what
+ * produced a feed whose whole idea a viewer had seen by the third post. Two
+ * shapes and a strict alternation is the smallest rule that cannot do that.
+ *
+ * `after` IS WHY THIS IS A FUNCTION. The alternation used to be `i % 2` over the
+ * batch index, which is correct for `/clip 4` and silently wrong for the case
+ * that actually runs: suggestClip builds ONE clip a day, index 0 every time, so
+ * every unattended clip this account has ever made was a cuts clip and the held
+ * shape existed only for a hand-typed batch. The owner asked for "1 video with a
+ * static text" believing it had been dropped, and it had - not from the code,
+ * from the only path that reaches it.
+ *
+ * Cuts leads on a fresh box because it is the stronger shape: it carries more
+ * information and it moves.
+ */
+export function nextShapes(count, { after = null, cutsOn = true } = {}) {
+  if (!cutsOn) return Array.from({ length: count }, () => 'held');
+  const out = [];
+  let prev = after === 'cuts' || after === 'held' ? after : null;
+  for (let i = 0; i < count; i++) {
+    prev = prev === 'cuts' ? 'held' : 'cuts';
+    out.push(prev);
+  }
+  return out;
+}
+
+/**
+ * Which shape a `/clip` argument named, or null to let the rotation decide.
+ *
+ * `/clip 2` is two clips, whatever comes next; `/clip cuts` names the shape and
+ * `/clip 2 held` names both. Named rather than numbered because the shapes are
+ * not a scale, and it is what you want on the one occasion you are sitting there
+ * watching — a shape has just been changed and you want to see it now rather than
+ * wait for the alternation to come round.
+ *
+ * Here rather than in bot.js because bot.js starts a Telegram bot when it is
+ * imported, so nothing in it can be tested except by reading it as text.
+ */
+const CLIP_SHAPES = { cuts: 'cuts', חתוך: 'cuts', held: 'held', בודד: 'held', static: 'held' };
+export function clipShapeArg(arg) {
+  for (const word of String(arg || '').toLowerCase().split(/\s+/)) {
+    if (CLIP_SHAPES[word]) return CLIP_SHAPES[word];
+  }
+  return null;
+}
+
+/**
  * Find clips and build a batch of them.
  *
  * Failures are per clip and reported rather than thrown: a Pexels rendition
@@ -397,19 +477,11 @@ export async function buildCutClip(found, { outDir = clipOutputDir(), used = new
  * batch. Which one failed and why travels back, because a batch that quietly
  * returns three of five looks identical to a search that only found three.
  *
- * THE TWO SHAPES ALTERNATE, starting on cuts.
- *
- * Not weighted, alternated, for the reason src/shoot/rotation.js gives about
- * formats: a weight is a tendency, and a tendency permits a run of five of the
- * same thing, which is well within normal for any weighting and is exactly what
- * produced a feed whose whole idea a viewer had seen by the third post. Two
- * shapes and a strict alternation is the smallest rule that cannot do that.
- *
- * Cuts first because it is the stronger one: it carries more information, it
- * moves, and at the default CLIPS_PER_DAY of two a batch of one would otherwise
- * be a held clip every day.
+ * `after` is the shape of the last clip built, for the alternation — see
+ * nextShapes. `shapes` overrides it outright, which is what `/clip cuts` and a
+ * lab run use.
  */
-export async function buildClips({ count = 5, seen = new Set(), outDir = clipOutputDir(), shapes = null } = {}) {
+export async function buildClips({ count = 5, seen = new Set(), outDir = clipOutputDir(), shapes = null, after = null } = {}) {
   const ready = await ffmpegReady();
   if (!ready.ok) throw new Error(`ffmpeg is not usable (${ready.path}): ${ready.error}`);
 
@@ -435,9 +507,7 @@ export async function buildClips({ count = 5, seen = new Set(), outDir = clipOut
 
   // The shapes to build, in order. Overridable so a lab or a test can ask for
   // one shape without reaching into the config.
-  const order =
-    shapes ||
-    Array.from({ length: count }, (_, i) => (cuts.on && i % 2 === 0 ? 'cuts' : 'held'));
+  const order = shapes || nextShapes(count, { after, cutsOn: cuts.on });
 
   // Shots not yet spent by an earlier clip in this batch. A cuts clip takes
   // four or five off the front, and without removing them the next clip in the
@@ -449,30 +519,45 @@ export async function buildClips({ count = 5, seen = new Set(), outDir = clipOut
     for (let i = pool.length - 1; i >= 0; i--) if (gone.has(String(pool[i].id))) pool.splice(i, 1);
   };
 
+  const one = async (shape) => {
+    if (shape === 'cuts') {
+      const clip = await buildCutClip(pool, { outDir, used, tracksUsed });
+      spend(clip.clip.cuts.map((c) => c.pexelsId));
+      return clip;
+    }
+    const f = pool[0];
+    const clip = await buildClip(f, { outDir, used, tracksUsed });
+    spend([f.id]);
+    return clip;
+  };
+
   for (const shape of order) {
     if (built.length >= count || !pool.length) break;
-    try {
-      if (shape === 'cuts') {
-        const clip = await buildCutClip(pool, { outDir, used, tracksUsed });
+    // The shape asked for, then the one that needs least from the search.
+    //
+    // A cuts clip needs cutsMin shots the judge could name SPECIFICALLY, and a
+    // day where it named three is an ordinary day rather than a fault. Falling
+    // through to held costs nothing and keeps the post, where failing keeps
+    // nothing at all - and the timer builds one clip a day, so "nothing at all"
+    // is the whole day. The reverse fallback does not exist and should not: a
+    // held clip fails on its own footage, and cuts would fail on the same.
+    const attempts = shape === 'cuts' ? ['cuts', 'held'] : ['held'];
+    for (const s of attempts) {
+      if (!pool.length) break;
+      try {
+        const clip = await one(s);
         used.add(clip.hook);
         if (clip.clip.audio) tracksUsed.add(clip.clip.audio.name);
-        spend(clip.clip.cuts.map((c) => c.pexelsId));
         built.push(clip);
-      } else {
-        const f = pool[0];
-        const clip = await buildClip(f, { outDir, used, tracksUsed });
-        used.add(clip.hook);
-        if (clip.clip.audio) tracksUsed.add(clip.clip.audio.name);
-        spend([f.id]);
-        built.push(clip);
+        break;
+      } catch (e) {
+        failed.push(`${s}: ${e.message}`);
+        // A failed HELD clip has spent its one candidate and the next iteration
+        // must not be handed it again. A failed cuts clip is dropped whole:
+        // which of its shots was at fault is not knowable from here, and
+        // removing all five would throw away good footage on one bad line.
+        if (s === 'held' && pool.length) pool.shift();
       }
-    } catch (e) {
-      failed.push(`${shape}: ${e.message}`);
-      // A failed HELD clip has spent its one candidate and the next iteration
-      // must not be handed it again. A failed cuts clip is dropped whole: which
-      // of its shots was at fault is not knowable from here, and removing all
-      // five would throw away good footage on one bad line.
-      if (shape === 'held' && pool.length) pool.shift();
     }
   }
 
@@ -481,6 +566,13 @@ export async function buildClips({ count = 5, seen = new Set(), outDir = clipOut
     considered: total,
     vetoed,
     failed,
+    // What was asked for and what came back, which are not the same thing the
+    // moment a cuts attempt falls through to held. Both, because "the rotation
+    // asked for cuts and the search could not name four places" and "the
+    // rotation asked for held" produce the identical batch and are different
+    // facts about the account.
+    asked: order,
+    shapes: built.map((c) => c.clip?.shape || 'held'),
     // Which candidates the vision judge turned down and why.
     //
     // findClips has always returned this and buildClips has never passed it on,

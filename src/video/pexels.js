@@ -203,7 +203,12 @@ export async function findClips({ limit = 12, seen = new Set(), pages = 2, timeo
   for (const c of queue) {
     if (judged.length >= limit || calls >= cfg.visionMaxCandidates) break;
     calls++;
-    const vision = await judgeThumb(c.poster);
+    // The query and the title go WITH the picture. Without them the judge is
+    // being asked to recognise a place unaided and names one on about a
+    // fifteenth of candidates; with them it is confirming a lead against the
+    // frame, which is the question a thumbnail can actually answer. See the note
+    // on judgeThumb — the cuts format is built entirely out of these names.
+    const vision = await judgeThumb(c.poster, { query: c.query, title: c.title });
     const rank = rankVision(vision, cfg);
     if (rank === null) {
       // Recorded rather than dropped silently. "destination 2" is the single

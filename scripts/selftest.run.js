@@ -2937,9 +2937,9 @@ ok('no sign-off line', !cap.includes('לסוכן הטיולים החכם שלנ�
 ok('and no domain at all', !/tiyulplus\.com/.test(cap));
 ok('no scheme-prefixed URL anywhere', !/https?:\/\//.test(cap));
 
-// What replaced it: the close every other kind already had. A question, and on
-// ctaShare of posts one ask naming the next thing to do here. Forced rather than
-// drawn, because a test that depends on Math.random passes four times in five.
+// What replaced it: the close every other kind already had. A question, then one
+// ask naming the next thing to do here. Forced rather than drawn, because a test
+// that depends on Math.random passes four times in five.
 {
   const closed = instagramCaption(capCand, { rand: () => 0 });
   const q = postConfig().caption.questions[0];
@@ -2949,11 +2949,15 @@ ok('no scheme-prefixed URL anywhere', !/https?:\/\//.test(cap));
   ok('the question comes before the ask', closed.indexOf(q) < closed.indexOf(ask));
   ok('the ask is last', closed.trim().endsWith(ask));
 
-  // ctaShare is what makes it soft. A draw above the share appends no ask, and
-  // the question still closes the caption on its own.
-  const noAsk = instagramCaption(capCand, { rand: () => 0.99 });
-  ok('most posts carry no ask', !postConfig().caption.ctas.some((c) => noAsk.includes(c)));
-  ok('but every post carries a question', /\?/.test(noAsk));
+  // EVERY DESCRIPTION CARRIES ONE, at the owner's instruction. This used to
+  // assert the opposite — that a draw above ctaShare appended nothing — which
+  // was the 0.7 rule written down. Both ends of the random range now land on an
+  // ask, and which ask still varies, so the pool is doing the work the share
+  // used to: one closing line on every post is a signature, six are a rotation.
+  const high = instagramCaption(capCand, { rand: () => 0.99 });
+  ok('every post carries an ask', postConfig().caption.ctas.some((c) => high.includes(c)));
+  ok('and a different one at the other end of the draw', !high.includes(ask));
+  ok('and every post carries a question', /\?/.test(high));
 }
 
 // Both descriptions from ONE draw. Called separately they each draw their own
@@ -4282,15 +4286,39 @@ group('the music bed - a reel cannot be given a sound after it is posted');
 group('cuts - the second clip shape, where every line change is a cut');
 
 {
-  const { pickCuts, oneCountry, cutLabel, beatCountMismatch } = await import('../src/video/cuts.js');
+  const { pickCuts, oneCountry, cutLabel, cutsReason, beatCountMismatch } = await import('../src/video/cuts.js');
   const { clipPexelsIds, clipPexelsId } = await import('../src/store.js');
   const cfg = postConfig().clips.cuts;
 
   // A shot the vision judge could place, in the form findClips returns.
+  //
+  // `siteHe` is filled in from this table rather than left blank, because
+  // clipSiteName needs Hebrew letters and will return null without them — so a
+  // site spelled only in Latin is, correctly, not a nameable place. Half of
+  // these happen to be pinned in clips.sites and would resolve anyway; writing
+  // them all out keeps the tests from depending on which half.
+  const SITE_HE = {
+    Lauterbrunnen: 'לאוטרברונן',
+    Zermatt: 'צרמט',
+    Grindelwald: 'גרינדלוולד',
+    Interlaken: 'אינטרלאקן',
+    Skogafoss: 'סקוגאפוס',
+    'Lago di Braies': 'לאגו די בראייס',
+    'Fushimi Inari': 'פושימי אינארי',
+    'Machu Picchu': 'מאצ׳ו פיצ׳ו',
+    Trolltunga: 'טרולטונגה',
+    Oia: 'אואיה',
+  };
   const shot = (id, place, site) => ({
     id: String(id),
     title: `shot ${id}`,
-    vision: { place, site: site || '', siteHe: '', placeConfidence: 10 },
+    vision: {
+      place,
+      site: site || '',
+      siteHe: site ? SITE_HE[site] || '' : '',
+      placeConfidence: 10,
+      siteConfidence: 10,
+    },
   });
 
   eq('a shot is labelled with its place', cutLabel(shot(1, 'Switzerland')), 'שווייץ');
@@ -4298,38 +4326,76 @@ group('cuts - the second clip shape, where every line change is a cut');
 
   // Rule 1: a shot with no name cannot be in a list of places. The viewer
   // counting against the hook's number will not count it.
-  const withBlank = [shot(1, 'Switzerland'), shot(2, null), shot(3, 'Iceland'), shot(4, 'Italy'), shot(5, 'Japan')];
+  const withBlank = [
+    shot(1, 'Switzerland', 'Lauterbrunnen'),
+    shot(2, null),
+    shot(3, 'Iceland', 'Skogafoss'),
+    shot(4, 'Italy', 'Lago di Braies'),
+    shot(5, 'Japan', 'Fushimi Inari'),
+  ];
   const picked = pickCuts(withBlank, cfg);
   ok('an unnamed shot is left out', !picked.some((c) => c.id === '2'));
   eq('and the rest are taken in rank order', picked.map((c) => c.id).join(','), '1,3,4,5');
 
-  // Rule 2, and it is the one a count guard cannot see: four shots of four
-  // corners of Switzerland all label "שווייץ", so the hook's number matches and
-  // the post is still a list of one place four times.
-  const sameCountry = [
+  // RULE 2, AND IT IS THE OWNER'S: the name burned onto a cut has to be a
+  // SPECIFIC PLACE. clipPlaceLabel falls back to the bare country, which is
+  // right for the pin under a post and wrong on a cut — the first cuts video
+  // went out as four country names and the note back was "places should be
+  // specific, not a whole country".
+  const countriesOnly = [
     shot(1, 'Switzerland'),
-    shot(2, 'Switzerland'),
-    shot(3, 'Switzerland'),
-    shot(4, 'Switzerland'),
+    shot(2, 'Iceland'),
+    shot(3, 'Italy'),
+    shot(4, 'Japan'),
   ];
-  eq('four shots of one unnamed country are not a list', pickCuts(sameCountry, cfg).length, 0);
+  eq('four countries are not four places', pickCuts(countriesOnly, cfg).length, 0);
+  eq('and the reason says which of the three things went wrong',
+    cutsReason(countriesOnly, cfg).includes('0 with a named site'), true);
+  // The escape hatch, for a day when the judge named nothing and a country list
+  // beats no post at all.
+  eq('unless the rule is turned off', pickCuts(countriesOnly, { ...cfg, labelNeedsSite: false }).length, 4);
 
-  // ...unless the judge named the SITE, which is what makes them four places.
+  // Rule 3, and it is the one a count guard cannot see: two shots of the same
+  // valley are one place twice, so the hook's number matches and the post is
+  // still a list that repeats itself.
+  const sameSite = [
+    shot(1, 'Switzerland', 'Lauterbrunnen'),
+    shot(2, 'Switzerland', 'Lauterbrunnen'),
+    shot(3, 'Switzerland', 'Zermatt'),
+    shot(4, 'Switzerland', 'Interlaken'),
+  ];
+  eq('the same site twice counts once', pickCuts(sameSite, cfg).length, 0);
+
+  // FOUR PLACES IN ONE COUNTRY, which used to be unreachable. The labels were
+  // deduplicated whole, so "שווייץ" collided with itself and every cut had to
+  // come from a different country — which meant oneCountry never found one and
+  // the writer was never allowed to name it. Deduplicating on the SITE is what
+  // opens "4 מקומות בשווייץ".
   const sites = [
     shot(1, 'Switzerland', 'Lauterbrunnen'),
     shot(2, 'Switzerland', 'Zermatt'),
     shot(3, 'Switzerland', 'Grindelwald'),
     shot(4, 'Switzerland', 'Interlaken'),
   ];
-  eq('four named sites in one country are', pickCuts(sites, cfg).length, 4);
+  eq('four named sites in one country are a list', pickCuts(sites, cfg).length, 4);
   eq('and the hook may name that country', oneCountry(pickCuts(sites, cfg)), 'שווייץ');
   eq('a mixed list names none', oneCountry(picked), null);
 
-  ok('too few shots build nothing', pickCuts([shot(1, 'Italy'), shot(2, 'Japan')], cfg).length === 0);
+  ok('too few shots build nothing',
+    pickCuts([shot(1, 'Italy', 'Lago di Braies'), shot(2, 'Japan', 'Fushimi Inari')], cfg).length === 0);
   ok('and never more than the ceiling', pickCuts(
-    ['Italy', 'Japan', 'Iceland', 'Peru', 'Norway', 'Greece'].map((p, i) => shot(i + 1, p)),
+    [['Italy', 'Lago di Braies'], ['Japan', 'Fushimi Inari'], ['Iceland', 'Skogafoss'],
+     ['Peru', 'Machu Picchu'], ['Norway', 'Trolltunga'], ['Greece', 'Oia']]
+      .map(([p, s], i) => shot(i + 1, p, s)),
     cfg
   ).length <= cfg.cutsMax);
+
+  // The opening cut is held for its own length, because it is the one cut with
+  // no place name on it. "hook is too long" was a quarter of the video spent on
+  // a title card.
+  ok('the opening cut is shorter than the rest', cfg.hookSeconds < cfg.secondsPerCut,
+    `hook ${cfg.hookSeconds}s vs ${cfg.secondsPerCut}s`);
+  ok('and the hook is read in one glance', cfg.hookMaxWords <= 6, `${cfg.hookMaxWords} words`);
 
   // THE RULE THAT CANNOT BE WAIVED. A hook promising five places over four cuts
   // breaks its promise in the last two seconds, which BRIEF.md identifies as
@@ -4350,6 +4416,56 @@ group('cuts - the second clip shape, where every line change is a cut');
     id: 'abc123def456',
     clip: { shape: 'cuts', cuts: [{ pexelsId: '11' }, { pexelsId: '22' }, { pexelsId: '33' }, { pexelsId: '44' }] },
   };
+  // THE TWO SHAPES ALTERNATE ACROSS DAYS, not across a batch index.
+  //
+  // This is the bug that made the held shape unreachable. suggestClip builds ONE
+  // clip, so `i % 2 === 0` was 'cuts' every single day, and every unattended clip
+  // this account ever produced was a cuts clip. The owner asked for "1 video with
+  // a static text" believing the shape had been dropped; it had been, from the
+  // only path that reaches it.
+  {
+    const { nextShapes, clipShapeArg } = await import('../src/video/clip.js');
+    eq('a fresh box opens on the stronger shape', nextShapes(1).join(','), 'cuts');
+    eq('after a cuts clip, the next one is held', nextShapes(1, { after: 'cuts' }).join(','), 'held');
+    eq('and after a held clip, cuts again', nextShapes(1, { after: 'held' }).join(','), 'cuts');
+    eq('a batch alternates from wherever it starts',
+      nextShapes(4, { after: 'cuts' }).join(','), 'held,cuts,held,cuts');
+    eq('nothing is ever asked for twice in a row',
+      nextShapes(6).filter((s, i, a) => i && s === a[i - 1]).length, 0);
+    // With the shape switched off in config there is one shape, and asking for
+    // the other would fail every build rather than degrade.
+    eq('with cuts off, every clip is held', nextShapes(3, { cutsOn: false }).join(','), 'held,held,held');
+
+    // And the shape can be named, for the occasion you have just changed one and
+    // want to see it now rather than wait for the alternation to come round.
+    eq('/clip cuts names the shape', clipShapeArg('cuts'), 'cuts');
+    eq('/clip 2 held names both', clipShapeArg('2 held'), 'held');
+    eq('and in Hebrew', clipShapeArg('חתוך'), 'cuts');
+    eq('a bare count names no shape', clipShapeArg('3'), null);
+    eq('and neither does nothing at all', clipShapeArg(''), null);
+  }
+
+  // THE MEASURED SPOT IS ROUNDED THE SAME WAY ON BOTH SHAPES. A held clip
+  // rounded its numbers where it built them; a cuts clip stored the raw object
+  // measureClip returns, whose worst contrast lives at `spread.worst` — so the
+  // approval card, which prints `spot.worstContrast`, said "ניגודיות undefined"
+  // on every cut of every cuts clip. One function for both now.
+  {
+    const { spotNote } = await import('../src/video/clip.js');
+    const raw = {
+      x: 0.5001234, y: 0.2698, color: '#fff', onDark: true,
+      contrast: 9.123456, spread: { worst: 7.15432 }, assist: 0.4,
+      onBackground: 0.8123, frames: 5, agreed: 5,
+    };
+    const note = spotNote(raw);
+    eq('the worst contrast is lifted out of spread', note.worstContrast, 7.15);
+    eq('and is a number, not a string', typeof note.worstContrast, 'number');
+    eq('the position is rounded to three places', note.y, 0.27);
+    eq('an unmeasured shot notes nothing', spotNote(null), null);
+    // The field the card actually reads, on the shape that was printing undefined.
+    ok('so the card has a contrast to print', Number.isFinite(note.worstContrast));
+  }
+
   eq('every shot of a cuts clip is spent', clipPexelsIds(cutsCand).join(','), '11,22,33,44');
   eq('and the singular field still answers with the first', clipPexelsId(cutsCand), '11');
   eq('a held clip still spends one', clipPexelsIds({ kind: 'clip', clip: { pexelsId: '99' } }).join(','), '99');
@@ -5258,11 +5374,29 @@ group('the caption - a question, sometimes a CTA, and never a URL');
   // sends anybody anywhere.
   ok('and exactly one still points at the bio', cfg.ctas.filter((c) => /ביו/.test(c)).length === 1);
 
-  // Soft means "not on every post". ctaShare is what makes that true, and the
-  // two ends of the random range are what prove it is wired up at all.
-  ok('below the share, an ask appears', Boolean(captionCta({ rand: () => 0 })));
-  eq('above it, nothing', captionCta({ rand: () => 0.999 }), null);
-  ok('and the share is under one', cfg.ctaShare < 1, `ctaShare=${cfg.ctaShare}`);
+  // At least one asks for a COMMENT outright, which is what the owner asked for
+  // when ctaShare went to 1. Imperative rather than interrogative: the caption
+  // already carries a question, and two question marks is a post asking twice.
+  ok('at least one asks for a comment', cfg.ctas.some((c) => /תגיבו/.test(c)));
+  ok('and the comment asks are imperative, not a second question',
+    cfg.ctas.filter((c) => /תגיבו/.test(c)).every((c) => !c.includes('?')),
+    cfg.ctas.filter((c) => /תגיבו/.test(c) && c.includes('?')).join(' | '));
+  // And none of them promises something nothing here can deliver. "comment and
+  // I'll send you the list" is the standard version of this ask and there is no
+  // DM automation behind it, which makes it the one shape banned outright.
+  ok('and none promises a reply nobody will send',
+    cfg.ctas.every((c) => !/אשלח|שולח לכם|בפרטי|בדיאם/.test(c)));
+
+  // EVERY POST CARRIES ONE. This used to assert the opposite at ctaShare 0.7 —
+  // "soft means not on every post" — and the owner's instruction replaced it.
+  // Both ends of the range are still checked, because that is what proves the
+  // draw is wired up rather than the share being read once.
+  ok('at the bottom of the range, an ask', Boolean(captionCta({ rand: () => 0 })));
+  ok('at the top of it, still an ask', Boolean(captionCta({ rand: () => 0.999 })));
+  ok('because the share is one', cfg.ctaShare >= 1, `ctaShare=${cfg.ctaShare}`);
+  // The dial itself still works and is one character from being turned back
+  // down, so the gate is exercised rather than trusted.
+  ok('and the gate would still withhold below it', captionCta({ rand: () => 0.5, share: 0.2 }) === null);
   // Two independent draws: one for whether, one for which. Tied together the
   // rarest asks would get rarer as the share fell.
   const asks = new Set();

@@ -230,27 +230,36 @@ export function captionQuestion({ rand = Math.random } = {}) {
 }
 
 /**
- * The soft closing ask, on `ctaShare` of posts, drawn from the pool.
+ * The closing ask, on `ctaShare` of posts, drawn from the pool.
  *
- * NOT on every post, and that is the whole of what "soft" means here. The
- * brief's rule 8 says a soft CTA at the end and never make the whole video an
- * advertisement; the same line under every single caption is not soft, it is a
- * signature.
+ * ON EVERY POST NOW, because ctaShare is 1. It was 0.7, and the argument for
+ * that was the brief's rule 8: a soft CTA at the end, never make the whole video
+ * an advertisement, and the same line under every caption is not soft, it is a
+ * signature. The owner's instruction is that every description asks for
+ * something, and the old argument was weaker than it read — it was made when
+ * this was one fixed string, and a rotation of six asks is not one line
+ * repeated. The full reasoning is in post-config.json's `_ctas_comment`.
  *
  * TWO random draws, and they are independent on purpose. The first decides
- * WHETHER this post closes with an ask, which is what keeps it soft; the second
- * decides WHICH ask, which is what keeps it from being a signature on the half
- * of posts that do carry one. Collapsing them into one draw would tie the
- * choice of ask to the frequency and make the rarest asks rarer again.
+ * WHETHER this post closes with an ask; the second decides WHICH. Collapsing
+ * them into one would tie the choice of ask to the frequency, so turning the
+ * share back down would also make the rarest asks rarer, which is not what that
+ * dial is for.
+ *
+ * `share` overrides the configured frequency. Only a test passes it: with the
+ * share at 1 both ends of the random range return an ask, so the gate is no
+ * longer observable from outside, and a gate nothing exercises is a gate that
+ * quietly stops working before the day it is turned back down.
  *
  * Each string is checked for a domain when post-config.json is read rather than
  * here, so an ask with a URL in it fails once, loudly, at startup, instead of
  * once per post from inside a build.
  */
-export function captionCta({ rand = Math.random } = {}) {
+export function captionCta({ rand = Math.random, share = null } = {}) {
   const { ctas, ctaShare } = postConfig().caption;
-  if (!ctas.length || ctaShare <= 0) return null;
-  if (rand() >= ctaShare) return null;
+  const gate = share == null ? ctaShare : share;
+  if (!ctas.length || gate <= 0) return null;
+  if (rand() >= gate) return null;
   return ctas[Math.floor(rand() * ctas.length)];
 }
 
