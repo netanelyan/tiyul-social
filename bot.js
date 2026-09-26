@@ -10,7 +10,8 @@ import { toCandidate, RejectedError } from './src/candidate.js';
 import { primaryAuthority, enabledSources, registry } from './src/sources/index.js';
 import { approvalMessage, decidedMessage, evidenceReport, channelCaption, publishedDescriptions } from './src/format.js';
 import { sendableNow, windowsHe } from './src/schedule.js';
-import { renderCard, closeBrowser } from './src/render/index.js';
+import { renderCard, closeBrowser, cardOutputDir } from './src/render/index.js';
+import { startAdminServer, createLogTap } from './src/admin/server.js';
 import { publishTelegram, publishTelegramDeck, sendForApproval } from './src/publish/telegram.js';
 import { proposeIdeas, titleForRequest, reviseIdea, freeformIdea, freeformFromIdea } from './src/deck/ideas.js';
 import { pickAngle } from './src/angles.js';
@@ -292,7 +293,23 @@ async function stage(candidate) {
   const cand = await attachTikTok(candidate);
   const key = store.addStaging(cand);
   try {
-    await sendForApproval(bot.telegram, staging, cand, approvalMessage(cand), stagingButtons(key, cand));
+    const sent = await sendForApproval(bot.telegram, staging, cand, approvalMessage(cand), stagingButtons(key, cand));
+    // WHERE THE CARD LANDED, so a decision made anywhere else can close it.
+    //
+    // The result of sendForApproval is always the message carrying the BUTTONS —
+    // for a deck that is the text under the album, not the album — and without
+    // recording it a card approved on the admin site sits in Telegram with live
+    // buttons under it forever. Tapping them is safe (takeStaging returns
+    // nothing and the tap says "כבר טופל"), but a chat full of cards that look
+    // undecided is the same problem /resend was written for, arriving from the
+    // other direction.
+    // Top-level rather than tucked under `card`, which is the FILE to publish and
+    // is read by the publishers. Two unrelated things under one key is how a
+    // field gets published by accident.
+    store.updateStaging(key, {
+      ...cand,
+      approvalCard: { chatId: staging, messageId: sent?.message_id ?? null, isPhoto: Boolean(sent?.photo) },
+    });
   } catch (e) {
     // A send that fails leaves a post staged and INVISIBLE. It has to be added
     // before the send — the key is what the buttons carry — so the item exists,
@@ -329,10 +346,27 @@ async function markDecided(ctx, statusLine, cand) {
   await ctx.editMessageReplyMarkup(undefined).catch(() => {});
 }
 
-bot.action(/^ok:(.+)$/, async (ctx) => {
-  const key = ctx.match[1];
+// ---------------------------------------------------------------------------
+// The decisions themselves, with no channel in them
+// ---------------------------------------------------------------------------
+//
+// EXTRACTED SO THERE IS ONE OF EACH. These used to live inside the Telegraf
+// handlers, tangled with `ctx` — which was fine while Telegram was the only way
+// to approve something and became a fork in the road the moment the admin site
+// existed. Two copies of "what approving means" is a promise that they drift,
+// and the one that drifts is whichever is used less.
+//
+// So each returns a plain `{ ok, said, cand }` and touches nothing but the
+// store. Telling somebody what happened is the caller's job, because who needs
+// telling is exactly what differs between a button tap and an HTTP request.
+//
+// `by` is who did it, and it is carried for one reason: a card that vanishes out
+// of the approval chat with no explanation is indistinguishable from a bug. The
+// Telegram card says "אושר באתר · name" when the site was what approved it.
+
+function approveStaged(key, { by = null } = {}) {
   const cand = store.takeStaging(key);
-  if (!cand) return ctx.answerCbQuery('כבר טופל');
+  if (!cand) return { ok: false, said: 'כבר טופל' };
   store.clearPendingEdit(key);
 
   // A draft is a handoff, not a publish, so there is nothing for the drip to
@@ -354,20 +388,19 @@ bot.action(/^ok:(.+)$/, async (ctx) => {
       : '✅ נשלח לטיוטות בטיקטוק'
     : `✅ אושר - ${pos} בתור`;
 
-  await ctx.answerCbQuery(said);
-  await markDecided(ctx, said, cand);
-
-  // After the card is settled, so a slow upload cannot leave the message
-  // looking undecided while it runs.
+  // Detached rather than awaited, so a slow upload cannot leave the caller
+  // hanging — a button tap that does not answer inside a few seconds shows
+  // Telegram's spinner forever, and an HTTP request that does not answer looks
+  // to the browser exactly like a server that has died.
   if (draftNow) {
-    detach('טיוטה לטיקטוק', () => publishNext({ ...cand, pendingTargets: ['tiktok'] }), ctx.chat.id);
+    detach('טיוטה לטיקטוק', () => publishNext({ ...cand, pendingTargets: ['tiktok'] }), staging);
   }
-});
+  return { ok: true, said, cand, by, draftNow };
+}
 
-bot.action(/^no:(.+)$/, async (ctx) => {
-  const key = ctx.match[1];
+function rejectStaged(key, { by = null } = {}) {
   const cand = store.takeStaging(key);
-  if (!cand) return ctx.answerCbQuery('כבר טופל');
+  if (!cand) return { ok: false, said: 'כבר טופל' };
   store.clearPendingEdit(key);
   // Give the day's quota slot back. A rejected card is not one of "the best two
   // or three a day", and charging the day for it meant rejecting the morning's
@@ -375,8 +408,64 @@ bot.action(/^no:(.+)$/, async (ctx) => {
   // nothing could publish until tomorrow. offerCeiling() is what stops the
   // refund turning into an endless supply — see tick().
   store.noteRejected(localDay(new Date()));
-  await ctx.answerCbQuery('❌ נדחה');
-  await markDecided(ctx, '❌ נדחה', cand);
+  return { ok: true, said: '❌ נדחה', cand, by };
+}
+
+/**
+ * Cycle one staged card's TikTok privacy level.
+ *
+ * Returns the updated candidate, because whoever asked has a card on screen
+ * showing the old value and no way to derive the new one — the cycle order is
+ * in nextPrivacy and the options came from TikTok at staging time.
+ */
+function cyclePrivacy(key) {
+  const cand = store.getStaging(key);
+  if (!cand) return { ok: false, said: 'כבר טופל' };
+  const options = cand.tiktok?.options || [];
+  if (options.length < 2) return { ok: false, said: 'אין רמות פרטיות אחרות זמינות' };
+
+  const privacy = nextPrivacy(cand.tiktok.privacy, options);
+  const updated = { ...cand, tiktok: { ...cand.tiktok, privacy } };
+  store.updateStaging(key, updated);
+  return { ok: true, said: `🔒 ${privacyHe(privacy)}`, cand: updated };
+}
+
+/**
+ * Close a staged card's Telegram message from somewhere that is not Telegram.
+ *
+ * The bot's own handlers edit through `ctx`, which carries the message. A
+ * decision made on the admin site has no ctx, so the ids recorded at staging
+ * time are what it edits through — see `approvalCard` in stage().
+ *
+ * Failures are swallowed to a log line. The decision has already been made and
+ * saved; a card that could not be edited is untidy, and throwing here would turn
+ * that into an HTTP 500 over an action that in fact succeeded.
+ */
+async function closeCardElsewhere(cand, statusLine) {
+  const at = cand?.approvalCard;
+  if (!at?.messageId) return;
+  const text = decidedMessage(statusLine, cand);
+  try {
+    if (at.isPhoto) await bot.telegram.editMessageCaption(at.chatId, at.messageId, undefined, text);
+    else await bot.telegram.editMessageText(at.chatId, at.messageId, undefined, text);
+  } catch (e) {
+    console.error(`admin: could not close the Telegram card - ${e?.message || e}`);
+  }
+  await bot.telegram.editMessageReplyMarkup(at.chatId, at.messageId, undefined, undefined).catch(() => {});
+}
+
+bot.action(/^ok:(.+)$/, async (ctx) => {
+  const res = approveStaged(ctx.match[1], { by: 'telegram' });
+  if (!res.ok) return ctx.answerCbQuery(res.said);
+  await ctx.answerCbQuery(res.said);
+  await markDecided(ctx, res.said, res.cand);
+});
+
+bot.action(/^no:(.+)$/, async (ctx) => {
+  const res = rejectStaged(ctx.match[1], { by: 'telegram' });
+  if (!res.ok) return ctx.answerCbQuery(res.said);
+  await ctx.answerCbQuery(res.said);
+  await markDecided(ctx, res.said, res.cand);
 });
 
 bot.action(/^ev:(.+)$/, async (ctx) => {
@@ -395,20 +484,13 @@ bot.action(/^ev:(.+)$/, async (ctx) => {
  */
 bot.action(/^tp:(.+)$/, async (ctx) => {
   const key = ctx.match[1];
-  const cand = store.getStaging(key);
-  if (!cand) return ctx.answerCbQuery('כבר טופל');
+  const res = cyclePrivacy(key);
+  if (!res.ok) return ctx.answerCbQuery(res.said);
 
-  const options = cand.tiktok?.options || [];
-  if (options.length < 2) return ctx.answerCbQuery('אין רמות פרטיות אחרות זמינות');
-
-  const privacy = nextPrivacy(cand.tiktok.privacy, options);
-  const updated = { ...cand, tiktok: { ...cand.tiktok, privacy } };
-  store.updateStaging(key, updated);
-
-  await ctx.answerCbQuery(`🔒 ${privacyHe(privacy)}`);
+  await ctx.answerCbQuery(res.said);
   const isPhoto = Boolean(ctx.callbackQuery?.message?.photo);
   const edit = isPhoto ? ctx.editMessageCaption.bind(ctx) : ctx.editMessageText.bind(ctx);
-  await edit(approvalMessage(updated), stagingButtons(key, updated)).catch((e) =>
+  await edit(approvalMessage(res.cand), stagingButtons(key, res.cand)).catch((e) =>
     console.error('approval UX: privacy edit failed:', e.message)
   );
 });
@@ -577,17 +659,46 @@ async function handleEditReply(ctx, key) {
   if (!pending || !cand) return ctx.reply('הפריט הזה כבר לא ממתין לעריכה');
 
   const newHeadline = (ctx.message.text || ctx.message.caption || '').replace(/\s+/g, ' ').trim();
-  if (!newHeadline) {
+  const res = await retitleStaged(key, newHeadline);
+  if (!res.ok) {
     store.setPendingEdit(key, pending); // nothing consumed — leave it pending
-    return ctx.reply('שלח טקסט (לא תמונה/מדבקה)');
+    return ctx.reply(res.said);
   }
 
-  const updated = { ...cand, headline: newHeadline };
+  // The old message carried the old image, so it can't be edited in place —
+  // the card is re-sent with fresh buttons instead.
+  await resendCard(key, res.cand, pending.chatId);
+  await ctx.reply('✏️ הכותרת עודכנה והכרטיס רונדר מחדש - אשר/דחה למעלה');
+}
+
+/**
+ * Replace one staged card's headline and re-render it.
+ *
+ * Channel-neutral for the same reason approveStaged is: this is what editing a
+ * headline MEANS, and the admin site does it too. What differs is only how the
+ * new text arrives — a reply to a forced-reply prompt, or a field in a PUT — and
+ * neither of those is a fact about the card.
+ *
+ * Only a card has a headline to replace. A deck's title lives on its cover and a
+ * clip's line is burned into the video, which is why neither offers the button;
+ * this refuses them by kind rather than trusting the button to be absent, since
+ * an HTTP client can ask for anything.
+ */
+async function retitleStaged(key, headline) {
+  const cand = store.getStaging(key);
+  if (!cand) return { ok: false, said: 'הפריט הזה כבר לא ממתין לעריכה' };
+  if (cand.kind === 'deck' || cand.kind === 'clip' || cand.kind === 'plan') {
+    return { ok: false, said: `אין כותרת לעריכה ב${cand.kind} - זה רינדור מחדש` };
+  }
+
+  const text = String(headline || '').replace(/\s+/g, ' ').trim();
+  if (!text) return { ok: false, said: 'שלח טקסט (לא תמונה/מדבקה)' };
+
+  const updated = { ...cand, headline: text };
   try {
     updated.card = await renderCard(updated, { id: cand.id, data: cand.data, image: cand.image });
   } catch (e) {
-    store.setPendingEdit(key, pending);
-    return ctx.reply(notify.withDetail('❌ רינדור הכרטיס נכשל', e));
+    return { ok: false, said: notify.withDetail('❌ רינדור הכרטיס נכשל', e) };
   }
   updated.channelCaption = channelCaption(updated);
   // One draw for both, like the build path. Editing a headline re-draws the
@@ -597,11 +708,25 @@ async function handleEditReply(ctx, key) {
   updated.instagramCaption = editedDesc.instagram;
   updated.tiktokCaption = editedDesc.tiktok;
   store.updateStaging(key, updated);
+  return { ok: true, said: '✏️ הכותרת עודכנה והכרטיס רונדר מחדש', cand: updated };
+}
 
-  // The old message carried the old image, so it can't be edited in place —
-  // the card is re-sent with fresh buttons instead.
-  await sendForApproval(bot.telegram, pending.chatId, updated, approvalMessage(updated), stagingButtons(key, updated));
-  await ctx.reply('✏️ הכותרת עודכנה והכרטיס רונדר מחדש - אשר/דחה למעלה');
+/**
+ * Send a staged card's approval message again, and remember where it landed.
+ *
+ * Shared by the edit path and by /resend, and it exists mainly to keep
+ * `approvalCard` honest: a re-sent card is at a NEW message id, and leaving the
+ * old one recorded means a later decision made on the site edits a message that
+ * has been superseded — so the stale card keeps its live buttons and the current
+ * one never gets closed.
+ */
+async function resendCard(key, cand, chatId = staging) {
+  const sent = await sendForApproval(bot.telegram, chatId, cand, approvalMessage(cand), stagingButtons(key, cand));
+  store.updateStaging(key, {
+    ...cand,
+    approvalCard: { chatId, messageId: sent?.message_id ?? null, isPhoto: Boolean(sent?.photo) },
+  });
+  return sent;
 }
 
 // ---------------------------------------------------------------------------
@@ -1329,7 +1454,11 @@ bot.command('resend', async (ctx) => {
       let sent = 0;
       for (const { key, cand } of rows) {
         try {
-          await sendForApproval(bot.telegram, staging, cand, approvalMessage(cand), stagingButtons(key, cand));
+          // Through resendCard, so the recorded message id follows the card it
+          // is on. Sent directly, a re-send left `approvalCard` pointing at the
+          // message that failed — and a later decision on the admin site would
+          // then close the wrong one and leave this one live.
+          await resendCard(key, cand);
           sent += 1;
         } catch (e) {
           console.error(`resend: ${cand.headline} - ${e?.message || e}`);
@@ -1398,33 +1527,60 @@ bot.command('queue', (ctx) => {
  * post jumped the queue, which is a thing you did on purpose and which the
  * posts behind it did not.
  */
+/**
+ * Publish one queued post now: a chosen one, or simply the next.
+ *
+ * Both /post and /next, and the admin site's publish button, because they are
+ * one act with one disclosure. Publishing ahead of the drip steps over
+ * POST_INTERVAL_MINUTES and a chosen post jumps the queue, and both of those are
+ * recorded as overrides rather than done quietly — which is the whole reason this
+ * runs inside runOverridden.
+ *
+ * `background` is for the admin site. An Instagram publish is tens of seconds of
+ * uploading, and an HTTP request held open that long is indistinguishable from a
+ * server that has died — so the site gets an immediate answer and reads the
+ * outcome out of the Telegram chat and the log, both of which it shows.
+ */
+async function publishQueued(n = null, { background = false } = {}) {
+  // Taken out BEFORE publishing, so a slow publish cannot have the drip pick
+  // the same post up underneath it. If publishing then fails, the post follows
+  // the ordinary failure path — held or requeued — exactly as it would have
+  // from the drip.
+  const item = n == null ? null : store.takeQueuedAt(n);
+  if (n != null && !item) return { ok: false, said: `אין פריט ${n} בתור - /queue לרשימה` };
+
+  const sinceLast = store.lastPublishedAt() ? Date.now() - store.lastPublishedAt() : null;
+  const run = () =>
+    runOverridden(n == null ? '/next' : '/post', async () => {
+      if (n != null) noteOverride('סדר התור', `#${n} לפני התור`);
+      if (sinceLast !== null && sinceLast < intervalMs) {
+        noteOverride('מרווח', `${Math.round(sinceLast / 60_000)}/${POST_INTERVAL_MINUTES} דק׳`);
+      }
+      return publishNext(item);
+    });
+
+  if (background) {
+    detach('פרסום', run);
+    return { ok: true, said: `⏳ מפרסם${item ? `: ${item.headline}` : ' את הבא'}`, headline: item?.headline || null };
+  }
+  const ok = await run();
+  return {
+    ok,
+    said: ok ? (n == null ? '📤 פורסם הפריט הבא' : '📤 פורסם') : n == null ? 'התור ריק' : 'לא פורסם - ראו את ההודעה שלמעלה',
+    headline: item?.headline || null,
+  };
+}
+
 bot.command('post', async (ctx) => {
   const arg = (ctx.message.text || '').replace(/^\/post(@\S+)?\s*/, '').trim();
   const n = Number(arg);
   if (!arg || !Number.isInteger(n) || n < 1) {
     return ctx.reply('שימוש: /post 2 - המספר מהרשימה ב-/queue');
   }
-
-  // Taken out BEFORE publishing, so a slow publish cannot have the drip pick
-  // the same post up underneath it. If publishing then fails, the post follows
-  // the ordinary failure path — held or requeued — exactly as it would have
-  // from the drip.
-  const item = store.takeQueuedAt(n);
-  if (!item) return ctx.reply(`אין פריט ${n} בתור - /queue לרשימה`);
-
-  await ctx.reply(`⏳ מפרסם: ${item.headline}`);
-  const sinceLast = store.lastPublishedAt() ? Date.now() - store.lastPublishedAt() : null;
-  const ok = await runOverridden('/post', async () => {
-    noteOverride('סדר התור', `#${n} לפני התור`);
-    if (sinceLast !== null && sinceLast < intervalMs) {
-      noteOverride(
-        'מרווח',
-        `${Math.round(sinceLast / 60_000)}/${POST_INTERVAL_MINUTES} דק׳`
-      );
-    }
-    return publishNext(item);
-  });
-  await ctx.reply(ok ? '📤 פורסם' : 'לא פורסם - ראו את ההודעה שלמעלה');
+  const peek = store.queuedItems()[n - 1];
+  if (peek) await ctx.reply(`⏳ מפרסם: ${peek.headline}`);
+  const res = await publishQueued(n);
+  await ctx.reply(res.said);
 });
 
 /**
@@ -1436,17 +1592,8 @@ bot.command('post', async (ctx) => {
  * difference between a deliberate double-post and one you will be surprised by.
  */
 bot.command('next', async (ctx) => {
-  const sinceLast = store.lastPublishedAt() ? Date.now() - store.lastPublishedAt() : null;
-  const ok = await runOverridden('/next', async () => {
-    if (sinceLast !== null && sinceLast < intervalMs) {
-      noteOverride(
-        'מרווח',
-        `${Math.round(sinceLast / 60_000)}/${POST_INTERVAL_MINUTES} דק׳`
-      );
-    }
-    return publishNext();
-  });
-  await ctx.reply(ok ? '📤 פורסם הפריט הבא' : 'התור ריק');
+  const res = await publishQueued(null);
+  await ctx.reply(res.said);
 });
 
 /**
@@ -1460,13 +1607,11 @@ bot.command('next', async (ctx) => {
  * the queue and keeps its turn, because that half is a real publish and the
  * drip exists for it.
  */
-bot.command('draft', async (ctx) => {
-  const arg = (ctx.message.text || '').replace(/^\/draft(@\S+)?\s*/, '').trim();
-  const n = Number(arg);
-  if (!arg || !Number.isInteger(n) || n < 1) return ctx.reply('שימוש: /draft 2 - המספר מהרשימה ב-/queue');
+async function draftQueued(n) {
+  if (!Number.isInteger(n) || n < 1) return { ok: false, said: 'שימוש: /draft 2 - המספר מהרשימה ב-/queue' };
 
   const item = store.takeQueuedAt(n);
-  if (!item) return ctx.reply(`אין פריט ${n} בתור - /queue לרשימה`);
+  if (!item) return { ok: false, said: `אין פריט ${n} בתור - /queue לרשימה` };
 
   const targets = item.pendingTargets?.length ? item.pendingTargets : item.publishTargets || [];
 
@@ -1492,19 +1637,27 @@ bot.command('draft', async (ctx) => {
     // Put it back exactly as it was. Taking a post out of the queue to tell you
     // it was the wrong one would be a worse answer than the error.
     store.enqueue(item);
-    return ctx.reply(`הפריט הזה לא מיועד לטיקטוק (${targetsHe(targets) || 'אין יעד'})`);
+    return { ok: false, said: `הפריט הזה לא מיועד לטיקטוק (${targetsHe(targets) || 'אין יעד'})` };
   }
   const again = !targets.includes('tiktok');
 
   const rest = targets.filter((t) => t !== 'tiktok');
   if (rest.length) store.enqueue({ ...item, pendingTargets: rest });
 
-  await ctx.reply(
-    again
+  detach('טיוטה לטיקטוק', () => publishNext({ ...item, pendingTargets: ['tiktok'] }), staging);
+  return {
+    ok: true,
+    said: again
       ? `⏳ שולח טיוטה נוספת: ${item.headline}\n   מחקו את הקודמת בטיקטוק - היא נשארת עם התמונה הישנה`
-      : `⏳ שולח לטיוטות: ${item.headline}`
-  );
-  detach('טיוטה לטיקטוק', () => publishNext({ ...item, pendingTargets: ['tiktok'] }), ctx.chat.id);
+      : `⏳ שולח לטיוטות: ${item.headline}`,
+    headline: item.headline,
+  };
+}
+
+bot.command('draft', async (ctx) => {
+  const arg = (ctx.message.text || '').replace(/^\/draft(@\S+)?\s*/, '').trim();
+  const res = await draftQueued(Number(arg));
+  await ctx.reply(res.said);
 });
 
 bot.command('held', (ctx) => {
@@ -1543,9 +1696,9 @@ bot.command('held', (ctx) => {
  * already published did so before the card was held, so nothing that went out
  * is affected — only the copy that was never going to be made.
  */
-bot.command('clear_held', async (ctx) => {
+function clearHeldNow() {
   const rows = store.heldItems();
-  if (!rows.length) return ctx.reply('✅ אין פוסטים מוחזקים');
+  if (!rows.length) return { ok: false, said: '✅ אין פוסטים מוחזקים' };
 
   const lost = new Set();
   for (const h of rows) for (const t of h.targets) lost.add(t);
@@ -1556,13 +1709,18 @@ bot.command('clear_held', async (ctx) => {
   // own here.
   for (const t of liveTargets()) store.clearDegraded(t);
 
-  await ctx.reply(
-    [
+  return {
+    ok: true,
+    said: [
       `🗑️ ${n} פוסטים מוחזקים נמחקו.`,
       `ויתרנו על: ${targetsHe([...lost])}`,
       'מה שכבר פורסם נשאר. כל היעדים סומנו כתקינים - הפוסט הבא ינסה מחדש.',
-    ].join('\n')
-  );
+    ].join('\n'),
+  };
+}
+
+bot.command('clear_held', async (ctx) => {
+  await ctx.reply(clearHeldNow().said);
 });
 
 /**
@@ -1574,7 +1732,16 @@ bot.command('clear_held', async (ctx) => {
  * blocked at the API a retry is a wasted call and a repeated alert — so
  * something has to say the block is gone, and it should be you.
  */
-bot.command('retry', async (ctx) => {
+/**
+ * The "I have fixed it" signal: everything held goes back on the queue and every
+ * destination is marked healthy again.
+ *
+ * Nothing retries by itself once a destination is degraded, because while
+ * Instagram is blocked at the API a retry is a wasted call and a repeated alert.
+ * So something has to say the block is gone, and it should be a person — which
+ * is now a person in either channel.
+ */
+async function retryHeldNow({ background = false } = {}) {
   const rows = store.releaseHeld();
   const targets = new Set();
   for (const h of rows) for (const t of h.targets) targets.add(t);
@@ -1584,10 +1751,26 @@ bot.command('retry', async (ctx) => {
 
   for (const h of rows) store.enqueue({ ...h.cand, publishAttempts: 0, pendingTargets: h.targets });
 
-  if (!rows.length) return ctx.reply('אין מה להחזיר לתור. סימנתי את כל היעדים כתקינים - הפרסום הבא ינסה שוב.');
-  await ctx.reply(`🔁 ${rows.length} פוסטים חזרו לתור. מפרסם את הראשון...`);
+  if (!rows.length) {
+    return { ok: true, said: 'אין מה להחזיר לתור. סימנתי את כל היעדים כתקינים - הפרסום הבא ינסה שוב.', released: 0 };
+  }
+  if (background) {
+    detach('פרסום אחרי retry', () => publishNext());
+    return { ok: true, said: `🔁 ${rows.length} פוסטים חזרו לתור. מפרסם את הראשון...`, released: rows.length };
+  }
   const ok = await publishNext();
-  await ctx.reply(ok ? '📤 עבד' : 'עדיין נכשל - /held לפרטים');
+  return {
+    ok,
+    said: `🔁 ${rows.length} פוסטים חזרו לתור.\n${ok ? '📤 עבד' : 'עדיין נכשל - /held לפרטים'}`,
+    released: rows.length,
+  };
+}
+
+bot.command('retry', async (ctx) => {
+  const rows = store.heldCount();
+  if (rows) await ctx.reply(`🔁 מחזיר ${rows} פוסטים לתור...`);
+  const res = await retryHeldNow();
+  await ctx.reply(res.said);
 });
 
 bot.command('clear_pending', (ctx) => {
@@ -1942,6 +2125,37 @@ ${why}`).catch(() => {});
  * printed under the album. An approved plan goes to the TikTok inbox as a draft
  * and to Instagram as a carousel.
  */
+async function suggestPlan(asked, days, chatId = staging) {
+  const { writePlan, resolveDestination } = await import('./src/plan/write.js');
+  const { toPlanCandidate } = await import('./src/plan/candidate.js');
+
+  // Which destinations the feed has just been about, so the picker can skip
+  // them. The same history the deck's repeat notes are counted from, and the
+  // resolver gets it too: `/trip norway` is a request for a Norwegian
+  // itinerary, and which Norwegian city is the freshness rules' business.
+  const recent = store.recentPublished().slice(0, 12).map((p) => p.place);
+
+  // A destination typed by hand is RESOLVED rather than refused. It used to
+  // answer "not in destinations.json, add it with the Hebrew spelling",
+  // which sent you to edit a JSON file to get a video out of a word the
+  // catalogue could already place. See the note in src/plan/write.js.
+  const found = asked ? await resolveDestination(asked, { recent }) : null;
+  if (asked && !found) {
+    await notify.send(bot.telegram, chatId, `❌ לא הצלחתי להבין איזה יעד זה: ${asked}`).catch(() => {});
+    return null;
+  }
+  if (found) console.log(`trip: "${asked}" -> ${found.dest.he} (${found.how})`);
+
+  const plan = await writePlan({ dest: found?.dest || null, days, recent });
+  const cand = await toPlanCandidate(plan);
+  await stage(cand);
+
+  if (plan.dropped?.length) {
+    await notify.send(bot.telegram, chatId, `⚠️ ${plan.dropped.length} שורות נפסלו בבנייה`).catch(() => {});
+  }
+  return cand;
+}
+
 bot.command('trip', async (ctx) => {
   const arg = (ctx.message.text || '').replace(/^\/trip(@\S+)?\s*/, '').trim();
   const m = /^(.*?)\s*(\d+)?$/.exec(arg) || [];
@@ -1949,41 +2163,7 @@ bot.command('trip', async (ctx) => {
   const days = m[2] ? Number(m[2]) : null;
 
   await ctx.reply(`⏳ מתכנן ${asked ? asked : 'יעד'}${days ? ` · ${days} ימים` : ''}...`);
-  detach(
-    'מסלול',
-    async () => {
-      const { writePlan, resolveDestination } = await import('./src/plan/write.js');
-      const { toPlanCandidate } = await import('./src/plan/candidate.js');
-
-      // Which destinations the feed has just been about, so the picker can skip
-      // them. The same history the deck's repeat notes are counted from, and the
-      // resolver gets it too: `/trip norway` is a request for a Norwegian
-      // itinerary, and which Norwegian city is the freshness rules' business.
-      const recent = store.recentPublished().slice(0, 12).map((p) => p.place);
-
-      // A destination typed by hand is RESOLVED rather than refused. It used to
-      // answer "not in destinations.json, add it with the Hebrew spelling",
-      // which sent you to edit a JSON file to get a video out of a word the
-      // catalogue could already place. See the note in src/plan/write.js.
-      const found = asked ? await resolveDestination(asked, { recent }) : null;
-      if (asked && !found) {
-        await notify.send(bot.telegram, ctx.chat.id, `❌ לא הצלחתי להבין איזה יעד זה: ${asked}`).catch(() => {});
-        return;
-      }
-      if (found) console.log(`trip: "${asked}" -> ${found.dest.he} (${found.how})`);
-
-      const plan = await writePlan({ dest: found?.dest || null, days, recent });
-      const cand = await toPlanCandidate(plan);
-      await stage(cand);
-
-      if (plan.dropped?.length) {
-        await notify
-          .send(bot.telegram, ctx.chat.id, `⚠️ ${plan.dropped.length} שורות נפסלו בבנייה`)
-          .catch(() => {});
-      }
-    },
-    ctx.chat.id
-  );
+  detach('מסלול', () => suggestPlan(asked, days, ctx.chat.id), ctx.chat.id);
 });
 
 /**
@@ -2737,6 +2917,9 @@ bot.command('help', (ctx) =>
       '/trip - מסלול שנכתב ב-AI, כמצגת: יעד שלא היה לאחרונה',
       '/trip רומא - מסלול ליעד מסוים',
       '/trip רומא 5 - ולמספר ימים מסוים',
+      '/clip - קליפ אחד. שתי הצורות מתחלפות: חתוך, ואז שוט אחד עם טקסט קבוע',
+      '/clip 3 - שלושה בבת אחת',
+      '/clip cuts · /clip held - לבחור צורה במקום לחכות לתורה',
       '/clear_pending',
       '',
       'תדריך צילום לא מתפרסם על ידי הבוט - אתה מצלם ומעלה. /shoot מתעלם משעות',
@@ -2746,6 +2929,13 @@ bot.command('help', (ctx) =>
       'הערכה. הכרטיס מדפיס את כל המסלול כדי שאפשר יהיה לקרוא לפני שמאשרים.',
       '',
       'אפשר גם להדביק כתובת של מקור ראשוני והיא תיבדק ותיכתב.',
+      '',
+      ...(adminServer
+        ? [
+            'אותן החלטות קיימות גם באתר הניהול, ומי שמאשר שם מדווח כאן בשמו.',
+            'שני הערוצים עובדים על אותו התור - מה שאושר כאן נעלם שם ולהפך.',
+          ]
+        : []),
     ].join('\n')
   )
 );
@@ -2954,8 +3144,354 @@ function sendRejectDigest() {
 
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// The admin site's half of the bridge
+// ---------------------------------------------------------------------------
+//
+// Everything the site can do, as one object handed to the server. The server
+// does routing, auth and JSON and knows nothing about posting; this knows nothing
+// about HTTP. See the long note at the top of src/admin/server.js for why the two
+// live in ONE process rather than two.
+//
+// Every action here is the SAME function the Telegram handler calls. That is the
+// whole point of the extraction above: "approve" cannot come to mean two
+// different things, because there is only one of it.
+//
+// WHAT HAPPENS ON THE SITE IS ANNOUNCED IN TELEGRAM. Not as a courtesy — as the
+// only way the two channels can be trusted together. A card that quietly left the
+// approval queue is indistinguishable from a bug, and the owner reads Telegram.
+
+/** A basename the site can fetch back through /api/media, or null. */
+const mediaName = (file) => (file ? file.split(/[\\/]/).pop() : null);
+
+/**
+ * One pending item, as the site needs it.
+ *
+ * `text` is the Hebrew approval block Telegram shows, verbatim. Deliberately not
+ * re-implemented: two renderings of the same card is two things to keep in step,
+ * and the one that falls behind is whichever is read less. The structured fields
+ * beside it are only what the text cannot carry — which pictures to show, and
+ * which buttons are legal for this kind.
+ */
+function stagedView({ key, cand }) {
+  const slides = (cand.deck?.preview || []).map((s) => mediaName(s.file)).filter(Boolean);
+  return {
+    key,
+    id: cand.id,
+    kind: cand.kind || 'card',
+    headline: cand.headline || '',
+    text: approvalMessage(cand),
+    createdAt: cand.createdAt || null,
+    // Media, in the order it would publish. A clip is a video and everything
+    // else is stills, which the page needs to know before it can choose a tag.
+    video: cand.kind === 'clip' ? mediaName(cand.clip?.file) : null,
+    images: cand.kind === 'clip' ? [] : slides.length ? slides : [mediaName(cand.card?.file)].filter(Boolean),
+    targets: (cand.pendingTargets?.length ? cand.pendingTargets : cand.publishTargets || []).filter((t) =>
+      allowedForKind(cand.kind).includes(t)
+    ),
+    draft: Boolean(cand.tiktokDraft),
+    // Which controls to draw. The same rules stagingButtons applies, answered
+    // once here rather than guessed at in the browser — a page that offers a
+    // button the server refuses is a page that looks broken.
+    canRetitle: cand.kind !== 'deck' && cand.kind !== 'clip' && cand.kind !== 'plan',
+    canSeeEvidence: cand.kind !== 'clip' && cand.kind !== 'plan',
+    privacy: cand.tiktok?.options?.length > 1 ? privacyHe(cand.tiktok.privacy) : null,
+    sourceName: cand.sourceName || null,
+    sourceUrl: cand.sourceUrl || null,
+  };
+}
+
+const queuedView = (c, i) => ({
+  n: i + 1,
+  id: c.id,
+  kind: c.kind || 'card',
+  headline: c.headline || '',
+  video: c.kind === 'clip' ? mediaName(c.clip?.file) : null,
+  images:
+    c.kind === 'clip'
+      ? []
+      : (c.deck?.preview || []).map((s) => mediaName(s.file)).filter(Boolean).slice(0, 1) ||
+        [mediaName(c.card?.file)].filter(Boolean),
+  targets: (c.pendingTargets?.length ? c.pendingTargets : c.publishTargets || []).filter((t) =>
+    allowedForKind(c.kind).includes(t)
+  ),
+  draft: Boolean(c.tiktokDraft) && (c.pendingTargets || c.publishTargets || []).includes('tiktok'),
+});
+
+const adminOps = {
+  mediaDir: () => cardOutputDir(),
+
+  async state() {
+    const day = localDay(new Date());
+    const dayAgo = Date.now() - 24 * 3_600_000;
+    const recent = activity.filter((a) => a.ts >= dayAgo);
+    const rejectedByReason = {};
+    for (const r of rejectLog.filter((r) => r.ts >= dayAgo)) {
+      rejectedByReason[r.reason] = (rejectedByReason[r.reason] || 0) + 1;
+    }
+    const healthTargets = [...new Set([...liveTargets(), ...store.healthTargets()])];
+
+    return {
+      pending: store.stagingItems().map(stagedView),
+      proposals: store.proposalItems().map(({ key, proposal }) => ({
+        key,
+        text: proposalMessage(proposal.idea),
+        title: proposal.idea?.titleHe || '',
+        proposedAt: proposal.proposedAt || null,
+      })),
+      queue: store.queuedItems().map(queuedView),
+      held: store.heldItems().map((h, i) => ({
+        n: i + 1,
+        headline: h.cand?.headline || '',
+        kind: h.cand?.kind || 'card',
+        missing: h.targets || [],
+        missingHe: targetsHe(h.targets || []),
+        error: h.error || null,
+      })),
+      // The same report /status prints, as text, for the same reason `text` is on
+      // a staged card: one rendering, not two.
+      status: notify.statusReport({
+        sourceCount: enabledSources().length,
+        stagingSize: store.stagingSize(),
+        queueSize: store.queueSize(),
+        gathered: recent.filter((a) => a.type === 'run').reduce((s, a) => s + (a.gathered || 0), 0),
+        staged: recent.filter((a) => a.type === 'staged').length,
+        rejected: recent.filter((a) => a.type === 'rejected').length,
+        rejectedByReason,
+        publishedToday: store.publishedToday(),
+        lastRunAgoMs: lastRunAt ? Date.now() - lastRunAt : null,
+        postIntervalMinutes: POST_INTERVAL_MINUTES,
+        stagedToday: store.stagedToday(day) - store.rejectedToday(day),
+        rejectedToday: store.rejectedToday(day),
+        remainingToday: remainingToday(day),
+        dailyTarget: dailyTarget(),
+        nextGatherInMin: Math.max(0, Math.round((gatherIntervalMs - (Date.now() - lastGatherAt)) / 60000)),
+        heldCount: store.heldCount(),
+        targetHealth: Object.fromEntries(liveTargets().map((t) => [t, store.targetHealth(t)])),
+        targets: liveTargets(),
+      }),
+      health: notify.healthReport(
+        healthTargets.map((target) => ({
+          target,
+          ...store.targetHealth(target),
+          degraded: store.isDegradedLatched(target),
+          recoveryDueAt: store.recoveryDueAt(target),
+        })),
+        []
+      ),
+      usage: usageReport(),
+      // The budgets and the backlog caps, which are the answer to "why is nothing
+      // being suggested" and are invisible in every other view.
+      budgets: {
+        cards: { today: store.stagedToday(day) - store.rejectedToday(day), perDay: dailyTarget() },
+        decks: { today: decksToday, perDay: DECKS_PER_DAY, waiting: store.proposalSize(), max: DECK_BACKLOG_MAX },
+        clips: { today: clipsToday, perDay: CLIPS_PER_DAY, waiting: clipsWaiting(), max: CLIP_BACKLOG_MAX },
+        shoots: { today: store.shootsToday(), perDay: SHOOTS_PER_DAY, window: windowsHe(), now: sendableNow() },
+        clipShapes: store.clipShapeHistory().slice(0, 6),
+      },
+    };
+  },
+
+  async evidence(key) {
+    const cand = store.getStaging(key);
+    if (!cand) return { ok: false, said: 'כבר טופל' };
+    return { ok: true, text: evidenceReport(cand) };
+  },
+
+  async approve(key, { by }) {
+    const res = approveStaged(key, { by });
+    if (!res.ok) return res;
+    // The Telegram card is closed from here, saying who did it, because a card
+    // that vanishes with no explanation reads as a fault. Awaited so a failure to
+    // edit is logged before the response goes out, not after.
+    await closeCardElsewhere(res.cand, `${res.said} · באתר · ${by}`);
+    await notify
+      .send(bot.telegram, staging, `🌐 ${by} אישר באתר: ${res.cand.headline}\n${res.said}`)
+      .catch(() => {});
+    return { ok: true, said: res.said };
+  },
+
+  async reject(key, { by }) {
+    const res = rejectStaged(key, { by });
+    if (!res.ok) return res;
+    await closeCardElsewhere(res.cand, `${res.said} · באתר · ${by}`);
+    await notify.send(bot.telegram, staging, `🌐 ${by} דחה באתר: ${res.cand.headline}`).catch(() => {});
+    return { ok: true, said: res.said };
+  },
+
+  async privacy(key) {
+    const res = cyclePrivacy(key);
+    if (!res.ok) return res;
+    // The Telegram card prints the level it will publish at, so it has to be
+    // rewritten — with its buttons intact, because the card is still undecided.
+    const at = res.cand.approvalCard;
+    if (at?.messageId) {
+      const text = approvalMessage(res.cand);
+      const markup = stagingButtons(key, res.cand);
+      const edit = at.isPhoto
+        ? bot.telegram.editMessageCaption(at.chatId, at.messageId, undefined, text, markup)
+        : bot.telegram.editMessageText(at.chatId, at.messageId, undefined, text, markup);
+      await edit.catch((e) => console.error(`admin: privacy edit failed - ${e.message}`));
+    }
+    return { ok: true, said: res.said, privacy: privacyHe(res.cand.tiktok.privacy) };
+  },
+
+  async retitle(key, headline, { by }) {
+    const res = await retitleStaged(key, headline);
+    if (!res.ok) return res;
+    // Re-sent rather than edited: the old message carries the old image. The new
+    // message id is recorded by resendCard, which is what keeps a later decision
+    // pointing at the card actually on screen.
+    await resendCard(key, res.cand).catch((e) => console.error(`admin: resend failed - ${e.message}`));
+    await notify
+      .send(bot.telegram, staging, `🌐 ${by} שינה כותרת באתר: ${res.cand.headline}`)
+      .catch(() => {});
+    return { ok: true, said: res.said, item: stagedView({ key, cand: res.cand }) };
+  },
+
+  async buildProposal(key, targets, { by }) {
+    const proposal = store.getProposal(key);
+    if (!proposal) return { ok: false, said: 'ההצעה הזו כבר לא ממתינה' };
+    const want = Array.isArray(targets) && targets.length ? targets : ['instagram'];
+    const legal = want.filter((t) => t === 'instagram' || t === 'tiktok');
+    if (!legal.length) return { ok: false, said: 'יעד לא חוקי' };
+    const draft = legal.includes('tiktok');
+
+    await notify
+      .send(bot.telegram, staging, `🌐 ${by} אישר בנייה באתר: ${proposal.idea?.titleHe || key}`)
+      .catch(() => {});
+    // runOverridden for the same reason the button does it: an override does not
+    // survive the wait for a decision, and a deck asked for by name must not be
+    // judged by the repeat guards it was meant to step over.
+    detach('בניית מצגת', () => runOverridden('/deck', () => buildProposal(key, staging, null, legal, draft)));
+    return { ok: true, said: `⏳ בונה · ${targetsHe(legal)}` };
+  },
+
+  async rejectProposal(key, { by }) {
+    if (!store.getProposal(key)) return { ok: false, said: 'ההצעה הזו כבר לא ממתינה' };
+    const title = store.getProposal(key)?.idea?.titleHe || key;
+    store.clearProposal(key);
+    await notify.send(bot.telegram, staging, `🌐 ${by} דחה הצעה באתר: ${title}`).catch(() => {});
+    return { ok: true, said: '❌ נדחה' };
+  },
+
+  async publish(n, { by }) {
+    const res = await publishQueued(n == null ? null : Number(n), { background: true });
+    if (res.ok) {
+      await notify.send(bot.telegram, staging, `🌐 ${by} פרסם באתר${res.headline ? `: ${res.headline}` : ''}`).catch(() => {});
+    }
+    return res;
+  },
+
+  async draft(n, { by }) {
+    const res = await draftQueued(Number(n));
+    if (res.ok) {
+      await notify.send(bot.telegram, staging, `🌐 ${by} שלח טיוטה באתר: ${res.headline}`).catch(() => {});
+    }
+    return res;
+  },
+
+  async retryHeld({ by }) {
+    const res = await retryHeldNow({ background: true });
+    await notify.send(bot.telegram, staging, `🌐 ${by} לחץ retry באתר\n${res.said}`).catch(() => {});
+    return res;
+  },
+
+  async clearHeld({ by }) {
+    const res = clearHeldNow();
+    if (res.ok) await notify.send(bot.telegram, staging, `🌐 ${by} ניקה מוחזקים באתר\n${res.said}`).catch(() => {});
+    return res;
+  },
+
+  /**
+   * Ask for something to be built.
+   *
+   * Every one of these is minutes of work and several are money, so they are
+   * detached and the answer is "started". The outcome arrives as a staged card in
+   * both channels, which is the only report that matters.
+   */
+  async build(body, { by }) {
+    const what = String(body?.what || '').toLowerCase();
+    const count = Math.min(5, Math.max(1, Number(body?.count) || 1));
+
+    if (what === 'gather') {
+      if (running) return { ok: false, said: '⏳ כבר רץ סבב איסוף' };
+      await notify.send(bot.telegram, staging, `🌐 ${by} הריץ איסוף באתר`).catch(() => {});
+      detach('סבב איסוף', () => runOverridden('/run', () => doRun({ announce: true })));
+      return { ok: true, said: '⏳ מריץ סבב איסוף' };
+    }
+
+    if (what === 'clip') {
+      const { clipShapeArg, buildClips } = await import('./src/video/clip.js');
+      const shape = clipShapeArg(String(body?.shape || ''));
+      await notify
+        .send(bot.telegram, staging, `🌐 ${by} ביקש ${count} קליפ(ים) באתר${shape ? ` · ${shape}` : ''}`)
+        .catch(() => {});
+      detach('קליפים', async () => {
+        const { clips } = await buildClips({
+          count,
+          seen: clipFootageSeen(),
+          shapes: shape ? Array.from({ length: count }, () => shape) : null,
+          after: store.lastClipShape(),
+        });
+        spendClipFootage(clips);
+        if (!clips.length) {
+          await notify.send(bot.telegram, staging, '🎬 אין קליפ להציג').catch(() => {});
+          return;
+        }
+        for (const clip of clips) await stage(clip);
+      });
+      return { ok: true, said: `⏳ בונה ${count} קליפ(ים)` };
+    }
+
+    if (what === 'deck') {
+      await notify.send(bot.telegram, staging, `🌐 ${by} ביקש הצעת מצגת באתר`).catch(() => {});
+      detach('הצעת מצגת', () => runOverridden('/deck', () => suggestDecks(count, staging)));
+      return { ok: true, said: '⏳ מכין הצעה' };
+    }
+
+    if (what === 'trip') {
+      const asked = String(body?.dest || '').trim();
+      const days = body?.days ? Number(body.days) : null;
+      await notify.send(bot.telegram, staging, `🌐 ${by} ביקש מסלול באתר: ${asked || 'יעד כלשהו'}`).catch(() => {});
+      detach('מסלול', () => runOverridden('/trip', () => suggestPlan(asked, days, staging)));
+      return { ok: true, said: `⏳ מתכנן ${asked || 'יעד'}` };
+    }
+
+    if (what === 'shoot') {
+      await notify.send(bot.telegram, staging, `🌐 ${by} ביקש תדריך צילום באתר`).catch(() => {});
+      detach('תדריך צילום', () => sendShoots(count, staging));
+      return { ok: true, said: `⏳ שולח ${count} תדריך(ים)` };
+    }
+
+    return { ok: false, said: `לא יודע לבנות "${what}"` };
+  },
+};
+
+// The running admin site, so shutdown can close it. Null when ADMIN_USERS is
+// unset, which is how the site stays off.
+let adminServer = null;
+let logTap = null;
+
 async function main() {
+  // BEFORE the first console.log, so the boot lines are in the buffer the admin
+  // site shows. Started after them, an admin who cannot read pm2 logs gets a
+  // window that begins just past the most informative part of the run — the
+  // destinations, the budgets, and any warning about them.
+  logTap = createLogTap();
   console.log('starting tiyul+ ...');
+
+  // BEFORE Telegram, deliberately.
+  //
+  // The site is the second channel, and the moment it is most worth having is
+  // the moment the first one is unreachable — a revoked token, a network that
+  // cannot see api.telegram.org. Started after getMe, an unreachable Telegram
+  // takes the site down with it and there is nowhere left to look at the queue.
+  //
+  // Everything it announces to Telegram is already `.catch(() => {})`, so an
+  // action taken while the chat is unreachable still happens; it just goes
+  // unannounced, which is the right direction.
+  adminServer = startAdminServer(adminOps, { log: logTap });
 
   // launch() never resolves during normal operation — it *is* the long-poll
   // loop. Awaiting it queues everything after it behind a promise that only
@@ -3101,6 +3637,14 @@ const shutdown = async (sig) => {
   // with EADDRINUSE, and the connect endpoint would be the one thing that did
   // not come back from a routine restart.
   await stopOAuthServer();
+  // The admin port, for exactly the same reason and with the same failure: pm2
+  // restart sends SIGTERM and starts the replacement immediately, and a socket
+  // still held here greets it with EADDRINUSE. The bot would come back and the
+  // site would be the one thing that did not.
+  if (adminServer) {
+    await new Promise((resolve) => adminServer.close(resolve));
+    adminServer = null;
+  }
   await closeBrowser();
   bot.stop(sig);
 };

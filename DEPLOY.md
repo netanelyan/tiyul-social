@@ -143,6 +143,71 @@ curl -sI https://cards.tiyulplus.com/cards/probe.jpg | head -1   # expect 200
 If that is not a 200 from another network, Instagram will not be able to fetch a
 card either, and the failure it gives you is far less legible than this one.
 
+**The `cards.tiyulplus.com` block is load-bearing and lives in a file another
+project also edits.** It was once removed by a rewrite of that file from the
+other side, and the symptom was not a 404 — it was Caddy having no certificate
+for the hostname, so every media fetch failed the TLS handshake and surfaced
+hours later as an opaque `photo_pull_failed` from TikTok. When publishing breaks
+with no code change to explain it, check this before looking in the repo:
+
+```bash
+grep cards.tiyulplus.com /etc/caddy/Caddyfile
+curl -sSI https://cards.tiyulplus.com/cards/probe.jpg | head -1
+```
+
+Use `-sSI`, not `-sI`. Plain `-s` hides connection errors, so a TLS failure
+prints nothing at all and reads as a hang.
+
+## 4a. The admin site (optional)
+
+The same approve/reject/publish decisions as the Telegram bot, in a browser, for
+admins who are not on the Telegram chat. It runs **inside the bot's process** —
+the store is held in memory and written whole, so a second process would revert
+whatever the bot did between its read and its write. There is nothing extra to
+start or supervise.
+
+It is off until `ADMIN_USERS` is set. One `name:password` per person, comma
+separated, because every action is announced in the Telegram chat under the name
+that performed it:
+
+```bash
+# in /opt/tiyul-social/.env
+ADMIN_USERS=neta:a-long-password,dana:a-different-one
+```
+
+Then a Caddy block beside the cards one, in the same file:
+
+```
+admin.tiyulplus.com {
+    reverse_proxy 127.0.0.1:8787
+}
+```
+
+```bash
+sudo caddy validate --config /etc/caddy/Caddyfile
+sudo systemctl reload caddy
+pm2 restart tiyul
+```
+
+The DNS A record for `admin.tiyulplus.com` has to point at this box first, or
+Caddy cannot get a certificate.
+
+**Never bind the site to a public address.** `ADMIN_BIND` defaults to
+`127.0.0.1` and should stay there: there is no TLS inside the process, Caddy
+provides it, and the session cookie would otherwise travel in clear. The login
+throttle also trusts `X-Forwarded-For` only while bound to localhost, where the
+proxy is the only thing that can reach it.
+
+Check it is up before opening a browser:
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8787/        # 200
+curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8787/api/state  # 401
+```
+
+A 200 then a 401 is exactly right: the login page is public and everything
+behind it is not.
+
 ## 5. `.env`
 
 Copy `.env.example` and fill it in, it documents every variable. Two entries
@@ -319,3 +384,7 @@ find /var/www/tiyul/cards -name '*.jpg' -mtime +30 -delete
 | Instagram fetch fails | `curl -I` the exact URL from off the box; check the `CARD_OUTPUT_DIR` / `CARD_PUBLIC_BASE_URL` pair |
 | `no places found` on every deck | Overpass, not you. All three mirrors go down together sometimes; it is transient |
 | Memory pressure on a shared box | Lower `RENDER_IDLE_MS` so Chromium is released sooner between renders |
+| Admin site 502s | The bot is down — the site is inside its process. `pm2 logs tiyul` |
+| Admin site says `off (ADMIN_USERS is not set)` at boot | `.env` is gitignored, so it never arrives by `git pull`. Set it on the box |
+| Correct admin password is rejected | A `Secure` cookie over plain http is never sent back. Reach it through Caddy on https, or set `ADMIN_INSECURE_COOKIES=1` for a local run only |
+| Admin port already in use after a restart | Both listeners are closed on SIGTERM; if it persists, something else took 8787. `ss -lptn 'sport = :8787'` |

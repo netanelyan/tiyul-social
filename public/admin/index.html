@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>tiyul+ · ניהול</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!--
+  The admin site's one page.
+
+  RTL and Hebrew, because everything it shows is: the approval text, the
+  itineraries, the hooks. An LTR shell around Hebrew content puts the punctuation
+  on the wrong side of every line.
+
+  No framework and no build step, on purpose. This project has four dependencies
+  and a deploy that is `git pull && pm2 restart`; a bundler would make the site
+  the only thing needing a build, and the one moment you need to fix the admin
+  panel is the moment something else is already broken. It is also small enough
+  not to need one.
+-->
+
+<div id="login" class="gate">
+  <form id="login-form" class="card gate-card">
+    <h1>tiyul+</h1>
+    <p class="muted">ניהול תוכן</p>
+    <label>שם<input name="name" autocomplete="username" required autofocus></label>
+    <label>סיסמה<input name="password" type="password" autocomplete="current-password" required></label>
+    <button type="submit">כניסה</button>
+    <p id="login-error" class="error" hidden></p>
+  </form>
+</div>
+
+<div id="app" hidden>
+  <header>
+    <strong>tiyul+</strong>
+    <nav>
+      <button data-tab="pending" class="on">ממתינים <span class="count" id="c-pending">0</span></button>
+      <button data-tab="queue">בתור <span class="count" id="c-queue">0</span></button>
+      <button data-tab="held">מוחזקים <span class="count" id="c-held">0</span></button>
+      <button data-tab="make">בנייה</button>
+      <button data-tab="system">מצב</button>
+    </nav>
+    <span class="spacer"></span>
+    <span class="muted" id="who"></span>
+    <button id="refresh" title="רענון">↻</button>
+    <button id="logout">יציאה</button>
+  </header>
+
+  <p id="flash" class="flash" hidden></p>
+
+  <main>
+    <section data-panel="pending">
+      <div id="proposals"></div>
+      <div id="pending"></div>
+    </section>
+
+    <section data-panel="queue" hidden>
+      <div class="row-actions">
+        <button class="go" data-act="publish-next">פרסם את הבא</button>
+      </div>
+      <div id="queue"></div>
+    </section>
+
+    <section data-panel="held" hidden>
+      <div class="row-actions">
+        <button class="go" data-act="retry">נסה שוב הכל</button>
+        <button class="danger" data-act="clear-held">ותר על המוחזקים</button>
+      </div>
+      <div id="held"></div>
+    </section>
+
+    <section data-panel="make" hidden>
+      <div class="card">
+        <h2>בנה משהו</h2>
+        <p class="muted">כל אחד מאלה לוקח דקות וכמה מהם עולים כסף. התוצאה מגיעה לכאן ולטלגרם.</p>
+        <div class="make-grid">
+          <div class="make">
+            <h3>📰 סבב איסוף</h3>
+            <p class="muted">קורא את המקורות וכותב כרטיסים ממה שנמצא.</p>
+            <button data-build="gather">הרץ</button>
+          </div>
+          <div class="make">
+            <h3>🎬 קליפ</h3>
+            <p class="muted">וידאו אנכי עם שורה בעברית.</p>
+            <label>כמה<input type="number" id="clip-count" value="1" min="1" max="5"></label>
+            <label>צורה
+              <select id="clip-shape">
+                <option value="">הבא בתור (מתחלף)</option>
+                <option value="cuts">חתוך - כמה מקומות</option>
+                <option value="held">שוט אחד, טקסט קבוע</option>
+              </select>
+            </label>
+            <button data-build="clip">בנה</button>
+          </div>
+          <div class="make">
+            <h3>🃏 מצגת</h3>
+            <p class="muted">מגיעה קודם כהצעת טקסט לאישור.</p>
+            <label>כמה<input type="number" id="deck-count" value="1" min="1" max="3"></label>
+            <button data-build="deck">הצע</button>
+          </div>
+          <div class="make">
+            <h3>🗺️ מסלול</h3>
+            <p class="muted">אפשר לכתוב כל יעד, גם באנגלית וגם אם הוא לא בקטלוג.</p>
+            <label>יעד<input id="trip-dest" placeholder="norway · lake como · טוקיו"></label>
+            <label>ימים<input type="number" id="trip-days" min="1" max="14" placeholder="אוטומטי"></label>
+            <button data-build="trip">תכנן</button>
+          </div>
+          <div class="make">
+            <h3>🎥 תדריך צילום</h3>
+            <p class="muted">רשימת שוטים לצלם ביד. לא מתפרסם בעצמו.</p>
+            <label>כמה<input type="number" id="shoot-count" value="1" min="1" max="5"></label>
+            <button data-build="shoot">שלח</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section data-panel="system" hidden>
+      <div id="budgets" class="card"></div>
+      <div class="card"><h2>מצב</h2><pre id="status"></pre></div>
+      <div class="card"><h2>יעדי פרסום</h2><pre id="health"></pre></div>
+      <div class="card"><h2>שימוש במודלים</h2><pre id="usage"></pre></div>
+      <div class="card"><h2>לוג</h2><pre id="log" class="log"></pre></div>
+    </section>
+  </main>
+</div>
+
+<dialog id="modal">
+  <h2 id="modal-title"></h2>
+  <pre id="modal-body"></pre>
+  <div class="row-actions"><button id="modal-close">סגור</button></div>
+</dialog>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -30,6 +30,7 @@
     "clip-lab": "node scripts/clip-lab.js",
     "clip-redo": "node scripts/clip-redo.js",
     "plan-lab": "node scripts/plan-lab.js",
+    "admin-lab": "node scripts/admin-lab.js",
     "redraw": "node scripts/redraw.js"
   },
   "dependencies": {

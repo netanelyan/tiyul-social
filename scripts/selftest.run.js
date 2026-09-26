@@ -5634,6 +5634,204 @@ try {
 }
 
 /* -------------------------------------------------------------------------- */
+group('the admin site - the same decisions, in a browser');
+
+{
+  const { readUsers, checkLogin, signSession, readSession, cookieFor, readCookie, createThrottle } =
+    await import('../src/admin/auth.js');
+
+  // --- who may get in ------------------------------------------------------
+  const users = readUsers('neta:hunter2,dana:pw,:blank,noPassword:');
+  eq('a user list is parsed', [...users.keys()].join(','), 'neta,dana');
+  ok('a nameless entry is dropped', !users.has(''));
+  ok('and so is a passwordless one', !users.has('noPassword'));
+  // A blank password would let anybody who guessed the name straight in, and a
+  // typo in .env is the likeliest way to write one.
+  eq('an empty user list means the site is off', readUsers('').size, 0);
+  eq('and so does a missing one', readUsers(undefined).size, 0);
+
+  ok('the right password gets in', checkLogin('neta', 'hunter2', users));
+  ok('the wrong one does not', !checkLogin('neta', 'hunter3', users));
+  ok('a name nobody has does not', !checkLogin('ghost', 'hunter2', users));
+  ok('and neither does an empty password', !checkLogin('neta', '', users));
+  // One password per person is what makes "who approved this" answerable.
+  ok('a second admin has their own password', checkLogin('dana', 'pw', users));
+  ok('and cannot use the first one', !checkLogin('dana', 'hunter2', users));
+
+  // --- sessions ------------------------------------------------------------
+  const key = Buffer.from('a-test-key-for-sessions-only....');
+  eq('a session round-trips', readSession(signSession('neta', { key }), { key }), 'neta');
+  eq('a tampered signature is refused', readSession(signSession('neta', { key }).slice(0, -3) + 'xyz', { key }), null);
+  eq('junk is refused rather than thrown at', readSession('nonsense', { key }), null);
+  eq('so is nothing at all', readSession(null, { key }), null);
+  // The expiry is INSIDE the signed payload rather than left to the cookie's
+  // Max-Age, which is a request to the browser and nothing more.
+  eq('an expired session is refused', readSession(signSession('neta', { key, hours: -1 }), { key }), null);
+  // A different key must not validate — this is what stops a session signed on
+  // one box being replayed against another.
+  eq('a session signed with another key is refused',
+    readSession(signSession('neta', { key }), { key: Buffer.from('b-different-key-entirely.......!') }), null);
+  // The name cannot be swapped without re-signing: the payload is inside the MAC.
+  {
+    const [, expiry, sig] = signSession('neta', { key }).split('.');
+    const forged = `${Buffer.from('dana').toString('base64url')}.${expiry}.${sig}`;
+    eq('and the name cannot be swapped', readSession(forged, { key }), null);
+  }
+
+  const cookie = cookieFor('tok');
+  ok('the cookie is HttpOnly', /HttpOnly/.test(cookie), cookie);
+  ok('and SameSite=Strict, which is most of the CSRF defence', /SameSite=Strict/.test(cookie));
+  ok('and Secure, because Caddy terminates TLS in front', /Secure/.test(cookie));
+  ok('clearing it expires immediately', /Max-Age=0/.test(cookieFor('')));
+  eq('the cookie is read back out of a crowded header',
+    readCookie('other=1; tiyul_admin=abc; third=2'), 'abc');
+  eq('and a header without it reads null', readCookie('other=1'), null);
+
+  // --- the login throttle --------------------------------------------------
+  // A delay rather than a lockout: a lockout on a site with three users is a
+  // denial of service anybody can trigger on the owner's behalf.
+  const throttle = createThrottle({ base: 100, max: 1000 });
+  eq('a fresh address waits for nothing', throttle.delayFor('1.2.3.4'), 0);
+  throttle.fail('1.2.3.4');
+  eq('one wrong password costs the base delay', throttle.delayFor('1.2.3.4'), 100);
+  throttle.fail('1.2.3.4');
+  throttle.fail('1.2.3.4');
+  eq('and it doubles', throttle.delayFor('1.2.3.4'), 400);
+  for (let i = 0; i < 20; i++) throttle.fail('1.2.3.4');
+  eq('up to a ceiling', throttle.delayFor('1.2.3.4'), 1000);
+  eq('another address is unaffected', throttle.delayFor('5.6.7.8'), 0);
+  throttle.pass('1.2.3.4');
+  eq('and a correct password clears it', throttle.delayFor('1.2.3.4'), 0);
+
+  // --- the server, driven over real HTTP -----------------------------------
+  //
+  // Started for real rather than stubbed, because everything worth checking here
+  // is a property of the wiring: that a mutation without the CSRF header is
+  // refused, that /api/media cannot be walked out of, that an action is
+  // attributed to the person who signed in. None of that is visible from a unit
+  // test of the handler.
+  const saved = {
+    users: process.env.ADMIN_USERS,
+    secret: process.env.ADMIN_SECRET,
+    insecure: process.env.ADMIN_INSECURE_COOKIES,
+  };
+  process.env.ADMIN_USERS = 'neta:hunter2';
+  process.env.ADMIN_SECRET = 'selftest-admin-secret';
+  process.env.ADMIN_INSECURE_COOKIES = '1';
+
+  const { startAdminServer } = await import('../src/admin/server.js');
+  const calls = [];
+  const ops = {
+    mediaDir: () => new URL('../public/admin/', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'),
+    state: async () => ({ pending: [], proposals: [], queue: [], held: [], status: 's', health: 'h', usage: 'u', budgets: {} }),
+    approve: async (k, o) => (calls.push(`approve:${k}:${o.by}`), { ok: true, said: 'ok' }),
+    reject: async (k, o) => (calls.push(`reject:${k}:${o.by}`), { ok: true }),
+    privacy: async () => ({ ok: true }),
+    retitle: async (k, h) => (calls.push(`retitle:${k}:${h}`), { ok: true }),
+    evidence: async () => ({ ok: true, text: 'quotes' }),
+    buildProposal: async (k, t) => (calls.push(`prop:${k}:${(t || []).join('+')}`), { ok: true }),
+    rejectProposal: async () => ({ ok: true }),
+    publish: async (n) => (calls.push(`publish:${n}`), { ok: true }),
+    draft: async (n) => (calls.push(`draft:${n}`), { ok: true }),
+    retryHeld: async () => ({ ok: true }),
+    clearHeld: async () => ({ ok: true }),
+    build: async (b) => (calls.push(`build:${b.what}:${b.count ?? ''}`), { ok: true }),
+  };
+
+  // Port 0 so a developer with something on 8787 — or two test runs at once —
+  // does not get EADDRINUSE instead of a result.
+  const server = startAdminServer(ops, { port: 0, log: { lines: () => [{ at: 1, level: 'log', text: 'hello' }] } });
+  ok('the server starts when ADMIN_USERS is set', Boolean(server));
+
+  if (server) {
+    await new Promise((r) => (server.listening ? r() : server.once('listening', r)));
+    const base = `http://127.0.0.1:${server.address().port}`;
+    let jar = null;
+    const hit = async (path, { method = 'GET', body, csrf = true, cookies = true } = {}) => {
+      const res = await fetch(base + path, {
+        method,
+        headers: {
+          ...(body ? { 'content-type': 'application/json' } : {}),
+          ...(csrf && method !== 'GET' ? { 'x-tiyul-admin': '1' } : {}),
+          ...(cookies && jar ? { cookie: jar } : {}),
+        },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      const set = res.headers.get('set-cookie');
+      if (set) jar = set.split(';')[0];
+      const text = await res.text();
+      let parsed = null;
+      try { parsed = JSON.parse(text); } catch {}
+      return { status: res.status, text, json: parsed };
+    };
+
+    eq('the state needs a session', (await hit('/api/state')).status, 401);
+    eq('and so does approving something', (await hit('/api/staging/k/approve', { method: 'POST' })).status, 401);
+    eq('the login page itself is public', (await hit('/')).status, 200);
+    ok('and it is the real page', (await hit('/')).text.includes('tiyul+'));
+
+    eq('a wrong password is refused',
+      (await hit('/api/login', { method: 'POST', body: { name: 'neta', password: 'no' } })).status, 401);
+    ok('and hands out no cookie', jar === null);
+
+    const login = await hit('/api/login', { method: 'POST', body: { name: 'neta', password: 'hunter2' } });
+    eq('the right one signs in', login.status, 200);
+    eq('and says who', login.json.me, 'neta');
+    eq('the state now reads', (await hit('/api/state')).json?.ok, true);
+    eq('and carries the name', (await hit('/api/state')).json?.me, 'neta');
+
+    // THE CSRF CHECK. A cross-site form post cannot set a custom header, and
+    // SameSite=Strict means the cookie would not travel anyway.
+    eq('a mutation with no x-tiyul-admin header is refused',
+      (await hit('/api/staging/k1/approve', { method: 'POST', csrf: false })).status, 403);
+    eq('with the header it goes through',
+      (await hit('/api/staging/k1/approve', { method: 'POST' })).json?.ok, true);
+    ok('and the action is attributed to whoever signed in', calls.includes('approve:k1:neta'), calls.join(' '));
+
+    await hit('/api/staging/k2/headline', { method: 'POST', body: { headline: 'כותרת חדשה' } });
+    ok('a new headline reaches the bot with its text', calls.includes('retitle:k2:כותרת חדשה'));
+    eq('evidence comes back as text', (await hit('/api/staging/k2/evidence')).json?.text, 'quotes');
+    await hit('/api/proposals/p1/build', { method: 'POST', body: { targets: ['instagram', 'tiktok'] } });
+    ok('a proposal carries its destinations', calls.includes('prop:p1:instagram+tiktok'));
+    await hit('/api/queue/publish', { method: 'POST', body: { n: 3 } });
+    ok('publish carries the number from the list', calls.includes('publish:3'));
+    await hit('/api/queue/publish', { method: 'POST', body: {} });
+    ok('and a bare publish means "the next one"', calls.includes('publish:null'));
+    await hit('/api/build', { method: 'POST', body: { what: 'clip', count: 2 } });
+    ok('a build request routes by name', calls.includes('build:clip:2'));
+    eq('the log is readable', (await hit('/api/log')).json?.lines?.[0]?.text, 'hello');
+
+    eq('an unknown route is 404', (await hit('/api/nope')).status, 404);
+    eq('a real route with the wrong method is 405', (await hit('/api/staging/k/approve')).status, 405);
+
+    // MEDIA CANNOT BE WALKED OUT OF. The check is on the resolved path, not on
+    // the requested string: testing for ".." is the version that misses
+    // url-encoding, backslashes and absolute paths.
+    eq('media serves a file that is there', (await hit('/api/media?file=style.css')).status, 200);
+    eq('and refuses an empty name', (await hit('/api/media?file=')).status, 400);
+    for (const evil of ['../../.env', '..%2f..%2f.env', '....//.env', '/etc/passwd', 'C:\\Windows\\win.ini', '..\\..\\.env']) {
+      const r = await hit(`/api/media?file=${encodeURIComponent(evil)}`);
+      ok(`nothing escapes the media directory: ${evil}`, r.status === 404 || r.status === 403, `got ${r.status}`);
+    }
+
+    await hit('/api/logout', { method: 'POST' });
+    eq('logging out ends the session', (await hit('/api/state')).status, 401);
+    jar = `tiyul_admin=${'x'.repeat(48)}`;
+    eq('a forged cookie is refused', (await hit('/api/state')).status, 401);
+
+    await new Promise((r) => server.close(r));
+  }
+
+  // And the site is OFF, not merely unguarded, when nobody is configured.
+  delete process.env.ADMIN_USERS;
+  eq('with no users configured there is no listener', startAdminServer(ops, { port: 0, users: readUsers('') }), null);
+
+  if (saved.users === undefined) delete process.env.ADMIN_USERS; else process.env.ADMIN_USERS = saved.users;
+  if (saved.secret === undefined) delete process.env.ADMIN_SECRET; else process.env.ADMIN_SECRET = saved.secret;
+  if (saved.insecure === undefined) delete process.env.ADMIN_INSECURE_COOKIES; else process.env.ADMIN_INSECURE_COOKIES = saved.insecure;
+}
+
+/* -------------------------------------------------------------------------- */
 console.log(`\n${'─'.repeat(56)}`);
 if (fail) {
   console.log(`${pass} passed, ${fail} FAILED\n`);

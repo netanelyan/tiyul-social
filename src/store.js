@@ -613,6 +613,22 @@ export function clearProposal(key) {
 }
 export const proposalSize = () => Object.keys(state.proposals).length;
 
+/**
+ * Every unanswered proposal, with its key, oldest first.
+ *
+ * The twin of stagingItems, and it did not exist because Telegram never needed
+ * it: a proposal arrives as a message with two buttons and the key is in the
+ * button. A page has to be able to LIST them, and `proposalSize` — the only
+ * thing that could see this collection — answers with a number.
+ *
+ * Oldest first, because that is the order they were offered in and the order a
+ * queue of decisions should be worked through.
+ */
+export const proposalItems = () =>
+  Object.entries(state.proposals)
+    .map(([key, proposal]) => ({ key, proposal }))
+    .sort((a, b) => (a.proposal.proposedAt || 0) - (b.proposal.proposedAt || 0));
+
 // --- shoots -----------------------------------------------------------------
 // Shot lists that have been sent, most recent first.
 //
