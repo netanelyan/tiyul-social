@@ -5449,6 +5449,31 @@ try {
   ok('an impossible title stops at the floor', floored.fitted[0]?.to / floored.fitted[0]?.from >= 0.6, JSON.stringify(floored.fitted[0]));
   eq('and says so rather than pretending', floored.fitted[0]?.fits, false);
 
+  // Re-rendering ONE slide of a deck, which is how a post already built can be
+  // repaired after a rendering bug is found. A stored candidate keeps its
+  // photographs' provenance and credit but not their `src`, so re-rendering the
+  // whole deck to fix its cover would return five slides with no pictures and
+  // overwrite five good files.
+  const { renderDeckSize } = await import('../src/render/deck.js');
+  const deck = {
+    id: 'selftest-only',
+    titleHe: 'המקומות הכי טובים בסקנדינביה',
+    idea: { emphasisHe: '' },
+    style: 'minimal',
+    coverImage: null,
+    slides: [1, 2, 3, 4, 5].map((n) => ({ n, nameHe: `מקום ${n}`, fields: [], image: null })),
+  };
+  const one = await renderDeckSize(deck, { size: 'instagram', outDir, only: [2] });
+  eq('only: [2] renders one slide', one.length, 1);
+  // The index comes from the slide's place in the WHOLE deck, not from the
+  // filtered array. Getting this wrong writes the right picture to the wrong
+  // filename, and on an Instagram cover it also prints "1 / 1" on a deck of six.
+  eq('numbered by its place in the whole deck', one[0].index, 2);
+  ok('which is what the filename says', /-instagram-02\.jpg$/.test(one[0].filename), one[0].filename);
+
+  const whole = await renderDeckSize(deck, { size: 'instagram', outDir });
+  eq('and without `only` the whole deck still renders', whole.length, 6);
+
   const { closeBrowser } = await import('../src/render/index.js');
   await closeBrowser().catch(() => {});
 } catch (e) {

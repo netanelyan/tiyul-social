@@ -89,10 +89,27 @@ function blockHeight(slide, { cover = false, style = 'minimal' } = {}) {
  * colour are properties of the photograph, and the renderer cannot know either
  * of them from the HTML.
  */
-export async function renderDeckSize(deck, { size = 'tiktok', outDir = cardOutputDir() } = {}) {
+export async function renderDeckSize(deck, { size = 'tiktok', outDir = cardOutputDir(), only = null } = {}) {
   if (!SIZES[size]) throw new Error(`unknown deck size: ${size}`);
   const geometry = SIZES[size];
   const style = isStyle(deck.style) ? deck.style : 'minimal';
+
+  // `only` re-renders SOME slides of a deck, by 1-based index, leaving the
+  // files for the rest exactly as they are.
+  //
+  // It exists because a rendering bug is discovered after the post is built. A
+  // deck published with its cover line cut by the clamp could not be repaired:
+  // the filenames are deterministic, so overwriting slide 01 is all that is
+  // needed, but the only way to produce one was to render the whole deck - and
+  // a stored candidate keeps its photographs' provenance and credit, not their
+  // `src`, so the other five slides would have come back without pictures and
+  // overwritten five good files.
+  //
+  // The full item list is still built, so `total` on an Instagram cover and
+  // every index still describe the WHOLE deck. Rendering slide 1 of 6 must
+  // print "1 / 6"; a version of this that trimmed the list first printed
+  // "1 / 1", which is a different bug wearing the same fix.
+  const wanted = (i) => !only || only.includes(i + 1);
 
   const cover = {
     titleHe: deck.titleHe,
@@ -111,11 +128,17 @@ export async function renderDeckSize(deck, { size = 'tiktok', outDir = cardOutpu
   // and a headline that wandered to wherever the photograph was quietest would
   // undo exactly that. It does also mean the Instagram pass costs no image
   // analysis, which is most of what rendering a deck spends its time on.
-  const spots = size === 'instagram' ? items.map(() => null) : await analyseSlides(
-    items.map((slide, i) => ({
-      src: slide.image?.src || null,
-      place: i === 0 ? deck.titleHe : slide.nameHe,
-      blockH: blockHeight(slide, { cover: i === 0, style }),
+  // A slide that will not be rendered is not analysed either. Image analysis is
+  // most of what a TikTok deck costs, and asking about six slides to redraw one
+  // cover would spend a whole deck's budget on it. The indices are carried
+  // through rather than the filtered array's own, so `i === 0` still means the
+  // cover and the answers still land back on the slide they describe.
+  const analysed = items.map((_, i) => i).filter(wanted);
+  const measured = size === 'instagram' ? [] : await analyseSlides(
+    analysed.map((i) => ({
+      src: items[i].image?.src || null,
+      place: i === 0 ? deck.titleHe : items[i].nameHe,
+      blockH: blockHeight(items[i], { cover: i === 0, style }),
       blockW: blockWidth({ cover: i === 0, style }),
       // Instagram draws none of TikTok's furniture over the image, so the rail
       // exclusion that pushes text left on a TikTok slide would be inventing a
@@ -166,11 +189,19 @@ export async function renderDeckSize(deck, { size = 'tiktok', outDir = cardOutpu
   // the light scrim it needs instead of near-black over near-black.
   const scrims =
     size === 'instagram'
-      ? await measureCardScrims(items.map((s) => s.image?.src || null)).catch(() => [])
+      ? await measureCardScrims(items.map((s, i) => (wanted(i) ? s.image?.src || null : null))).catch(() => [])
       : [];
+
+  // Back onto the full-length axis, so spots[i] still describes slide i whether
+  // or not its neighbours were rendered.
+  const spots = items.map(() => null);
+  analysed.forEach((i, k) => {
+    spots[i] = measured[k] ?? null;
+  });
 
   const out = [];
   for (const [i, slide] of items.entries()) {
+    if (!wanted(i)) continue;
     const index = i + 1;
     // Measured or not at all — a slide whose photograph could not be sampled
     // keeps its image untouched and falls through to the worst-photograph
