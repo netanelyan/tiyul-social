@@ -29,7 +29,8 @@
     "contact-sheet": "node scripts/contact-sheet.js",
     "clip-lab": "node scripts/clip-lab.js",
     "clip-redo": "node scripts/clip-redo.js",
-    "plan-lab": "node scripts/plan-lab.js"
+    "plan-lab": "node scripts/plan-lab.js",
+    "redraw": "node scripts/redraw.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",
