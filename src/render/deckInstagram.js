@@ -171,7 +171,10 @@ export function renderInstagramSlideHtml(
       `<div class="name" style="font-size:${nameSize(slide.nameHe)}px">${name}</div>` +
       (slide.countryHe ? `<div class="country">${e(slide.countryHe)}</div>` : '') +
       (fields ? `<div class="fields">${fields}</div>` : '') +
-      (note ? `<div class="note">(${e(note.text)})</div>` : '');
+      // Unbracketed on the one slide that asks for it — the closing one, whose
+      // note is the argument for following rather than an aside about a place.
+      // Same flag, same reason, as the TikTok template.
+      (note ? `<div class="note">${slide.plainNote ? e(note.text) : `(${e(note.text)})`}</div>` : '');
   }
 
   return `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><style>

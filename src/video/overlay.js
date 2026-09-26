@@ -422,7 +422,28 @@ body { direction:rtl; font-family:'TikTok Sans','Arimo','Assistant','Heebo',sans
 </style></head><body>${washed ? '<div class="assist"></div>' : ''}<div class="hook">${escapeHtml(text)}</div></body></html>`;
 }
 
-/** Render that HTML to a PNG with a real alpha channel. */
+/**
+ * Render that HTML to a PNG with a real alpha channel.
+ *
+ * AND SHRINK THE TYPE RATHER THAN LET THE CLAMP EAT IT.
+ *
+ * `-webkit-line-clamp` cuts a line that runs past `maxLines` and puts an
+ * ellipsis on the end of it. On a card that would be a truncated caption; here
+ * it is a video that ends mid-sentence in a "…", which is the one thing
+ * `trailsOff` refuses everywhere else in this pipeline — and it arrives by a
+ * route no guard could see, because the string was fine and the LAYOUT cut it.
+ *
+ * Found on the closing line: two of the first six reasons to follow rendered as
+ * three lines and shipped clipped. Character count does not predict it (39
+ * characters fit, a different 39 did not), so it is measured rather than
+ * guessed: Chromium is asked how many lines it actually laid out, and the size
+ * steps down until it fits or reaches the floor.
+ *
+ * The floor is 70%. Below that a closing line would be smaller than the place
+ * labels around it and the shrinking would be hiding the problem instead of
+ * solving it; at that point the honest answer is that the line is too long, and
+ * it renders at the floor rather than disappearing.
+ */
 export async function renderOverlayPng(text, { width, height, file, spot = null, id = '' }) {
   const browser = await getBrowser();
   const context = await browser.newContext({
@@ -434,6 +455,30 @@ export async function renderOverlayPng(text, { width, height, file, spot = null,
   try {
     await page.setContent(overlayHtml(text, { width, height, spot, id }), { waitUntil: 'load' });
     await page.evaluate(() => document.fonts.ready);
+
+    const maxLines = postConfig().clips.overlay.maxLines;
+    const fitted = await page.evaluate(
+      ([max]) => {
+        const el = document.querySelector('.hook');
+        if (!el) return null;
+        const lines = () => Math.round(el.scrollHeight / parseFloat(getComputedStyle(el).lineHeight));
+        const from = parseFloat(getComputedStyle(el).fontSize);
+        if (lines() <= max) return { from, to: from, fits: true };
+        for (let scale = 0.95; scale >= 0.7; scale -= 0.05) {
+          el.style.fontSize = `${Math.round(from * scale)}px`;
+          if (lines() <= max) return { from, to: Math.round(from * scale), fits: true };
+        }
+        return { from, to: Math.round(from * 0.7), fits: false };
+      },
+      [maxLines]
+    );
+    if (fitted && fitted.to !== fitted.from) {
+      console.log(
+        `clip overlay: "${String(text).slice(0, 40)}" set at ${fitted.to}px instead of ${fitted.from}px` +
+          (fitted.fits ? '' : ' - still over the line limit at the floor')
+      );
+    }
+
     const buf = await page.screenshot({ type: 'png', omitBackground: true });
     writeFileSync(file, buf);
     return file;
@@ -535,7 +580,7 @@ function audioChain(track, { inputIndex, seconds, id }) {
  * from five seconds up, so without it the shortest sources ship two seconds
  * under length.
  */
-export async function burnClip(source, { text, outFile, pngFile, id = '', duration = null, track = null }) {
+export async function burnClip(source, { text, outFile, pngFile, followText = null, followPngFile = null, id = '', duration = null, track = null }) {
   const cfg = postConfig().clips.video;
   const { width: w, height: h, seconds, fps, crf, preset, keepAudio, loopSource } = cfg;
 
@@ -554,8 +599,28 @@ export async function burnClip(source, { text, outFile, pngFile, id = '', durati
   const spot = await measureClip(source, { startAt, seconds: span }).catch(() => null);
   await renderOverlayPng(text, { width: w, height: h, file: pngFile, spot, id });
 
-  // The bed, if there is one. Input 2, after the source and the overlay PNG.
-  const audio = audioChain(track, { inputIndex: 2, seconds, id });
+  // THE CLOSING FRAME, AND WHY THIS IS NOT THE BEATS COMING BACK.
+  //
+  // The note above records that this function once gated a chain of overlays to
+  // their own windows and that it was reverted: four or five lines changing over
+  // one unbroken shot turns the footage into wallpaper for a caption rewriting
+  // itself. That argument is about the BODY of the clip, where the picture is
+  // supposed to be what the line answers.
+  //
+  // This is one line at the END, for the last two seconds, and it swaps the hook
+  // out rather than joining it. By second six the hook has been read; what a
+  // viewer who watched to here has not been told is why they would want the next
+  // one. Taking the same measured position means the closing line lands where the
+  // frames proved text is legible, instead of being placed somewhere nothing
+  // sampled.
+  const followAt = followText && followPngFile ? Math.max(0, seconds - postConfig().clips.follow.seconds) : null;
+  if (followAt !== null) {
+    await renderOverlayPng(followText, { width: w, height: h, file: followPngFile, spot, id: `${id}-follow` });
+  }
+
+  // The bed, if there is one. After the source and the overlay PNGs, so its
+  // index moves with them: two inputs normally, three with a closing frame.
+  const audio = audioChain(track, { inputIndex: followAt === null ? 2 : 3, seconds, id });
 
   const args = [
     '-y',
@@ -566,9 +631,20 @@ export async function burnClip(source, { text, outFile, pngFile, id = '', durati
     '-t', String(seconds),
     '-i', source,
     '-i', pngFile,
+    ...(followAt === null ? [] : ['-i', followPngFile]),
     ...(audio?.input || []),
     '-filter_complex',
-    [`[0:v]${coverFilter(w, h, fps)}[v];[v][1:v]overlay=0:0:format=auto[out]`, audio?.filter]
+    [
+      // One overlay when there is no closing frame, exactly as before. With one,
+      // the two windows are complementary — `lt` then `gte` on the same instant —
+      // so there is never a moment with both lines on screen or neither.
+      followAt === null
+        ? `[0:v]${coverFilter(w, h, fps)}[v];[v][1:v]overlay=0:0:format=auto[out]`
+        : `[0:v]${coverFilter(w, h, fps)}[v];` +
+          `[v][1:v]overlay=0:0:format=auto:enable='lt(t,${followAt})'[vh];` +
+          `[vh][2:v]overlay=0:0:format=auto:enable='gte(t,${followAt})'[out]`,
+      audio?.filter,
+    ]
       .filter(Boolean)
       .join(';'),
     '-map', '[out]',
@@ -593,7 +669,11 @@ export async function burnClip(source, { text, outFile, pngFile, id = '', durati
 
   await run(ffmpegPath(), args, { maxBuffer: 1 << 24 });
   if (!existsSync(outFile)) throw new Error('ffmpeg reported success but wrote no file');
-  return { file: outFile, spot, startAt, seconds, audio: audioNote(audio) };
+  // `followAt` is reported rather than recomputed from the config: it is when the
+  // closing line actually appears in THIS file, and the config can be edited
+  // afterwards. The approval card prints it, because a two-second end card is the
+  // easiest thing in a video to miss on a phone in a Telegram preview.
+  return { file: outFile, spot, startAt, seconds, followAt, audio: audioNote(audio) };
 }
 
 /**

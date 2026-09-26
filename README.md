@@ -64,10 +64,26 @@ are held to, and the reason the last two exist at all.
 A **card** is one verified claim from one source, 1080×1350, and it goes to
 Instagram. That is the loop above.
 
-A **deck** is a slideshow, a cover and five to seven places, and it goes to
-TikTok, and to Instagram as a carousel. It is built the other way round: Claude
-proposes what would be worth watching, and only then does the pipeline go
-looking for whether it can be sourced.
+A **deck** is a slideshow, a cover, five to seven places and a closing slide,
+and it goes to TikTok, and to Instagram as a carousel. It is built the other way
+round: Claude proposes what would be worth watching, and only then does the
+pipeline go looking for whether it can be sourced.
+
+The cover is written to a **rotation of shapes**, `COVER_SHAPES` in
+`src/deck/ideas.js`, and half the rotation is now shapes that open on a feeling
+rather than on a recommendation. `מקומות באירופה שחייבים לראות` is useful and
+expected, and a viewer who can finish the line has no reason to swipe; what
+replaced half of those is surprise (`הכפרים באיטליה שלא נראים כמו איטליה`), the
+fear of booking wrong (`אל תזמינו טיול לאיטליה לפני שראיתם את הכפרים האלה`) and
+an opinion rather than a testimony (`אף אחד לא מדבר על הכפרים האלה`). What each
+may claim is the whole of the design: the surprise is about how somewhere looks
+and the swipe proves it, the warning promises only that this list is worth
+seeing first and never invents the mistake, and the opinion is unfalsifiable.
+None of them may name a price, a month or a rule, which is where that register
+usually gets its punch and is exactly what a cover here cannot source.
+
+The closing slide is the reason to follow, appended by the renderer rather than
+by any of the three deck builders: see `src/deck/follow.js`.
 
 A deck is rendered **twice, in two design languages**. The TikTok set is
 1080×1920 with no branding on it at all and the text placed wherever the
@@ -638,7 +654,8 @@ live in `post-config.json`:
   in it, `הלינק בביו`, at the end, on `caption.ctaShare` of posts. A CTA on
   every post is not soft; it is a signature. The question is the other half of
   the shape, and it is there because a caption that states and stops gives
-  nobody anything to type.
+  nobody anything to type. Under both of them, on every post, is the reason to
+  follow from `caption.follows`, which is also what the last slide says.
 - **Five hashtags, two broad and three niche.** There were none. The deck's own
   country, `#פורטוגל`, spends one of the niche slots rather than adding a
   sixth, so the count is the same whether or not the country resolved.
@@ -810,7 +827,8 @@ at boot and warns once rather than failing at the first clip of the day; cards
 and decks are unaffected. The text is composited as an image rather than drawn
 by ffmpeg, because `drawtext` has no bidi support and renders Hebrew reversed.
 
-**The description is a pin, a question, sometimes one ask, and five tags.**
+**The description is a pin, a question, one ask, a reason to follow, and five
+tags.**
 
 ```
 📍 צ׳ינקווה טורי, איטליה
@@ -819,15 +837,32 @@ by ffmpeg, because `drawtext` has no bidi support and renders Hebrew reversed.
 
 שלחו את זה למי שאתם טסים איתו
 
+כל יום יעד אחד, עם המקום המדויק. עקבו
+
 #טיול #חופשה #איטליה #טיולים #טיפיםלטיול
 ```
 
 The question asks for something only a particular reader has, a price or a
 choice, rather than something anybody can answer in one word: an empty comment
 thread under a post that asked `לאן אתם טסים הבא?` is what that looked like.
-The ask is drawn from a pool that leans on sends and follows, with the bio
-pointer as one entry rather than the whole of it, and it appears on
-`caption.ctaShare` of posts rather than all of them.
+The ask is drawn from a pool that leans on sends, saves and comments, with the
+bio pointer as one entry rather than the whole of it, and it appears on
+`caption.ctaShare` of posts.
+
+**And every post closes on a reason to follow, at the end and in the
+description.** That is `caption.follows`, and it is the one closing line with no
+share to draw against: a follow is what turns this post's reach into the next
+post's baseline, so it is on all of them. Each entry is an ask and a reason, in
+two fields, because the same drawn entry is published twice: the reason then the
+ask as the last line of the description, and the ask large with the reason under
+it on the last slide of a slideshow or the last two seconds of a clip. The two
+follow asks that used to sit in `caption.ctas` came out when this arrived, or the
+same request would appear twice in one description. The reasons may only promise
+what this pipeline does, a destination most days, facts quoted from an official
+page, an itinerary with its prices, because a follow bought with anything else is
+an unfollow a week later. A slideshow that already ends on an ask, an itinerary
+with the giveaway on, keeps that one instead; `clips.follow.on` turns the closing
+frame off without touching the description.
 
 `#פוריו` and `#ויראלי` are gone. Removing `#fyp` was right and stopped a step
 short: `#פוריו` is `#fyp` with Hebrew letters, which is the same non-pool, and

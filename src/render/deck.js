@@ -4,6 +4,7 @@ import { renderInstagramSlideHtml } from './deckInstagram.js';
 import { analyseSlides, measureCardScrims } from './photo.js';
 import { findTextRegion } from '../images/textbox.js';
 import { postConfig } from '../postConfig.js';
+import { followSlideFor } from '../deck/follow.js';
 
 // A deck to files on disk, twice.
 //
@@ -119,7 +120,19 @@ export async function renderDeckSize(deck, { size = 'tiktok', outDir = cardOutpu
     image: deck.coverImage || deck.slides[0]?.image,
   };
 
-  const items = [cover, ...deck.slides];
+  // Cover, places, and the reason to follow. See followSlideFor — it is appended
+  // here rather than pushed into `deck.slides`, because everything that reads
+  // that array reads it as the places: the approval message lists their sources,
+  // the evidence report quotes them, and a closing slide filed among them would
+  // be a place with no country, no source and nothing to verify.
+  const follow = followSlideFor(deck);
+  const items = [cover, ...deck.slides, ...(follow ? [follow] : [])];
+
+  // The follow slide is drawn MINIMAL whatever the deck is, because the info
+  // style is a name over a grid of measured fields and this slide has none: in
+  // that style its reason would simply not be drawn. Minimal is name-plus-note,
+  // which is exactly the shape of an ask and its why.
+  const styleAt = (i) => (items[i].follow ? 'minimal' : style);
 
   // Instagram is drawn as cards, and a card pins its text: header to the top,
   // name to the bottom, same on every slide. So the placement search is skipped
@@ -138,8 +151,8 @@ export async function renderDeckSize(deck, { size = 'tiktok', outDir = cardOutpu
     analysed.map((i) => ({
       src: items[i].image?.src || null,
       place: i === 0 ? deck.titleHe : items[i].nameHe,
-      blockH: blockHeight(items[i], { cover: i === 0, style }),
-      blockW: blockWidth({ cover: i === 0, style }),
+      blockH: blockHeight(items[i], { cover: i === 0, style: styleAt(i) }),
+      blockW: blockWidth({ cover: i === 0, style: styleAt(i) }),
       // Instagram draws none of TikTok's furniture over the image, so the rail
       // exclusion that pushes text left on a TikTok slide would be inventing a
       // constraint here.
@@ -216,15 +229,15 @@ export async function renderDeckSize(deck, { size = 'tiktok', outDir = cardOutpu
       size === 'instagram'
         ? renderInstagramSlideHtml(drawn, {
             cover: i === 0,
-            style,
+            style: styleAt(i),
             index,
             total: items.length,
             kicker: i === 0 ? '' : deck.titleHe,
             pillar: 'day',
           })
         : renderSlideHtml(
-            { ...slide, blockH: blockHeight(slide, { cover: i === 0, style }) },
-            { size, cover: i === 0, style, spot: spots[i] }
+            { ...slide, blockH: blockHeight(slide, { cover: i === 0, style: styleAt(i) }) },
+            { size, cover: i === 0, style: styleAt(i), spot: spots[i] }
           );
     const rendered = await renderToJpeg(html, {
       stem: slideStem(deck.id, size, index),
@@ -236,6 +249,9 @@ export async function renderDeckSize(deck, { size = 'tiktok', outDir = cardOutpu
       ...rendered,
       index,
       cover: i === 0,
+      // Which one is the closing slide, so a lab or a contact sheet can label it
+      // as what it is rather than as a place called "עקבו".
+      follow: Boolean(slide.follow),
       nameHe: i === 0 ? deck.titleHe : slide.nameHe,
       // Kept so a slide that came out wrong can be argued about with the
       // numbers that placed it rather than from memory.

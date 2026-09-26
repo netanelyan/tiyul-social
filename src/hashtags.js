@@ -264,20 +264,63 @@ export function captionCta({ rand = Math.random, share = null } = {}) {
 }
 
 /**
+ * The reason to follow, on EVERY post.
+ *
+ * No gate, unlike captionCta. The ask above it is drawn on a share because an
+ * ask every time reads as an advertisement; this is the owner's instruction and
+ * it is about a different line — a description ends by saying what arrives if
+ * you follow, and on a slideshow or a clip the same words are the last thing on
+ * screen. Which is why it returns the ENTRY rather than the line: the caption
+ * uses `lineHe`, and the closing slide sets `askHe` large with `whyHe` under it.
+ *
+ * Drawn ONCE PER POST by the caller, like the question and the ask, and handed
+ * to every builder — the caption, the two platform descriptions and the slide
+ * have to name the same reason or the post argues with itself about why anybody
+ * should follow it.
+ */
+export function captionFollow({ rand = Math.random } = {}) {
+  const { follows } = postConfig().caption;
+  return follows[Math.floor(rand() * follows.length)];
+}
+
+/**
+ * One drawn follow as the caption line, whatever the caller handed over.
+ *
+ * `undefined` draws one, which is what the labs and the tests do. A string is
+ * taken as the line itself, an entry is read for its `lineHe`. Null is NOT a
+ * valid answer here and is treated as "nothing was handed over": the whole
+ * point is that every post has one, so the way to turn this off is to argue
+ * with the owner, not to pass null from a call site.
+ */
+export function followLine(follow, opts = {}) {
+  const f = follow === undefined || follow === null ? captionFollow(opts) : follow;
+  return typeof f === 'string' ? f : f?.lineHe || null;
+}
+
+/**
  * The whole TikTok description for a clip.
  *
- * The pin, a question, sometimes the CTA, then the tags. The HOOK is still not
- * repeated here — it is burned into the video, and printing it again spends the
- * description on something the viewer read two seconds ago.
+ * The pin, a question, sometimes the CTA, the reason to follow, then the tags.
+ * The HOOK is still not repeated here — it is burned into the video, and
+ * printing it again spends the description on something the viewer read two
+ * seconds ago.
  *
  * ORDER IS THE DECISION. The pin is first because it is the one thing the video
  * cannot say and the one thing somebody searching will match on. The question
  * sits above the CTA because a viewer who reads to the end of a caption should
  * hit the thing that costs them nothing before the thing that asks them to
- * leave. The tags are last, where they have always been.
+ * leave. The follow reason is the last line before the tags, because it is the
+ * one line that is about the account rather than about this post, and the end of
+ * the description is where a viewer who read all of it is deciding whether to
+ * come back. The tags are last, where they have always been.
  */
 export function clipCaption(cand, opts) {
-  const parts = [clipPlaceLine(cand), captionQuestion(opts), captionCta(opts)].filter(Boolean);
+  const parts = [
+    clipPlaceLine(cand),
+    captionQuestion(opts),
+    captionCta(opts),
+    followLine(opts?.follow, opts),
+  ].filter(Boolean);
   const tags = clipHashtags(cand, opts).join(' ');
   return parts.length ? `${parts.join('\n\n')}\n\n${tags}` : tags;
 }
@@ -345,6 +388,13 @@ export function planCaption(plan, { text, giveaway = null, titled = false, ...op
     captionQuestion(opts),
     giveaway?.captionHe || null,
     giveaway ? null : captionCta(opts),
+    // The follow reason, and the giveaway line replaces it rather than joining
+    // it. ONE ASK PER POST is the rule above, and the giveaway IS a follow ask
+    // with a reason attached - "עקבו ותגיבו רומא, ו-5 מכם מקבלים 30 יום
+    // פרימיום" is a stronger reason to follow than anything in the pool, and
+    // printing a second one under it is a post asking twice for the same thing
+    // and paying for it with the reader's attention.
+    giveaway ? null : followLine(opts.follow, opts),
   ].filter(Boolean);
   const tags = planHashtags(plan, opts).join(' ');
   return `${parts.join('\n\n')}\n\n${tags}`;

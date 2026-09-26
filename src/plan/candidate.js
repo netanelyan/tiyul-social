@@ -6,7 +6,8 @@ import { fillImages } from '../deck/build.js';
 import { targetsForKind } from '../publish/targets.js';
 import { overrideActive, overrideNotes } from '../override.js';
 import { assertNoUrl } from '../format.js';
-import { planCaption } from '../hashtags.js';
+import { planCaption, captionFollow } from '../hashtags.js';
+import { publishedSlideCount } from '../deck/follow.js';
 import { planText, planGiveaway } from './text.js';
 import { tripDecks, deckForSize, dayTotal, allStops, shekels } from './slides.js';
 
@@ -109,20 +110,29 @@ export async function fillPlanPhotos(plan, { stopsMin = 0, onProgress = null } =
  * unbranded slide and Instagram's card from the same words. Nothing in this
  * module draws anything.
  */
-export async function renderPlan(plan, { sizes = ['instagram', 'tiktok'], outDir = cardOutputDir(), text, giveaway } = {}) {
+export async function renderPlan(plan, { sizes = ['instagram', 'tiktok'], outDir = cardOutputDir(), text, giveaway, follow = null } = {}) {
   const want = sizes.filter((s) => SIZES[s]);
   if (!want.length) throw new Error(`renderPlan: no known size in [${sizes.join(', ')}]`);
 
   const decks = tripDecks(plan, { text, giveaway });
   const out = {};
   for (const size of want) {
-    const deck = deckForSize(decks, size);
+    // The follow reason travels with the deck, so the closing slide the renderer
+    // appends and the last line of the description are the same sentence. With
+    // the giveaway on there is no closing slide at all and this is ignored: the
+    // ask slide is already the follow ask. See src/deck/follow.js.
+    const deck = { ...deckForSize(decks, size), follow };
     // The bound Instagram enforces at publish time, checked here where it can
     // still be acted on. A carousel over ten is rejected outright, hours after
     // the post was approved and by an error that names none of this.
-    if (size === 'instagram' && deck.slides.length + 1 > 10) {
+    //
+    // Counted through publishedSlideCount, which knows about the closing slide.
+    // Adding it up here as slides + 1 was right until every slideshow gained a
+    // close, and then it was one short in exactly the case that matters: a
+    // five-day trip with no giveaway renders eleven and passes a check for ten.
+    if (size === 'instagram' && publishedSlideCount(deck) > 10) {
       throw new Error(
-        `the Instagram set is ${deck.slides.length + 1} slides and a carousel takes 10 - ` +
+        `the Instagram set is ${publishedSlideCount(deck)} slides and a carousel takes 10 - ` +
           'shorten the trip or lower plans.daysMax'
       );
     }
@@ -162,8 +172,13 @@ export async function toPlanCandidate(plan, { targets = targetsForKind('plan'), 
   const withId = { ...shot, id };
   const text = planText(withId);
   const giveaway = planGiveaway(withId);
+  // One draw for the post, handed to the renderer and to both captions, so the
+  // closing slide and the last line of the description say the same thing. Null
+  // is never what this is: the pool is required to be non-empty, and with the
+  // giveaway on nothing reads it.
+  const follow = captionFollow();
 
-  const rendered = await renderPlan(withId, { sizes: sizesFor(targets), outDir, text, giveaway });
+  const rendered = await renderPlan(withId, { sizes: sizesFor(targets), outDir, text, giveaway, follow });
 
   const cand = {
     kind: 'plan',
@@ -208,6 +223,11 @@ export async function toPlanCandidate(plan, { targets = targetsForKind('plan'), 
       // Rome itineraries in a week are the same post twice.
       where: withId.dest.he,
       category: 'מסלול AI',
+      // The reason this post closed on, kept with it. Nothing reads it back
+      // today - a plan is rebuilt rather than redrawn - but it is the one part
+      // of the published slides that is not derivable from the itinerary, so
+      // storing it is what makes "why does the last slide say that" answerable.
+      follow,
       // What the slides say, kept beside them so the approval card can print the
       // plan without re-deriving any of it.
       stops: allStops(withId).length,
@@ -247,8 +267,8 @@ export async function toPlanCandidate(plan, { targets = targetsForKind('plan'), 
   // Both captions, drawn once each. The hook opens the Instagram caption because
   // a carousel has no title field; TikTok carries the title separately and its
   // description opens with the pin instead.
-  const instagram = planCaption(withId, { text, giveaway, titled: true });
-  const tiktok = planCaption(withId, { text, giveaway, titled: false });
+  const instagram = planCaption(withId, { text, giveaway, titled: true, follow });
+  const tiktok = planCaption(withId, { text, giveaway, titled: false, follow });
   cand.instagramCaption = assertNoUrl(instagram, 'the plan caption');
   cand.tiktokCaption = assertNoUrl(tiktok, 'the plan description');
   cand.channelCaption = cand.instagramCaption;

@@ -123,6 +123,14 @@ export const askSlide = (giveaway) => ({
   flag: null,
   bullets: [{ text: giveaway.prizeHe }],
   fields: [],
+  // THE FLAG THE RENDERER READS TO STAY OUT OF THE WAY.
+  //
+  // Every slideshow now closes on a reason to follow, appended by the renderer
+  // (see src/deck/follow.js). This slide already IS one, with a better reason
+  // attached than anything in the pool, so `ask` is how it says so: a second
+  // closing slide under it would ask twice for one thing and spend the last
+  // swipe doing it. Same rule planCaption applies to the description.
+  ask: true,
 });
 
 /**

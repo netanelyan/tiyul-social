@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { renderDeck } from '../render/deck.js';
 import { deckCaption, deckTiktokCaption, captionHook } from '../format.js';
-import { captionQuestion, captionCta } from '../hashtags.js';
+import { captionQuestion, captionCta, captionFollow } from '../hashtags.js';
 import { targetsForKind } from '../publish/targets.js';
 import { overrideActive, overrideNotes } from '../override.js';
 import { recentPublished } from '../store.js';
@@ -116,7 +116,15 @@ export async function toDeckCandidate(
   }
 
   const id = deckId(built);
-  const deck = { ...built, id };
+  // The reason to follow, drawn BEFORE the render and carried on the deck.
+  //
+  // One draw for the post, because it is published twice: the renderer turns it
+  // into the closing slide and the two captions print it as their last line. Two
+  // draws would give a slideshow that ends on "עקבו" over one reason while its
+  // own description argues a different one, which reads as two people writing
+  // the same post.
+  const follow = captionFollow();
+  const deck = { ...built, id, follow };
   const rendered = await renderDeck(deck, { sizes: sizesFor(targets) });
 
   // Drop the photographs now that they are baked into the JPEGs.
@@ -196,13 +204,18 @@ export async function toDeckCandidate(
   // `cta` is null on most posts, by ctaShare, and null is a real answer that
   // has to survive the handover, so it is passed explicitly rather than left
   // undefined, which the builders would read as "not drawn yet, draw one".
+  //
+  // The follow reason is the one part of the close that was drawn further up,
+  // before the render, because the closing SLIDE is built from it too. Passed
+  // down here so the last line of the description and the last thing on screen
+  // are the same sentence.
   const hook = captionHook();
   const question = captionQuestion();
   const cta = captionCta();
-  const caption = deckCaption(deck, { hook, question, cta });
+  const caption = deckCaption(deck, { hook, question, cta, follow });
   cand.channelCaption = [deck.titleHe, '', caption].join('\n');
   cand.instagramCaption = caption;
-  cand.tiktokCaption = deckTiktokCaption(deck, { hook, question, cta });
+  cand.tiktokCaption = deckTiktokCaption(deck, { hook, question, cta, follow });
 
   // A deck publishes from its slide URLs, but Telegram uploads bytes and the
   // held/retry paths look for a file — the cover stands in as "the card".

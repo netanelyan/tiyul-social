@@ -1,5 +1,5 @@
 import { postConfig } from '../postConfig.js';
-import { captionQuestion, captionCta } from '../hashtags.js';
+import { captionQuestion, captionCta, captionFollow, followLine } from '../hashtags.js';
 import { windowsHe } from '../schedule.js';
 
 // What a shoot looks like when it arrives.
@@ -63,6 +63,11 @@ export function shootCaption(shoot, opts = {}) {
     shoot.seriesNext,
     captionQuestion(opts),
     captionCta(opts),
+    // The reason to follow, last before the tags, exactly as it closes every
+    // other description here. A shoot brief is a post that gets published by
+    // hand, and a line that is on every automated post and missing from the
+    // hand-posted ones is the account sounding like two accounts.
+    followLine(opts.follow, opts),
   ].filter(Boolean);
   return `${parts.join('\n\n')}\n\n${tags(shoot, opts).join(' ')}`;
 }
@@ -78,6 +83,13 @@ export function shootMessage(shoot, opts = {}) {
     shoot.angle ? `🇮🇱 הזווית: ${shoot.angle}` : null,
   ].filter(Boolean);
 
+  // ONE DRAW FOR THE WHOLE BRIEF. The reason to follow is printed twice here -
+  // as the line to put on screen at the end of the video, and inside the caption
+  // to be copied - and those two have to be the same sentence. Drawn here rather
+  // than inside each, which would hand the shooter a video closing on one reason
+  // and a caption arguing a different one.
+  const follow = opts.follow === undefined ? captionFollow(opts) : opts.follow;
+
   const script = [
     '',
     '━━━ מה אומרים ━━━',
@@ -87,6 +99,14 @@ export function shootMessage(shoot, opts = {}) {
     '',
     '📋 הביטים:',
     ...shoot.beats.map((b, i) => `   ${i + 1}. ${b}`),
+    // The close, as its own instruction. Every post this pipeline publishes ends
+    // on a reason to follow - a deck on a closing slide, a clip on its last two
+    // seconds - and a hand-filmed video that stops on the last beat is the one
+    // format where that is missing. The ask is what to say and the reason is why
+    // anybody would, in the order the closing slide puts them.
+    '',
+    '👋 הסיום (השנייה האחרונה, על המסך ובקול):',
+    `   ${typeof follow === 'string' ? follow : `${follow.askHe} - ${follow.whyHe}`}`,
   ];
 
   // The product format's one extra field, and the reason it exists: "record a
@@ -106,7 +126,7 @@ export function shootMessage(shoot, opts = {}) {
     '',
     '━━━ הכיתוב (להעתקה) ━━━',
     '',
-    shootCaption(shoot, opts),
+    shootCaption(shoot, { ...opts, follow }),
   ];
 
   // Last, and stated rather than implied. Every other message in this bot ends

@@ -8,7 +8,7 @@ import { writeHook, hasApiKey, namesOtherCountry, trailsOff } from './hooks.js';
 import { pickCuts, cutLabel, cutsReason, writeCutsHook, beatCountMismatch } from './cuts.js';
 import { pickTrack, audioConfigured } from './tracks.js';
 import { assertNoUrl } from '../format.js';
-import { clipCaption } from '../hashtags.js';
+import { clipCaption, captionFollow } from '../hashtags.js';
 import { targetsForKind } from '../publish/targets.js';
 
 // A stock clip and a Hebrew line become something you can approve.
@@ -140,21 +140,32 @@ export async function buildClip(found, { outDir = clipOutputDir(), hook = null, 
   const id = clipId(found.id, line);
   const source = join(outDir, `src-${found.id}.mp4`);
   const png = join(outDir, `txt-${id}.png`);
+  const followPng = join(outDir, `txt-${id}-follow.png`);
   const file = join(outDir, `clip-${id}.mp4`);
+
+  // The reason to follow, drawn once for this clip and used twice: burned into
+  // the last two seconds of the video and printed as the last line of the
+  // description. Two draws would close the video on one reason and the caption on
+  // another, which reads as two people making one post.
+  const follow = postConfig().clips.follow.on ? captionFollow() : null;
+  if (follow) assertNoUrl(follow.lineHe, 'the clip closing line');
 
   await download(found.src, source);
   let spot = null;
   let startAt = null;
   let seconds = null;
+  let followAt = null;
   let audio = null;
   // The bed. Null when assets/audio/tracks.json names nothing, which is where
   // this project starts and which renders exactly what it rendered before.
   const track = pickTrack(tracksUsed);
   try {
-    ({ spot, startAt, seconds, audio } = await burnClip(source, {
+    ({ spot, startAt, seconds, followAt, audio } = await burnClip(source, {
       text: line,
       outFile: file,
       pngFile: png,
+      followText: follow?.lineHe || null,
+      followPngFile: follow ? followPng : null,
       id,
       duration: found.duration,
       track,
@@ -165,6 +176,7 @@ export async function buildClip(found, { outDir = clipOutputDir(), hook = null, 
     // is impossible to argue about without the original.
     if (!keepSource) rmSync(source, { force: true });
     rmSync(png, { force: true });
+    rmSync(followPng, { force: true });
   }
 
   const cfg = postConfig().clips.video;
@@ -214,6 +226,11 @@ export async function buildClip(found, { outDir = clipOutputDir(), hook = null, 
       // for. They agree today — every clip is cfg.seconds long — and the
       // fallback is what a clip built before the encoder reported it gets.
       seconds: seconds ?? cfg.seconds,
+      // The closing line and the second it appears on. Stored because it is the
+      // one thing in the video that is not in the footage or the hook, and it is
+      // two seconds long at the end of a clip nobody watches twice on a phone.
+      follow: follow || null,
+      followAt: followAt ?? null,
       width: cfg.width,
       height: cfg.height,
       pexelsId: found.id,
@@ -251,7 +268,9 @@ export async function buildClip(found, { outDir = clipOutputDir(), hook = null, 
   // is re-rendered per platform because a carousel has no title field and a
   // TikTok slideshow does; a clip's hook is burned into the frame, so there is
   // no title to move around and nothing left to differ.
-  cand.tiktokCaption = assertNoUrl(clipCaption(cand), 'the clip description');
+  // The same drawn follow the video closes on, so the last frame and the last
+  // line of the description are one sentence rather than two.
+  cand.tiktokCaption = assertNoUrl(clipCaption(cand, { follow }), 'the clip description');
   cand.instagramCaption = cand.tiktokCaption;
   cand.channelCaption = cand.tiktokCaption;
 
@@ -294,7 +313,12 @@ export async function buildCutClip(found, { outDir = clipOutputDir(), used = new
   const id = clipId(cuts.map((c) => c.id).join('+'), line);
   const file = join(outDir, `clip-${id}.mp4`);
   const sources = cuts.map((c) => join(outDir, `src-${c.id}.mp4`));
+  // One more PNG than there are cuts when the clip closes on a reason to follow:
+  // the closing frame is a segment like any other, so it needs its own overlay.
+  const follow = postConfig().clips.follow.on ? captionFollow() : null;
+  if (follow) assertNoUrl(follow.lineHe, 'the clip closing line');
   const pngs = cuts.map((_, i) => join(outDir, `txt-${id}-${i}.png`));
+  const followPng = join(outDir, `txt-${id}-follow.png`);
 
   // ONE bed across the whole video. The cuts are in the picture; audio that
   // changed with them would turn four shots into four posts played in a row.
@@ -304,25 +328,51 @@ export async function buildCutClip(found, { outDir = clipOutputDir(), used = new
   try {
     for (const [i, c] of cuts.entries()) await download(c.src, sources[i]);
     burned = await burnCuts(
-      cuts.map((c, i) => ({
-        source: sources[i],
-        // The hook opens the video and the first shot's own label would collide
-        // with it, so cut one carries the hook alone. Every other cut carries
-        // its place. The count the hook must match is therefore the number of
-        // CUTS, not the number of labels, which is what writeCutsHook is told.
-        text: i === 0 ? line : c.label,
-        pngFile: pngs[i],
-        duration: c.duration,
-        // The opening cut is held for its own length. It carries one line and no
-        // place, so it is over the moment the line is read; every cut after it
-        // has a name to read and a shot to watch move. See burnCuts.
-        seconds: i === 0 ? cfg.hookSeconds : cfg.secondsPerCut,
-      })),
+      [
+        ...cuts.map((c, i) => ({
+          source: sources[i],
+          // The hook opens the video and the first shot's own label would collide
+          // with it, so cut one carries the hook alone. Every other cut carries
+          // its place. The count the hook must match is therefore the number of
+          // CUTS, not the number of labels, which is what writeCutsHook is told.
+          text: i === 0 ? line : c.label,
+          pngFile: pngs[i],
+          duration: c.duration,
+          // The opening cut is held for its own length. It carries one line and
+          // no place, so it is over the moment the line is read; every cut after
+          // it has a name to read and a shot to watch move. See burnCuts.
+          seconds: i === 0 ? cfg.hookSeconds : cfg.secondsPerCut,
+        })),
+        // THE CLOSING FRAME, AS ONE MORE CUT.
+        //
+        // A video has no slide to end on, so the reason to follow gets its own
+        // two seconds at the end - the same close a slideshow gets from
+        // src/deck/follow.js, arrived at by the only route this shape offers.
+        //
+        // It borrows the FIRST shot's footage, which is the choice tripDecks
+        // makes for the two slides it bolts onto an itinerary and for the same
+        // reason: the last cut is what is on screen immediately before, so
+        // holding it would read as a line changing over a shot that did not cut,
+        // and that is the thing the whole format exists to avoid. Coming back to
+        // the opening shot is a bookend, four cuts away from where it was.
+        ...(follow
+          ? [
+              {
+                source: sources[0],
+                text: follow.lineHe,
+                pngFile: followPng,
+                duration: cuts[0].duration,
+                seconds: postConfig().clips.follow.seconds,
+              },
+            ]
+          : []),
+      ],
       { outFile: file, id, track }
     );
   } finally {
     if (!keepSource) for (const s of sources) rmSync(s, { force: true });
     for (const p of pngs) rmSync(p, { force: true });
+    rmSync(followPng, { force: true });
   }
 
   const video = postConfig().clips.video;
@@ -350,6 +400,11 @@ export async function buildCutClip(found, { outDir = clipOutputDir(), used = new
       file,
       audio: burned.audio,
       seconds: burned.seconds,
+      // The closing frame, and when it starts. `seconds` already includes it, so
+      // the start is the length less the hold - derived once here rather than by
+      // every reader of this object.
+      follow: follow || null,
+      followAt: follow ? Number((burned.seconds - postConfig().clips.follow.seconds).toFixed(3)) : null,
       width: video.width,
       height: video.height,
       hookFormat: res.format,
@@ -409,7 +464,7 @@ export async function buildCutClip(found, { outDir = clipOutputDir(), used = new
     card: { file },
   };
 
-  cand.tiktokCaption = assertNoUrl(clipCaption(cand), 'the clip description');
+  cand.tiktokCaption = assertNoUrl(clipCaption(cand, { follow }), 'the clip description');
   cand.instagramCaption = cand.tiktokCaption;
   cand.channelCaption = cand.tiktokCaption;
 
@@ -623,6 +678,20 @@ export async function buildClips({ count = 5, seen = new Set(), outDir = clipOut
  * being silent is the plan rather than a fault, and a warning against the
  * intended workflow is noise that teaches you to skim the card.
  */
+/**
+ * The closing line, for an approval card.
+ *
+ * Printed on every clip, and when there is none it says so. A two-second end
+ * card at the end of an eight-second video is the easiest thing here to miss in a
+ * Telegram preview on a phone, and the two states — "it closes on a reason to
+ * follow" and "clips.follow.on is off" — look identical from the outside.
+ */
+export function followFrameLine(cand) {
+  const c = cand.clip || {};
+  if (!c.follow) return '👋 סיום: אין (clips.follow.on כבוי)';
+  return `👋 סיום מ-${c.followAt}ש׳: ${c.follow.lineHe}`;
+}
+
 export function audioLine(cand) {
   const a = cand.clip?.audio;
   if (!a) return '🎵 הסאונד נבחר באפליקציה';
@@ -654,6 +723,8 @@ export function clipApprovalMessage(cand) {
     '',
     `✍️ השורה: ${cand.hook}`,
     cand.hookWritten ? '   (נכתבה לקליפ הזה)' : `   ⚠️ מהמאגר - ${cand.hookNote || 'לא נכתבה שורה'}`,
+    '',
+    followFrameLine(cand),
     '',
     audioLine(cand),
     '',
@@ -709,6 +780,8 @@ export function cutApprovalMessage(cand) {
     beatCountMismatch(cand.hook, cuts)
       ? `   ⚠️ ${beatCountMismatch(cand.hook, cuts)}`
       : `   (${c.hookFormat || 'תבנית לא ידועה'}${c.country ? ` · כולם ב${c.country}` : ' · כמה מדינות'})`,
+    '',
+    followFrameLine(cand),
     '',
     audioLine(cand),
     '',

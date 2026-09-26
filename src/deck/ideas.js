@@ -325,6 +325,39 @@ NO COUNT. None of them says how many. "טופ 6" and "6 מקומות" are not wr
 they are just rarely what this page sounds like, and they will be asked for
 explicitly when they are wanted.
 
+USEFUL IS NOT THE SAME AS CURIOUS, AND CURIOUS IS THE JOB
+
+The owner's verdict on covers like "מקומות באירופה שחייבים לראות": useful, and
+expected. Nothing is wrong with the sentence. The problem is that a viewer knows
+what is behind it before they swipe, so there is nothing to find out, and a
+slideshow lives or dies on whether somebody wants to know what is on slide two.
+
+A cover that works hits a FEELING. There are three that do, and they are the
+three registers the shapes below are built on:
+
+  SURPRISE. The line denies something the viewer assumes. "הכפרים באיטליה שלא
+  נראים כמו איטליה" is interesting because it contradicts a picture already in
+  their head. What makes it honest here is that the contradiction has to be
+  visible in the photographs on the slides - it is a claim about how somewhere
+  LOOKS, and the swipe is the proof.
+
+  THE FEAR OF GETTING IT WRONG. "אל תזמינו מלון בפורטוגל לפני שאתם יודעים את
+  זה" works because a trip is expensive and booking it wrong is a real fear. It
+  promises nothing factual - it says this list is worth seeing first - and it is
+  honest exactly as long as the list is. Never invent the mistake: do not name a
+  month, a price, a neighbourhood or a rule the slides do not carry.
+
+  SOMETHING PERSONAL. Not a testimony. Nobody here has been to these places and
+  the photographs are not ours, so "הייתי שם" and "לא האמנתי למה שראיתי" are
+  lies. What IS available is a reaction anybody may have to a list: "אף אחד לא
+  מדבר על הכפרים האלה" is an opinion, unfalsifiable, and it reads like a person
+  rather than a catalogue.
+
+An obligation - "שאתם חייבים לראות", "שאסור לפספס" - is the weakest of the
+clauses for exactly this reason. It tells a viewer what to do about a list they
+have not seen, which is the sentence every travel account already opens with.
+It stays in the rotation because it is short and clear; it is not the default.
+
 NAME THE PLACE OR NAME THE PHENOMENON, one of the two, and never neither.
 
 A cover has to promise something a viewer can picture before they swipe. There
@@ -361,12 +394,22 @@ and do not add a second place beside it. One place, the one supplied.
 A BROAD PLURAL NOUN opens it: הרים, מפלים, מקומות, חופים, ערים, כפרים. Not a
 category from a database.
 
+The one exception is the warning shape, which opens on the instruction and puts
+the noun in the second half: "אל תזמינו טיול לאיטליה לפני שראיתם את הכפרים
+האלה". That is the only cover here allowed to start with a verb.
+
 ONE STRONG CLAUSE, and it may be any of these:
 
-  a superlative, הכי יפים בעולם, הכי טובים ל...
+  a contradiction, שלא נראים כמו <the country>, שאף אחד לא מדבר עליהם
+  a warning, אל תזמינו ... לפני ש..., לפני שאתם מזמינים
   a picture, שלא נראים אמיתיים, שנראים כמו סרט
+  a superlative, הכי יפים בעולם, הכי טובים ל...
   an obligation, שאתם חייבים לראות, שאסור לפספס
   a time pressure, לפני שזה מאוחר מדי, פעם אחת בחיים לפחות
+
+The first two are the ones that make somebody curious rather than informed, and
+the last two are the ones every travel account already uses. Ordered that way on
+purpose.
 
 Superlatives are welcome here. "הכי יפים בעולם" is a claim nobody can check and
 everybody understands, and it is exactly how this kind of page talks.
@@ -400,6 +443,11 @@ the caption's job and belongs nowhere near the cover.
 Read your line back and cut everything after the point where it could have
 stopped. If two clauses both earn their place, you have written two covers and
 should keep the better one.
+
+The warning shape is the exception again, and it is the shape rather than a
+loophole: "אל תזמינו טיול לאיטליה" on its own is not a cover, it is a prohibition
+with nothing behind it. The "לפני ש..." half is what the line is FOR, so both
+halves ship, and nothing comes after the second one.
 
 A deck about something a photograph already shows does not need the photograph
 described. An aurora deck is not "the skies that do not look real" - the sky is
@@ -453,6 +501,10 @@ Nobody opens a slideshow because of how you get somewhere.
 Also fatal: a neutral catalogue title ("מוזיאונים בפראג"), a question, "ידעתם
 ש", and any attempt to be clever at the cost of being clear.
 
+And the one that is not obviously fatal: a line a viewer can finish for you.
+"מקומות באירופה שחייבים לראות" is not badly written, it is simply already known,
+and a cover whose contents can be predicted from it has no reason to be swiped.
+
 IF A COUNT IS ASKED FOR
 
 Then the number is a NUMERAL and "טופ" is borrowed: טופ 5, טופ 3. Never spelled
@@ -480,7 +532,54 @@ list of what the slides contain, opening hours, prices, or the words
 // the noun for three of them, after the superlative for one, at the end for the
 // counted one — and that is most of what keeps five covers in a row from
 // reading as one template with the nouns swapped.
+// THREE SHAPES WERE ADDED FOR THE FEELING AND THEY ARE NOT DECORATION.
+//
+// The owner's note on the covers this list produced: "מקומות באירופה שחייבים
+// לראות" is useful and expected, and the hooks that work hit a feeling —
+// surprise, the fear of making a mistake, or something personal. Every shape
+// below the first three is a form of "here is a good list", which is the thing
+// that was called expected.
+//
+// What each of the three may claim is the whole of the design, because a feeling
+// is the easiest thing to buy with a sentence that is not true:
+//
+//   surprise  a claim about how somewhere LOOKS, which the swipe proves.
+//   mistake   a claim about the LIST, never about a fact the slides lack.
+//   secret    an opinion. Unfalsifiable, and therefore honest.
+//
+// Nothing here lets a cover name a price, a month or a rule, which is where the
+// reference examples of these registers usually get their punch: "הכפר הזה ביפן
+// עולה פחות מאילת" is a better line than any of these and it is a price claim
+// off an unsourced slide. The register is worth having; that particular sentence
+// is not available to this pipeline.
 export const COVER_SHAPES = [
+  {
+    id: 'surprise',
+    // A contradiction of what the viewer already pictures. The comparison is to
+    // a LOOK, because that is the only kind of surprise the slides can prove.
+    brief:
+      'Plural noun + the place + a clause denying what everybody assumes the place looks like. The contradiction has to be visible in the photographs: they do not look like that country, they look like somewhere else, there is nobody in them. NOT a price, a season or a document.',
+    voice: 'none',
+    examples: ['הכפרים באיטליה שלא נראים כמו איטליה', 'החופים ביוון שנראים כמו האיים הקריביים'],
+  },
+  {
+    id: 'mistake',
+    // Loss aversion, and the one shape that opens on an instruction. It promises
+    // only that the list is worth seeing before you book, which the slides keep.
+    brief:
+      'אל תזמינו / אל תטוסו + the place + לפני ש + a clause pointing at this list. It promises nothing factual and must not invent the mistake: no month, no price, no neighbourhood, no rule. The thing they would be missing is the list itself.',
+    voice: 'you',
+    examples: ['אל תזמינו טיול לאיטליה לפני שראיתם את הכפרים האלה', 'אל תטוסו ליוון לפני שאתם מכירים את החופים האלה'],
+  },
+  {
+    id: 'secret',
+    // The personal register, as an opinion rather than a testimony. Nobody here
+    // has been to these places and the photographs are not ours.
+    brief:
+      'אף אחד לא מדבר על + plural noun + the place, or the same thought as a quiet discovery. An opinion about how little known something is - never a first-person claim about having been there or seen it.',
+    voice: 'none',
+    examples: ['אף אחד לא מדבר על הכפרים האלה באיטליה', 'אף אחד לא מדבר על הפינה הזאת של נורווגיה'],
+  },
   {
     id: 'unreal',
     brief:
@@ -1004,12 +1103,42 @@ export function emphasisFrom(title) {
  * because the three lists are different lengths the combination does not repeat
  * for thirty decks. `n` comes from how many decks have already gone out.
  */
+// The order the counter walks, written out rather than derived from weights.
+//
+// THE FEELING SHAPES GET HALF THE POSTS. Twelve entries: surprise, mistake and
+// secret twice each, unreal twice because it is the one plain shape that is also
+// a picture, and one slot each for the four that are a form of "here is a good
+// list". That ratio is the owner's note turned into a number — those four are
+// what "useful, and expected" was about, and the answer to expected is not to
+// delete them, it is to stop them being four covers in five.
+//
+// Spelled out as a list because the constraint is about ADJACENCY as much as
+// share: no shape twice in a row, and no two consecutive covers from the same
+// register, which a weights-and-modulo scheme gets wrong in exactly the place
+// nobody looks. A sequence you can read is a sequence you can check.
+export const COVER_ROTATION = [
+  'surprise',
+  'unreal',
+  'mistake',
+  'superlative',
+  'secret',
+  'best-for',
+  'surprise',
+  'urgency',
+  'mistake',
+  'unreal',
+  'secret',
+  'top-n',
+];
+
 export function rotationFor(n = 0) {
   const i = Math.max(0, Math.trunc(Number(n) || 0));
-  return {
-    shape: COVER_SHAPES[i % COVER_SHAPES.length],
-    voice: COVER_VOICES[COVER_SHAPES[i % COVER_SHAPES.length].voice],
-  };
+  const id = COVER_ROTATION[i % COVER_ROTATION.length];
+  // Falls back to walking COVER_SHAPES if the rotation names a shape that is not
+  // there, which is what an edited list one side of this pair looks like. A cover
+  // still gets written; it is merely the shape it would have had before.
+  const shape = COVER_SHAPES.find((s) => s.id === id) || COVER_SHAPES[i % COVER_SHAPES.length];
+  return { shape, voice: COVER_VOICES[shape.voice] };
 }
 
 /**

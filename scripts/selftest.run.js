@@ -39,7 +39,7 @@ import { flagFor, COUNTRIES } from '../src/deck/flags.js';
 import { emojiDataUri } from '../src/render/emojiArt.js';
 import { isHebrew } from '../src/deck/hebrew.js';
 import { parseLocally } from '../src/deck/request.js';
-import { rotationFor, oneClause, emphasisFrom, COVER_SHAPES, COVER_VOICES } from '../src/deck/ideas.js';
+import { rotationFor, oneClause, emphasisFrom, COVER_SHAPES, COVER_VOICES, COVER_ROTATION } from '../src/deck/ideas.js';
 import { deckPlace, namesPlace, REGIONS } from '../src/deck/region.js';
 import { __test as photoTest, scrimAlpha, underScrim } from '../src/render/photo.js';
 import { deckId } from '../src/deck/candidate.js';
@@ -2944,10 +2944,17 @@ ok('no scheme-prefixed URL anywhere', !/https?:\/\//.test(cap));
   const closed = instagramCaption(capCand, { rand: () => 0 });
   const q = postConfig().caption.questions[0];
   const ask = postConfig().caption.ctas[0];
+  const follow = postConfig().caption.follows[0];
   ok('the caption closes on a question', closed.includes(q));
   ok('and then the ask', closed.includes(ask));
   ok('the question comes before the ask', closed.indexOf(q) < closed.indexOf(ask));
-  ok('the ask is last', closed.trim().endsWith(ask));
+  // THE REASON TO FOLLOW IS THE LAST LINE, on the owner's instruction: every post
+  // ends on one. The ask was last until it arrived, and it now sits above it -
+  // the ask is about this post, the follow is about the account, and the end of a
+  // description is where somebody who read the whole thing decides.
+  ok('and the reason to follow after that', closed.includes(follow.lineHe));
+  ok('the ask comes before the follow', closed.indexOf(ask) < closed.indexOf(follow.lineHe));
+  ok('the follow reason is last', closed.trim().endsWith(follow.lineHe));
 
   // EVERY DESCRIPTION CARRIES ONE, at the owner's instruction. This used to
   // assert the opposite — that a draw above ctaShare appended nothing — which
@@ -2969,6 +2976,14 @@ ok('no scheme-prefixed URL anywhere', !/https?:\/\//.test(cap));
   // A rand that walks, so two independent draws would land on different entries.
   const both = publishedDescriptions(capCand, { rand: () => (n++ % 10) / 10 });
   eq('the Instagram and TikTok descriptions match', both.instagram, both.tiktok);
+  // Including the reason to follow, which is the third thing in the close and the
+  // one that has to agree with the closing slide or frame as well. A walking rand
+  // is what catches it: with three independent draws per platform the two sides
+  // land on different entries and the approval card previews neither.
+  ok(
+    'and one of the follow reasons is in both',
+    postConfig().caption.follows.some((f) => both.instagram.includes(f.lineHe) && both.tiktok.includes(f.lineHe))
+  );
 }
 
 /* -------------------------------------------------------------------------- */
@@ -3352,20 +3367,47 @@ ok('consecutive posts differ in shape', seq[0].shape.id !== seq[1].shape.id);
 // independently it put "אתם" on a shape with no room for it —
 // "פסגות שאתם לא תאמינו שהן אמיתיות" where the spec says
 // "הרים שלא נראים אמיתיים".
-eq('the unreal shape is impersonal', seq[0].voice.id, 'none');
-eq('the obligation shape takes the pronoun', seq[2].voice.id, 'you');
+eq('the surprise shape is impersonal', seq[0].voice.id, 'none');
+// The warning shape talks straight at them, because "אל תזמינו" is addressed to
+// somebody by construction. It is third in the rotation.
+eq('the warning shape takes the pronoun', seq[2].voice.id, 'you');
 ok('every shape declares its voice', COVER_SHAPES.every((sh) => COVER_VOICES[sh.voice]));
 // In the four covers the channel was specified by, "אתם" appears exactly once.
+// Three of eight shapes now take it — the two that are built from an address to
+// the viewer, obligation and warning, plus the counted one. Still the minority,
+// which is the property this asserts.
 const pronouns = COVER_SHAPES.filter((sh) => sh.voice === 'you').length;
-ok('most shapes carry no pronoun', pronouns <= 2);
+ok('most shapes carry no pronoun', pronouns * 2 < COVER_SHAPES.length, `${pronouns} of ${COVER_SHAPES.length}`);
 
 eq('every shape is reachable', new Set(seq.map((r) => r.shape.id)).size, COVER_SHAPES.length);
 eq('and both voices are used', new Set(seq.map((r) => r.voice.id)).size, Object.keys(COVER_VOICES).length);
 // Most covers carry no count and name nowhere. The counted shape exists because
 // the channel's own first example was "טופ 4 פסגות שאסור לפספס באלפים", but a
 // list built AROUND counts and place names had every cover rejected.
-const counted = seq.slice(0, 10).filter((r) => r.shape.id === 'top-n').length;
-eq('one cover in five carries a count', counted, 2);
+const counted = seq.slice(0, COVER_ROTATION.length).filter((r) => r.shape.id === 'top-n').length;
+eq('the counted shape gets one slot in the rotation', counted, 1);
+
+// THE FEELING SHAPES GET HALF OF IT, which is the owner's note turned into a
+// number: a cover can be useful and still be expected, and the four shapes that
+// are a form of "here is a good list" were what "expected" meant. Asserted on the
+// rotation rather than on the shape list, because share is what the sequence
+// decides and the list only says what exists.
+const FEELING = new Set(['surprise', 'mistake', 'secret']);
+const feeling = seq.slice(0, COVER_ROTATION.length).filter((r) => FEELING.has(r.shape.id)).length;
+eq('half the covers open on a feeling', feeling * 2, COVER_ROTATION.length);
+// And the four "here is a good list" shapes get a quarter of it between them,
+// which is the other half of the same decision. `unreal` sits with neither: it is
+// a picture claim, so it keeps two slots.
+const LIST = new Set(['superlative', 'best-for', 'urgency', 'top-n']);
+const listy = seq.slice(0, COVER_ROTATION.length).filter((r) => LIST.has(r.shape.id)).length;
+eq('and the expected shapes share a quarter', listy * 3, COVER_ROTATION.length);
+ok('every shape in the rotation exists', COVER_ROTATION.every((id) => COVER_SHAPES.some((sh) => sh.id === id)));
+// No shape twice in a row, which is the whole reason the order is written out
+// rather than derived from weights.
+ok(
+  'the rotation never repeats a shape back to back',
+  seq.slice(1, COVER_ROTATION.length + 1).every((r, i) => r.shape.id !== seq[i].shape.id)
+);
 // Obligation is no longer rationed by a flag — it is one of the five shapes,
 // which is what the channel's own examples do with it.
 ok('obligation is a shape of its own', COVER_SHAPES.some((sh) => sh.id === 'urgency'));
@@ -5368,7 +5410,13 @@ group('the caption - a question, sometimes a CTA, and never a URL');
   // turns this post's reach into the next post's baseline, so the pool has to
   // contain both, not four rewordings of one.
   ok('at least one asks for a send', cfg.ctas.some((c) => /שלחו|תייגו/.test(c)));
-  ok('at least one asks for a follow', cfg.ctas.some((c) => /עקבו|עוקבים/.test(c)));
+  // AND NONE OF THEM ASKS FOR A FOLLOW ANY MORE. Two used to, and that was right
+  // while a follow ask reached one post in eight. Every description now closes on
+  // a reason to follow (cfg.follows below), so an ask up here wanting the same
+  // thing is the same request twice in one description, three lines apart.
+  ok('none of them asks for a follow, which is the closing line\'s job now',
+    cfg.ctas.every((c) => !/עקבו|עוקבים/.test(c)),
+    cfg.ctas.filter((c) => /עקבו|עוקבים/.test(c)).join(' | '));
   // The bio pointer survives as ONE entry: it is the only tappable route to the
   // product either platform offers, and a pipeline that never mentions it never
   // sends anybody anywhere.
@@ -5406,10 +5454,45 @@ group('the caption - a question, sometimes a CTA, and never a URL');
   }
   ok('the whole pool is reachable', asks.size > 1, `${asks.size} distinct`);
 
+  // THE REASON TO FOLLOW. On every post, which is why there is no share to draw
+  // against and no way to get null out of it.
+  {
+    const { captionFollow, followLine } = await import('../src/hashtags.js');
+    ok('there are reasons to follow to draw from', cfg.follows.length > 1);
+    ok('each one has an ask and a reason', cfg.follows.every((f) => f.askHe && f.whyHe && f.lineHe));
+    // The ask is SHORT because on a closing slide it is the big line and the
+    // reason is the note under it. Four words is already a slide that wraps.
+    ok('the asks are short enough to be a slide headline',
+      cfg.follows.every((f) => f.askHe.split(/\s+/).length <= 4),
+      cfg.follows.find((f) => f.askHe.split(/\s+/).length > 4)?.askHe);
+    ok('every ask actually asks for a follow', cfg.follows.every((f) => /עקבו|לעקוב|עוקב/.test(f.askHe)));
+    // A reason that promises something this pipeline cannot deliver buys a follow
+    // and loses it a week later. Nothing here sends anybody anything.
+    ok('and no reason promises a thing nobody will send',
+      cfg.follows.every((f) => !/אשלח|שולח לכם|בפרטי|בדיאם|מדריך במתנה/.test(f.whyHe)));
+    ok('none of them carries a domain',
+      cfg.follows.every((f) => { try { assertNoUrl(f.lineHe); return true; } catch { return false; } }));
+
+    // Both ends of the draw, because there is no gate and a missing one would be
+    // invisible: the description would simply be one line shorter.
+    ok('the bottom of the range returns one', Boolean(captionFollow({ rand: () => 0 })));
+    ok('and the top of it too', Boolean(captionFollow({ rand: () => 0.999 })));
+    const reasons = new Set();
+    for (let i = 0; i < cfg.follows.length; i++) reasons.add(captionFollow({ rand: () => i / cfg.follows.length }).lineHe);
+    ok('the whole pool is reachable', reasons.size > 1, `${reasons.size} distinct`);
+
+    // What a caller hands over survives, and null is NOT "no follow" — it is read
+    // as nothing handed over, because every post has one.
+    eq('a handed-over entry is used as it is', followLine(cfg.follows[2]), cfg.follows[2].lineHe);
+    eq('a string is taken as the line', followLine('עקבו כי כן'), 'עקבו כי כן');
+    ok('and null still draws one', Boolean(followLine(null, { rand: () => 0.4 })));
+  }
+
   const cand = { clip: { vision: { place: 'Italy', site: 'Cinque Torri', siteHe: 'צ׳ינקווה טורי' } } };
   const caption = clipCaption(cand, { rand: () => 0.1 });
   ok('the clip caption still opens with the pin', caption.startsWith('📍'));
   ok('carries a question', /\?/.test(caption));
+  ok('and a reason to follow above the tags', cfg.follows.some((f) => caption.includes(f.lineHe)));
   ok('and still ends with the tags', /#\S+$/.test(caption.trim()));
   ok('and has no URL in it', (() => { try { assertNoUrl(caption); return true; } catch { return false; } })());
 
@@ -5451,6 +5534,24 @@ group('the caption - a question, sometimes a CTA, and never a URL');
   ok('prints the exact thing to type', msg.includes(shoot.prompt));
   ok('says nobody else will publish it', /אף אחד לא מפרסם/.test(msg));
   ok('and the copyable caption carries no URL', (() => { try { assertNoUrl(shootCaption(shoot, { rand: () => 0.1 })); return true; } catch { return false; } })());
+
+  // The brief says how to END the video, not only how to start it. A hand-filmed
+  // post is the one format with no closing slide and no closing frame, so the
+  // instruction is the only thing that puts a reason to follow on the end of it.
+  {
+    const closed = shootMessage(shoot, { follow: cfg.follows[1] });
+    ok('the brief says what to put on the last second', closed.includes('הסיום'));
+    ok('and names the ask and the reason', closed.includes(cfg.follows[1].askHe) && closed.includes(cfg.follows[1].whyHe));
+    // ONE DRAW for the brief: the line to film and the line in the caption are
+    // the same sentence. Two draws would hand the shooter a video closing on one
+    // reason and a caption arguing another.
+    ok('and the caption underneath closes on the same one', closed.includes(cfg.follows[1].lineHe));
+    eq(
+      'the reason appears twice and no more',
+      closed.split(cfg.follows[1].whyHe).length - 1,
+      2
+    );
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -5624,8 +5725,30 @@ try {
   eq('numbered by its place in the whole deck', one[0].index, 2);
   ok('which is what the filename says', /-instagram-02\.jpg$/.test(one[0].filename), one[0].filename);
 
+  // Seven, not six: the cover, five places, and the closing slide every
+  // slideshow now ends on. See src/deck/follow.js.
   const whole = await renderDeckSize(deck, { size: 'instagram', outDir });
-  eq('and without `only` the whole deck still renders', whole.length, 6);
+  eq('and without `only` the whole deck still renders', whole.length, 7);
+  ok('the last slide is the reason to follow', whole.at(-1).follow === true);
+  ok('and it is the only one', whole.filter((s) => s.follow).length === 1);
+  // It carries the drawn ask as its headline, which is what the approval message
+  // prints and what the viewer reads on the last swipe.
+  {
+    const { captionFollow } = await import('../src/hashtags.js');
+    const asks = new Set(postConfig().caption.follows.map((f) => f.askHe));
+    ok('naming one of the asks from the pool', asks.has(whole.at(-1).nameHe), whole.at(-1).nameHe);
+    ok('captionFollow is what drew it', Boolean(captionFollow({ rand: () => 0 }).askHe));
+  }
+
+  // A deck that already ends on an ask does not get a second one. An itinerary
+  // with the giveaway on closes on "עקבו ותגיבו רומא", which is a follow ask with
+  // a better reason attached than anything in the pool.
+  const asked = await renderDeckSize(
+    { ...deck, id: 'selftest-asked', slides: [...deck.slides, { n: 6, nameHe: 'עקבו ותגיבו רומא', fields: [], bullets: [{ text: '5 מכם מקבלים 30 יום' }], image: null, ask: true }] },
+    { size: 'instagram', outDir }
+  );
+  eq('a deck ending on an ask is left alone', asked.length, 7);
+  ok('and closes on that ask rather than on a second one', asked.at(-1).follow === false);
 
   const { closeBrowser } = await import('../src/render/index.js');
   await closeBrowser().catch(() => {});

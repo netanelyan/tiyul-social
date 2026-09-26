@@ -780,7 +780,13 @@ export function renderSlideHtml(slide, { size = 'tiktok', cover = false, style =
       // emoji stay because they are a fixed set tied to fixed labels: a boot
       // for difficulty, a ruler for distance. Those earn their place; a free
       // choice does not.
-      (note ? `<div class="note"><span>(${escapeHtml(note.text)})</span></div>` : '');
+      // `plainNote` drops the brackets, and exactly one slide asks for it: the
+      // closing one, where the note is not an aside about a place but the whole
+      // argument for following. "(כל יום יעד אחד)" in brackets reads as a
+      // footnote to the word above it, which is the opposite of what it is for.
+      (note
+        ? `<div class="note"><span>${slide.plainNote ? escapeHtml(note.text) : `(${escapeHtml(note.text)})`}</span></div>`
+        : '');
   }
 
   // Nothing at the bottom. Not one reference post carries a domain, and a URL

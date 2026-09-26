@@ -7,7 +7,8 @@ import { KINDS } from './sources/places.js';
 import { clipApprovalMessage } from './video/clip.js';
 import { planApprovalMessage } from './plan/candidate.js';
 import { postConfig } from './postConfig.js';
-import { hashtagLine, captionQuestion, captionCta } from './hashtags.js';
+import { hashtagLine, captionQuestion, captionCta, captionFollow, followLine } from './hashtags.js';
+import { followSlideFor, publishedSlideCount } from './deck/follow.js';
 import { URL_LIKE } from './urlLike.js';
 
 // Two different texts, for two different readers.
@@ -197,7 +198,7 @@ export const tiktokCaption = (cand, opts) => publishedDescription(cand, 4000, op
  * the exports stay for the single-caption callers and for the labs.
  */
 export function publishedDescriptions(cand, opts = {}) {
-  const close = { question: captionQuestion(opts), cta: captionCta(opts) };
+  const close = { question: captionQuestion(opts), cta: captionCta(opts), follow: captionFollow(opts) };
   return {
     instagram: instagramCaption(cand, { ...opts, ...close }),
     tiktok: tiktokCaption(cand, { ...opts, ...close }),
@@ -226,22 +227,30 @@ export function publishedDescriptions(cand, opts = {}) {
  * Checked before it is returned, not after it is staged: see assertNoUrl.
  */
 /**
- * How a published caption ends: a question, then sometimes one ask.
+ * How a published caption ends: a question, then sometimes one ask, then the
+ * reason to follow.
  *
- * Shared by every kind. `opts.question` and `opts.cta` are drawn once per POST
- * by the caller and handed to each builder, so the Instagram and TikTok halves
- * of one post close the same way, which is what makes the single description on
- * the approval card a true preview of both.
+ * Shared by every kind. `opts.question`, `opts.cta` and `opts.follow` are drawn
+ * once per POST by the caller and handed to each builder, so the Instagram and
+ * TikTok halves of one post close the same way, which is what makes the single
+ * description on the approval card a true preview of both.
  *
  * The undefined/null distinction is load-bearing. `undefined` means nothing was
  * handed over and one is drawn here, which is what the labs and the tests do.
  * `null` means the caller drew and got nothing, which on the ask is the normal
  * case by ctaShare and must not be re-rolled into a yes.
+ *
+ * THE FOLLOW REASON IS THE EXCEPTION TO THAT, and deliberately: it is on every
+ * post by instruction, so there is no "drew and got nothing" state for it and
+ * null is read as "nothing handed over". It goes LAST because it is the only
+ * line here that is about the account rather than about this post, and the end
+ * of the description is where somebody who read the whole thing decides whether
+ * they want the next one.
  */
 function captionClose(opts = {}) {
   const question = opts.question === undefined ? captionQuestion(opts) : opts.question;
   const cta = opts.cta === undefined ? captionCta(opts) : opts.cta;
-  return [question, cta].filter(Boolean);
+  return [question, cta, followLine(opts.follow, opts)].filter(Boolean);
 }
 
 export function deckTiktokCaption(deck, opts = {}) {
@@ -329,7 +338,14 @@ export function deckApprovalMessage(cand) {
     lines.push('');
   }
 
-  lines.push(`📑 ${deck.slides.length + 1} שקופיות (שער + ${deck.slides.length} מקומות):`);
+  // The closing slide is counted and named, because it is a slide you cannot see
+  // in the album's thumbnail row and it is the one carrying an ask. A count that
+  // said "6 שקופיות" under an album of seven made the extra one look like a
+  // rendering bug.
+  const closing = followSlideFor(deck);
+  lines.push(
+    `📑 ${publishedSlideCount(deck)} שקופיות (שער + ${deck.slides.length} מקומות${closing ? ' + סיום' : ''}):`
+  );
   for (const [i, s] of deck.slides.entries()) {
     // A slide is a name and, where the category has them, a few fields. The
     // fields are shown because they are the only part that can be wrong.
@@ -337,6 +353,9 @@ export function deckApprovalMessage(cand) {
     const note = (s.bullets || [])[0]?.text;
     const extra = fields || note || '';
     lines.push(`   ${i + 2}. ${s.nameHe}${s.flag ? ` ${s.flag}` : ''}${extra ? ` - ${extra}` : ''}`);
+  }
+  if (closing) {
+    lines.push(`   ${deck.slides.length + 2}. ${closing.nameHe} - ${closing.bullets[0].text}`);
   }
   lines.push('');
 

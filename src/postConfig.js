@@ -76,6 +76,46 @@ export function postConfig() {
     }
   }
 
+  // THE REASON TO FOLLOW, WHICH EVERY POST CARRIES.
+  //
+  // Not a share and not a pool of one. `ctas` is drawn on `ctaShare` of posts
+  // because an ask that arrives every time reads as an advertisement; the
+  // owner's instruction here is the opposite and is about a different line -
+  // every post closes with a reason to follow, and on anything with slides or
+  // frames the same reason is also the last thing on screen.
+  //
+  // Two fields per entry, because the closing SLIDE needs them apart: the ask
+  // is the big line and the reason is the note under it. See askSlide in
+  // src/plan/slides.js, which is where that split was argued out, and
+  // followSlideFor in src/render/deck.js, which draws this one.
+  //
+  // Thrown on when empty, like caption.lines. An empty pool would silently
+  // remove a line the owner asked for from every post this pipeline makes,
+  // which is the failure mode this file's own header warns about: a post with
+  // nothing on it looks exactly like a post that was meant to be that way.
+  const follows = (caption.follows || [])
+    .map((f) => ({
+      askHe: String(f?.askHe || '').trim(),
+      whyHe: String(f?.whyHe || '').trim(),
+    }))
+    .filter((f) => f.askHe && f.whyHe)
+    .map((f) => ({ ...f, lineHe: `${f.whyHe}. ${f.askHe}` }));
+  if (!follows.length) {
+    throw new Error(
+      'post-config.json: caption.follows is empty - every post has to carry a reason to follow, and each entry needs both askHe and whyHe'
+    );
+  }
+  // Checked here for the same reason the asks are: a domain typed into a follow
+  // line would otherwise throw once per post from inside a build, and the thing
+  // that is broken is this file.
+  for (const f of follows) {
+    if (URL_LIKE.test(f.lineHe)) {
+      throw new Error(
+        `post-config.json: follow reason "${f.lineHe}" contains a URL - the link lives in the bio, the caption says so in words`
+      );
+    }
+  }
+
   const broad = tags(hashtags.broad, 'hashtags.broad');
   const niche = tags(hashtags.niche, 'hashtags.niche');
   const broadCount = count(hashtags.broadCount, 2);
@@ -88,6 +128,7 @@ export function postConfig() {
       lines,
       questions,
       ctas,
+      follows,
       // Kept so anything still reading the singular key sees the first ask
       // rather than undefined. Nothing in src/ reads it now.
       cta: ctas[0] || '',
@@ -394,6 +435,25 @@ function clips(raw) {
     },
     audio: audioConfig(raw.audio || {}),
     cuts: cutsConfig(raw.cuts || {}),
+    // THE CLOSING FRAME: the reason to follow, at the end of every clip.
+    //
+    // The owner's instruction is that a post ends on one. A slideshow ends on a
+    // slide (src/deck/follow.js); a video has no slides, so it ends on its last
+    // seconds carrying the line instead - the hook comes off, the reason goes on,
+    // in the place the measurement already proved legible.
+    //
+    // TWO SECONDS, and the number is doing the same job hookSeconds does at the
+    // other end: long enough to read one short line, short enough that nothing
+    // is held after it has been understood. On an eight-second held clip that is
+    // a quarter of the running time, which is why it is not three.
+    //
+    // `on: false` removes it from both shapes at once, which is the dial to
+    // reach for if the videos start feeling like advertisements. The description
+    // still carries its reason to follow - that one is not optional.
+    follow: {
+      on: (raw.follow || {}).on !== false,
+      seconds: Math.max(0.8, num((raw.follow || {}).seconds, 2)),
+    },
     overlay: {
       sizePct: num(o.sizePct, 0.052),
       sizeBasis: o.sizeBasis === 'height' ? 'height' : 'width',
