@@ -840,7 +840,15 @@ export async function assertFetchable(urls, { timeoutMs = 8_000 } = {}) {
         const res = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(timeoutMs) });
         return { url, status: res.status };
       } catch (e) {
-        return { url, status: null, error: e?.message || String(e) };
+        // The cause, not just the message. Node's fetch reports every transport
+        // failure as a bare "fetch failed" and puts the one useful sentence in
+        // `cause` - so a TLS handshake the host refused, a DNS name that does
+        // not resolve and a connection refused all arrive here indistinguishable
+        // unless it is unwrapped. Found on a real outage, where the bot could
+        // only say "fetch failed" about an image host whose certificate had
+        // stopped being served.
+        const why = [e?.message, e?.cause?.message].filter(Boolean).join(': ');
+        return { url, status: null, error: why || String(e) };
       }
     })
   );

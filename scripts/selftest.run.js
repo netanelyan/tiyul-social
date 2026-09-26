@@ -1739,6 +1739,9 @@ ok('a mismatched privacy level is too', isCardLevelTikTok(new TikTokError('x', {
   const heads = (map) => async (url) => {
     const s = map[String(url)] ?? 200;
     if (s === 'boom') throw new Error('connect ECONNREFUSED');
+    // How Node's fetch really reports a transport failure: a useless message
+    // and the actual reason hidden in `cause`.
+    if (s === 'tls') throw Object.assign(new TypeError('fetch failed'), { cause: new Error('tlsv1 alert internal error') });
     return { ok: s < 400, status: s };
   };
 
@@ -1761,6 +1764,13 @@ ok('a mismatched privacy level is too', isCardLevelTikTok(new TikTokError('x', {
   globalThis.fetch = heads({ [A]: 503 });
   const sick = await assertFetchable([A]).then(() => null, (e) => e);
   ok('a 5xx from the host is the destination too', !isCardLevelTikTok(sick), `step ${sick?.step}`);
+
+  // The failure must SAY what it was. "fetch failed" about an image host sends
+  // you looking in the wrong codebase; "tlsv1 alert internal error" sends you
+  // to the web server, which is where the problem actually was.
+  globalThis.fetch = heads({ [A]: 'tls' });
+  const tls = await assertFetchable([A]).then(() => null, (e) => e);
+  ok('a TLS refusal names the handshake, not just "fetch failed"', /tlsv1 alert internal error/.test(tls?.message || ''), tls?.message);
 
   eq('nothing to check is not a failure', (await assertFetchable([])).length, 0);
 
