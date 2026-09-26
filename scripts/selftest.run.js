@@ -77,6 +77,7 @@ import {
   SCOPES as TK_SCOPES,
   TikTokError,
   waitForPublish,
+  assertFetchable,
 } from '../src/publish/tiktok.js';
 import { codeFrom } from './tiktok-token.js';
 import { hyphensOnly, stripEmoji, capHashtags, normalise } from '../src/draft.js';
@@ -1718,6 +1719,50 @@ ok('a mismatched privacy level is too', isCardLevelTikTok(new TikTokError('x', {
   globalThis.fetch = replies([fine('FAILED')]);
   const refused = await poll();
   ok('a FAILED status is not retried into a success', refused instanceof TikTokError && /publish failed/.test(refused.message), refused?.message);
+
+  globalThis.fetch = realFetch;
+}
+
+// Are the files TikTok is about to fetch actually there?
+//
+// preflight checked the URLs were well formed, https and on a verified domain,
+// and never that anything was AT them. A plan built before slideStem grew its
+// `deck-` prefix kept its old URLs in the queue, the files under those names
+// were gone, and every attempt passed preflight, reached init, and came back
+// photo_pull_failed hours later - scored as a TikTok outage, because a status
+// failure is not a card refusal. Three of those degraded the destination and
+// held every good post behind one that could never work.
+{
+  const realFetch = globalThis.fetch;
+  const A = 'https://cards.example.com/cards/deck-plan-a-tiktok-01.jpg';
+  const B = 'https://cards.example.com/cards/deck-plan-a-tiktok-02.jpg';
+  const heads = (map) => async (url) => {
+    const s = map[String(url)] ?? 200;
+    if (s === 'boom') throw new Error('connect ECONNREFUSED');
+    return { ok: s < 400, status: s };
+  };
+
+  globalThis.fetch = heads({ [A]: 200, [B]: 200 });
+  eq('files that are there pass', (await assertFetchable([A, B])).length, 2);
+
+  globalThis.fetch = heads({ [A]: 200, [B]: 404 });
+  const missing = await assertFetchable([A, B]).then(() => null, (e) => e);
+  ok('a slide that 404s is refused before the post is made', missing instanceof TikTokError, missing?.message);
+  // The distinction the publish loop acts on. Its files are not coming back, so
+  // the POST is abandoned by name and TikTok keeps its health - the next post,
+  // whose slides exist, publishes perfectly well.
+  ok("a missing slide is the post's problem", isCardLevelTikTok(missing), `step ${missing?.step}`);
+
+  globalThis.fetch = heads({ [A]: 'boom' });
+  const down = await assertFetchable([A]).then(() => null, (e) => e);
+  ok('a host that does not answer is refused too', down instanceof TikTokError, down?.message);
+  ok('but THAT one is the destination, and must still degrade', !isCardLevelTikTok(down), `step ${down?.step}`);
+
+  globalThis.fetch = heads({ [A]: 503 });
+  const sick = await assertFetchable([A]).then(() => null, (e) => e);
+  ok('a 5xx from the host is the destination too', !isCardLevelTikTok(sick), `step ${sick?.step}`);
+
+  eq('nothing to check is not a failure', (await assertFetchable([])).length, 0);
 
   globalThis.fetch = realFetch;
 }

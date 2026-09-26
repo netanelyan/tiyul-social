@@ -808,6 +808,68 @@ export function preflight(cand) {
  * earlier would leave the interesting half untested.
  */
 /**
+ * Ask our own host for the files TikTok is about to ask it for.
+ *
+ * A HEAD each, in parallel, against a server on this box. It costs milliseconds
+ * and it answers the question `photo_pull_failed` answers hours later and less
+ * legibly.
+ *
+ * THE TWO OUTCOMES ARE DIFFERENT KINDS OF PROBLEM and the steps say so, because
+ * the publish loop reads the step to decide what to do next:
+ *
+ *   404/410 - THIS POST is unpublishable and will be at every retry. Its files
+ *             are not coming back: renamed by a change to slideStem, cleaned
+ *             up, or written somewhere the host does not serve. `step: config`
+ *             makes it card-level, so the post is abandoned by name and the
+ *             destination keeps its health.
+ *
+ *   no answer, or a 5xx - THE HOST is down, which is not this post's fault and
+ *             will be the next post's problem too. Left as a destination
+ *             failure, so it degrades and backs off exactly as intended.
+ *
+ * Deliberately NOT a fetch of the bytes. TikTok downloads the file itself; all
+ * that matters here is that something is there to download.
+ */
+export async function assertFetchable(urls, { timeoutMs = 8_000 } = {}) {
+  const list = (urls || []).filter(Boolean);
+  if (!list.length) return [];
+
+  const checks = await Promise.all(
+    list.map(async (url) => {
+      try {
+        const res = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(timeoutMs) });
+        return { url, status: res.status };
+      } catch (e) {
+        return { url, status: null, error: e?.message || String(e) };
+      }
+    })
+  );
+
+  const gone = checks.filter((c) => c.status === 404 || c.status === 410);
+  if (gone.length) {
+    throw new TikTokError(
+      `${gone.length} of ${list.length} file(s) are not on the image host: ${gone
+        .slice(0, 2)
+        .map((c) => c.url)
+        .join(', ')} - the post is stale. Rebuild it rather than retrying it.`,
+      { step: 'config', code: 'image_missing' }
+    );
+  }
+
+  const unreachable = checks.filter((c) => c.status === null || c.status >= 500);
+  if (unreachable.length) {
+    const first = unreachable[0];
+    throw new TikTokError(
+      `the image host did not answer for ${unreachable.length} of ${list.length} file(s): ` +
+        `${first.error || `HTTP ${first.status}`} (${first.url})`,
+      { step: 'image_host', code: 'image_host_unreachable' }
+    );
+  }
+
+  return checks;
+}
+
+/**
  * Publish, or hand over.
  *
  * `draft` switches post_mode to MEDIA_UPLOAD: the slides are delivered to the
@@ -847,6 +909,22 @@ export async function publishTikTok(cand, { dryRun = false, draft = false } = {}
       { step: 'preflight', code: 'no_video_url' }
     );
   }
+
+  // And do those URLs actually answer?
+  //
+  // preflight checks the addresses are well formed, https and on a verified
+  // domain. It never asked whether anything is AT them, which is the one thing
+  // TikTok is about to do and the one thing we can check for free, against our
+  // own host, before spending a post on it.
+  //
+  // What that gap cost, in full: a plan built before slideStem grew its `deck-`
+  // prefix kept its old URLs in the queue. The files under those names were
+  // gone. Every attempt passed preflight, reached init, and came back
+  // `photo_pull_failed` at the status step hours later - which is not a card
+  // refusal, so it was scored as a TikTok outage, and three of them latched the
+  // destination degraded and held every good post behind a post that could
+  // never work.
+  await assertFetchable(isClip ? [videoUrl] : images);
 
   // Checked here rather than discovered at init. TikTok's answer is correct and
   // unhelpful — it names "the scope required for completing this request"
