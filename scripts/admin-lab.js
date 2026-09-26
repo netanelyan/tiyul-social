@@ -1,4 +1,6 @@
-import { readdirSync } from 'node:fs';
+import { mkdtempSync, readdirSync, writeFileSync, copyFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { loadEnv } from '../src/env.js';
 import { startAdminServer } from '../src/admin/server.js';
 import { cardOutputDir } from '../src/render/index.js';
@@ -27,17 +29,68 @@ process.env.ADMIN_SECRET = process.env.ADMIN_SECRET || 'admin-lab-not-a-secret';
 process.env.ADMIN_INSECURE_COOKIES = '1';
 process.env.ADMIN_PORT = process.env.ADMIN_PORT || '8788';
 
-// Real pictures, because the layout questions are all about real proportions: a
-// 4:5 card and a 9:16 slide do different things to a row that scrolls.
-const dir = cardOutputDir();
-let pics = [];
+// DRAWN PLACEHOLDERS, NOT REAL CARDS, and this is the whole point of the file.
+//
+// The first version of this lab served whatever JPEGs happened to be in the card
+// directory. The proportions were right, which is what the layout questions are
+// about — but the pictures had nothing to do with the invented headlines above
+// them, so a post about a Berlin terminal sat over a rendered card about an Ebola
+// outbreak in Uganda, and a deck listing Tromsø, Abisko and Rovaniemi showed
+// Tokyo, São Tomé and Los Angeles.
+//
+// That is indistinguishable from the site drawing the wrong file, which is a real
+// bug it has had. A lab that produces a convincing false alarm is worse than no
+// lab: it costs an hour of looking for a fault in working code, and then it
+// teaches you to ignore the thing it is meant to demonstrate. A banner saying
+// "the pictures do not match" was the first attempt and was not good enough — the
+// only correct fix is for there to be nothing to mismatch.
+//
+// So each one is generated, at the real aspect ratio, saying what it belongs to.
+// Nothing here can be mistaken for a photograph, and every picture names its own
+// post.
+const dir = mkdtempSync(join(tmpdir(), 'tiyul-admin-lab-'));
+
+const HUES = [210, 160, 28, 280, 340, 95];
+function placeholder(name, { w, h, title, sub, n = null, hue = 210 }) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="hsl(${hue} 34% 26%)"/>
+    <stop offset="1" stop-color="hsl(${hue} 38% 14%)"/>
+  </linearGradient></defs>
+  <rect width="${w}" height="${h}" fill="url(#g)"/>
+  <rect x="18" y="18" width="${w - 36}" height="${h - 36}" fill="none"
+        stroke="hsl(${hue} 40% 62%)" stroke-width="4" stroke-dasharray="22 16" opacity="0.55"/>
+  <text x="${w / 2}" y="86" fill="hsl(${hue} 30% 72%)" font-family="system-ui, sans-serif"
+        font-size="34" text-anchor="middle" letter-spacing="2">LAB · דוגמה</text>
+  ${n === null ? '' : `<text x="${w / 2}" y="${h / 2 - 90}" fill="hsl(${hue} 45% 78%)"
+        font-family="system-ui, sans-serif" font-size="150" font-weight="700" text-anchor="middle">${n}</text>`}
+  <text x="${w / 2}" y="${h / 2 + 20}" fill="#ffffff" font-family="system-ui, sans-serif"
+        font-size="60" font-weight="700" text-anchor="middle" direction="rtl">${title}</text>
+  <text x="${w / 2}" y="${h / 2 + 100}" fill="hsl(${hue} 28% 80%)" font-family="system-ui, sans-serif"
+        font-size="40" text-anchor="middle" direction="rtl">${sub}</text>
+  <text x="${w / 2}" y="${h - 56}" fill="hsl(${hue} 25% 66%)" font-family="ui-monospace, monospace"
+        font-size="28" text-anchor="middle">${w}×${h}</text>
+</svg>`;
+  writeFileSync(join(dir, name), svg);
+  return name;
+}
+
+// A card is 4:5 for Instagram; a slide is 9:16. Both matter — they do different
+// things to a row that scrolls, which is the layout question this lab answers.
+const CARD = { w: 1080, h: 1350 };
+const SLIDE = { w: 1080, h: 1920 };
+
+// The one thing that cannot be drawn. A real clip is the only way to check that
+// the player appears, is the right shape and has a scrubber — and a video of
+// scenery makes no claim the headline above it can contradict, so borrowing one
+// is honest in a way a rendered card with a headline burned into it is not.
 let vids = [];
 try {
-  const files = readdirSync(dir);
-  pics = files.filter((n) => n.endsWith('.jpg'));
-  vids = files.filter((n) => n.endsWith('.mp4'));
+  vids = readdirSync(cardOutputDir()).filter((n) => n.endsWith('.mp4'));
+  if (vids[0]) copyFileSync(join(cardOutputDir(), vids[0]), join(dir, vids[0]));
 } catch {
-  console.log(`(no media in ${dir} - the cards will draw without pictures)`);
+  // No card directory on this machine. The clip then draws the site's
+  // "file not found" panel, which is a case worth seeing anyway.
 }
 
 const did = [];
@@ -47,19 +100,35 @@ const done = (what, said) => {
   return { ok: true, said };
 };
 
+// Every picture is drawn for the post it belongs to, so the two can never
+// disagree. See the note at `dir`.
+const DECK_SLIDES = [
+  'שער',
+  'טרומסו, נורווגיה',
+  'אבישקו, שוודיה',
+  'רוברמולה, פינלנד',
+  'סנפלסנס, איסלנד',
+  'לופוטן, נורווגיה',
+];
+const cardPic = placeholder('lab-card.svg', { ...CARD, title: 'כרטיס', sub: 'ברלין', hue: 210 });
+const deckPics = DECK_SLIDES.map((name, i) =>
+  placeholder(`lab-deck-${String(i + 1).padStart(2, '0')}.svg`, {
+    ...SLIDE, title: name, sub: 'מצגת · סקנדינביה', n: i + 1, hue: HUES[i % HUES.length],
+  })
+);
+const planPic = placeholder('lab-plan.svg', { ...SLIDE, title: 'קופנהגן', sub: 'מסלול · 5 ימים', n: 1, hue: 160 });
+const queuedCardPic = placeholder('lab-queued-card.svg', { ...CARD, title: 'כרטיס', sub: 'וינה - פראג', hue: 28 });
+// The held tab draws no pictures - what is being read there is the error - so
+// there is nothing to generate for it.
+
 const ops = {
   mediaDir: () => dir,
   state: async () => ({
-    // SAY SO, LOUDLY, AT THE TOP OF THE PAGE.
-    //
-    // The headlines here are invented and the pictures are whatever real cards
-    // happen to be on disk, so the two never match - a card about a Berlin
-    // terminal over a slide about a volcano in Uganda. That is unavoidable
-    // without shipping sample images, and it reads exactly like the bug where
-    // the site draws the wrong file for an item. Which is worse than a plain
-    // placeholder would be, because it is a bug report waiting to happen about
-    // code that is working.
-    lab: 'תוכן לדוגמה · הכותרות מומצאות והתמונות הן קבצים אמיתיים מהדיסק, ולכן אינן תואמות',
+    // Still said out loud, because the CONTENT is invented even though the
+    // pictures now match it - and somebody looking at a queue of five posts
+    // should not have to work out whether they are real before acting on them.
+    // The pictures no longer carry the claim; this line carries it.
+    lab: 'תוכן לדוגמה · אף אחד מהפוסטים כאן אינו אמיתי ושום כפתור לא עושה דבר',
     pending: [
       {
         key: 'lab-card', id: 'card1', kind: 'card',
@@ -72,7 +141,7 @@ const ops = {
           '',
           '🏷️ #טיולים #ברלין #גרמניה #טיולבאירופה #חופשה',
         ].join('\n'),
-        images: pics.slice(0, 1), video: null,
+        images: [cardPic], video: null,
         targets: ['instagram'], draft: false,
         canRetitle: true, canSeeEvidence: true, privacy: null,
         sourceName: 'Berlin Airport', sourceUrl: 'https://ber.de/',
@@ -90,7 +159,7 @@ const ops = {
           '',
           '🏷️ #סקנדינביה #אורותצפוניים #טיולים',
         ].join('\n'),
-        images: pics.slice(1, 7), video: null,
+        images: deckPics, video: null,
         targets: ['instagram', 'tiktok'], draft: true,
         canRetitle: false, canSeeEvidence: true, privacy: null,
       },
@@ -127,11 +196,11 @@ const ops = {
     queue: [
       {
         n: 1, id: 'plan1', kind: 'plan', headline: '5 ימים בקופנהגן ובמלמו',
-        images: pics.slice(7, 8), video: null, targets: ['instagram'], draft: false,
+        images: [planPic], video: null, targets: ['instagram'], draft: false,
       },
       {
         n: 2, id: 'card2', kind: 'card', headline: 'רכבת חדשה בין וינה לפראג',
-        images: pics.slice(8, 9), video: null, targets: ['instagram'], draft: false,
+        images: [queuedCardPic], video: null, targets: ['instagram'], draft: false,
       },
     ],
     held: [

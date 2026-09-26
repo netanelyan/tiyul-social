@@ -166,9 +166,23 @@ main { padding: 14px; max-width: 900px; margin: 0 auto; }
   white-space: pre-wrap;
 }
 .flash[data-bad="1"] { border-color: var(--bad); }
-/* The lab's "none of this is real" banner. Above the flash, never dismissed. */
+
+/*
+  The lab's "none of this is real" banner.
+
+  NOT STICKY, and that is the fix rather than the compromise. It was `top: 0`,
+  which is the same offset the header claims — and the header is z-index 5 to the
+  flash's 4, so the banner parked itself exactly underneath the header and was
+  invisible from the first scroll. A warning you cannot see is worse than none,
+  because it is also a reason not to look for a second one.
+
+  It sits in the flow instead: seen once at the top, scrolled past like any other
+  heading. The real reassurance is that the pictures now match their posts, so
+  this line is context rather than a correction.
+*/
 .flash.lab {
-  top: 0;
+  position: static;
+  margin: 0 14px 12px;
   border-color: var(--warn);
   color: var(--warn);
   font-size: 13px;

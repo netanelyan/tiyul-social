@@ -5932,6 +5932,33 @@ group('the admin site - the same decisions, in a browser');
     await new Promise((r) => server.close(r));
   }
 
+  // THE LAB MUST NOT SERVE REAL CARDS FOR ITS INVENTED POSTS.
+  //
+  // It used to: whatever JPEGs were in the card directory, under headlines that
+  // had nothing to do with them — a Berlin airport post over a rendered card
+  // about Ebola in Uganda, a deck listing Tromsø and Abisko showing Tokyo and
+  // São Tomé. Which is indistinguishable from the site drawing the wrong file,
+  // a bug it has actually had, so the lab was manufacturing false alarms about
+  // working code. The pictures are generated per post now.
+  //
+  // Checked as source text because the lab is a script that opens a listener,
+  // and the property worth protecting is structural: it must not reach into the
+  // real card directory for its stills.
+  {
+    const lab = readFileSync(new URL('../scripts/admin-lab.js', import.meta.url), 'utf8');
+    ok('the lab draws its own placeholders', lab.includes('function placeholder('));
+    ok('and never serves a real card as a sample',
+      !/images:\s*pics\b/.test(lab) && !/pics\.slice/.test(lab),
+      'admin-lab.js is reading real card files again');
+    ok('it serves them from a temp directory of its own', /mkdtempSync/.test(lab));
+    ok('and still says the content is invented', /lab:\s*'/.test(lab));
+    // The banner was `top: 0` at z-index 4 under a header at z-index 5, so it
+    // parked itself exactly beneath the header and vanished on the first scroll.
+    const css = readFileSync(new URL('../public/admin/style.css', import.meta.url), 'utf8');
+    const labRule = css.slice(css.indexOf('.flash.lab'), css.indexOf('.flash.lab') + 240);
+    ok('and the banner does not hide under the header', /position:\s*static/.test(labRule), labRule.slice(0, 80));
+  }
+
   // And the site is OFF, not merely unguarded, when nobody is configured.
   delete process.env.ADMIN_USERS;
   eq('with no users configured there is no listener', startAdminServer(ops, { port: 0, users: readUsers('') }), null);
