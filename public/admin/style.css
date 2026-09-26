@@ -166,6 +166,13 @@ main { padding: 14px; max-width: 900px; margin: 0 auto; }
   white-space: pre-wrap;
 }
 .flash[data-bad="1"] { border-color: var(--bad); }
+/* The lab's "none of this is real" banner. Above the flash, never dismissed. */
+.flash.lab {
+  top: 0;
+  border-color: var(--warn);
+  color: var(--warn);
+  font-size: 13px;
+}
 
 .row-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
 

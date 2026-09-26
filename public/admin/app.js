@@ -92,7 +92,24 @@ async function act(label, fn) {
 // --- rendering -------------------------------------------------------------
 
 const ICON = { deck: '🎞️', clip: '🎬', plan: '🗺️', card: '📰' };
-const media = (name) => `/api/media?file=${encodeURIComponent(name)}`;
+
+// A media reference is `name.jpg` or `name.jpg?v=<mtime>`. The version is split
+// out and sent as its own parameter rather than left in the filename, because
+// the server takes the basename of `file` and would go looking for a file called
+// "name.jpg?v=1727380000000".
+//
+// It exists so a re-rendered card cannot show its old picture: the filename is
+// derived from the candidate id, so editing a headline writes over the same
+// name, and the browser keeps serving what it already has. See mediaName in
+// bot.js.
+const split = (ref) => {
+  const at = String(ref).lastIndexOf('?v=');
+  return at < 0 ? { name: String(ref), v: null } : { name: String(ref).slice(0, at), v: String(ref).slice(at + 3) };
+};
+const media = (ref) => {
+  const { name, v } = split(ref);
+  return `/api/media?file=${encodeURIComponent(name)}${v ? `&v=${encodeURIComponent(v)}` : ''}`;
+};
 
 /**
  * The pictures or the video, whichever this item has.
@@ -108,10 +125,12 @@ function shots(item) {
   if (!item.video && !item.images.length) return null;
   const box = el('div', { className: 'shots' });
 
-  const gone = (node, name) => {
+  const gone = (node, ref) => {
     node.replaceWith(el('div', { className: 'missing' }, [
       el('strong', { textContent: '⚠️ הקובץ לא נמצא' }),
-      el('span', { textContent: name }),
+      // The bare name. The version token is plumbing and would read as part of
+      // the filename somebody is about to go looking for on the box.
+      el('span', { textContent: split(ref).name }),
       el('span', { className: 'muted', textContent: 'קבצים ישנים נמחקים אחרי 30 יום' }),
     ]));
   };
@@ -121,9 +140,9 @@ function shots(item) {
     v.addEventListener('error', () => gone(v, item.video));
     box.append(v);
   }
-  for (const name of item.images) {
-    const img = el('img', { src: media(name), loading: 'lazy', alt: '' });
-    img.addEventListener('error', () => gone(img, name));
+  for (const ref of item.images) {
+    const img = el('img', { src: media(ref), loading: 'lazy', alt: '' });
+    img.addEventListener('error', () => gone(img, ref));
     box.append(img);
   }
   return box;
@@ -321,6 +340,12 @@ function setCount(id, n) {
 function draw() {
   if (!state) return;
   $('#who').textContent = state.me;
+
+  // Present only when the lab is what is serving. The real bot never sets it, so
+  // this banner appearing on the live site would itself be the bug.
+  const lab = $('#lab-banner');
+  lab.textContent = state.lab || '';
+  lab.hidden = !state.lab;
 
   setCount('#c-pending', state.pending.length + state.proposals.length);
   setCount('#c-queue', state.queue.length);

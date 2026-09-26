@@ -50,6 +50,16 @@ const done = (what, said) => {
 const ops = {
   mediaDir: () => dir,
   state: async () => ({
+    // SAY SO, LOUDLY, AT THE TOP OF THE PAGE.
+    //
+    // The headlines here are invented and the pictures are whatever real cards
+    // happen to be on disk, so the two never match - a card about a Berlin
+    // terminal over a slide about a volcano in Uganda. That is unavoidable
+    // without shipping sample images, and it reads exactly like the bug where
+    // the site draws the wrong file for an item. Which is worse than a plain
+    // placeholder would be, because it is a bug report waiting to happen about
+    // code that is working.
+    lab: 'תוכן לדוגמה · הכותרות מומצאות והתמונות הן קבצים אמיתיים מהדיסק, ולכן אינן תואמות',
     pending: [
       {
         key: 'lab-card', id: 'card1', kind: 'card',

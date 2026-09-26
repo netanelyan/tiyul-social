@@ -5703,6 +5703,107 @@ group('the admin site - the same decisions, in a browser');
   throttle.pass('1.2.3.4');
   eq('and a correct password clears it', throttle.delayFor('1.2.3.4'), 0);
 
+  // --- what a candidate looks like to the page ------------------------------
+  {
+    const { stagedView, queuedView, mediaName } = await import('../src/admin/views.js');
+    const { mkdtempSync, writeFileSync, utimesSync, rmSync: rmTmp } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join: j } = await import('node:path');
+
+    const dir = mkdtempSync(j(tmpdir(), 'tiyul-views-'));
+    const put = (name) => {
+      writeFileSync(j(dir, name), 'x');
+      return j('/var/www/tiyul/cards', name);
+    };
+    const cardFile = put('abc123.jpg');
+    const slideFiles = [put('deck-1-01.jpg'), put('deck-1-02.jpg'), put('deck-1-03.jpg')];
+    const clipFile = put('clip-xyz.mp4');
+    const at = (ref) => String(ref).split('?v=')[0];
+
+    // A CARD IN THE QUEUE HAS A PICTURE. It did not: the cover was chosen with
+    // `slides.slice(0, 1) || [cardFile]`, and an empty array is truthy, so the
+    // fallback never ran once and every queued card came back with none.
+    const card = { id: 'abc123', kind: 'card', headline: 'כותרת', card: { file: cardFile }, publishTargets: ['instagram'] };
+    const q = queuedView(card, 0, { dir });
+    eq('a queued card carries exactly one picture', q.images.length, 1);
+    eq('and it is its own rendered card', at(q.images[0]), 'abc123.jpg');
+    eq('numbered from one, the way the list reads', q.n, 1);
+
+    // A deck shows every slide where it is being reviewed, and only the cover
+    // where it is being scanned.
+    const deck = {
+      id: 'deck1', kind: 'deck', headline: 'מצגת',
+      deck: {
+        preview: slideFiles.map((file) => ({ file })),
+        // Enough of a deck for approvalMessage to render one, since `text` is
+        // that message verbatim and rendering it is half of what is being
+        // tested here.
+        titleHe: 'מצגת',
+        where: 'איסלנד',
+        slides: [
+          { n: 1, nameHe: 'סקוגאפוס', fields: [] },
+          { n: 2, nameHe: 'גיסיר', fields: [] },
+        ],
+        counts: { asked: 2, built: 2, found: 5, withAuthority: 4 },
+        dropped: [],
+      },
+      card: { file: slideFiles[0] },
+      publishTargets: ['instagram', 'tiktok'],
+      tiktokDraft: true,
+    };
+    eq('a queued deck shows its cover alone', queuedView(deck, 1, { dir }).images.length, 1);
+    eq('and it is the FIRST slide, not an arbitrary one', at(queuedView(deck, 1, { dir }).images[0]), 'deck-1-01.jpg');
+    eq('a staged deck shows every slide', stagedView({ key: 'k', cand: deck }, { dir }).images.length, 3);
+    eq('in play order', stagedView({ key: 'k', cand: deck }, { dir }).images.map(at).join(','),
+      'deck-1-01.jpg,deck-1-02.jpg,deck-1-03.jpg');
+
+    // A clip is a video and nothing else, or the page draws a broken <img>
+    // beside a working player.
+    const clip = { id: 'clip1', kind: 'clip', headline: 'שורה', clip: { file: clipFile }, card: { file: clipFile }, publishTargets: ['tiktok'] };
+    const cv = stagedView({ key: 'k', cand: clip }, { dir });
+    eq('a clip carries a video', at(cv.video), 'clip-xyz.mp4');
+    eq('and no stills at all', cv.images.length, 0);
+    eq('a queued clip likewise', queuedView(clip, 0, { dir }).images.length, 0);
+
+    // WHICH BUTTONS ARE LEGAL, answered by the server so the page cannot offer
+    // one the server refuses. The same rules stagingButtons applies.
+    ok('a card can be retitled', stagedView({ key: 'k', cand: card }, { dir }).canRetitle);
+    ok('a deck cannot - its title is on the cover', !stagedView({ key: 'k', cand: deck }, { dir }).canRetitle);
+    ok('and neither can a clip - its line is burned in', !cv.canRetitle);
+    ok('a clip has no evidence to show', !cv.canSeeEvidence);
+    ok('a card does', stagedView({ key: 'k', cand: card }, { dir }).canSeeEvidence);
+    // Privacy is offered only when TikTok returned more than one level. A
+    // button that cycles back to the same value lies about having options.
+    eq('no privacy button without a choice', cv.privacy, null);
+    eq('and one when there is',
+      stagedView({ key: 'k', cand: { ...clip, tiktok: { options: ['PUBLIC_TO_EVERYONE', 'SELF_ONLY'], privacy: 'SELF_ONLY' } } }, { dir }).privacy !== null,
+      true);
+
+    // THE VERSION TOKEN. A rendered card's filename comes from its candidate id,
+    // so editing a headline writes over the same name — and without this the
+    // browser keeps drawing the picture it already had while the text updates.
+    const before = mediaName(cardFile, { dir });
+    ok('a media reference carries a version', /\?v=\d+$/.test(before), before);
+    // Re-rendered: same name, new bytes, new mtime.
+    utimesSync(j(dir, 'abc123.jpg'), new Date(), new Date(Date.now() + 60_000));
+    const after = mediaName(cardFile, { dir });
+    eq('the name does not change when the card is re-rendered', at(after), at(before));
+    ok('but the version does, so the browser refetches', after !== before, `${before} -> ${after}`);
+    // A file that is gone still names itself, so the page can say which one.
+    eq('a missing file still reports its name', mediaName('/nowhere/gone.jpg', { dir }), 'gone.jpg');
+    ok('and carries no version to pretend with', !mediaName('/nowhere/gone.jpg', { dir }).includes('?v='));
+    eq('nothing at all is nothing', mediaName(null, { dir }), null);
+
+    // What it will ACTUALLY publish to, not what it was built for. A card queued
+    // before the routing rule changed still carries telegram.
+    const stale = { ...card, kind: 'card', pendingTargets: ['telegram', 'instagram'] };
+    ok('a destination this kind may not use is dropped',
+      !queuedView(stale, 0, { dir }).targets.includes('telegram'),
+      queuedView(stale, 0, { dir }).targets.join(','));
+
+    rmTmp(dir, { recursive: true, force: true });
+  }
+
   // --- the server, driven over real HTTP -----------------------------------
   //
   // Started for real rather than stubbed, because everything worth checking here
@@ -5809,6 +5910,15 @@ group('the admin site - the same decisions, in a browser');
     // url-encoding, backslashes and absolute paths.
     eq('media serves a file that is there', (await hit('/api/media?file=style.css')).status, 200);
     eq('and refuses an empty name', (await hit('/api/media?file=')).status, 400);
+    // THE CACHE-BUSTING VERSION IS IGNORED BY THE SERVER. A rendered card's
+    // filename comes from its candidate id, so editing a headline writes over
+    // the same name and the browser keeps drawing what it already had — the
+    // text updates and the picture does not. The client appends `&v=<mtime>`;
+    // the server must serve the file regardless of what is in it.
+    eq('a versioned request serves the same file',
+      (await hit('/api/media?file=style.css&v=1727380000000')).status, 200);
+    eq('and an unknown version is not a cache miss either',
+      (await hit('/api/media?file=style.css&v=nonsense')).status, 200);
     for (const evil of ['../../.env', '..%2f..%2f.env', '....//.env', '/etc/passwd', 'C:\\Windows\\win.ini', '..\\..\\.env']) {
       const r = await hit(`/api/media?file=${encodeURIComponent(evil)}`);
       ok(`nothing escapes the media directory: ${evil}`, r.status === 404 || r.status === 403, `got ${r.status}`);

@@ -12,6 +12,7 @@ import { approvalMessage, decidedMessage, evidenceReport, channelCaption, publis
 import { sendableNow, windowsHe } from './src/schedule.js';
 import { renderCard, closeBrowser, cardOutputDir } from './src/render/index.js';
 import { startAdminServer, createLogTap } from './src/admin/server.js';
+import { stagedView, queuedView, heldView } from './src/admin/views.js';
 import { publishTelegram, publishTelegramDeck, sendForApproval } from './src/publish/telegram.js';
 import { proposeIdeas, titleForRequest, reviseIdea, freeformIdea, freeformFromIdea } from './src/deck/ideas.js';
 import { pickAngle } from './src/angles.js';
@@ -3161,63 +3162,6 @@ function sendRejectDigest() {
 // only way the two channels can be trusted together. A card that quietly left the
 // approval queue is indistinguishable from a bug, and the owner reads Telegram.
 
-/** A basename the site can fetch back through /api/media, or null. */
-const mediaName = (file) => (file ? file.split(/[\\/]/).pop() : null);
-
-/**
- * One pending item, as the site needs it.
- *
- * `text` is the Hebrew approval block Telegram shows, verbatim. Deliberately not
- * re-implemented: two renderings of the same card is two things to keep in step,
- * and the one that falls behind is whichever is read less. The structured fields
- * beside it are only what the text cannot carry — which pictures to show, and
- * which buttons are legal for this kind.
- */
-function stagedView({ key, cand }) {
-  const slides = (cand.deck?.preview || []).map((s) => mediaName(s.file)).filter(Boolean);
-  return {
-    key,
-    id: cand.id,
-    kind: cand.kind || 'card',
-    headline: cand.headline || '',
-    text: approvalMessage(cand),
-    createdAt: cand.createdAt || null,
-    // Media, in the order it would publish. A clip is a video and everything
-    // else is stills, which the page needs to know before it can choose a tag.
-    video: cand.kind === 'clip' ? mediaName(cand.clip?.file) : null,
-    images: cand.kind === 'clip' ? [] : slides.length ? slides : [mediaName(cand.card?.file)].filter(Boolean),
-    targets: (cand.pendingTargets?.length ? cand.pendingTargets : cand.publishTargets || []).filter((t) =>
-      allowedForKind(cand.kind).includes(t)
-    ),
-    draft: Boolean(cand.tiktokDraft),
-    // Which controls to draw. The same rules stagingButtons applies, answered
-    // once here rather than guessed at in the browser — a page that offers a
-    // button the server refuses is a page that looks broken.
-    canRetitle: cand.kind !== 'deck' && cand.kind !== 'clip' && cand.kind !== 'plan',
-    canSeeEvidence: cand.kind !== 'clip' && cand.kind !== 'plan',
-    privacy: cand.tiktok?.options?.length > 1 ? privacyHe(cand.tiktok.privacy) : null,
-    sourceName: cand.sourceName || null,
-    sourceUrl: cand.sourceUrl || null,
-  };
-}
-
-const queuedView = (c, i) => ({
-  n: i + 1,
-  id: c.id,
-  kind: c.kind || 'card',
-  headline: c.headline || '',
-  video: c.kind === 'clip' ? mediaName(c.clip?.file) : null,
-  images:
-    c.kind === 'clip'
-      ? []
-      : (c.deck?.preview || []).map((s) => mediaName(s.file)).filter(Boolean).slice(0, 1) ||
-        [mediaName(c.card?.file)].filter(Boolean),
-  targets: (c.pendingTargets?.length ? c.pendingTargets : c.publishTargets || []).filter((t) =>
-    allowedForKind(c.kind).includes(t)
-  ),
-  draft: Boolean(c.tiktokDraft) && (c.pendingTargets || c.publishTargets || []).includes('tiktok'),
-});
-
 const adminOps = {
   mediaDir: () => cardOutputDir(),
 
@@ -3232,22 +3176,21 @@ const adminOps = {
     const healthTargets = [...new Set([...liveTargets(), ...store.healthTargets()])];
 
     return {
-      pending: store.stagingItems().map(stagedView),
+      // Called with explicit arguments rather than passed straight to `.map`.
+      // Both take an options object last, and `.map` would hand them the index
+      // and the array — which happens to be harmless today and is the kind of
+      // thing that stops being harmless the moment an option is added.
+      pending: store.stagingItems().map((row) => stagedView(row)),
       proposals: store.proposalItems().map(({ key, proposal }) => ({
         key,
         text: proposalMessage(proposal.idea),
         title: proposal.idea?.titleHe || '',
         proposedAt: proposal.proposedAt || null,
       })),
-      queue: store.queuedItems().map(queuedView),
-      held: store.heldItems().map((h, i) => ({
-        n: i + 1,
-        headline: h.cand?.headline || '',
-        kind: h.cand?.kind || 'card',
-        missing: h.targets || [],
-        missingHe: targetsHe(h.targets || []),
-        error: h.error || null,
-      })),
+      queue: store.queuedItems().map((c, i) => queuedView(c, i)),
+      // The Hebrew is added here because targetsHe lives with the bot's other
+      // wording, and views.js is meant to stay free of anything but the shape.
+      held: store.heldItems().map((h, i) => ({ ...heldView(h, i), missingHe: targetsHe(h.targets || []) })),
       // The same report /status prints, as text, for the same reason `text` is on
       // a staged card: one rendering, not two.
       status: notify.statusReport({
