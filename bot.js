@@ -1469,17 +1469,41 @@ bot.command('draft', async (ctx) => {
   if (!item) return ctx.reply(`אין פריט ${n} בתור - /queue לרשימה`);
 
   const targets = item.pendingTargets?.length ? item.pendingTargets : item.publishTargets || [];
-  if (!targets.includes('tiktok')) {
+
+  // A RE-SEND is allowed, and it is as much the point of this command as the
+  // first send is.
+  //
+  // Approving a deck hands TikTok its draft immediately and leaves only
+  // Instagram in the queue, so the tiktok target is spent within a second of
+  // the tap. That made a draft unrepeatable: the one case where you most want
+  // to send it again is after the file it was made from has been fixed, which
+  // is exactly what `npm run redraw` is for, and the answer was "this item is
+  // not meant for TikTok" about a deck that had just been sent there.
+  //
+  // The question is therefore whether this KIND belongs on TikTok, not whether
+  // this copy still owes it one. A card does not (targets.js: card is Instagram
+  // alone) and is still refused by name.
+  //
+  // What it cannot do is withdraw the first draft. TikTok downloaded the image
+  // when it was delivered, so the old one sits in the inbox until it is deleted
+  // in the app, and this puts a second one beside it.
+  const belongs = targetsForKind(item.kind).includes('tiktok');
+  if (!targets.includes('tiktok') && !belongs) {
     // Put it back exactly as it was. Taking a post out of the queue to tell you
     // it was the wrong one would be a worse answer than the error.
     store.enqueue(item);
     return ctx.reply(`הפריט הזה לא מיועד לטיקטוק (${targetsHe(targets) || 'אין יעד'})`);
   }
+  const again = !targets.includes('tiktok');
 
   const rest = targets.filter((t) => t !== 'tiktok');
   if (rest.length) store.enqueue({ ...item, pendingTargets: rest });
 
-  await ctx.reply(`⏳ שולח לטיוטות: ${item.headline}`);
+  await ctx.reply(
+    again
+      ? `⏳ שולח טיוטה נוספת: ${item.headline}\n   מחקו את הקודמת בטיקטוק - היא נשארת עם התמונה הישנה`
+      : `⏳ שולח לטיוטות: ${item.headline}`
+  );
   detach('טיוטה לטיקטוק', () => publishNext({ ...item, pendingTargets: ['tiktok'] }), ctx.chat.id);
 });
 

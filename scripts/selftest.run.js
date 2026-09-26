@@ -1882,6 +1882,25 @@ withEnv({ ...IG, CHANNEL_ID: '@c' }, () => {
   ok('nothing publishes to Telegram, even with a channel configured', !allowedForKind('card').includes('telegram'));
   ok('not even a deck', !allowedForKind('deck').includes('telegram'));
 
+  // /draft asks whether the KIND belongs on TikTok, not whether this copy still
+  // owes it one.
+  //
+  // Approving a deck hands TikTok its draft at once and leaves only Instagram
+  // queued, so the target is spent a second after the tap - and a draft was
+  // therefore unrepeatable. The one moment you most want to send it again is
+  // after the file behind it has been fixed (npm run redraw), and the answer
+  // was "this item is not meant for TikTok" about a deck just sent there.
+  //
+  // The kind check is what keeps that from becoming "anything, anywhere": a
+  // card is still refused by name, because a card is an Instagram post.
+  const botSrc = readFileSync(new URL('../bot.js', import.meta.url), 'utf8');
+  ok('/draft allows a re-send', /const belongs = targetsForKind\(item\.kind\)\.includes\('tiktok'\)/.test(botSrc));
+  ok('and still refuses a kind that does not belong there', /!targets\.includes\('tiktok'\) && !belongs/.test(botSrc));
+  ok('a card is such a kind', !allowedForKind('card').includes('tiktok'));
+  ok('a plan is not', allowedForKind('plan').includes('tiktok'));
+  // The second draft cannot withdraw the first, so the command has to say so.
+  ok('and it says the old draft stays in the inbox', /מחקו את הקודמת בטיקטוק/.test(botSrc));
+
   // The distinction health and the quiet alarm depend on. publishTargets says
   // what is CONFIGURED and still counts a Telegram channel; liveTargets says
   // what can actually receive something. Reading the first one would have left
