@@ -4746,6 +4746,52 @@ group('AI itineraries - the plan has to survive its own shape check');
 }
 
 /* -------------------------------------------------------------------------- */
+group('/trip resolves what you typed - it does not send you to edit a JSON file');
+
+{
+  const { resolveDestination, pickDestination, findDestination } = await import('../src/plan/write.js');
+
+  // The paths that cost nothing. Both of these used to be "not in
+  // destinations.json - add it with the Hebrew spelling", and one of them is a
+  // country the file mentions 102 times.
+  const rome = await resolveDestination('רומא');
+  eq('a Hebrew city name resolves without a call', rome.how, 'exact');
+  eq('and to the row the file already has', rome.dest.id, 'rome');
+  eq('an English city name resolves too', (await resolveDestination('Rome')).dest.id, 'rome');
+  eq('so does the id', (await resolveDestination('rome')).dest.id, 'rome');
+
+  const norway = await resolveDestination('נורווגיה');
+  eq('a Hebrew COUNTRY name is a country, not a miss', norway.how, 'country');
+  eq('and answers with a city in it', norway.dest.country, 'נורווגיה');
+  ok('a city an itinerary fits, never the country itself', norway.dest.he !== 'נורווגיה', norway.dest.he);
+
+  // Nothing typed is not an error, it is /trip with no argument.
+  eq('an empty ask stays null', await resolveDestination('  '), null);
+  eq('and findDestination is unchanged for it', findDestination(''), null);
+
+  // Which city a country resolves to is the FRESHNESS rules' decision, the same
+  // ones /trip with no argument obeys. Otherwise "/trip italy" twice in a week
+  // is Rome twice, which is the repeat the picker exists to prevent.
+  const all = JSON.parse(readFileSync(new URL('../destinations.json', import.meta.url), 'utf8')).destinations;
+  const inItaly = all.filter((d) => d.country === 'איטליה');
+  ok('the catalogue has several Italian cities to choose between', inItaly.length > 1);
+  const held = pickDestination([inItaly[0].he], { from: inItaly, rand: () => 0 });
+  ok('a city just published is held back', held.he !== inItaly[0].he, held.he);
+  ok('and the pool is honoured - nothing outside it comes back', inItaly.some((d) => d.he === held.he));
+  // A country with exactly one city in the file still answers. Norway is that
+  // country, and it is the one that started this.
+  eq('a one-city country falls back to that city', pickDestination(['אוסלו'], { from: all.filter((d) => d.id === 'oslo') }).id, 'oslo');
+
+  // The model path is not exercised here (it costs a call), but its contract is
+  // asserted where it can be: the resolver must not be able to answer with a
+  // Latin name, because that name reaches the cover slide and the caption.
+  const src = readFileSync(new URL('../src/plan/write.js', import.meta.url), 'utf8');
+  ok('the resolver refuses a non-Hebrew name', /if \(!isHebrew\(he\)/.test(src));
+  ok('and runs on the cheap tier', /const RESOLVE_MODEL = modelFor\('mechanical'\)/.test(src));
+  ok('the bot no longer tells you to edit destinations.json', !/לא ב-destinations\.json/.test(readFileSync(new URL('../bot.js', import.meta.url), 'utf8')));
+}
+
+/* -------------------------------------------------------------------------- */
 group('the itinerary slideshow - what it says, and what it promises');
 
 {

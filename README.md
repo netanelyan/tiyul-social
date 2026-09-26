@@ -437,6 +437,22 @@ name nobody sees. Then a photograph for every stop, through the deck's own image
 step: two libraries, a vision call per shortlist, and a refusal rather than a
 fallback when none of them is the place. Then the deck's renderer draws it.
 
+**What you type for a destination is resolved, not matched.** `/trip norway`,
+`/trip lake como` and `/trip Rome` all work. The lookup tries the catalogue
+first, free: the Hebrew spelling, the English name, the id, and a Hebrew country
+name. Only when none of those lands does it spend one Haiku call, handed the
+whole of destinations.json, to place what was typed. A country resolves to a city
+in it the feed has not just used, so `/trip norway` twice in a week is not Oslo
+twice. A place the catalogue has never heard of gets a Hebrew name from that
+call and is used for this one itinerary; it is not written back to
+destinations.json, which needs lat/lon on every row for the climate rotation.
+
+This used to answer `❌ norway לא ב-destinations.json`, which sent you to edit a
+JSON file to get a video out of a word the catalogue could already place. What
+that refusal was protecting is real and is still protected: one city must not
+reach the feed under two spellings, so the resolver's first job is to land on a
+catalogue row, and it is given every row to land on.
+
 **A plan is built AS a deck**, and that is the whole design. The first version
 drew its own thing, a dark branded card with a timeline rail and the wordmark
 at the top, and beside the account's real slideshows it read as a different

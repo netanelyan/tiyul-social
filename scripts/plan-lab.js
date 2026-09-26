@@ -1,5 +1,5 @@
 import { loadEnv } from '../src/env.js';
-import { writePlan, findDestination } from '../src/plan/write.js';
+import { writePlan, resolveDestination } from '../src/plan/write.js';
 import { toPlanCandidate, planApprovalMessage } from '../src/plan/candidate.js';
 import { closeBrowser } from '../src/render/index.js';
 
@@ -61,17 +61,20 @@ const FIXTURE = {
   dropped: [],
 };
 
-const plan = fake
-  ? { ...FIXTURE, days: days ? FIXTURE.days.slice(0, days) : FIXTURE.days }
-  : await writePlan({
-      dest: asked ? findDestination(asked) : null,
-      days,
-    });
-
-if (!fake && asked && !plan?.dest) {
-  console.error(`${asked} is not in destinations.json`);
+// Resolved the same way /trip resolves it, which is the point of a lab: a
+// destination that works here works there. The old line called findDestination
+// and passed null on a miss, so an unknown name silently planned SOMEWHERE ELSE
+// and the check below it could never fire - `plan.dest` is always set.
+const found = !fake && asked ? await resolveDestination(asked) : null;
+if (!fake && asked && !found) {
+  console.error(`could not work out where "${asked}" is`);
   process.exit(1);
 }
+if (found) console.log(`${asked} -> ${found.dest.he} (${found.how})`);
+
+const plan = fake
+  ? { ...FIXTURE, days: days ? FIXTURE.days.slice(0, days) : FIXTURE.days }
+  : await writePlan({ dest: found?.dest || null, days });
 
 // Recomputed rather than trusted on the fixture path too, so the lab cannot
 // show a total the renderer would not have printed.

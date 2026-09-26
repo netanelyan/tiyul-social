@@ -57,9 +57,9 @@ const destinations = () =>
  * twice: the footage is not what varies here, the destination is the ONLY thing
  * that varies, so repeating it is repeating everything.
  */
-export function pickDestination(recentHe = [], { rand = Math.random } = {}) {
+export function pickDestination(recentHe = [], { rand = Math.random, from = null } = {}) {
   const used = new Set(recentHe.filter(Boolean).map((s) => String(s).trim()));
-  const ranked = byWeight(destinations());
+  const ranked = byWeight(from || destinations());
   const fresh = ranked.filter((d) => !used.has(d.he));
   const pool = fresh.length ? fresh : ranked;
   return pool[Math.floor(rand() * Math.min(pool.length, 12))] || pool[0] || null;
@@ -74,6 +74,173 @@ export function findDestination(asked) {
     destinations().find((d) => String(d.en).toLowerCase() === q || d.id === q) ||
     null
   );
+}
+
+// `/trip norway` used to be a refusal.
+//
+// findDestination matches a CITY, spelled the way the file spells it, so a
+// country came back null and the command answered "not in destinations.json,
+// add it with the Hebrew spelling". Which is the worst available answer: the
+// file knows perfectly well where Norway is, it is the `country` of Oslo and of
+// Bergen, and the person who typed it runs the channel and has said something
+// completely unambiguous. Sending them to edit a JSON file before they can have
+// a video is a refusal on a lookup technicality.
+//
+// The same mistake /deck made and already fixed - see the note at the top of
+// src/deck/request.js. Try the free parse; when it does not land, ASK. One
+// low-effort mechanical call turns anything typed into a destination: a country,
+// a region, an English city name, a Hebrew spelling the file does not use, a
+// city the catalogue has never heard of.
+//
+// WHAT THE ORIGINAL RULE WAS PROTECTING is still protected, because it was
+// never about refusing. It is that one city must not reach the feed under two
+// spellings, and the catalogue is where the spelling lives. So the resolver's
+// FIRST job is to land on a catalogue entry whenever one fits, and it is handed
+// the whole catalogue to land on. Only a place genuinely not in the file gets a
+// fresh Hebrew name, and that is one hand-typed itinerary rather than a
+// recurring source of the same city twice.
+//
+// It is NOT written back to destinations.json. That file feeds the climate
+// rotation, which needs lat/lon on every row, and a row without them is a
+// broken when-to-go card weeks later in a place nobody would look.
+const RESOLVE_MODEL = modelFor('mechanical');
+
+const RESOLVE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    scope: {
+      type: 'string',
+      enum: ['city', 'country'],
+      description:
+        'Did the request name ONE place ("Rome", "טוקיו", "Lake Como"), or a whole country or region ("norway", "the Balkans", "יפן")?',
+    },
+    id: {
+      type: 'string',
+      description:
+        'The id from the catalogue this request means, exactly as spelled there, or "" when the catalogue has nothing that fits. A country scope should still name the catalogue city in it that best answers the request.',
+    },
+    he: {
+      type: 'string',
+      description:
+        'The CITY or area an itinerary would be built for, in Hebrew, as it is normally written in Israel. Never a country name. When the id is set, copy that row\'s Hebrew exactly.',
+    },
+    en: {
+      type: 'string',
+      description: 'The same place in English, the way a photographer would tag it: "Oslo", "Lake Como", "Reykjavik".',
+    },
+    country_he: { type: 'string', description: 'The country it is in, in Hebrew. "נורווגיה", "איטליה".' },
+  },
+  required: ['scope', 'id', 'he', 'en', 'country_he'],
+};
+
+const RESOLVE_SYSTEM = `You turn whatever was typed after /trip into a destination an itinerary can be written for.
+
+It comes from the person who runs the channel, typed quickly, in Hebrew or in
+English. It may be a city, a country, a region, an island, a lake, or a
+misspelling of any of those.
+
+THE CATALOGUE BELOW IS THE PREFERRED ANSWER. Its Hebrew spellings are the ones
+this channel has already published, and reusing one is how the same city stays
+one city across posts. Search it properly before deciding nothing fits: the
+request may name a city in English, in Hebrew, under a local name, or name the
+country a catalogue city sits in.
+
+scope is "country" when the request names a country or a region rather than a
+single place. Then still choose the catalogue city that best answers it - a
+request for Norway is answered by a Norwegian city, and which one is not
+important here, the caller decides that.
+
+he and en always name a PLACE AN ITINERARY FITS: a city, a town, a lake, an
+island. Never a country. "norway" resolves to Oslo, not to Norway, because
+nobody walks around a country between 09:00 and 19:00.
+
+Set id to "" only when the catalogue genuinely has nothing in that country, and
+then write the Hebrew name yourself, the way an Israeli travel page would write
+it.
+
+NEVER refuse. Every string that names anywhere on earth has an answer here.`;
+
+let resolveSystem = null;
+const resolveSystemText = () =>
+  (resolveSystem ??= [
+    RESOLVE_SYSTEM,
+    '',
+    'THE CATALOGUE:',
+    ...destinations().map((d) => `  ${d.id} - ${d.he} (${d.en}), ${d.country}`),
+  ].join('\n'));
+
+/**
+ * Anything typed, as a destination.
+ *
+ * Returns `{ dest, how }` or null, where `how` is 'exact' (the catalogue matched
+ * outright, no call made), 'country' (a country was named and a city in it was
+ * picked), 'known' (the model landed on a catalogue row) or 'new' (a place the
+ * catalogue does not have).
+ *
+ * `recent` is passed through to the same freshness pick /trip with no argument
+ * uses, so `/trip norway` twice in a week is two different Norwegian cities
+ * rather than Oslo both times.
+ */
+export async function resolveDestination(asked, { recent = [], rand = Math.random } = {}) {
+  const q = stripDashes(asked);
+  if (!q) return null;
+
+  // The free answers first. A name the file already spells this way, and a
+  // Hebrew country name, are both lookups - paying a model for either would be
+  // paying for a string comparison.
+  const exact = findDestination(q);
+  if (exact) return { dest: exact, how: 'exact' };
+
+  const inCountry = destinations().filter((d) => d.country === q);
+  if (inCountry.length) return { dest: pickDestination(recent, { rand, from: inCountry }), how: 'country' };
+
+  if (!hasApiKey()) return null;
+
+  const res = await getClient().messages.create({
+    model: RESOLVE_MODEL,
+    max_tokens: 400,
+    output_config: outputConfig(RESOLVE_MODEL, 'low', RESOLVE_SCHEMA),
+    // The catalogue rides in the system block rather than the user turn because
+    // it is the same 102 lines every time and the typed word is the only thing
+    // that varies. Cached, it costs a tenth of what repeating it would.
+    system: [{ type: 'text', text: resolveSystemText(), cache_control: { type: 'ephemeral' } }],
+    messages: [{ role: 'user', content: `TYPED: ${q}` }],
+  });
+
+  recordUsage(res.usage, RESOLVE_MODEL);
+  const text = res.content.find((b) => b.type === 'text')?.text;
+  if (!text) return null;
+
+  const parsed = JSON.parse(text);
+  const countryHe = stripDashes(parsed.country_he);
+
+  // A country named: the caller's freshness rules decide which city, not the
+  // resolver's first thought. This is the branch `/trip norway` lands in.
+  if (parsed.scope === 'country' && countryHe) {
+    const pool = destinations().filter((d) => d.country === countryHe);
+    if (pool.length) return { dest: pickDestination(recent, { rand, from: pool }), how: 'country' };
+  }
+
+  const known = destinations().find((d) => d.id === String(parsed.id || '').trim().toLowerCase());
+  if (known) return { dest: known, how: 'known' };
+
+  const he = stripDashes(parsed.he);
+  const en = stripDashes(parsed.en);
+  // Hebrew is not negotiable on the way out. Every field of a plan that reaches
+  // a slide is Hebrew, and the destination name reaches the cover, the hook and
+  // the caption - a Latin one there is a post in two languages.
+  if (!isHebrew(he) || URL_LIKE.test(he)) return null;
+
+  return {
+    dest: {
+      id: (en || he).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'typed',
+      he,
+      en: en || he,
+      country: countryHe || he,
+    },
+    how: 'new',
+  };
 }
 
 const SYSTEM = `אתה מתכנן מסלול טיול קצר בעברית, לזוג או לחברים מישראל, ומחזיר אותו כנתונים.

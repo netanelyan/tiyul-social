@@ -104,7 +104,15 @@ const {
   // Last hour a gather may start. Nothing should arrive overnight.
   GATHER_UNTIL_HOUR = '22',
   REJECT_DIGEST_HOURS = '6',
-  REJECT_NOTIFY = 'digest', // off | each | digest
+  // off | each | digest, and it DEFAULTS TO OFF.
+  //
+  // A digest every six hours is four messages a day about posts that were
+  // filtered out, which is four messages a day about nothing you have to do.
+  // The information is not lost and was never only here: /status prints what was
+  // rejected today and the reason for each, on demand, which is the right shape
+  // for something you consult when the queue looks thin rather than something
+  // that interrupts you when it does not.
+  REJECT_NOTIFY = 'off',
   QUIET_ALERT_HOURS = '30',
 } = process.env;
 
@@ -1095,7 +1103,6 @@ async function publishNext(item = null) {
 let running = false;
 let lastRunAt = null;
 let lastRunDay = null;
-let lastAnnouncedDay = null;
 // Epoch 0, so the first tick after a start gathers immediately rather than
 // waiting out a full interval.
 let lastGatherAt = 0;
@@ -1679,21 +1686,45 @@ bot.command('status', async (ctx) => {
     })
   );
 
-  // The shoot queue reports separately, because "why is it quiet" has an answer
-  // here that no other line in the status can give: it may be Shabbat, or it
-  // may be 16:00. Both are correct and neither is a fault, and a status that
-  // said nothing about it would send you looking for a broken timer.
+  // Everything that is NOT a card reports separately, because "why is it only
+  // cards" has an answer here that no other line in the status can give, and
+  // every one of those answers is a correct timer rather than a broken one.
+  //
+  // The shoot window may be Shabbat, or it may be 16:00. A deck or a clip may be
+  // held by its BACKLOG cap, which is the one that stays shut for days: it is
+  // released by tapping approve or reject, not by waiting. Four undecided clips
+  // against a ceiling of three is a timer that stopped offering clips a week ago
+  // with nothing anywhere saying so, and the fix is a tap.
+  //
+  // One message for the three of them, not three. The whole point of a status is
+  // that it is the place you come to ask.
+  const other = [];
   if (SHOOTS_PER_DAY > 0) {
     const when = sendableNow();
-    await ctx.reply(
-      [
-        `🎬 תדריכי צילום: ${store.shootsToday()}/${SHOOTS_PER_DAY} היום`,
-        `   שעות: ${windowsHe()} (שעון ישראל), לא בשבת`,
-        when.ok ? '   ✅ אפשר לשלוח עכשיו' : `   ⏸️ ${when.why}`,
-        '   /shoot שולח אחד בלי קשר לשעה',
-      ].join('\n')
+    other.push(
+      `🎬 תדריכי צילום: ${store.shootsToday()}/${SHOOTS_PER_DAY} היום`,
+      `   שעות: ${windowsHe()} (שעון ישראל), לא בשבת`,
+      when.ok ? '   ✅ אפשר לשלוח עכשיו' : `   ⏸️ ${when.why}`,
+      '   /shoot שולח אחד בלי קשר לשעה'
     );
   }
+  const backlogLine = (n, max, how) =>
+    n >= max
+      ? `   ⏸️ ${n}/${max} ממתינים להחלטה - לא יוצעו חדשים עד שתאשרו או תדחו`
+      : `   ✅ ${n}/${max} ממתינים · ${how}`;
+  if (DECKS_PER_DAY > 0) {
+    other.push(
+      `🃏 דקים: ${decksToday}/${DECKS_PER_DAY} היום`,
+      backlogLine(store.proposalSize(), DECK_BACKLOG_MAX, '/deck שולח הצעה עכשיו')
+    );
+  }
+  if (CLIPS_PER_DAY > 0) {
+    other.push(
+      `🎥 קליפים: ${clipsToday}/${CLIPS_PER_DAY} היום`,
+      backlogLine(clipsWaiting(), CLIP_BACKLOG_MAX, '/clip בונה אחד עכשיו')
+    );
+  }
+  if (other.length) await ctx.reply(other.join('\n'));
 });
 
 bot.command('igquota', async (ctx) => {
@@ -1845,8 +1876,11 @@ ${why}`).catch(() => {});
  * `/trip` — an AI-written itinerary, as a slideshow.
  *
  * `/trip` picks a destination the feed has not just used, `/trip רומא` names
- * one, and `/trip רומא 5` names the length too. The argument order is "where,
- * then how long" because that is the order the sentence goes in, and the number
+ * one, and `/trip רומא 5` names the length too. What you name does not have to
+ * be in destinations.json and does not have to be in Hebrew: `/trip norway` and
+ * `/trip lake como` both resolve, on one cheap model call, to a place the plan
+ * can be written for. The argument order is "where, then how long" because that
+ * is the order the sentence goes in, and the number
  * is the only part that can be a bare digit — so `/trip 5` is five DAYS
  * somewhere chosen, not five itineraries. That differs from /clip and /deck on
  * purpose: one plan is a post, and five plans is five posts nobody asked to
@@ -1866,25 +1900,27 @@ bot.command('trip', async (ctx) => {
   detach(
     'מסלול',
     async () => {
-      const { writePlan, findDestination } = await import('./src/plan/write.js');
+      const { writePlan, resolveDestination } = await import('./src/plan/write.js');
       const { toPlanCandidate } = await import('./src/plan/candidate.js');
 
-      // A destination typed by hand that is not in destinations.json is a
-      // refusal rather than a guess. The file is where the Hebrew spelling
-      // lives, and inventing one here is how the same city reaches the feed
-      // under two names.
-      const dest = asked ? findDestination(asked) : null;
-      if (asked && !dest) {
-        await notify
-          .send(bot.telegram, ctx.chat.id, `❌ ${asked} לא ב-destinations.json - הוסיפו אותו עם האיות בעברית`)
-          .catch(() => {});
+      // Which destinations the feed has just been about, so the picker can skip
+      // them. The same history the deck's repeat notes are counted from, and the
+      // resolver gets it too: `/trip norway` is a request for a Norwegian
+      // itinerary, and which Norwegian city is the freshness rules' business.
+      const recent = store.recentPublished().slice(0, 12).map((p) => p.place);
+
+      // A destination typed by hand is RESOLVED rather than refused. It used to
+      // answer "not in destinations.json, add it with the Hebrew spelling",
+      // which sent you to edit a JSON file to get a video out of a word the
+      // catalogue could already place. See the note in src/plan/write.js.
+      const found = asked ? await resolveDestination(asked, { recent }) : null;
+      if (asked && !found) {
+        await notify.send(bot.telegram, ctx.chat.id, `❌ לא הצלחתי להבין איזה יעד זה: ${asked}`).catch(() => {});
         return;
       }
+      if (found) console.log(`trip: "${asked}" -> ${found.dest.he} (${found.how})`);
 
-      // Which destinations the feed has just been about, so the picker can skip
-      // them. The same history the deck's repeat notes are counted from.
-      const recent = store.recentPublished().slice(0, 12).map((p) => p.place);
-      const plan = await writePlan({ dest, days, recent });
+      const plan = await writePlan({ dest: found?.dest || null, days, recent });
       const cand = await toPlanCandidate(plan);
       await stage(cand);
 
@@ -2838,11 +2874,15 @@ function tick() {
       maybeRefreshIgToken().catch(() => {});
       maybeRefreshTikTokToken().catch(() => {});
     }
-    // Announce only the first pass of the day. The later ones are routine and a
-    // "0 staged" report every few hours is noise you would learn to ignore.
-    doRun({ target: remaining, announce: day !== lastAnnouncedDay }).then(() => {
-      lastAnnouncedDay = day;
-    }).catch((e) => console.error('gather failed:', e.message));
+    // THE TIMER NEVER ANNOUNCES. It used to report the first pass of each day,
+    // on the reasoning that the later ones were routine; the first one is
+    // routine too. A gather that produced cards announces itself perfectly well
+    // by sending the cards, and a gather that produced none is a report saying
+    // nothing happened, which is the definition of a message you learn to
+    // ignore. /run still reports, because a run you asked for is a question you
+    // are waiting on an answer to, and /status answers the same question at any
+    // other time.
+    doRun({ target: remaining, announce: false }).catch((e) => console.error('gather failed:', e.message));
   }
 
   quietCheck();
