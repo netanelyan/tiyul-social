@@ -76,6 +76,7 @@ import {
   scopeForMode,
   SCOPES as TK_SCOPES,
   TikTokError,
+  waitForPublish,
 } from '../src/publish/tiktok.js';
 import { codeFrom } from './tiktok-token.js';
 import { hyphensOnly, stripEmoji, capHashtags, normalise } from '../src/draft.js';
@@ -1678,6 +1679,49 @@ ok("an unaudited-client refusal is the card's problem", isCardLevelTikTok(unaudi
 ok('a mismatched privacy level is too', isCardLevelTikTok(new TikTokError('x', { step: 'init', code: 'privacy_level_option_mismatch' })));
 // The ones that really are the destination must still degrade it, or an outage
 // would be retried forever with no backoff and no alert.
+// The status poll, and the one coded error that is a TIMING window rather than
+// an argument. TikTok's status endpoint does not always know a publish_id its
+// own init endpoint minted a moment earlier, and the loop used to give up on
+// the first sight of any code at all: "after 1 attempts: invalid_publish_id".
+//
+// Reported as a publish failure, on a video that was already on its way to the
+// inbox. So the card went back round to be delivered a second time and the
+// destination collected a failure it did not earn, which after three of them
+// latches it degraded and holds every good post behind it.
+{
+  const realFetch = globalThis.fetch;
+  // TikTok's envelope: an error is `error: {code, message}`, and the specific
+  // problem is in the MESSAGE while the code is a generic bucket.
+  const fail = (code, message) => ({ error: { code, message, log_id: 'L1' } });
+  const fine = (status) => ({ data: { status }, error: { code: 'ok' } });
+  const replies = (seq) => {
+    let i = 0;
+    return async () => ({ ok: true, status: 200, json: async () => seq[Math.min(i++, seq.length - 1)] });
+  };
+  const poll = () =>
+    waitForPublish('p_inbox_url~v2.1', 'tok', { intervalMs: 0 }).then((d) => d.status, (e) => e);
+
+  globalThis.fetch = replies([fail('invalid_params', 'invalid_publish_id'), fine('SEND_TO_USER_INBOX')]);
+  eq('a publish_id the status endpoint has not caught up with is asked again', await poll(), 'SEND_TO_USER_INBOX');
+
+  globalThis.fetch = replies([fail('invalid_params', 'invalid_publish_id')]);
+  const forever = await poll();
+  ok('but not forever', forever instanceof TikTokError && /after 4 attempts/.test(forever.message), forever?.message);
+
+  // Everything else keeps failing on the first poll. Asking a dead token three
+  // more times is three wasted calls and a promise that cannot be kept.
+  globalThis.fetch = replies([fail('access_token_invalid', 'token is invalid')]);
+  const dead = await poll();
+  ok('a dead token still gives up at once', dead instanceof TikTokError && /after 1 attempts/.test(dead.message), dead?.message);
+
+  // And TikTok saying the publish itself failed is still a failure, not a retry.
+  globalThis.fetch = replies([fine('FAILED')]);
+  const refused = await poll();
+  ok('a FAILED status is not retried into a success', refused instanceof TikTokError && /publish failed/.test(refused.message), refused?.message);
+
+  globalThis.fetch = realFetch;
+}
+
 ok('a dead token is NOT', !isCardLevelTikTok(new TikTokError('x', { step: 'init', code: 'access_token_invalid' })));
 ok('nor is an unknown server error', !isCardLevelTikTok(new TikTokError('x', { step: 'init', code: 'internal_error' })));
 ok('nor is a plain Error from somewhere else', !isCardLevelTikTok(new Error('socket hang up')));

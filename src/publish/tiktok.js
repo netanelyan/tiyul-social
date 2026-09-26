@@ -510,7 +510,11 @@ export function nextPrivacy(current, options = []) {
 
 // TikTok downloads the image itself, so "initialised" is not "published".
 // Polling turns a generic later failure into a named one we can print.
-async function waitForPublish(publishId, tok, { timeoutMs = 120_000, intervalMs = 4_000 } = {}) {
+// Exported for the selftest, which drives it against a stubbed fetch with
+// intervalMs: 0. The retry rule below is not observable any other way - from
+// outside, a poll that was retried and a poll that succeeded look identical,
+// which is exactly how the bug lived here unnoticed.
+export async function waitForPublish(publishId, tok, { timeoutMs = 120_000, intervalMs = 4_000 } = {}) {
   const deadline = Date.now() + timeoutMs;
   let last = null;
   // One transient poll failure is not a failed post. The photos are already
@@ -520,6 +524,31 @@ async function waitForPublish(publishId, tok, { timeoutMs = 120_000, intervalMs 
   // round to be posted a second time.
   let pollErrors = 0;
   const POLL_ERRORS_ALLOWED = 3;
+
+  // `invalid_publish_id` IS A RACE, NOT A BAD ARGUMENT.
+  //
+  // The first poll goes out the instant init returns, and TikTok's status
+  // endpoint does not always know a publish_id its own init endpoint minted a
+  // moment earlier. So the same upload succeeds five times and fails the sixth
+  // on an id TikTok handed us one line before, which is the shape of a timing
+  // window rather than of a malformed request.
+  //
+  // The `|| e.code` rule below is right for everything else: a bad token or a
+  // malformed body will refuse the next hundred asks identically, and retrying
+  // is three wasted calls and a promise that cannot be kept. This one code
+  // changes on its own within seconds, and short-circuiting on it threw away
+  // the protection the comment above describes, for the only error that needed
+  // it most.
+  //
+  // What it cost was not a scary message. The video was already on its way to
+  // the inbox, and a status read reported as a publish FAILURE sends the card
+  // back round to be delivered a second time, and charges the destination a
+  // failure it did not earn - which is what latches TikTok degraded and holds
+  // every good post behind it. "I do not see the draft" started here.
+  //
+  // Matched on the message because TikTok files it under the generic
+  // `invalid_params` code and names the real problem in `message`.
+  const stillSettling = (e) => /invalid_publish_id/i.test(e?.message || '');
 
   for (;;) {
     let d;
@@ -532,7 +561,7 @@ async function waitForPublish(publishId, tok, { timeoutMs = 120_000, intervalMs 
       pollErrors = 0;
     } catch (e) {
       // An auth or argument error will not fix itself by asking again.
-      if (++pollErrors > POLL_ERRORS_ALLOWED || e.code) {
+      if (++pollErrors > POLL_ERRORS_ALLOWED || (e.code && !stillSettling(e))) {
         throw new TikTokError(
           `could not read publish status for ${publishId} after ${pollErrors} attempts: ${e.message}`,
           { step: 'status', code: e.code, logId: e.logId }
