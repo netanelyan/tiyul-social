@@ -11,6 +11,7 @@ import { publishedSlideCount } from '../deck/follow.js';
 import { planText, planGiveaway } from './text.js';
 import { tripDecks, deckForSize, dayTotal, allStops, shekels } from './slides.js';
 import { COST_LINES } from './budget.js';
+import { withSiteShot } from './sitePage.js';
 
 // A written itinerary becomes something the approval queue can carry.
 //
@@ -116,13 +117,26 @@ export async function renderPlan(plan, { sizes = ['instagram', 'tiktok'], outDir
   if (!want.length) throw new Error(`renderPlan: no known size in [${sizes.join(', ')}]`);
 
   const decks = tripDecks(plan, { text, giveaway });
+
+  // The screenshot, ONCE, before either size is drawn and before anything
+  // counts slides. A failure here clears `siteSlug` rather than being handled
+  // downstream, which puts the ordinary follow slide back and keeps the
+  // ten-image check below counting what will actually be published. See
+  // withSiteShot.
+  const first = deckForSize(decks, want[0]);
+  const { deck: probed, shot: siteShot, why: siteWhy } = await withSiteShot(first);
+  const siteOk = Boolean(probed.siteSlug);
+  if (siteWhy) console.log(`plan: no site slide (${siteWhy})`);
+
   const out = {};
   for (const size of want) {
     // The follow reason travels with the deck, so the closing slide the renderer
     // appends and the last line of the description are the same sentence. With
     // the giveaway on there is no closing slide at all and this is ignored: the
     // ask slide is already the follow ask. See src/deck/follow.js.
-    const deck = { ...deckForSize(decks, size), follow };
+    // `siteSlug` carried from the probe rather than from the deck, so a failed
+    // capture removes the slide from BOTH sizes and from the count.
+    const deck = { ...deckForSize(decks, size), follow, siteSlug: siteOk ? first.siteSlug : null };
     // The bound Instagram enforces at publish time, checked here where it can
     // still be acted on. A carousel over ten is rejected outright, hours after
     // the post was approved and by an error that names none of this.
@@ -137,7 +151,7 @@ export async function renderPlan(plan, { sizes = ['instagram', 'tiktok'], outDir
           'shorten the trip or lower plans.daysMax'
       );
     }
-    out[size] = await renderDeckSize(deck, { size, outDir });
+    out[size] = await renderDeckSize(deck, { size, outDir, siteShot });
   }
 
   return {
@@ -151,6 +165,9 @@ export async function renderPlan(plan, { sizes = ['instagram', 'tiktok'], outDir
       instagram: (out.instagram || []).map((s) => s.url),
     },
     slideCounts: Object.fromEntries(want.map((s) => [s, out[s].length])),
+    // Whether the closing slide is the screenshot or the ordinary follow ask.
+    // Read by the approval card, which says which one the post got.
+    siteSlide: siteOk,
   };
 }
 
@@ -242,6 +259,16 @@ export async function toPlanCandidate(plan, { targets = targetsForKind('plan'), 
       // The budget side of the plan, carried through so the approval card can
       // print the arithmetic rather than re-deriving it. All null on a plain
       // /trip, which is what the card's own conditionals key off.
+      // Where the itinerary came from, and the page it came from, so the
+      // approval card can say so and the published row can be told apart
+      // later. `siteSlide` is whether the screenshot actually made it: the
+      // capture can fail after the plan was built, and the card says which of
+      // the two endings this post got rather than leaving it to be discovered
+      // in the album.
+      source: withId.source || 'ai',
+      url: withId.url || null,
+      slug: withId.slug || null,
+      siteSlide: Boolean(rendered.siteSlide),
       budgetIls: withId.budgetIls || null,
       costs: withId.costs || null,
       stopsIls: withId.stopsIls ?? withId.total,
@@ -281,8 +308,11 @@ export async function toPlanCandidate(plan, { targets = targetsForKind('plan'), 
   // Both captions, drawn once each. The hook opens the Instagram caption because
   // a carousel has no title field; TikTok carries the title separately and its
   // description opens with the pin instead.
-  const instagram = planCaption(withId, { text, giveaway, titled: true, follow });
-  const tiktok = planCaption(withId, { text, giveaway, titled: false, follow });
+  // `target` is what lets the two captions differ on the one line that has to:
+  // Instagram can answer a comment with a link and TikTok cannot, so only one
+  // of them may ask for a comment. Everything else about them is the same.
+  const instagram = planCaption(withId, { text, giveaway, titled: true, follow, target: 'instagram' });
+  const tiktok = planCaption(withId, { text, giveaway, titled: false, follow, target: 'tiktok' });
   cand.instagramCaption = assertNoUrl(instagram, 'the plan caption');
   cand.tiktokCaption = assertNoUrl(tiktok, 'the plan description');
   cand.channelCaption = cand.instagramCaption;
@@ -322,8 +352,17 @@ export function planApprovalMessage(cand) {
     .map(([size, n]) => `${size === 'tiktok' ? 'טיקטוק' : 'אינסטגרם'} ${n}`)
     .join(' · ');
 
+  // WHOSE ITINERARY THIS IS, on the first line, because it is the thing that
+  // decides how hard the rest of the card has to be read. An AI plan is forty
+  // assertions nobody sourced and the card prints all of them for that reason;
+  // a site plan is the page's own itinerary, and the useful thing to check is
+  // that the page says what the slides say. So the URL goes on the line under
+  // it, where it can be opened.
+  const fromSite = p.source === 'site';
   const lines = [
-    `🗺️ מסלול AI · ${p.dest?.he || '—'} · ${p.days} ימים · ${counts || '—'} שקופיות`,
+    `🗺️ ${fromSite ? 'מסלול טיול+' : 'מסלול AI'} · ${p.dest?.he || '—'} · ${p.days} ימים · ${counts || '—'} שקופיות`,
+    ...(fromSite && p.url ? [`🔗 ${p.url}`] : []),
+    ...(fromSite && !p.siteSlide ? ['⚠️ השקופית עם צילום העמוד לא נוצרה - נסגר בשקופית מעקב רגילה'] : []),
     '',
     `✍️ ${cand.headline}`,
     '',

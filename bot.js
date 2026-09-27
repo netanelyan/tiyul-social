@@ -24,6 +24,7 @@ import { canonicalKind } from './src/sources/tiyulplus.js';
 import { KINDS, isSourcedKind } from './src/sources/places.js';
 import { resolveRequest } from './src/deck/request.js';
 import { parseTripArgs, BUDGET_MIN, BUDGET_MAX } from './src/plan/budget.js';
+import { startIgWebhook } from './src/igReplies/server.js';
 import { buildWithFallback, describeAttempt } from './src/deck/attempt.js';
 import { buildFreeformDeck } from './src/deck/build.js';
 import { searchConfigured, remaining as searchRemaining, dailyBudget as searchBudget } from './src/search.js';
@@ -1022,7 +1023,26 @@ async function publishNext(item = null) {
       cand.kind === 'deck' || cand.kind === 'plan'
         ? publishTelegramDeck(bot.telegram, CHANNEL_ID, cand)
         : publishTelegram(bot.telegram, CHANNEL_ID, cand),
-    instagram: () => publishInstagram(cand),
+    instagram: async () => {
+      const res = await publishInstagram(cand);
+      // REMEMBERED HERE, AFTER THE PUBLISH SUCCEEDED, because this is the only
+      // moment both halves exist: Instagram has just handed back the media id,
+      // and the candidate that knows which page the post was about is still in
+      // hand. A comment arriving in three days carries neither.
+      //
+      // Only for a post that HAS a page. A deck sourced from the map or from
+      // Wikidata has no `siteSlug`, no row is written, and a comment on it is
+      // ignored rather than answered with a link to somewhere it was not about.
+      const slug = cand.deck?.siteSlug || null;
+      if (res?.mediaId && slug) {
+        store.noteIgPost(res.mediaId, {
+          slug,
+          destHe: cand.deck?.where || '',
+          candidateId: cand.id,
+        });
+      }
+      return res;
+    },
     tiktok: () => publishTikTok(cand, { draft: Boolean(cand.tiktokDraft) }),
   };
   const errorText = {
@@ -2150,7 +2170,7 @@ ${why}`).catch(() => {});
  */
 const suggestPlan = billed('plan', suggestPlanJob);
 async function suggestPlanJob(asked, days, chatId = staging, budgetIls = null) {
-  const { writePlan, resolveDestination } = await import('./src/plan/write.js');
+  const { writePlan, resolveDestination, pickDestination } = await import('./src/plan/write.js');
   const { toPlanCandidate } = await import('./src/plan/candidate.js');
 
   // Which destinations the feed has just been about, so the picker can skip
@@ -2170,9 +2190,48 @@ async function suggestPlanJob(asked, days, chatId = staging, budgetIls = null) {
   }
   if (found) console.log(`trip: "${asked}" -> ${found.dest.he} (${found.how})`);
 
-  let plan;
+  // THE SITE FIRST, WHEN IT HAS THIS DESTINATION.
+  //
+  // The destination is chosen before either route runs, by the same weighted,
+  // recency-aware picker as before, so what changes here is where the
+  // itinerary comes from and not which places this account posts about. The
+  // site covers 37 of the 102 rows in destinations.json, so most plans still
+  // take the AI route, and a budget is an AI-only request: the site publishes
+  // a price band rather than prices, and there is nothing to plan against.
+  const { writeSitePlan } = await import('./src/plan/site.js');
+  const prefer = postConfig().plans.source.prefer;
+
+  // ONE DESTINATION, CHOSEN ONCE, FOR BOTH ROUTES.
+  //
+  // The site route needs it up front to know whether there is a page, and if
+  // the AI fallback picked its own afterwards then which city you got would
+  // depend on which route happened to answer - so a day the site was down
+  // would quietly change the subject of the post as well as its source.
+  const dest = found?.dest || pickDestination(recent);
+
+  let plan = null;
+  if (prefer === 'site' && !budgetIls) {
+    plan = await writeSitePlan({ dest, days }).catch((e) => {
+      // The site being unreachable is not a reason to refuse a plan: the AI
+      // route below is exactly the fallback for it. Logged rather than sent,
+      // because it is an infrastructure note and the owner asked for an
+      // itinerary.
+      console.log(`trip: site route failed (${e.message}), falling back`);
+      return null;
+    });
+    if (plan) console.log(`trip: ${plan.slug} from the site, ${plan.days.length} days`);
+  }
+  if (plan) {
+    const cand = await toPlanCandidate(plan);
+    await stage(cand);
+    if (plan.dropped?.length) {
+      await notify.send(bot.telegram, chatId, `⚠️ ${plan.dropped.length} שורות נפסלו בבנייה`).catch(() => {});
+    }
+    return cand;
+  }
+
   try {
-    plan = await writePlan({ dest: found?.dest || null, days, budgetIls, recent });
+    plan = await writePlan({ dest, days, budgetIls, recent });
   } catch (e) {
     // A plan that will not fit its budget is a RESULT, not a crash. The
     // planner is told to come back honest and over rather than cheap and
@@ -3545,6 +3604,10 @@ async function main() {
   // In this process rather than a service of its own, so pm2 supervises it and
   // so the token it writes goes through the same store this process holds open.
   startOAuthServer();
+  // The Instagram comment listener. Returns null and says so when either
+  // secret is missing, exactly as the admin site does with no users: an
+  // endpoint that sends direct messages must not come up unauthenticated.
+  startIgWebhook();
   console.log(`   daily run at ${RUN_HOUR}:00 · target ${dailyTarget()} · drip every ${POST_INTERVAL_MINUTES} min`);
   console.log(`   suggestions per day: ${dailyTarget()} cards · ${DECKS_PER_DAY} decks · ${CLIPS_PER_DAY} clips · ${SHOOTS_PER_DAY} shoots`);
 

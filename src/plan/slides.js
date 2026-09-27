@@ -58,7 +58,13 @@ export const stopSlide = (stop, { flag = null } = {}) => ({
   // is two facts, so it wraps — and when it wraps, whichever fact is second
   // gets broken across the line. A broken sentence still reads; a price with
   // its number on one line and its currency on the next does not.
-  bullets: [{ text: `${price(stop.costIls)} · ${stop.noteHe}` }],
+  //
+  // A SITE STOP HAS NO PRICE AT ALL, and null is how it says so. `price()`
+  // renders 0 as חינם, which is a claim: it says somebody checked and the
+  // place is free. On a site plan nobody checked, the site publishes a price
+  // band rather than a price, and printing חינם in front of every stop would
+  // be the plan's one invented fact.
+  bullets: [{ text: stop.costIls === null ? stop.noteHe : `${price(stop.costIls)} · ${stop.noteHe}` }],
   fields: [],
 });
 
@@ -78,12 +84,21 @@ export const stopSlide = (stop, { flag = null } = {}) => ({
  * lengths", and it is stated on the approval card so nobody discovers it from
  * the feed.
  */
-export const daySlide = (day, { flag = null, dayLabelHe = 'יום' } = {}) => ({
+export const daySlide = (day, { flag = null, dayLabelHe = 'יום', priced = true } = {}) => ({
   nameHe: `${dayLabelHe} · ${day.titleHe}`,
   nameEn: day.stops[0]?.nameEn || null,
   countryHe: null,
   flag,
-  bullets: [{ text: `${day.stops.map((s) => s.nameHe).join(' · ')} · ${price(dayTotal(day))}` }],
+  // Same rule as the stop slide: no subtotal on a plan that has no prices to
+  // total. The stops named in order are the whole of the line there, which is
+  // also the version that fits a five-stop day without wrapping.
+  bullets: [
+    {
+      text: priced
+        ? `${day.stops.map((s) => s.nameHe).join(' · ')} · ${price(dayTotal(day))}`
+        : day.stops.map((s) => s.nameHe).join(' · '),
+    },
+  ],
   fields: [],
   image: day.stops[0]?.image || null,
 });
@@ -202,7 +217,13 @@ export function tripDecks(plan, { text, giveaway = null }) {
   // and twelve slides of distance is far enough that this reads as a bookend
   // rather than as a repeat.
   const stops = allStops(plan);
-  const total = { ...totalSlide(plan, text), image: plan.coverImage || stops[0]?.image || null };
+
+  // NO TOTAL SLIDE ON A PLAN WITH NO PRICES. Not an empty one, and not a zero:
+  // the slide's whole content is a number, and a plan built from the site has
+  // no number to put there. What closes a site plan instead is the site slide
+  // (src/plan/sitePage.js), which is a better ending than an itemisation
+  // anyway, because it is the thing the post is trying to get somebody to open.
+  const total = text.priced ? { ...totalSlide(plan, text), image: plan.coverImage || stops[0]?.image || null } : null;
   const ask = giveaway ? { ...askSlide(giveaway), image: stops[0]?.image || plan.coverImage || null } : null;
 
   // The breakdown goes BEFORE the total, in both sets, and only when there is
@@ -217,10 +238,12 @@ export function tripDecks(plan, { text, giveaway = null }) {
     ? { ...breakdownSlide(plan, text), image: stops[stops.length - 1]?.image || plan.coverImage || null }
     : null;
 
-  const tail = [...(breakdown ? [breakdown] : []), total, ...(ask ? [ask] : [])];
+  const tail = [...(breakdown ? [breakdown] : []), ...(total ? [total] : []), ...(ask ? [ask] : [])];
 
   const full = stops.map((stop) => ({ ...stopSlide(stop, { flag }), image: stop.image || null }));
-  const short = plan.days.map((day, i) => daySlide(day, { flag, dayLabelHe: text.dayLabelFor(i + 1) }));
+  const short = plan.days.map((day, i) =>
+    daySlide(day, { flag, dayLabelHe: text.dayLabelFor(i + 1), priced: text.priced })
+  );
 
   const base = {
     id: `plan-${plan.id}`,
@@ -236,7 +259,16 @@ export function tripDecks(plan, { text, giveaway = null }) {
     // minimal gives. See the note at the top of render/deckTemplates.js.
     style: 'minimal',
     where: plan.dest.he,
-    category: 'מסלול AI',
+    category: plan.source === 'site' ? 'מסלול טיול+' : 'מסלול AI',
+    // The page this post is advertising, or null. Read by src/deck/follow.js to
+    // decide whether the deck closes on the site slide instead of the generic
+    // follow one, and by the caption to name the destination in its ask.
+    //
+    // A SLUG, NOT A SCREENSHOT. follow.js does the slide-count arithmetic that
+    // renderPlan checks against Instagram's ten, and it must keep running
+    // without a browser behind it: a field it can read off the deck is the
+    // whole reason that stays true.
+    siteSlug: plan.source === 'site' ? plan.slug || null : null,
   };
 
   return {

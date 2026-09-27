@@ -21,6 +21,10 @@ const FILE = process.env.STORE_PATH
   : fileURLToPath(new URL('../data/store.json', import.meta.url));
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+// The auto-reply ledgers' window. Declared up here with the other clocks
+// rather than beside the function that uses it, because load() runs at module
+// init and would reach it inside its temporal dead zone.
+const IG_REPLY_TTL_MS = 14 * DAY_MS;
 // Read lazily rather than at module load — store.js can be evaluated before
 // .env has been read. Same hoisting trap BrickDeal's deals.js documents.
 const ttlMs = () => Math.max(0, Number(process.env.SEEN_TTL_DAYS ?? '45')) * DAY_MS;
@@ -78,6 +82,29 @@ const empty = {
   // shapes alternate across days rather than only inside one batch — see
   // lastClipShape further down.
   clipShapes: [],
+  // Instagram media id -> what that post was about, for the auto-reply.
+  //
+  // WITHOUT THIS THE WEBHOOK CANNOT ANSWER ANYTHING. A comment arrives naming
+  // only the media it is on, and the reply has to carry the right destination
+  // page with the right campaign tag on it. Neither is derivable from the
+  // comment: the candidate that produced the post is long out of staging by
+  // the time anybody comments, and the queue does not keep it.
+  //
+  // It is also the safety rule. A comment on a post with no row here is
+  // IGNORED rather than answered generically, so a post from before this
+  // existed, or one published by hand, cannot produce a DM about a page it was
+  // never about.
+  igPosts: {},
+  // Comment ids already answered, and (media, commenter) pairs already
+  // answered, both -> when.
+  //
+  // Two keys for one rule, because Meta redelivers. A webhook that is not
+  // acknowledged fast enough arrives again, and a retry carries the SAME
+  // comment id, so the comment id is what stops a double DM for one comment.
+  // The pair is what stops somebody who comments five times under one post
+  // getting five DMs, which is the same message five times and reads as a bot
+  // malfunctioning.
+  igReplied: {},
   // { date: 'YYYY-MM-DD', count: n, rejected: n } — the daily cap, survives restart.
   stagedDay: null,
   // When a card last reached the approval chat, and when something last went
@@ -146,6 +173,35 @@ function prunePublishedIds(s) {
     if (ts < cutoff) {
       delete s.publishedIds[id];
       changed = true;
+    }
+  }
+  return changed;
+}
+
+/**
+ * Both auto-reply ledgers, aged out on Meta's own window.
+ *
+ * SEVEN DAYS IS NOT A TIDINESS NUMBER HERE. Meta refuses a private reply more
+ * than seven days after the comment was made, so a post older than that can
+ * no longer be answered and a row for it can never be used again. Keeping a
+ * fortnight is slack for clock skew and for a comment that arrives on day
+ * seven; keeping them forever would grow the file that gets rewritten on every
+ * save with rows that are, by the platform's own rule, dead.
+ *
+ * The dedupe ledger outlives the post ledger deliberately. If a row expired
+ * first, a redelivered webhook for a comment already answered would find no
+ * record, and the reply that cannot be sent twice would be attempted twice.
+ */
+function pruneIgReplies(s) {
+  const cutoff = Date.now() - IG_REPLY_TTL_MS;
+  let changed = false;
+  for (const key of ['igPosts', 'igReplied']) {
+    for (const [id, row] of Object.entries(s[key] || {})) {
+      const ts = typeof row === 'number' ? row : row?.ts || 0;
+      if (ts < cutoff) {
+        delete s[key][id];
+        changed = true;
+      }
     }
   }
   return changed;
@@ -248,6 +304,16 @@ function load() {
     s.publishedIds = {};
     migrated = true;
   }
+  // Stores written before the auto-reply existed. Nothing to backfill - a post
+  // published before this shipped has no record of which page it was about and
+  // is correctly unanswerable - so this only has to make the keys exist, or
+  // every read below would be against undefined.
+  for (const key of ['igPosts', 'igReplied']) {
+    if (!s[key] || typeof s[key] !== 'object') {
+      s[key] = {};
+      migrated = true;
+    }
+  }
   for (const p of s.published) {
     if (p?.id && !s.publishedIds[p.id]) {
       s.publishedIds[p.id] = p.ts || Date.now();
@@ -326,7 +392,7 @@ function load() {
   // with something to drop was the last one to run at all — harmless while
   // every collection was pruned again on write, and not something to build a
   // fifth collection on top of.
-  const pruned = [pruneSeen(s), prunePublished(s), prunePublishedIds(s), pruneClipsUsed(s)];
+  const pruned = [pruneSeen(s), prunePublished(s), prunePublishedIds(s), pruneClipsUsed(s), pruneIgReplies(s)];
   if (pruned.some(Boolean) || migrated) save(s);
   return s;
 }
@@ -421,6 +487,89 @@ export function markClipUsed(pexelsId) {
   state.clipsUsed[String(pexelsId)] = Date.now();
   pruneClipsUsed(state);
   save();
+}
+
+// --- the Instagram auto-reply ledgers ---------------------------------------
+
+/**
+ * Remember what a published Instagram post was about.
+ *
+ * Called after a SUCCESSFUL publish, with the media id Instagram returned.
+ * Everything the reply needs is here, because none of it can be recovered
+ * later: the candidate is gone from staging, and the comment that arrives in
+ * three days names only the media.
+ */
+export function noteIgPost(mediaId, { slug, destHe, candidateId }) {
+  if (!mediaId || !slug) return;
+  state.igPosts[String(mediaId)] = {
+    slug: String(slug),
+    destHe: String(destHe || ''),
+    candidateId: String(candidateId || ''),
+    ts: Date.now(),
+  };
+  pruneIgReplies(state);
+  save();
+}
+
+/** What that post was about, or null for one this program did not publish. */
+export const igPost = (mediaId) => state.igPosts[String(mediaId || '')] || null;
+
+/** How many posts are currently answerable. For /status. */
+export const igPostCount = () => Object.keys(state.igPosts || {}).length;
+
+/**
+ * Claim the right to answer one comment, or find it already claimed.
+ *
+ * WRITTEN BEFORE THE SEND, NOT AFTER, and that is the whole design. Meta
+ * redelivers a webhook it did not get a fast 200 for, and the send is the slow
+ * part: recording afterwards leaves a window in which the same comment is
+ * being answered twice concurrently, which is the one failure Meta itself
+ * punishes (error 2534014, one private reply per comment). Claiming first
+ * means a duplicate delivery loses the race and does nothing.
+ *
+ * The cost of claiming first is that a send which then fails is never
+ * retried. That is the right trade here: a missed reply is a disappointment,
+ * and a double reply is a spam report.
+ *
+ * Returns true when the claim was granted.
+ */
+export function claimIgReply(commentId, { mediaId = '', userId = '' } = {}) {
+  const keys = [`c:${commentId}`, userId ? `u:${mediaId}:${userId}` : null].filter(Boolean);
+  if (!commentId) return false;
+  if (keys.some((k) => state.igReplied[k])) return false;
+  const now = Date.now();
+  for (const k of keys) state.igReplied[k] = { ts: now };
+  pruneIgReplies(state);
+  save();
+  return true;
+}
+
+/** Whether this comment, or this person under this post, has been answered. */
+export const igReplied = (commentId, { mediaId = '', userId = '' } = {}) =>
+  Boolean(
+    state.igReplied[`c:${commentId}`] || (userId && state.igReplied[`u:${mediaId}:${userId}`])
+  );
+
+/**
+ * Give a claim back, for a send that failed before it reached Meta.
+ *
+ * Only safe for failures that happened BEFORE the request went out - a config
+ * error, a missing token. A failure after the request cannot be told apart
+ * from a success that lost its response, and releasing that one is how the
+ * same person gets two DMs.
+ */
+export function releaseIgReply(commentId, { mediaId = '', userId = '' } = {}) {
+  delete state.igReplied[`c:${commentId}`];
+  if (userId) delete state.igReplied[`u:${mediaId}:${userId}`];
+  save();
+}
+
+/** How many replies went out in the last hour, for the cap. */
+export function igRepliesLastHour(now = Date.now()) {
+  const cutoff = now - 60 * 60 * 1000;
+  return Object.entries(state.igReplied || {}).filter(
+    ([k, row]) => k.startsWith('c:') && (row?.ts || 0) >= cutoff
+  ).length;
 }
 
 /**

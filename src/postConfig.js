@@ -68,8 +68,11 @@ export function postConfig() {
   // Checked HERE rather than at build time. A CTA with a domain in it would
   // otherwise throw once per post, from assertNoUrl, deep inside a build — and
   // the thing that is actually broken is this file.
-  for (const c of ctas) {
-    if (URL_LIKE.test(c)) {
+  // The two site asks are checked with them. They are the likeliest strings in
+  // the whole file to be given an address, because they are the only ones
+  // whose subject IS a web page.
+  for (const c of [...ctas, caption.siteCtaBioHe, caption.siteCtaDmHe].filter(Boolean)) {
+    if (URL_LIKE.test(String(c))) {
       throw new Error(
         `post-config.json: caption ask "${c}" contains a URL - the link lives in the bio, the caption says so in words`
       );
@@ -136,6 +139,13 @@ export function postConfig() {
       // above 1 is an ask on every post, which the brief calls the opposite of
       // soft, and a negative one silently turns the feature off.
       ctaShare: Math.max(0, Math.min(1, num(caption.ctaShare, 0))),
+      // The two asks used INSTEAD of the pool when the post is about a
+      // destination the site has a page for. Not gated by ctaShare: the share
+      // exists so a generic ask does not appear on every post and read as a
+      // signature, and these are not generic. See the comment beside them in
+      // post-config.json.
+      siteCtaBioHe: String(caption.siteCtaBioHe || 'המסלול המלא ל{dest}, עם מפה, בלינק בביו'),
+      siteCtaDmHe: String(caption.siteCtaDmHe || 'תגיבו "{dest}" ונשלח לכם את המסלול המלא בהודעה'),
     },
     hashtags: {
       broad,
@@ -194,6 +204,7 @@ export function postConfig() {
     // `postConfig().angles` says.
     shoot: shoot(raw.shoot || {}, angles),
     plans: plans(raw.plans || {}),
+    igReplies: igReplies(raw.igReplies || {}),
     schedule: schedule(raw.schedule || {}),
     // English country name from the vision judge -> Hebrew, for the place
     // formats. Keyed on free text a model produced, which is why it is separate
@@ -631,12 +642,22 @@ function plans(raw) {
   // Checked here, like caption.cta, so a domain typed into the ask fails once
   // at startup instead of once per post from inside a build. Every string in
   // this block can reach a published caption or a rendered slide.
+  //
+  // `sitePage.*` is in the list for the same reason the hooks are: it is drawn
+  // onto the last slide of a published slideshow, and the whole point of that
+  // slide is to be about a website, which is exactly the sentence somebody
+  // would be tempted to put an address into.
   for (const [where, s] of [
     ['giveaway.captionHe', g.captionHe],
     ['giveaway.actionHe', g.actionHe],
     ['giveaway.prizeHe', g.prizeHe],
     ['giveaway.titleHe', g.titleHe],
     ['hookHe', raw.hookHe],
+    ['hookSiteHe', raw.hookSiteHe],
+    ['sitePage.titleHe', raw.sitePage?.titleHe],
+    ['sitePage.noteHe', raw.sitePage?.noteHe],
+    ['sitePage.ctaBioHe', raw.sitePage?.ctaBioHe],
+    ['sitePage.ctaDmHe', raw.sitePage?.ctaDmHe],
     ['hookBudgetHe', raw.hookBudgetHe],
     ['breakdownLabelHe', raw.breakdownLabelHe],
     ['leftHe', raw.leftHe],
@@ -677,6 +698,20 @@ function plans(raw) {
     // cover, and `totalNoteBudgetHe` says the total includes a flight. Printing
     // either on a plain /trip would be a lie, which is why neither has a
     // fallback to its unbudgeted twin.
+    // Which route writes the itinerary. `prefer` is validated against the two
+    // names rather than passed through, because a typo here would silently
+    // disable the site route and look exactly like the site being down.
+    source: {
+      prefer: ['site', 'ai'].includes(String(raw.source?.prefer || 'site')) ? String(raw.source?.prefer) : 'site',
+      minDays: Math.max(daysMin, Math.round(num(raw.source?.minDays, daysMin))),
+    },
+    hookSiteHe: String(raw.hookSiteHe || '{days} ימים ב{dest}, המסלול של טיול+'),
+    sitePage: {
+      titleHe: String(raw.sitePage?.titleHe || 'המסלול המלא ל{dest}'),
+      noteHe: String(raw.sitePage?.noteHe ?? 'עם מפה, ואפשר לשנות כל יום'),
+      ctaBioHe: String(raw.sitePage?.ctaBioHe || 'חינם, בלי הרשמה · הלינק בביו'),
+      ctaDmHe: String(raw.sitePage?.ctaDmHe || 'תגיבו "{dest}" ונשלח לכם את הלינק'),
+    },
     hookBudgetHe: String(raw.hookBudgetHe || '{budget} ₪ ל-{days} ימים ב{dest}. ככה.'),
     breakdownLabelHe: String(raw.breakdownLabelHe || 'על מה הולך הכסף'),
     attractionsHe: String(raw.attractionsHe || 'כניסות'),
@@ -712,6 +747,69 @@ function plans(raw) {
  * failed to parse and silently fell back to "noon to two" would suppress the
  * queue for twenty-two hours a day and look exactly like a quiet bot.
  */
+/**
+ * The Instagram auto-reply block.
+ *
+ * THE ONE STRING IN THIS FILE THAT IS SUPPOSED TO CARRY A LINK, and the
+ * checking is therefore backwards from everywhere else. Every other published
+ * string is refused if it contains an address; this one is refused if it does
+ * NOT contain the placeholder, and refused separately if it contains a literal
+ * address instead.
+ *
+ * Both halves matter and they catch different mistakes. A DM with no {url} is
+ * a reply that promises a link and sends a sentence, which is worse than not
+ * replying. A DM with a hardcoded address sends everybody to the same page
+ * with no campaign on it, so the traffic this whole change exists to create
+ * arrives unattributed and the next decision about it gets made on no data.
+ *
+ * Checked even when `on` is false. A block that fails only once somebody
+ * switches it on is a block that fails at the least convenient moment.
+ */
+function igReplies(raw) {
+  const on = raw.on === true;
+  const dmHe = String(raw.dmHe || '').trim();
+
+  if (dmHe) {
+    if (!dmHe.includes('{url}')) {
+      throw new Error('post-config.json: igReplies.dmHe has no {url} - the reply would promise a link and send none');
+    }
+    // The placeholder is removed before the check, so the pattern that finds a
+    // domain cannot fire on the thing that is going to become one.
+    if (URL_LIKE.test(dmHe.replace(/\{url\}/g, ''))) {
+      throw new Error(
+        'post-config.json: igReplies.dmHe carries an address - the link is built per post with its own campaign tag'
+      );
+    }
+  } else if (on) {
+    throw new Error('post-config.json: igReplies.on is true with no dmHe - there is nothing to send');
+  }
+
+  for (const [where, s] of [
+    ['publicReplyHe', raw.publicReplyHe],
+    ['keywords', (raw.keywords || []).join(' ')],
+  ]) {
+    if (s && URL_LIKE.test(String(s))) throw new Error(`post-config.json: igReplies.${where} contains a URL`);
+  }
+
+  return {
+    on,
+    // A ceiling on how many strangers this can message in an hour. Not a rate
+    // limit for Meta's sake - theirs is far higher - but a blast radius. A
+    // matcher bug that starts answering every comment on every post is a
+    // spam report against the account, and the account is not replaceable.
+    hourlyCap: Math.max(1, Math.round(num(raw.hourlyCap, 30))),
+    // Whole words only, matched in src/igReplies/match.js. A substring match
+    // on "לינק" would fire on any word containing it.
+    keywords: (raw.keywords || []).map((k) => String(k).trim()).filter(Boolean),
+    dmHe,
+    // Optional. An empty string is how somebody turns the public half off
+    // while keeping the DM, which is the half that matters.
+    publicReplyHe: String(raw.publicReplyHe || '').trim(),
+    utmSource: String(raw.utmSource || 'instagram').trim(),
+    utmMedium: String(raw.utmMedium || 'dm').trim(),
+  };
+}
+
 function schedule(raw) {
   const windows = (Array.isArray(raw.windows) ? raw.windows : [])
     .map((w) => pair(w, null))

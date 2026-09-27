@@ -255,7 +255,28 @@ export function captionQuestion({ rand = Math.random } = {}) {
  * here, so an ask with a URL in it fails once, loudly, at startup, instead of
  * once per post from inside a build.
  */
-export function captionCta({ rand = Math.random, share = null } = {}) {
+export function captionCta({ rand = Math.random, share = null, siteSlug = null, destHe = null, target = null } = {}) {
+  // A POST ABOUT A PAGE WE HAVE GETS A DIFFERENT ASK, and it is not drawn from
+  // the pool at all.
+  //
+  // The pool's entries are good generic asks and exactly one of the six points
+  // at the bio, so a post about a destination the site covers mentioned it
+  // roughly one time in six, and never said what was there. That is the whole
+  // of the 1-in-6 problem: the account's reason to exist was a one-in-six
+  // chance of a vague pointer. When there IS a page, the ask names the
+  // destination and says what is on it, every time.
+  //
+  // Instagram's version asks for a comment instead of pointing at the bio,
+  // because with igReplies on a comment is a route to a real tappable link and
+  // the bio is not. It is only offered when the replies are actually switched
+  // on: an ask nothing answers is the giveaway's mistake.
+  if (siteSlug && destHe) {
+    const cfg = postConfig();
+    const canDm = target === 'instagram' && cfg.igReplies.on;
+    const line = canDm ? cfg.caption.siteCtaDmHe : cfg.caption.siteCtaBioHe;
+    if (line) return line.replace(/\{dest\}/g, destHe);
+  }
+
   const { ctas, ctaShare } = postConfig().caption;
   const gate = share == null ? ctaShare : share;
   if (!ctas.length || gate <= 0) return null;
@@ -387,7 +408,11 @@ export function planCaption(plan, { text, giveaway = null, titled = false, ...op
     `📍 ${plan.dest.he}${plan.dest.country && plan.dest.country !== plan.dest.he ? `, ${plan.dest.country}` : ''} · ${plan.days.length} ימים`,
     captionQuestion(opts),
     giveaway?.captionHe || null,
-    giveaway ? null : captionCta(opts),
+    // The site ask, when this plan came from a page we have. `siteSlug` and
+    // `destHe` are what switch captionCta off the random pool; `target` is
+    // what decides between the bio wording and the comment one, because only
+    // Instagram can turn a comment into a link.
+    giveaway ? null : captionCta({ ...opts, siteSlug: plan.slug || null, destHe: plan.dest.he, target: opts.target || null }),
     // The follow reason, and the giveaway line replaces it rather than joining
     // it. ONE ASK PER POST is the rule above, and the giveaway IS a follow ask
     // with a reason attached - "עקבו ותגיבו רומא, ו-5 מכם מקבלים 30 יום
