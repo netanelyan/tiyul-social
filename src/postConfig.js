@@ -637,6 +637,10 @@ function plans(raw) {
     ['giveaway.prizeHe', g.prizeHe],
     ['giveaway.titleHe', g.titleHe],
     ['hookHe', raw.hookHe],
+    ['hookBudgetHe', raw.hookBudgetHe],
+    ['breakdownLabelHe', raw.breakdownLabelHe],
+    ['leftHe', raw.leftHe],
+    ['totalNoteBudgetHe', raw.totalNoteBudgetHe],
     ['askHe', raw.askHe],
   ]) {
     if (s && URL_LIKE.test(String(s))) {
@@ -666,6 +670,22 @@ function plans(raw) {
     // "4 ימים ברומא" with nothing qualifying it reads as the price of the trip.
     totalNoteHe: String(
       raw.totalNoteHe === undefined ? 'כניסות ואטרקציות בלבד - בלי טיסה ולינה' : raw.totalNoteHe
+    ).trim(),
+    // The budgeted variant's own strings. Separate from the four above rather
+    // than sharing them, because every one of them says something that is true
+    // of exactly one of the two shapes: `hookBudgetHe` puts a trip price on the
+    // cover, and `totalNoteBudgetHe` says the total includes a flight. Printing
+    // either on a plain /trip would be a lie, which is why neither has a
+    // fallback to its unbudgeted twin.
+    hookBudgetHe: String(raw.hookBudgetHe || '{budget} ₪ ל-{days} ימים ב{dest}. ככה.'),
+    breakdownLabelHe: String(raw.breakdownLabelHe || 'על מה הולך הכסף'),
+    attractionsHe: String(raw.attractionsHe || 'כניסות'),
+    leftHe: String(raw.leftHe || 'נשאר {left} ₪ מהתקציב'),
+    leftNoneHe: String(raw.leftNoneHe || 'בדיוק בתקציב'),
+    totalNoteBudgetHe: String(
+      raw.totalNoteBudgetHe === undefined
+        ? 'הכל כלול: טיסה, לינה, אוכל, תחבורה וכניסות'
+        : raw.totalNoteBudgetHe
     ).trim(),
     giveaway: {
       on: g.on === true,

@@ -6,6 +6,7 @@ import { modelFor, outputConfig } from '../models.js';
 import { isHebrew } from '../deck/hebrew.js';
 import { URL_LIKE } from '../urlLike.js';
 import { stripDashes } from '../dashes.js';
+import { shapeCosts, fixedTotal, budgetVerdict } from './budget.js';
 
 // The itinerary an AI wrote, which is the post.
 //
@@ -276,8 +277,44 @@ const SYSTEM = `אתה מתכנן מסלול טיול קצר בעברית, לז�
 
 החזר JSON בלבד.`;
 
-const systemFor = (stopsMin, stopsMax) =>
-  SYSTEM.replace('{STOPSMIN}', String(stopsMin)).replace('{STOPSMAX}', String(stopsMax));
+// WHAT A BUDGET ADDS TO THE BRIEF ABOVE, AND WHAT IT MUST NOT.
+//
+// The danger with a cap is not that the planner misses it. It is that the
+// planner MEETS it, by pricing a European city break at nothing: a 40 ₪ flight,
+// a free bed, four days of food for 90 ₪. Every other guard in this file passes
+// that plan, and it is obvious nonsense to the one person whose opinion counts,
+// the viewer who has flown somewhere.
+//
+// So the instruction is not "come in under the number". It is "choose cheaper
+// things", which is what a person with 1,200 ₪ actually does: the budget
+// airline, the hostel, the free viewpoint, the bakery instead of the restaurant.
+// A plan that cannot be built honestly at the number is supposed to come back
+// over it and be refused, because "this trip does not fit that budget" is a
+// true answer and a fabricated one is not.
+const BUDGET_RULES = `
+תקציב:
+- למטייל יש בדיוק {BUDGET} ₪ לאדם לכל הטיול. הכל נכנס פנימה: טיסה, לינה, אוכל,
+  תחבורה מקומית וכניסות.
+- החזר גם אובייקט costs עם ארבעה מספרים, לאדם, לכל הטיול כולו ולא ליום:
+  flightIls טיסה הלוך ושוב מישראל, lodgingIls לינה לכל הלילות,
+  foodIls אוכל לכל הימים, transitIls תחבורה מקומית לכל הטיול.
+- סכום ארבעת המספרים האלה ועוד כל מחירי העצירות חייב להיות קטן או שווה
+  ל-{BUDGET}. השאר שוליים קטנים, אל תתכנן בדיוק לסכום.
+
+איך עומדים בתקציב:
+- בוחרים דברים זולים יותר. חברת תעופה לואו-קוסט, הוסטל או דירה קטנה, שוק
+  ומאפייה במקום מסעדה, הליכה ותחבורה ציבורית, ותצפיות וכיכרות שהכניסה אליהן
+  חינם. ככה מטייל אמיתי עומד בתקציב.
+- אסור להוריד מחיר של דבר שבחרת כדי שהסכום יסתדר. מחיר לא אמיתי הוא הכישלון
+  היחיד שהצופה תופס מהמסך, והוא פוסל את הפוסט כולו.
+- אם היעד והימים האלה לא נכנסים בתקציב בשום דרך כנה, החזר את המסלול הכן והיקר
+  יותר. עדיף מסלול שנפסל על מסלול שמשקר.`;
+
+const systemFor = (stopsMin, stopsMax, budgetIls = null) =>
+  (budgetIls ? SYSTEM.replace('החזר JSON בלבד.', `${BUDGET_RULES.trim()}\n\nהחזר JSON בלבד.`) : SYSTEM)
+    .replace('{STOPSMIN}', String(stopsMin))
+    .replace('{STOPSMAX}', String(stopsMax))
+    .replace(/\{BUDGET\}/g, String(budgetIls || ''));
 
 // additionalProperties: false on every object, which the structured output API
 // requires rather than merely prefers — without it the whole request comes back
@@ -318,6 +355,35 @@ const SCHEMA = {
     },
   },
   required: ['days'],
+};
+
+/**
+ * The same schema with the fixed costs bolted on, for a budgeted plan.
+ *
+ * Built from SCHEMA rather than written out again, so a change to the day or
+ * stop shape cannot apply to one of the two and not the other. `costs` is
+ * REQUIRED here: a budgeted plan that came back without them would have a
+ * cover promising a trip price and no flight or bed behind it, which is the
+ * exact defect this whole path exists to prevent.
+ */
+const BUDGET_SCHEMA = {
+  ...SCHEMA,
+  properties: {
+    ...SCHEMA.properties,
+    costs: {
+      type: 'object',
+      additionalProperties: false,
+      description: 'עלויות קבועות לאדם, לכל הטיול כולו',
+      properties: {
+        flightIls: { type: 'integer', description: 'טיסה הלוך ושוב מישראל, לאדם' },
+        lodgingIls: { type: 'integer', description: 'לינה לכל הלילות, לאדם' },
+        foodIls: { type: 'integer', description: 'אוכל לכל ימי הטיול, לאדם' },
+        transitIls: { type: 'integer', description: 'תחבורה מקומית לכל הטיול, לאדם' },
+      },
+      required: ['flightIls', 'lodgingIls', 'foodIls', 'transitIls'],
+    },
+  },
+  required: [...SCHEMA.required, 'costs'],
 };
 
 /** A time that reads as a time. Anything else is dropped rather than printed. */
@@ -437,19 +503,23 @@ export const planTotal = (days) =>
  * itineraries against each other, and a plan that fails its shape check is a
  * plan to re-run rather than one to pick an alternative for.
  */
-export async function writePlan({ dest, days = null, rand = Math.random, recent = [] } = {}) {
+export async function writePlan({ dest, days = null, budgetIls = null, rand = Math.random, recent = [] } = {}) {
   const cfg = postConfig().plans;
   const want = Math.min(cfg.daysMax, Math.max(cfg.daysMin, Math.round(Number(days) || cfg.days)));
   const where = dest || pickDestination(recent, { rand });
   if (!where) throw new Error('no destination available - destinations.json is empty');
   if (!hasApiKey()) throw new Error('ANTHROPIC_API_KEY is not set');
 
+  const budget = Number(budgetIls) > 0 ? Math.round(Number(budgetIls)) : null;
+
   const user = [
     `היעד: ${where.he}${where.country && where.country !== where.he ? ` (${where.country})` : ''}.`,
     `מספר ימים: ${want}.`,
     'המטיילים: זוג ישראלי, טיסה קצרה, בלי רכב שכור אלא אם אין ברירה.',
+    ...(budget ? [`התקציב: ${budget} ₪ לאדם לכל הטיול, הכל כלול.`] : []),
     '',
     `החזר בדיוק ${want} ימים, לפי הסדר, ${cfg.stopsMin} עד ${cfg.stopsMax} עצירות בכל יום.`,
+    ...(budget ? ['החזר גם את אובייקט costs.'] : []),
   ].join('\n');
 
   const res = await getClient().messages.create({
@@ -458,8 +528,10 @@ export async function writePlan({ dest, days = null, rand = Math.random, recent 
     // Through the helper, not hand-built: Haiku rejects output_config.effort
     // with a 400, so the tier and the effort cannot be chosen independently —
     // see the note in src/models.js.
-    output_config: outputConfig(MODEL, EFFORT, SCHEMA),
-    system: [{ type: 'text', text: systemFor(cfg.stopsMin, cfg.stopsMax), cache_control: { type: 'ephemeral' } }],
+    output_config: outputConfig(MODEL, EFFORT, budget ? BUDGET_SCHEMA : SCHEMA),
+    system: [
+      { type: 'text', text: systemFor(cfg.stopsMin, cfg.stopsMax, budget), cache_control: { type: 'ephemeral' } },
+    ],
     messages: [{ role: 'user', content: user }],
   });
 
@@ -484,5 +556,38 @@ export async function writePlan({ dest, days = null, rand = Math.random, recent 
     throw err;
   }
 
-  return { dest: where, days: kept, total: planTotal(kept), dropped };
+  const stopsIls = planTotal(kept);
+  if (!budget) return { dest: where, days: kept, total: stopsIls, stopsIls, costs: null, budgetIls: null, dropped };
+
+  // FROM HERE DOWN THE COVER IS GOING TO CARRY A NUMBER, so the arithmetic
+  // behind it stops being an estimate nobody checks and becomes the claim the
+  // post is making. Each of these three failures ships a slideshow that argues
+  // with itself, so each one throws rather than being printed.
+  const parsed = JSON.parse(text);
+  const { costs, bad } = shapeCosts(parsed.costs, { days: want });
+  if (bad) {
+    const err = new Error(`the costs did not survive - ${bad}`);
+    err.dropped = [...dropped, bad];
+    throw err;
+  }
+
+  const total = stopsIls + fixedTotal(costs);
+  const verdict = budgetVerdict(total, budget);
+  if (verdict.over) {
+    const err = new Error(`${total} ₪ against a budget of ${budget} ₪ - over by ${-verdict.left}`);
+    err.dropped = dropped;
+    err.overBudget = true;
+    throw err;
+  }
+  // The other direction, and the one a planner under a cap actually reaches
+  // for: satisfy the number by pricing a European city break at nothing. A
+  // plan coming in under a third of its budget is not a bargain, it is a
+  // costing nobody who has flown anywhere will believe.
+  if (verdict.thin) {
+    const err = new Error(`${total} ₪ against a budget of ${budget} ₪ - too cheap to be true`);
+    err.dropped = dropped;
+    throw err;
+  }
+
+  return { dest: where, days: kept, total, stopsIls, costs, budgetIls: budget, left: verdict.left, dropped };
 }

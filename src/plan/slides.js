@@ -1,4 +1,5 @@
 import { COUNTRIES, flagFor } from '../deck/flags.js';
+import { breakdownLine } from './budget.js';
 
 // An itinerary, expressed as DECK SLIDES.
 //
@@ -94,13 +95,43 @@ export const daySlide = (day, { flag = null, dayLabelHe = 'יום' } = {}) => ({
 // the flag takes a line of its own, so it is a line of the slide spent on
 // decoration. It stays on the stop and day slides, where it means what it says.
 
-/** The total, as a slide. A number this size is the whole line. */
+/**
+ * Where the money went, as a slide. Budgeted plans only.
+ *
+ * ONE LINE, because that is all a slide has. The minimal template draws a name
+ * and a single note and ignores anything after it (render/deckTemplates.js), so
+ * the five figures are joined on one line with the separator the day slide
+ * already uses rather than stacked into a table that would not render.
+ *
+ * It earns its swipe by being the thing the cover implicitly promised. A viewer
+ * who stopped on "1,200 ₪ ל-5 ימים בפראג" is asking exactly one question, and
+ * this is the slide that answers it.
+ */
+export const breakdownSlide = (plan, text) => ({
+  nameHe: text.breakdownLabelHe,
+  nameEn: null,
+  countryHe: null,
+  flag: null,
+  bullets: [{ text: breakdownLine(plan.costs, plan.stopsIls, { attractionsHe: text.attractionsHe }) }],
+  fields: [],
+});
+
+/**
+ * The total, as a slide. A number this size is the whole line.
+ *
+ * The note under it is the one line that differs most between the two shapes.
+ * An unbudgeted plan has to qualify its total, because the sum is entrance fees
+ * and reads as the price of the trip. A budgeted one has already itemised the
+ * whole trip on the slide before this, so the qualification is redundant and
+ * the interesting number is what is left over: the cover said 1,200 and this
+ * says the plan came in at 1,188, which is the payoff the format is built on.
+ */
 export const totalSlide = (plan, text) => ({
   nameHe: `${shekels(plan.total)} ₪ ${text.perPersonHe}`,
   nameEn: null,
   countryHe: null,
   flag: null,
-  bullets: text.totalNoteHe ? [{ text: text.totalNoteHe }] : [],
+  bullets: (text.budgeted ? text.leftHe : text.totalNoteHe) ? [{ text: text.budgeted ? text.leftHe : text.totalNoteHe }] : [],
   fields: [],
 });
 
@@ -150,9 +181,15 @@ export function tripDecks(plan, { text, giveaway = null }) {
   const cover = {
     titleHe: text.hookHe,
     // The phrase the cover colours. It is a substring of the title or it is
-    // ignored — see coverTitle — so it is built from the same two facts the
-    // hook was built from rather than written separately.
-    emphasisHe: `${plan.days.length} ימים ב${plan.dest.he}`,
+    // ignored — see coverTitle — so it is built from the same facts the hook
+    // was built from rather than written separately.
+    //
+    // On a budgeted cover the coloured phrase is the NUMBER. It is what the
+    // post is about, it is what stops the scroll, and colouring "5 ימים בפראג"
+    // instead would emphasise the one part of that sentence nobody argues with.
+    emphasisHe: plan.budgetIls
+      ? `${shekels(plan.budgetIls)} ₪`
+      : `${plan.days.length} ימים ב${plan.dest.he}`,
   };
 
   // The last two slides carry a photograph too, and they borrow rather than
@@ -167,7 +204,20 @@ export function tripDecks(plan, { text, giveaway = null }) {
   const stops = allStops(plan);
   const total = { ...totalSlide(plan, text), image: plan.coverImage || stops[0]?.image || null };
   const ask = giveaway ? { ...askSlide(giveaway), image: stops[0]?.image || plan.coverImage || null } : null;
-  const tail = [total, ...(ask ? [ask] : [])];
+
+  // The breakdown goes BEFORE the total, in both sets, and only when there is
+  // a budget to break down. Order matters: the itemisation is the argument and
+  // the total is the conclusion, and a conclusion placed first is a number the
+  // viewer has no reason to believe.
+  //
+  // It borrows the LAST stop's photograph, the one furthest from the cover the
+  // total slide takes, so the closing three slides do not repeat a picture
+  // between them.
+  const breakdown = plan.budgetIls
+    ? { ...breakdownSlide(plan, text), image: stops[stops.length - 1]?.image || plan.coverImage || null }
+    : null;
+
+  const tail = [...(breakdown ? [breakdown] : []), total, ...(ask ? [ask] : [])];
 
   const full = stops.map((stop) => ({ ...stopSlide(stop, { flag }), image: stop.image || null }));
   const short = plan.days.map((day, i) => daySlide(day, { flag, dayLabelHe: text.dayLabelFor(i + 1) }));

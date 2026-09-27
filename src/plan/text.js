@@ -32,16 +32,42 @@ const fill = (tpl, vars) =>
 export function planText(plan) {
   const cfg = postConfig().plans;
   const days = plan.days.length;
-  const vars = { dest: plan.dest.he, days, country: plan.dest.country || plan.dest.he };
+  const money = (n) => Number(n || 0).toLocaleString('en-US');
+  // `budget` and `left` are only ever read by the budgeted templates, and a
+  // budgeted plan always carries both: src/plan/write.js throws rather than
+  // return one without them. Grouped, so an unbudgeted plan substitutes an
+  // empty string into a template that should never have been chosen for it,
+  // instead of the word "undefined" appearing on a cover.
+  const vars = {
+    dest: plan.dest.he,
+    days,
+    country: plan.dest.country || plan.dest.he,
+    budget: plan.budgetIls ? money(plan.budgetIls) : '',
+    left: plan.budgetIls ? money(plan.left) : '',
+  };
+
+  // WHICH COVER AND WHICH DISCLAIMER, decided once, here.
+  //
+  // The two pairs are not interchangeable and the wrong pairing is the failure
+  // this format was most likely to ship: a cover promising a trip for 1,200 ₪
+  // over a total slide explaining that the figure excludes the flight. Picking
+  // both off the same flag is what makes that combination unreachable.
+  const budgeted = Boolean(plan.budgetIls);
 
   const text = {
+    budgeted,
     askWhoHe: cfg.askWhoHe,
     askHe: fill(cfg.askHe, vars),
-    hookHe: fill(cfg.hookHe, vars),
+    hookHe: fill(budgeted ? cfg.hookBudgetHe : cfg.hookHe, vars),
     hookSubHe: fill(cfg.hookSubHe, vars),
     totalLabelHe: fill(cfg.totalLabelHe, vars),
     perPersonHe: fill(cfg.perPersonHe, vars),
-    totalNoteHe: fill(cfg.totalNoteHe, vars),
+    totalNoteHe: fill(budgeted ? cfg.totalNoteBudgetHe : cfg.totalNoteHe, vars),
+    breakdownLabelHe: fill(cfg.breakdownLabelHe, vars),
+    attractionsHe: cfg.attractionsHe,
+    // "נשאר 0 ₪" is a sentence nobody writes. Coming in exactly on the number
+    // is a better outcome than coming in under it and deserves to say so.
+    leftHe: fill(plan.left === 0 ? cfg.leftNoneHe : cfg.leftHe, vars),
     // A function rather than a string, because the day number is the one
     // variable the caller has and this module does not.
     dayLabelFor: (n) => fill(cfg.dayLabelHe, { ...vars, n }),

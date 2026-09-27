@@ -5650,6 +5650,156 @@ group('the itinerary slideshow - what it says, and what it promises');
 }
 
 /* -------------------------------------------------------------------------- */
+group('a plan with a number on the cover');
+
+{
+  const { parseTripArgs, shapeCosts, fixedTotal, budgetVerdict, breakdownLine, BUDGET_MIN } = await import(
+    '../src/plan/budget.js'
+  );
+  const { tripDecks, deckForSize } = await import('../src/plan/slides.js');
+  const { planText } = await import('../src/plan/text.js');
+  const { planApprovalMessage } = await import('../src/plan/candidate.js');
+
+  // THE ARGUMENT THAT USED TO BE SWALLOWED.
+  //
+  // The old parser took the last run of digits as days whatever it was, so
+  // "/trip פראג 5 1200" planned a trip to a place called "פראג 5" for 1200
+  // days, clamped to 5, and dropped the budget without a word. It looked like
+  // it had worked, which is why this is the first thing tested.
+  const p = (s) => parseTripArgs(s);
+  eq('a destination, days and a budget', JSON.stringify(p('פראג 5 1200')),
+    JSON.stringify({ asked: 'פראג', days: 5, budgetIls: 1200, error: null }));
+  eq('the budget alone', p('פראג 1200').budgetIls, 1200);
+  eq('and it does not become the day count', p('פראג 1200').days, null);
+  eq('days alone still mean days', p('רומא 5').days, 5);
+  eq('with no budget attached', p('רומא 5').budgetIls, null);
+  eq('a bare number is days, as it always was', p('5').days, 5);
+
+  // The split is at the budget floor, NOT at the day ceiling. /trip רומא 7 has
+  // always meant seven days clamped to five, and a parser that called it a
+  // seven shekel budget would turn a working command into an error.
+  eq('a day count over the maximum is still days', p('רומא 7').days, 7);
+  eq('and is not mistaken for money', p('רומא 7').budgetIls, null);
+
+  // An explicit mark beats the magnitude, so a number that is obviously money
+  // is refused for being too small rather than silently planned as days.
+  ok('a marked number under the floor is refused', Boolean(p('פראג ב-300').error));
+  eq('and no budget comes back from it', p('פראג ב-300').budgetIls, null);
+  eq('a shekel sign is read as money', p('פראג 5 1200₪').budgetIls, 1200);
+  eq('and so is a grouped number', p('פראג 5 1,200').budgetIls, 1200);
+  ok('two budgets are refused', Boolean(p('פראג 1200 1500').error));
+  eq('nothing at all is not an error', p('').error, null);
+
+  // THE COSTS, which are the difference between this and a plain /trip.
+  const good = { flightIls: 420, lodgingIls: 300, foodIls: 280, transitIls: 60 };
+  eq('four lines sum to the fixed cost', fixedTotal(good), 1060);
+  ok('a good set survives', shapeCosts(good, { days: 5 }).costs !== null);
+  // A trip with no flight and no bed is a day out. Both are the model
+  // satisfying a cap by deleting the two largest numbers on the page.
+  ok('a free flight is refused', Boolean(shapeCosts({ ...good, flightIls: 0 }, { days: 5 }).bad));
+  ok('a free bed is refused', Boolean(shapeCosts({ ...good, lodgingIls: 0 }, { days: 5 }).bad));
+  // Food is per trip, not per day, and confusing the two is a factor of five.
+  ok('food priced per day is refused', Boolean(shapeCosts({ ...good, foodIls: 60 }, { days: 5 }).bad));
+  ok('and an absurd flight is refused', Boolean(shapeCosts({ ...good, flightIls: 99999 }, { days: 5 }).bad));
+
+  // THE VERDICT. Over is the only failing direction a reader can catch from
+  // the screen, and thin is the one they catch from experience.
+  ok('under budget is fine', !budgetVerdict(1188, 1200).over);
+  eq('and says what is left', budgetVerdict(1188, 1200).left, 12);
+  ok('exactly on budget is not over', !budgetVerdict(1200, 1200).over);
+  ok('over budget fails', budgetVerdict(1340, 1200).over);
+  ok('and a plan too cheap to be true fails too', budgetVerdict(300, 1200).thin);
+  ok('no budget means no verdict', !budgetVerdict(1188, null).on);
+
+  // One line, because a minimal slide renders exactly one bullet.
+  const line = breakdownLine(good, 128, { attractionsHe: 'כניסות' });
+  eq('the breakdown is a single line', line.split('\n').length, 1);
+  ok('and carries all five figures', ['420', '300', '280', '60', '128'].every((n) => line.includes(n)));
+
+  const budgeted = {
+    id: 'testplan0002',
+    dest: { id: 'prague', he: 'פראג', en: 'Prague', country: "צ'כיה" },
+    days: [
+      { n: 1, titleHe: 'העיר העתיקה', stops: [
+        { timeHe: '09:30', nameHe: 'גשר קארל', nameEn: 'Charles Bridge', noteHe: 'מוקדם בבוקר', costIls: 0 },
+        { timeHe: '13:00', nameHe: 'טירת פראג', nameEn: 'Prague Castle', noteHe: 'כרטיס משולב', costIls: 110 },
+      ] },
+      { n: 2, titleHe: 'העיר החדשה', stops: [
+        { timeHe: '10:00', nameHe: 'כיכר ואצלב', nameEn: 'Wenceslas Square', noteHe: 'הליכה קצרה', costIls: 18 },
+      ] },
+    ],
+    stopsIls: 128,
+    costs: good,
+    budgetIls: 1200,
+    left: 12,
+    total: 1188,
+  };
+  const plain = { ...budgeted, costs: null, budgetIls: null, left: undefined, total: 128, stopsIls: 128 };
+
+  // THE PAIRING THAT MUST BE UNREACHABLE: a cover promising a trip for 1,200 ₪
+  // over a total slide explaining the figure excludes the flight. Both strings
+  // are chosen off one flag so the wrong combination cannot be assembled.
+  const bText = planText(budgeted);
+  const pText = planText(plain);
+  ok('a budgeted cover carries the number', bText.hookHe.includes('1,200'));
+  ok('and says how many days and where', bText.hookHe.includes('פראג'));
+  ok('a plain cover does not invent one', !/\d,\d{3}/.test(pText.hookHe));
+  ok('the budgeted total says everything is included', bText.totalNoteHe.includes('טיסה'));
+  ok('the plain total says the opposite', pText.totalNoteHe.includes('בלי טיסה'));
+  ok('and the two are never the same sentence', bText.totalNoteHe !== pText.totalNoteHe);
+  ok('what is left over is said', bText.leftHe.includes('12'));
+  // "נשאר 0 ₪" is a sentence nobody writes.
+  ok('landing exactly on the number reads as that',
+    !planText({ ...budgeted, left: 0, total: 1200 }).leftHe.includes('0 ₪'));
+
+  // THE SLIDES. The itemisation is the argument and the total is the
+  // conclusion, so the order between them is load bearing.
+  const bDecks = tripDecks(budgeted, { text: bText, giveaway: null });
+  const bFull = deckForSize(bDecks, 'tiktok');
+  const names = bFull.slides.map((s) => s.nameHe);
+  const iBreak = names.findIndex((n) => n === bText.breakdownLabelHe);
+  const iTotal = names.findIndex((n) => n.includes('1,188'));
+  ok('the breakdown is a slide', iBreak >= 0);
+  ok('and it comes before the total', iBreak >= 0 && iTotal >= 0 && iBreak < iTotal);
+  ok('the total slide shows what is left', bFull.slides[iTotal].bullets[0].text.includes('12'));
+  ok('the coloured phrase on the cover is the number', bFull.idea.emphasisHe.includes('1,200'));
+  ok('and it is a substring of the title it colours', bFull.titleHe.includes(bFull.idea.emphasisHe));
+
+  const pFull = deckForSize(tripDecks(plain, { text: pText, giveaway: null }), 'tiktok');
+  ok('a plain plan grows no breakdown slide',
+    !pFull.slides.some((s) => s.nameHe === pText.breakdownLabelHe));
+
+  // Instagram takes ten images and the breakdown is an eleventh candidate. A
+  // five day plan is the longest this config can ask for, so that is the one
+  // worth counting: cover, five days, breakdown, total and an ask.
+  const long = {
+    ...budgeted,
+    days: [1, 2, 3, 4, 5].map((n) => ({ n, titleHe: `יום ${n}`, stops: budgeted.days[0].stops })),
+  };
+  const longShort = deckForSize(tripDecks(long, { text: planText(long), giveaway: null }), 'instagram');
+  ok('the longest budgeted plan still fits a carousel', longShort.slides.length + 1 <= 10,
+    `${longShort.slides.length + 1} images`);
+
+  // THE APPROVAL CARD. Every figure that becomes the account's claim is
+  // printed before the tap, which is the bargain BRIEF.md struck when the fare
+  // ban came off, and the itemisation is the only place it can be audited.
+  const card = planApprovalMessage({
+    headline: bText.hookHe,
+    plan: {
+      dest: budgeted.dest, days: 2, stops: 3, total: 1188,
+      budgetIls: 1200, costs: good, stopsIls: 128,
+      totalNoteHe: bText.totalNoteHe, leftHe: bText.leftHe, attractionsHe: bText.attractionsHe,
+      slides: { tiktok: 7, instagram: 5 }, dropped: [], giveaway: null,
+    },
+    deck: { days: budgeted.days },
+  });
+  ok('the card prints the budget', card.includes('1,200'));
+  ok('and every fixed cost under it', ['420', '300', '280', '60'].every((n) => card.includes(n)));
+  ok('and what is left', card.includes('נשאר 12'));
+  ok('and no longer claims entrances only', !card.includes('כניסות ואטרקציות בלבד'));
+}
+
+/* -------------------------------------------------------------------------- */
 group('posting windows - Israel time, and not on Shabbat');
 
 {
@@ -6644,6 +6794,55 @@ group('the admin site - the same decisions, in a browser');
     const css = readFileSync(new URL('../public/admin/style.css', import.meta.url), 'utf8');
     const labRule = css.slice(css.indexOf('.flash.lab'), css.indexOf('.flash.lab') + 240);
     ok('and the banner does not hide under the header', /position:\s*static/.test(labRule), labRule.slice(0, 80));
+  }
+
+  // Skeletons, and the four ways they go wrong.
+  //
+  // Source text again, for the reason the block above gives: app.js is a
+  // browser script that touches `document` the moment it is evaluated, so
+  // there is nothing to import. What is being protected here is not appearance
+  // but the states where a placeholder outlives the thing it stood in for,
+  // which is strictly worse than the blank box it replaced.
+  {
+    const html = readFileSync(new URL('../public/admin/index.html', import.meta.url), 'utf8');
+    const app = readFileSync(new URL('../public/admin/app.js', import.meta.url), 'utf8');
+    const css = readFileSync(new URL('../public/admin/style.css', import.meta.url), 'utf8');
+
+    // The page boots by asking /state, so the login form must not be what
+    // ships visible: a valid cookie is the normal case and everybody was being
+    // shown a password box for a few hundred milliseconds and then having it
+    // taken away, which reads as having been signed out.
+    ok('the login form ships hidden', /<div id="login" class="gate" hidden>/.test(html));
+    ok('and the boot shell ships visible', /<div id="boot"[^>]*>/.test(html) && !/<div id="boot"[^>]*\shidden/.test(html));
+
+    // Both real states have to dismiss it. A boot shell left up behind the app
+    // is invisible; left up in place of it, the site never loads at all.
+    ok('the boot shell is dismissed when signed in', /\$\('#boot'\)\.hidden = true/.test(app));
+    ok('and when signed out', app.slice(app.indexOf('function showLogin')).includes("$('#boot').hidden = true"));
+
+    // THE LAZY IMAGE DEADLOCK. An <img loading="lazy"> that is built detached
+    // and waited on never loads, because it is never in any viewport, so the
+    // placeholder stays up forever. The image has to be inside the slot.
+    const shots = app.slice(app.indexOf('function shots('), app.indexOf('function pendingCard('));
+    ok('a lazy image loads inside its placeholder', /box2\.append\(img\)/.test(shots),
+      'the <img> is not being appended into the skeleton slot - a lazy image outside the document never fires load');
+    ok('and a video waits on metadata, not load', /loadedmetadata/.test(shots));
+
+    // Re-skeletoning content that is already there makes the page strobe on
+    // the twenty second poll.
+    ok('a filled region is never re-skeletoned', /node\.textContent\.trim\(\)/.test(app));
+
+    // A placeholder for a build the server refused is a chair for a guest who
+    // was turned away at the door.
+    ok('a build placeholder waits for the server to accept', /res\.ok !== false && BUILD_HE\[what\]/.test(app));
+    // A shoot never reaches the pending list, so a placeholder for one has
+    // nothing that could ever clear it.
+    ok('and a shoot gets none', /const BUILD_HE = \{[^}]*\}/.test(app) && !/BUILD_HE = \{[^}]*shoot/.test(app));
+    ok('and no placeholder outlives its cap', /BUILD_MAX_MS/.test(app) && /b\.at > cutoff/.test(app));
+
+    // Motion off means off. A pulse is still motion.
+    const motion = css.slice(css.indexOf('@media (prefers-reduced-motion'));
+    ok('reduced motion stops the sweep', /animation:\s*none/.test(motion.slice(0, 220)), motion.slice(0, 120));
   }
 
   // And the site is OFF, not merely unguarded, when nobody is configured.

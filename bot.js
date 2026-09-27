@@ -23,6 +23,7 @@ import { placeOverCap } from './src/pillars.js';
 import { canonicalKind } from './src/sources/tiyulplus.js';
 import { KINDS, isSourcedKind } from './src/sources/places.js';
 import { resolveRequest } from './src/deck/request.js';
+import { parseTripArgs, BUDGET_MIN, BUDGET_MAX } from './src/plan/budget.js';
 import { buildWithFallback, describeAttempt } from './src/deck/attempt.js';
 import { buildFreeformDeck } from './src/deck/build.js';
 import { searchConfigured, remaining as searchRemaining, dailyBudget as searchBudget } from './src/search.js';
@@ -2148,7 +2149,7 @@ ${why}`).catch(() => {});
  * and to Instagram as a carousel.
  */
 const suggestPlan = billed('plan', suggestPlanJob);
-async function suggestPlanJob(asked, days, chatId = staging) {
+async function suggestPlanJob(asked, days, chatId = staging, budgetIls = null) {
   const { writePlan, resolveDestination } = await import('./src/plan/write.js');
   const { toPlanCandidate } = await import('./src/plan/candidate.js');
 
@@ -2169,7 +2170,27 @@ async function suggestPlanJob(asked, days, chatId = staging) {
   }
   if (found) console.log(`trip: "${asked}" -> ${found.dest.he} (${found.how})`);
 
-  const plan = await writePlan({ dest: found?.dest || null, days, recent });
+  let plan;
+  try {
+    plan = await writePlan({ dest: found?.dest || null, days, budgetIls, recent });
+  } catch (e) {
+    // A plan that will not fit its budget is a RESULT, not a crash. The
+    // planner is told to come back honest and over rather than cheap and
+    // false (src/plan/write.js), so this path is reached by the guard working
+    // and deserves a sentence somebody can act on: raise the number, cut a
+    // day, or pick somewhere nearer.
+    if (budgetIls && (e.overBudget || /budget/.test(e.message))) {
+      await notify
+        .send(
+          bot.telegram,
+          chatId,
+          `❌ ${budgetIls.toLocaleString('en-US')} ₪ לא מספיק ל${found?.dest?.he || 'יעד הזה'} ל-${days || ''} ימים.\n   ${e.message}\n   אפשר להעלות את התקציב, לקצר ביום, או לבחור יעד קרוב יותר.`
+        )
+        .catch(() => {});
+      return null;
+    }
+    throw e;
+  }
   const cand = await toPlanCandidate(plan);
   await stage(cand);
 
@@ -2181,12 +2202,22 @@ async function suggestPlanJob(asked, days, chatId = staging) {
 
 bot.command('trip', async (ctx) => {
   const arg = (ctx.message.text || '').replace(/^\/trip(@\S+)?\s*/, '').trim();
-  const m = /^(.*?)\s*(\d+)?$/.exec(arg) || [];
-  const asked = (m[1] || '').trim();
-  const days = m[2] ? Number(m[2]) : null;
+  const { asked, days, budgetIls, error } = parseTripArgs(arg);
 
-  await ctx.reply(`⏳ מתכנן ${asked ? asked : 'יעד'}${days ? ` · ${days} ימים` : ''}...`);
-  detach('מסלול', () => suggestPlan(asked, days, ctx.chat.id), ctx.chat.id);
+  // A number that could not be read is said so rather than dropped. The old
+  // parser took the last digits as days whatever they were, so "/trip פראג 5
+  // 1200" quietly planned a trip to a place called "פראג 5" and threw the
+  // budget away - a command that looks like it worked and produced the wrong
+  // post, which is the worst of the three possible outcomes.
+  if (error) {
+    await ctx.reply(`⚠️ ${error}`);
+    return;
+  }
+
+  await ctx.reply(
+    `⏳ מתכנן ${asked || 'יעד'}${days ? ` · ${days} ימים` : ''}${budgetIls ? ` · ${budgetIls.toLocaleString('en-US')} ₪` : ''}...`
+  );
+  detach('מסלול', () => suggestPlan(asked, days, ctx.chat.id, budgetIls), ctx.chat.id);
 });
 
 /**
@@ -2947,6 +2978,8 @@ bot.command('help', (ctx) =>
       '/trip - מסלול שנכתב ב-AI, כמצגת: יעד שלא היה לאחרונה',
       '/trip רומא - מסלול ליעד מסוים',
       '/trip רומא 5 - ולמספר ימים מסוים',
+      '/trip פראג 5 1200 - ועם תקציב: הכל כלול, טיסה ולינה ואוכל ותחבורה וכניסות',
+      '   השער הוא 600 ₪. מספר קטן ממנו הוא ימים, גדול ממנו הוא תקציב',
       '/clip - קליפ אחד. שלוש צורות מתחלפות בסבב',
       '   חתוך: 4-5 מקומות שונים, שם של מקום על כל אחד',
       '   רצף: 12 שוטים של מקום אחד, 1.5ש׳ כל אחד, שורה אחת שלא מתחלפת',
@@ -3431,9 +3464,25 @@ const adminOps = {
     if (what === 'trip') {
       const asked = String(body?.dest || '').trim();
       const days = body?.days ? Number(body.days) : null;
-      await notify.send(bot.telegram, staging, `🌐 ${by} ביקש מסלול באתר: ${asked || 'יעד כלשהו'}`).catch(() => {});
-      detach('מסלול', () => runOverridden('/trip', () => suggestPlan(asked, days, staging)));
-      return { ok: true, said: `⏳ מתכנן ${asked || 'יעד'}` };
+      // The site has its own field for this rather than reusing the command's
+      // parser: a form with a box labelled "תקציב" has nothing to disambiguate,
+      // so the 600 ₪ floor that separates days from money in /trip would only
+      // be in the way here. The range is still checked, because a typo in a
+      // number box is as easy as one in a chat line.
+      const asks = Number(body?.budget) || 0;
+      const budgetIls = asks >= BUDGET_MIN && asks <= BUDGET_MAX ? Math.round(asks) : null;
+      if (asks && !budgetIls) {
+        return { ok: false, said: `תקציב חייב להיות בין ${BUDGET_MIN} ל-${BUDGET_MAX.toLocaleString('en-US')} ₪` };
+      }
+      await notify
+        .send(
+          bot.telegram,
+          staging,
+          `🌐 ${by} ביקש מסלול באתר: ${asked || 'יעד כלשהו'}${budgetIls ? ` · ${budgetIls.toLocaleString('en-US')} ₪` : ''}`
+        )
+        .catch(() => {});
+      detach('מסלול', () => runOverridden('/trip', () => suggestPlan(asked, days, staging, budgetIls)));
+      return { ok: true, said: `⏳ מתכנן ${asked || 'יעד'}${budgetIls ? ` · ${budgetIls.toLocaleString('en-US')} ₪` : ''}` };
     }
 
     if (what === 'shoot') {

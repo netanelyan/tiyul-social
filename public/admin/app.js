@@ -25,8 +25,136 @@ const el = (tag, props = {}, kids = []) => {
   return node;
 };
 
+// --- skeletons --------------------------------------------------------------
+//
+// Nothing here is ever blank while it works, and nothing spins.
+//
+// The reason to prefer these over a spinner is not taste. A spinner is drawn in
+// one spot and says only "wait"; every skeleton below is the SHAPE of the thing
+// that is coming, in the place it is coming to, so the page does not jump when
+// it lands and a reader can tell a slow queue from an empty one before the
+// answer arrives. Those two states used to look identical, and on this site
+// they mean opposite things.
+//
+// `aria-busy` on the container is what carries this to a screen reader. The
+// boxes themselves are decorative and are never announced, which is why they
+// are plain divs with no text and no role.
+
+const sk = (cls = '') => el('div', { className: `sk ${cls}`.trim() });
+
+/** A stack of grey lines. Uneven by default, because what is coming is prose. */
+const skLines = (widths = ['w85', 'w70', 'w55']) => widths.map((w) => sk(`sk-line ${w}`));
+
+/** Monospace output that has not answered yet. */
+const skPre = (widths) => el('div', { className: 'sk-pre' }, skLines(widths));
+
+/**
+ * Put a skeleton in a box, but only if the box is empty.
+ *
+ * The guard is the whole point. Every one of these regions is re-read on a
+ * twenty second poll, and replacing good content with grey bars each time would
+ * make the page strobe on a timer. A skeleton is for not knowing yet, which
+ * happens once per region per session.
+ */
+function skInto(node, build) {
+  if (!node || node.dataset.sk === '1' || node.textContent.trim()) return false;
+  node.setAttribute('aria-busy', 'true');
+  node.dataset.sk = '1';
+  node.replaceChildren(build());
+  return true;
+}
+
+/** The region answered. Drop the busy flag so it stops being announced as loading. */
+function skDone(node) {
+  if (!node) return;
+  node.removeAttribute('aria-busy');
+  delete node.dataset.sk;
+}
+
+// --- things being built -----------------------------------------------------
+//
+// THE LONGEST WAIT ON THIS SITE, and until now the one with no feedback at all.
+//
+// /build is detached on the server: it answers "started" in milliseconds and
+// the clip or the deck lands in the pending list minutes later through the
+// twenty second poll. So pressing the button flashed one line and left the page
+// looking exactly as it did before, for three minutes, which reads as the
+// button not having worked. The honest fix is to show the empty chair: a card
+// in the list it will arrive in, saying what is coming.
+//
+// Held in memory only. A reload loses these and that is correct - the build is
+// the server's and this is a note about a button this tab pressed, not state.
+
+const BUILD_HE = {
+  gather: 'סבב איסוף',
+  clip: 'קליפ',
+  deck: 'הצעת מצגת',
+  trip: 'מסלול',
+};
+
+/** How long a placeholder may stand before it is assumed to have failed. */
+const BUILD_MAX_MS = 15 * 60_000;
+
+let building = [];
+
+/** The empty chair: a pending card with nothing in it yet. */
+function skBuildCard(b) {
+  return el('div', { className: 'card item building' }, [
+    el('div', { className: 'head' }, [
+      el('span', { className: 'kind', textContent: '⏳' }),
+      el('span', { className: 'what' }, [el('b', { textContent: BUILD_HE[b.what] || b.what }), ' נבנה עכשיו']),
+    ]),
+    el('div', { className: 'shots' }, [sk('sk-img')]),
+    el('div', {}, skLines(['w70', 'w85'])),
+  ]);
+}
+
+/**
+ * Drop the placeholders whose work has landed.
+ *
+ * Matched by COUNT rather than by identity, because the server's answer to
+ * /build carries no id to match on: it starts a job and says so. So one arrival
+ * clears one placeholder, oldest first, and the rest have their marks moved up
+ * to account for the item that has already been spoken for.
+ *
+ * The age cap is the other half. A build that throws server-side never arrives,
+ * and a chair left out forever for a guest who is not coming is worse than no
+ * chair. Fifteen minutes is longer than the slowest deck observed and short
+ * enough to be gone before anybody wonders.
+ */
+function reapBuilding(have) {
+  building.sort((a, b) => a.at - b.at);
+  while (building.length && have > building[0].mark) {
+    building.shift();
+    for (const b of building) b.mark++;
+  }
+  const cutoff = Date.now() - BUILD_MAX_MS;
+  building = building.filter((b) => b.at > cutoff);
+}
+
 let state = null;
 let busy = false;
+
+/*
+  The card whose button was pressed last.
+
+  Recorded here by one delegated listener rather than threaded through the
+  eight places that build a button, which also means a button added later gets
+  this for free instead of being the one that quietly does not.
+
+  Recording is all this does. `act` is what applies the faded state and what
+  takes it off again, so a button that opens a modal rather than mutating
+  anything sets this and nothing comes of it.
+*/
+let pressed = null;
+document.addEventListener(
+  'click',
+  (e) => {
+    const btn = e.target instanceof Element ? e.target.closest('button') : null;
+    pressed = btn ? btn.closest('.card') : null;
+  },
+  true
+);
 
 // --- talking to the server --------------------------------------------------
 
@@ -67,15 +195,33 @@ function flash(text, bad = false) {
 }
 
 function showLogin() {
+  // The boot skeleton is dismissed by whichever real state wins, and this is
+  // one of the two. Leaving it up behind the login form would show a greyed
+  // queue to somebody who is not signed in to see one.
+  $('#boot').hidden = true;
   $('#app').hidden = true;
   $('#login').hidden = false;
   state = null;
 }
 
-/** Run an action, keeping every button disabled until the state has been reread. */
-async function act(label, fn) {
+/**
+ * Run an action, keeping every button disabled until the state has been reread.
+ *
+ * `on` is the card the action is about. Approving a post replaces it, so from
+ * the moment the button is pressed that card is showing something which is no
+ * longer true: it fades and stops taking taps for as long as the server is
+ * working. Buttons going flat everywhere already said "busy"; this says WHICH
+ * ONE, which on a phone holding six pending cards is the difference between
+ * waiting and pressing approve on the wrong one twice.
+ */
+async function act(label, fn, { on = pressed } = {}) {
   if (busy) return;
   busy = true;
+  // Consumed, so the next action cannot inherit the last one's card. A button
+  // that opens a modal instead of calling act leaves `pressed` set and nothing
+  // else happens, which is why recording and applying are separate steps.
+  pressed = null;
+  on?.classList.add('working');
   document.querySelectorAll('button').forEach((b) => (b.disabled = true));
   try {
     const res = await fn();
@@ -85,6 +231,11 @@ async function act(label, fn) {
     flash(`${label}: ${e.message}`, true);
   } finally {
     busy = false;
+    // refresh() rebuilds the list, so `on` is usually detached by now and this
+    // is a no-op. It matters on the path where it is not: an action that threw
+    // leaves the original card in place, and a card left faded and dead after
+    // a failure is a card nobody can retry.
+    on?.classList.remove('working');
     document.querySelectorAll('button').forEach((b) => (b.disabled = false));
   }
 }
@@ -135,15 +286,55 @@ function shots(item) {
     ]));
   };
 
+  /*
+    A placeholder stands in the picture's place until the picture can take it.
+
+    The element is built detached and swapped in on `load`, so the strip is
+    never partly drawn: a card with four slides used to lay out four zero-width
+    boxes that snapped to full size one at a time as the files arrived, and on
+    a phone that walks the buttons underneath out from under your thumb. The
+    placeholder is the same 260px box the photograph will be, so the only thing
+    that changes on arrival is what is inside it.
+
+    `loading: 'lazy'` is kept. Its own point is that offscreen pictures in a
+    long queue are never fetched at all, and those keep their placeholder until
+    they are scrolled to, which is the honest thing for the page to show.
+  */
+  /*
+    THE PICTURE GOES INSIDE ITS PLACEHOLDER, which is not the arrangement you
+    would reach for first and is the only one that works.
+
+    The obvious version builds the <img> detached, waits for `load`, and swaps
+    it in. With `loading="lazy"` that deadlocks: a lazy image outside the
+    document is never in any viewport, so the browser never starts the fetch,
+    `load` never fires and the placeholder stays up forever. Nesting keeps the
+    image in the document where laziness can do its job, clipped by the
+    placeholder's own `overflow: hidden` until it has pixels to show.
+
+    On arrival the image takes the placeholder's place in the strip, so the
+    shimmer stops and the layout does not move: the slot is already exactly the
+    260px box `.shots img` will occupy.
+  */
+  const slot = () => sk('sk-img');
+
   if (item.video) {
     const v = el('video', { src: media(item.video), controls: true, playsInline: true, preload: 'metadata' });
-    v.addEventListener('error', () => gone(v, item.video));
-    box.append(v);
+    const box2 = slot();
+    // A video is ready at metadata. `load` is an image event and never fires
+    // for a media element, so waiting on it here would hold the placeholder up
+    // for the whole clip.
+    v.addEventListener('loadedmetadata', () => box2.replaceWith(v), { once: true });
+    v.addEventListener('error', () => gone(box2, item.video), { once: true });
+    box2.append(v);
+    box.append(box2);
   }
   for (const ref of item.images) {
     const img = el('img', { src: media(ref), loading: 'lazy', alt: '' });
-    img.addEventListener('error', () => gone(img, ref));
-    box.append(img);
+    const box2 = slot();
+    img.addEventListener('load', () => box2.replaceWith(img), { once: true });
+    img.addEventListener('error', () => gone(box2, ref), { once: true });
+    box2.append(img);
+    box.append(box2);
   }
   return box;
 }
@@ -201,7 +392,10 @@ function pendingCard(item) {
       el('button', {
         textContent: '📎 ציטוטים',
         onclick: async () => {
-          const res = await api(`/staging/${item.key}/evidence`);
+          // Open first, fill second. The quotes come off disk and are usually
+          // instant, but "usually" is what makes the slow case feel broken.
+          openModal('ציטוטים', null);
+          const res = await api(`/staging/${item.key}/evidence`).catch((e) => ({ said: e.message }));
           openModal('ציטוטים', res.text || res.said || 'אין');
         },
       })
@@ -325,10 +519,25 @@ function bars(budgets) {
   return el('div', {}, [el('h2', { textContent: 'תקציבים' }), box, notes]);
 }
 
+/**
+ * The modal, opened with its content or opened waiting for it.
+ *
+ * `body === null` means "this is still being fetched": the dialog opens
+ * immediately with a skeleton in it rather than after the round trip. Opening
+ * late is the worse of the two, because the tap appears to have missed and the
+ * reader taps again.
+ */
 function openModal(title, body) {
   $('#modal-title').textContent = title;
-  $('#modal-body').textContent = body;
-  $('#modal').showModal();
+  const pre = $('#modal-body');
+  if (body === null) {
+    pre.setAttribute('aria-busy', 'true');
+    pre.replaceChildren(skPre(['w85', 'w70', 'w85', 'w55', 'w40']));
+  } else {
+    skDone(pre);
+    pre.textContent = body;
+  }
+  if (!$('#modal').open) $('#modal').showModal();
 }
 
 function setCount(id, n) {
@@ -347,7 +556,13 @@ function draw() {
   lab.textContent = state.lab || '';
   lab.hidden = !state.lab;
 
-  setCount('#c-pending', state.pending.length + state.proposals.length);
+  const have = state.pending.length + state.proposals.length;
+  reapBuilding(have);
+
+  // The tab counts what is here PLUS what is on its way, so the number and the
+  // list agree. A badge reading 2 over a list showing three cards, one of them
+  // a placeholder, is a page arguing with itself.
+  setCount('#c-pending', have + building.length);
   setCount('#c-queue', state.queue.length);
   setCount('#c-held', state.held.length);
 
@@ -356,9 +571,12 @@ function draw() {
 
   const pending = $('#pending');
   pending.replaceChildren(
+    // Newest first, and a thing being built is newer than anything already
+    // here: it is the one the reader is waiting on.
+    ...building.map(skBuildCard),
     ...(state.pending.length
       ? state.pending.map(pendingCard)
-      : state.proposals.length
+      : state.proposals.length || building.length
         ? []
         : [el('p', { className: 'empty', textContent: '✅ אין ממתינים' })])
   );
@@ -388,12 +606,17 @@ function draw() {
   $('#status').textContent = state.status;
   $('#health').textContent = state.health;
   $('#usage').textContent = state.usage;
+  // These three shipped with a skeleton inside them (index.html) and have just
+  // been written over by the assignments above, so all that is left is to stop
+  // announcing them as busy.
+  for (const id of ['#status', '#health', '#usage']) skDone($(id));
 }
 
 async function refresh() {
   const data = await api('/state');
   if (!data.ok) return flash(data.said || 'לא הצלחתי לקרוא את המצב', true);
   state = data;
+  $('#boot').hidden = true;
   $('#login').hidden = true;
   $('#app').hidden = false;
   draw();
@@ -403,8 +626,20 @@ async function refresh() {
 }
 
 async function drawLog() {
-  const { lines = [] } = await api('/log');
   const pre = $('#log');
+  // Only on the first open. After that the box already holds the last two
+  // hundred lines, and greying them out every twenty seconds to fetch a nearly
+  // identical list would make the log the most distracting thing on the page.
+  skInto(pre, () => skPre(['w85', 'w70', 'w55', 'w85', 'w40', 'w70']));
+  const { lines = [] } = await api('/log');
+  skDone(pre);
+  // An empty log needs to SAY it is empty. Left blank the box reads as still
+  // loading, and skInto would agree with that reading and put the skeleton
+  // back on the next visit.
+  if (!lines.length) {
+    pre.replaceChildren(el('span', { className: 'muted', textContent: 'אין שורות בלוג' }));
+    return;
+  }
   pre.replaceChildren(
     ...lines.slice(-200).map((l) =>
       el('span', {
@@ -421,10 +656,23 @@ async function drawLog() {
 $('#login-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const form = new FormData(e.target);
+  const submit = e.target.querySelector('button[type="submit"]');
+
+  // The password check is a hash comparison and is deliberately not instant
+  // (src/admin/auth.js). Left alone the form sits there looking untouched for
+  // most of a second, which on a phone is long enough to press it twice.
+  submit.disabled = true;
+  const wait = sk('sk-line w85');
+  submit.after(wait);
+
   const res = await api('/login', {
     method: 'POST',
     body: { name: form.get('name'), password: form.get('password') },
   }).catch((err) => ({ ok: false, said: err.message }));
+
+  wait.remove();
+  submit.disabled = false;
+
   const err = $('#login-error');
   if (!res.ok) {
     err.textContent = res.said || 'לא הצלחתי להיכנס';
@@ -433,7 +681,12 @@ $('#login-form').addEventListener('submit', async (e) => {
   }
   err.hidden = true;
   e.target.reset();
-  await refresh();
+  // Straight to the boot skeleton rather than sitting on a filled-in login form
+  // while the first /state is fetched. It is the same shell the page opens on,
+  // so signing in and reloading look identical from here on.
+  $('#login').hidden = true;
+  $('#boot').hidden = false;
+  await refresh().catch(showLogin);
 });
 
 $('#logout').addEventListener('click', () =>
@@ -475,8 +728,31 @@ for (const btn of document.querySelectorAll('[data-build]')) {
     if (what === 'trip') {
       body.dest = $('#trip-dest').value.trim();
       body.days = Number($('#trip-days').value) || null;
+      // Empty means no budget at all, which is a different plan rather than a
+      // plan with a budget of zero: the itinerary comes back priced on
+      // entrances only, exactly as it did before this field existed.
+      body.budget = Number($('#trip-budget').value) || null;
     }
-    return act('בנייה', () => api('/build', { method: 'POST', body }));
+    return act('בנייה', async () => {
+      const res = await api('/build', { method: 'POST', body });
+      // Only once the server has actually taken the job. A placeholder put up
+      // before the call would survive a rejected build as a chair for a guest
+      // who was turned away at the door.
+      //
+      // A shoot gets none: it ends at a Telegram message and never reaches the
+      // pending list, so its placeholder would have nothing to clear it and
+      // would sit out its full fifteen minutes every time.
+      if (res.ok !== false && BUILD_HE[what]) {
+        const n = Math.max(1, Number(body.count) || 1);
+        for (let i = 0; i < n; i++) {
+          building.push({ what, at: Date.now() + i, mark: (state?.pending.length || 0) + (state?.proposals.length || 0) });
+        }
+        // Onto the tab the work will land on, so the placeholder is not put up
+        // behind whichever panel happened to be open.
+        document.querySelector('nav button[data-tab="pending"]')?.click();
+      }
+      return res;
+    });
   });
 }
 

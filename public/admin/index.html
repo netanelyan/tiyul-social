@@ -23,7 +23,35 @@
   not to need one.
 -->
 
-<div id="login" class="gate">
+<!--
+  What the page is before it knows anything.
+
+  THE FIRST PAINT USED TO BE THE LOGIN FORM, for everybody. The page boots by
+  asking /state rather than by showing a password box, because a valid session
+  cookie is the normal case - but the login form was the markup that shipped
+  visible, so every reload flashed a password prompt and then threw it away a
+  few hundred milliseconds later. A form you did not need, appearing and
+  vanishing, is worse than a blank screen: it reads as having been signed out.
+
+  So both real states ship hidden and this ships visible. It is the app's own
+  shape, greyed: the header bar, then cards where the cards go. Whichever
+  answer comes back, the thing that replaces this is the same size.
+-->
+<div id="boot" aria-busy="true" aria-label="טוען">
+  <div class="sk sk-bar-top"></div>
+  <div class="card">
+    <div class="sk-head"><div class="sk sk-chip sq"></div><div class="sk sk-title" style="margin:0"></div></div>
+    <div class="sk sk-line w85"></div>
+    <div class="sk sk-line w70"></div>
+  </div>
+  <div class="card">
+    <div class="sk-head"><div class="sk sk-chip sq"></div><div class="sk sk-title" style="margin:0"></div></div>
+    <div class="sk sk-line w70"></div>
+    <div class="sk sk-line w40"></div>
+  </div>
+</div>
+
+<div id="login" class="gate" hidden>
   <form id="login-form" class="card gate-card">
     <h1>tiyul+</h1>
     <p class="muted">ניהול תוכן</p>
@@ -109,6 +137,7 @@
             <p class="muted">אפשר לכתוב כל יעד, גם באנגלית וגם אם הוא לא בקטלוג.</p>
             <label>יעד<input id="trip-dest" placeholder="norway · lake como · טוקיו"></label>
             <label>ימים<input type="number" id="trip-days" min="1" max="14" placeholder="אוטומטי"></label>
+            <label>תקציב ₪ לאדם<input type="number" id="trip-budget" min="600" max="40000" step="100" placeholder="בלי תקציב"></label>
             <button data-build="trip">תכנן</button>
           </div>
           <div class="make">
@@ -121,12 +150,30 @@
       </div>
     </section>
 
+    <!--
+      Every block here ships with its skeleton already in it rather than empty.
+
+      Three of the four are filled by draw() from the same /state the page boots
+      on, so in the normal case this markup is never seen. It is here for the
+      case that is not normal: draw() throwing part way leaves whatever it had
+      not reached yet untouched, and an empty <pre> under a heading looks like a
+      subsystem reporting nothing, which is a different and much more alarming
+      thing than one that has not answered yet.
+
+      The log is the exception and the reason this is not paranoia: it is
+      fetched separately, only when this tab is opened, so its box is genuinely
+      empty on the first visit until a second request comes back.
+    -->
     <section data-panel="system" hidden>
-      <div id="budgets" class="card"></div>
-      <div class="card"><h2>מצב</h2><pre id="status"></pre></div>
-      <div class="card"><h2>יעדי פרסום</h2><pre id="health"></pre></div>
-      <div class="card"><h2>שימוש במודלים</h2><pre id="usage"></pre></div>
-      <div class="card"><h2>לוג</h2><pre id="log" class="log"></pre></div>
+      <div id="budgets" class="card">
+        <div class="sk sk-title"></div>
+        <div class="sk sk-line w85"></div>
+        <div class="sk sk-line w70"></div>
+      </div>
+      <div class="card"><h2>מצב</h2><pre id="status" aria-busy="true"><div class="sk-pre"><div class="sk sk-line w70"></div><div class="sk sk-line w85"></div><div class="sk sk-line w40"></div></div></pre></div>
+      <div class="card"><h2>יעדי פרסום</h2><pre id="health" aria-busy="true"><div class="sk-pre"><div class="sk sk-line w55"></div><div class="sk sk-line w40"></div></div></pre></div>
+      <div class="card"><h2>שימוש במודלים</h2><pre id="usage" aria-busy="true"><div class="sk-pre"><div class="sk sk-line w70"></div><div class="sk sk-line w55"></div><div class="sk sk-line w85"></div></div></pre></div>
+      <div class="card"><h2>לוג</h2><pre id="log" class="log" aria-busy="true"><div class="sk-pre"><div class="sk sk-line w85"></div><div class="sk sk-line w70"></div><div class="sk sk-line w55"></div><div class="sk sk-line w85"></div><div class="sk sk-line w40"></div><div class="sk sk-line w70"></div></div></pre></div>
     </section>
   </main>
 </div>

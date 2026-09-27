@@ -10,6 +10,7 @@ import { planCaption, captionFollow } from '../hashtags.js';
 import { publishedSlideCount } from '../deck/follow.js';
 import { planText, planGiveaway } from './text.js';
 import { tripDecks, deckForSize, dayTotal, allStops, shekels } from './slides.js';
+import { COST_LINES } from './budget.js';
 
 // A written itinerary becomes something the approval queue can carry.
 //
@@ -238,6 +239,19 @@ export async function toPlanCandidate(plan, { targets = targetsForKind('plan'), 
       days: withId.days.length,
       stops: allStops(withId).length,
       total: withId.total,
+      // The budget side of the plan, carried through so the approval card can
+      // print the arithmetic rather than re-deriving it. All null on a plain
+      // /trip, which is what the card's own conditionals key off.
+      budgetIls: withId.budgetIls || null,
+      costs: withId.costs || null,
+      stopsIls: withId.stopsIls ?? withId.total,
+      // The two sentences that differ between the shapes, resolved once in
+      // planText and carried rather than reconstructed. A card that rebuilt
+      // them would be a second place for the budgeted and unbudgeted wording
+      // to drift apart.
+      totalNoteHe: text.totalNoteHe || '',
+      leftHe: withId.budgetIls ? text.leftHe : '',
+      attractionsHe: text.attractionsHe,
       // How many slides each platform actually got. They differ by design —
       // TikTok one per stop, Instagram one per day — and the difference is the
       // kind of thing that should be read on the card rather than discovered in
@@ -325,11 +339,30 @@ export function planApprovalMessage(cand) {
     lines.push('');
   }
 
+  // The fixed costs, itemised, above the total they are part of.
+  //
+  // Printed here for the reason every stop price is printed here: approving is
+  // the moment these numbers stop being a model's estimate and become the
+  // account's claim, and a flight price is the single most checkable figure on
+  // the whole post. It is also the only place the arithmetic can be audited -
+  // the slide shows the five lines and the total, and this shows them against
+  // the budget they were written to fit.
+  if (p.costs) {
+    lines.push('');
+    lines.push(`🧾 ${p.budgetIls ? `תקציב ${shekels(p.budgetIls)} ₪ לאדם` : 'עלויות קבועות'}`);
+    for (const line of COST_LINES) lines.push(`   ${line.he}: ${shekels(p.costs[line.key])} ₪`);
+    lines.push(`   ${p.attractionsHe || 'כניסות'}: ${shekels(p.stopsIls)} ₪`);
+  }
+
+  lines.push('');
   lines.push(`💰 סה״כ ${shekels(p.total)} ₪ לאדם · ${p.stops} עצירות`);
   // The qualification, repeated here and not only on the slide. Approving is
   // where the number becomes the account's, so this is the moment to be told
-  // what it does and does not include.
-  lines.push('   כניסות ואטרקציות בלבד - בלי טיסה ולינה');
+  // what it does and does not include. Taken from the plan's own text rather
+  // than written out, because the honest sentence differs between the two
+  // shapes and a hardcoded one was right for only the older of them.
+  if (p.totalNoteHe) lines.push(`   ${p.totalNoteHe}`);
+  if (p.budgetIls) lines.push(`   ${p.leftHe}`);
 
   // Who was promised what, spelled out, because the bot cannot keep this
   // promise and the person tapping approve can.

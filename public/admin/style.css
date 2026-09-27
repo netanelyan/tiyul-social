@@ -319,3 +319,116 @@ dialog h2 { margin: 0 0 10px; font-size: 17px; }
 dialog pre { max-height: 60vh; margin-bottom: 12px; }
 
 .empty { color: var(--muted); text-align: center; padding: 30px 10px; }
+
+/*
+  Skeletons.
+
+  THE RULE THIS SECTION EXISTS TO KEEP: nothing on this site is ever blank while
+  it is working, and nothing spins. A spinner says "wait" and says nothing else;
+  a skeleton says how much is coming and where it will be, so the layout does
+  not jump when it arrives and the page reads as loaded rather than as broken.
+
+  Every skeleton here is built from the shape it replaces. A card skeleton is a
+  card, with a card's padding and a card's border, and the grey bars inside it
+  sit where that card's title and text will sit. That is the whole trick, and it
+  is why these are not one generic box reused everywhere.
+*/
+
+:root { --sk-sheen: rgba(255, 255, 255, 0.055); }
+@media (prefers-color-scheme: light) { :root { --sk-sheen: rgba(0, 0, 0, 0.045); } }
+
+.sk {
+  position: relative;
+  overflow: hidden;
+  background: var(--card-2);
+  border-radius: 7px;
+  /* A skeleton is furniture, not content. Screen readers get the aria-busy on
+     the region instead, which says "this is loading" once rather than reading
+     out forty empty boxes. */
+  pointer-events: none;
+}
+
+.sk::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  /* Right to left, because the page is. A sweep running against the reading
+     direction reads as a glitch rather than as motion. */
+  transform: translateX(100%);
+  background: linear-gradient(90deg, transparent, var(--sk-sheen), transparent);
+  animation: sk-sweep 1.5s ease-in-out infinite;
+}
+
+@keyframes sk-sweep {
+  to { transform: translateX(-100%); }
+}
+
+/*
+  Motion off means OFF, not slower.
+
+  The sweep is decorative and this page is used at arm's length on a phone at
+  night. With reduced motion asked for, the skeleton keeps its shape and loses
+  the animation entirely rather than pulsing, which is still motion.
+*/
+@media (prefers-reduced-motion: reduce) {
+  .sk::after { animation: none; display: none; }
+  .sk { background: var(--card-2); }
+}
+
+/* The pieces. Widths are deliberately uneven: a stack of identical bars reads
+   as a table, and what is coming is prose. */
+.sk-line { height: 11px; margin: 7px 0; }
+.sk-line.w40 { width: 40%; }
+.sk-line.w55 { width: 55%; }
+.sk-line.w70 { width: 70%; }
+.sk-line.w85 { width: 85%; }
+.sk-title { height: 15px; width: 45%; margin: 2px 0 10px; border-radius: 6px; }
+.sk-chip { height: 20px; width: 62px; border-radius: 99px; }
+
+/* A picture's placeholder holds the picture's box, so nothing reflows when it
+   lands. The numbers are copied from `.shots img` above rather than chosen:
+   260px tall, 9:16 because that is what every rendered card and slide in this
+   project is, and the same snap alignment so a strip of placeholders scrolls
+   exactly like the strip of photographs replacing it. */
+.sk-img {
+  height: 260px;
+  aspect-ratio: 9 / 16;
+  width: auto;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  scroll-snap-align: start;
+}
+
+.sk-head { display: flex; align-items: center; gap: 9px; }
+.sk-head .sk-chip.sq { width: 22px; height: 22px; border-radius: 6px; }
+
+/* A <pre> that is still loading. Monospace blocks are the one place the uneven
+   widths have to look like output rather than like sentences. */
+.sk-pre { display: grid; gap: 8px; padding: 2px 0; }
+.sk-pre .sk-line { margin: 0; height: 10px; }
+
+/* The boot shell. Shown before the first /state answers, in place of the login
+   form that used to flash up for anybody whose cookie was still good. */
+#boot { padding: 14px; display: grid; gap: 12px; max-width: 900px; margin: 0 auto; }
+#boot .sk-bar-top { height: 46px; border-radius: var(--radius); }
+
+/*
+  A card mid-action.
+
+  Approving a post replaces it, so the card it replaces stops being true the
+  moment the button is pressed. It goes translucent and stops taking taps rather
+  than sitting there looking live and clickable while the server works.
+*/
+.card.working { opacity: 0.45; pointer-events: none; transition: opacity 0.15s ease; }
+
+/*
+  The build placeholder.
+
+  A build is detached on the server and answers immediately, so the thing you
+  asked for lands minutes later through the poll. Without this the page looks
+  identical before and after pressing the button, which is the single most
+  confusing moment on this site.
+*/
+.card.building .head { display: flex; align-items: center; gap: 9px; }
+.card.building .what { color: var(--muted); font-size: 13px; }
+.card.building .what b { color: var(--ink); font-weight: 600; }
