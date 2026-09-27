@@ -130,7 +130,7 @@ async function search(query, page, { timeoutMs }) {
  * that Pexels rate-limits should not cost the other eleven, for the same reason
  * one unreachable destination does not stop the climate rotation.
  */
-export async function findClips({ limit = 12, seen = new Set(), pages = 2, timeoutMs = 20_000, judge = true } = {}) {
+export async function findClips({ limit = 12, seen = new Set(), pages = 2, timeoutMs = 20_000, judge = true, queries = null } = {}) {
   if (!configured()) throw new Error('PEXELS_API_KEY is not set');
 
   const cfg = postConfig().clips.search;
@@ -138,7 +138,19 @@ export async function findClips({ limit = 12, seen = new Set(), pages = 2, timeo
   const errors = [];
   const vetoed = [];
 
-  for (const query of cfg.queries) {
+  // NARROWED, OR THE WHOLE LIST. The default is every configured query, which
+  // is what a card, a held clip and a cuts clip all want: breadth, so the judge
+  // picks the best frames the day happens to offer.
+  //
+  // A MONTAGE WANTS THE OPPOSITE AND CANNOT BE BUILT WITHOUT IT. It needs six
+  // or more shots of ONE place, and spread across twenty-six destinations the
+  // shots of any one of them are a fraction of what comes back - measured, on a
+  // live run: fourteen judged clips across nine places, the best-covered with
+  // two. No amount of raising `limit` fixes that, because the breadth is the
+  // thing producing it. So the caller narrows the search instead, and the same
+  // vision budget is spent looking at one destination rather than at all of
+  // them.
+  for (const query of queries?.length ? queries : cfg.queries) {
     for (let page = 1; page <= pages; page++) {
       let videos;
       try {

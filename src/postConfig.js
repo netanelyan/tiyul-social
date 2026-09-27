@@ -447,6 +447,33 @@ function clips(raw) {
     },
     audio: audioConfig(raw.audio || {}),
     cuts: cutsConfig(raw.cuts || {}),
+    // THE THIRD SHAPE: many shots of ONE place, one line that never changes.
+    //
+    // Modelled on a reference the owner supplied, and it is the two existing
+    // shapes' halves swapped. `held` holds its line over a shot that never
+    // moves; `cuts` moves but rewrites the line on every cut. This moves and
+    // holds one line, which is what the owner asked for twice - once as "the
+    // text should not change" and once as "lots of clips changing each 1-2s
+    // with 1 static text".
+    //
+    // A SECOND AND A HALF, which is the number that makes it a montage rather
+    // than a slow list. At four seconds a shot the viewer starts reading each
+    // frame as a separate statement, which is exactly right when each one
+    // carries its own label and exactly wrong when they are all the same place.
+    //
+    // TWELVE SHOTS AT 1.5s IS EIGHTEEN SECONDS, inside the brief's 15 to 35,
+    // and reached from the opposite end to the way the beats once reached it:
+    // the length comes from how much footage of one place the search found,
+    // not from how many things the line promised.
+    //
+    // cutsMin is 6 rather than the cuts shape's 4. Four shots at a second and a
+    // half is a six-second video, which is a held clip with a stutter in it.
+    montage: {
+      on: (raw.montage || {}).on !== false,
+      cutsMin: Math.max(2, Math.round(num((raw.montage || {}).cutsMin, 6))),
+      cutsMax: Math.max(2, Math.round(num((raw.montage || {}).cutsMax, 12))),
+      secondsPerCut: Math.max(0.5, num((raw.montage || {}).secondsPerCut, 1.5)),
+    },
     // THE CLOSING FRAME: the reason to follow, at the end of a CUTS clip.
     //
     // The owner's instruction is that a post ends on one. A slideshow ends on a

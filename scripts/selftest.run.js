@@ -4520,25 +4520,48 @@ group('cuts - the second clip shape, where every line change is a cut');
     id: 'abc123def456',
     clip: { shape: 'cuts', cuts: [{ pexelsId: '11' }, { pexelsId: '22' }, { pexelsId: '33' }, { pexelsId: '44' }] },
   };
-  // THE TWO SHAPES ALTERNATE ACROSS DAYS, not across a batch index.
+  // THE SHAPES CYCLE ACROSS DAYS, not across a batch index.
   //
   // This is the bug that made the held shape unreachable. suggestClip builds ONE
   // clip, so `i % 2 === 0` was 'cuts' every single day, and every unattended clip
   // this account ever produced was a cuts clip. The owner asked for "1 video with
   // a static text" believing the shape had been dropped; it had been, from the
   // only path that reaches it.
+  //
+  // THERE ARE THREE NOW, and the property being protected is unchanged. The old
+  // note argued a strict alternation beats a weighting because a weighting
+  // permits a run of five of the same thing. A strict CYCLE over three keeps
+  // exactly that guarantee, which is what the "twice in a row" check below is
+  // really asserting - it was never about there being two.
   {
     const { nextShapes, clipShapeArg } = await import('../src/video/clip.js');
     eq('a fresh box opens on the stronger shape', nextShapes(1).join(','), 'cuts');
-    eq('after a cuts clip, the next one is held', nextShapes(1, { after: 'cuts' }).join(','), 'held');
-    eq('and after a held clip, cuts again', nextShapes(1, { after: 'held' }).join(','), 'cuts');
-    eq('a batch alternates from wherever it starts',
-      nextShapes(4, { after: 'cuts' }).join(','), 'held,cuts,held,cuts');
+    eq('after a cuts clip comes the montage', nextShapes(1, { after: 'cuts' }).join(','), 'montage');
+    eq('after a montage, the held shape', nextShapes(1, { after: 'montage' }).join(','), 'held');
+    eq('and after a held clip, round to cuts again', nextShapes(1, { after: 'held' }).join(','), 'cuts');
+    eq('a batch cycles from wherever it starts',
+      nextShapes(4, { after: 'cuts' }).join(','), 'montage,held,cuts,montage');
     eq('nothing is ever asked for twice in a row',
-      nextShapes(6).filter((s, i, a) => i && s === a[i - 1]).length, 0);
-    // With the shape switched off in config there is one shape, and asking for
-    // the other would fail every build rather than degrade.
-    eq('with cuts off, every clip is held', nextShapes(3, { cutsOn: false }).join(','), 'held,held,held');
+      nextShapes(9).filter((s, i, a) => i && s === a[i - 1]).length, 0);
+    // Every shape reachable from the unattended path, which is the whole point
+    // of the bug this cycle was written for: one clip a day means the rotation
+    // IS the only way a shape ever gets built.
+    eq('and every shape comes round', new Set(nextShapes(3)).size, 3);
+
+    // With a shape switched off in config it leaves the ring, and the rest keep
+    // cycling. Asking for a disabled shape would fail every build rather than
+    // degrade, which is why this is a filter and not a fallback.
+    eq('with cuts off, the other two alternate',
+      nextShapes(4, { cutsOn: false }).join(','), 'montage,held,montage,held');
+    eq('with the montage off, the original two do',
+      nextShapes(4, { montageOn: false }).join(','), 'cuts,held,cuts,held');
+    eq('with both off, every clip is held',
+      nextShapes(3, { cutsOn: false, montageOn: false }).join(','), 'held,held,held');
+    // A shape that was just switched off cannot strand the cycle: `after` names
+    // something no longer in the ring, and the next call has to start somewhere
+    // rather than return nothing.
+    eq('and a retired shape does not strand the rotation',
+      nextShapes(2, { after: 'montage', montageOn: false }).join(','), 'cuts,held');
 
     // And the shape can be named, for the occasion you have just changed one and
     // want to see it now rather than wait for the alternation to come round.
@@ -4911,6 +4934,152 @@ group('clip length - one line, one length, and a source long enough to fill it')
     cfg.search.minDuration >= cfg.video.seconds || cfg.video.loopSource === true,
     `minDuration=${cfg.search.minDuration}s, seconds=${cfg.video.seconds}s, loop=${cfg.video.loopSource}`
   );
+}
+
+/* -------------------------------------------------------------------------- */
+group('the montage - many shots of ONE place under one unchanging line');
+
+// THE THIRD SHAPE, from a reference the owner supplied: "lots of clips being
+// changed each 1-2s, with 1 static text that showcases the place".
+//
+// It is the two existing shapes' halves swapped. Its selection rule is the
+// exact inverse of pickCuts, which is the part most likely to be broken by
+// somebody later tidying the two into one function: a cuts video must have NO
+// two shots of the same place, a montage must have NOTHING ELSE.
+{
+  const { pickMontage, montageReason, pickCuts } = await import('../src/video/cuts.js');
+  const { clipPlaceLabel } = await import('../src/hashtags.js');
+  const cfg = { cutsMin: 3, cutsMax: 5 };
+  // vision shapes that clipPlaceLabel/clipSiteName can read. `place` is the
+  // English country the judge returned; post-config maps it to Hebrew.
+  // siteHe has to be real Hebrew: clipSiteName refuses a field with a Latin
+  // letter in it, which is the guard that stops an untranslated name reaching a
+  // published pin.
+  const HE = { Lauterbrunnen: 'לאוטרברונן', Skogafoss: 'סקוגאפוס', Dolomites: 'דולומיטים' };
+  const shot = (id, query, place, site) => ({
+    id,
+    query,
+    vision: place ? { place, site: site || '', siteHe: site ? HE[site] || site : '', destination: 9 } : null,
+  });
+
+  // GROUPED BY THE SEARCH, NOT BY THE JUDGE'S VERDICT PER SHOT.
+  //
+  // The first version of this required every shot to be individually placed and
+  // never assembled once. Measured on a live run narrowed to one destination:
+  // "meteora greece" returned eleven usable shots and the judge placed THREE.
+  // That is placeMinConfidence working as designed - most frames of a cliff are
+  // not identifiable as any particular cliff - and it is fatal to a rule that
+  // wants six placed shots of one place.
+  //
+  // A cuts video burns a name onto every shot and must have them all. A montage
+  // burns none, and its evidence that the shots are one place is that one
+  // search for that place returned them.
+  const meteora = [
+    shot(1, 'meteora greece', 'Greece', 'Meteora'),
+    shot(2, 'meteora greece', null),
+    shot(3, 'meteora greece', null),
+    shot(4, 'meteora greece', 'Greece', 'Meteora'),
+    shot(5, 'meteora greece', null),
+    shot(6, 'santorini greece', 'Greece', ''),
+  ];
+  const m = pickMontage(meteora, cfg);
+  eq('it takes the biggest group from one search', m.cuts.length, 5);
+  ok('and only that search', m.cuts.every((c) => c.query === 'meteora greece'));
+  ok('including the shots the judge could not place', m.cuts.filter((c) => !c.vision).length === 3);
+  eq('naming it from the ones it could', m.placed, 2);
+  ok('with the site in Hebrew', /^\p{Script=Hebrew}/u.test(m.site), m.site);
+  // The vision that will be PUBLISHED, returned whole from one real shot
+  // rather than assembled from two fields of two different shots. Crossing them
+  // put "גשר קרל, צ׳כיה" on the approval card and "קתדרלת סנט ויטוס, צ׳כיה" in
+  // the caption of the same Prague montage.
+  ok('it returns a real shot vision, not a synthetic one',
+    m.cuts.some((c) => c.vision && c.vision.site === m.vision.site && c.vision.siteHe === m.vision.siteHe));
+  ok('and the pin derives from it', /,/.test(clipPlaceLabel({ clip: { vision: m.vision } })),
+    clipPlaceLabel({ clip: { vision: m.vision } }));
+
+  // THE INVERSE OF pickCuts, on the same input, so the two cannot be quietly
+  // merged into one function later. A cuts video needs distinct places and
+  // finds one; a montage needs sameness and finds five.
+  eq('the same shots make a cuts video of one place', pickCuts(meteora, { cutsMin: 3, cutsMax: 5, labelNeedsSite: true }).length, 0);
+  eq('and a montage of five shots', m.cuts.length, 5);
+
+  // A stray verdict does not rename the post. One frame in a Meteora search
+  // read as Italy is the judge being wrong about one rock, and a majority is
+  // what the pin rests on.
+  const withStray = [
+    shot(1, 'dolomites italy', 'Italy', 'Dolomites'),
+    shot(2, 'dolomites italy', 'Italy', 'Dolomites'),
+    shot(3, 'dolomites italy', 'Austria', ''),
+    shot(4, 'dolomites italy', null),
+  ];
+  const stray = pickMontage(withStray, { cutsMin: 3, cutsMax: 12 });
+  ok('a minority verdict does not name the post', !/אוסטריה/.test(stray.place), stray.place);
+
+  // A site named by ONE shot out of many is a guess, not a group agreeing.
+  const oneSite = [
+    shot(1, 'iceland waterfall', 'Iceland', 'Skogafoss'),
+    shot(2, 'iceland waterfall', 'Iceland', ''),
+    shot(3, 'iceland waterfall', 'Iceland', ''),
+    shot(4, 'iceland waterfall', 'Iceland', ''),
+  ];
+  const loose = pickMontage(oneSite, { cutsMin: 3, cutsMax: 12 });
+  eq('one recognition out of four names no site', loose.site, null);
+  ok('but the country still survives', Boolean(loose.vision?.place));
+  ok('and the pin is the country alone',
+    !/,/.test(clipPlaceLabel({ clip: { vision: loose.vision } }) || ''),
+    clipPlaceLabel({ clip: { vision: loose.vision } }));
+
+  // Too few from any one search is a REPORT naming the fix, not a crash.
+  const thin = [shot(1, 'a', 'Greece', ''), shot(2, 'b', 'Italy', ''), shot(3, 'c', 'Spain', '')];
+  eq('shots spread across searches build no montage', pickMontage(thin, cfg).cuts.length, 0);
+  ok('and the reason names the best-covered search', /best-covered query is/.test(montageReason(thin, cfg)));
+  ok('and the config dial that would fix it', /visionMaxCandidates|cutsMin/.test(montageReason(thin, cfg)));
+  eq('an empty search builds nothing', pickMontage([], cfg).cuts.length, 0);
+
+  // Nothing placed at all: no pin, no country hashtag, and the video still
+  // builds. Same position a held clip is in when the judge is unsure.
+  const unplaced = [shot(1, 'q', null), shot(2, 'q', null), shot(3, 'q', null)];
+  const blind = pickMontage(unplaced, cfg);
+  eq('an unplaced group still makes a montage', blind.cuts.length, 3);
+  eq('it just has no vision to publish', blind.vision, null);
+  eq('so no pin is printed', clipPlaceLabel({ clip: { vision: blind.vision } }), null);
+  eq('and says nothing was confirmed', blind.placed, 0);
+}
+
+{
+  // ONE OVERLAY FOR THE WHOLE VIDEO, which is the shape's defining property and
+  // the thing a later "tidy-up" would most plausibly break by reusing burnCuts'
+  // per-segment compositing. N identical PNGs would be N Chromium renders AND
+  // N separate measurements, so a line that shifted band between shots would
+  // jump while reading as unchanged.
+  const overlay = readFileSync(new URL('../src/video/overlay.js', import.meta.url), 'utf8');
+  const mont = overlay.slice(overlay.indexOf('export async function burnMontage'), overlay.indexOf('/** Pull the source clip down'));
+  ok('burnMontage composites once, after the concat', /concat=n=\$\{segments\.length\}:v=1:a=0\[cat\];/.test(mont));
+  ok('and takes one pngFile rather than one per segment', /pngFile/.test(mont) && !/seg\.pngFile/.test(mont));
+  ok('with no window on it', !/enable='/.test(mont), 'the line must not change partway through');
+  eq('so exactly one overlay is composited', (mont.match(/overlay=0:0:format=auto/g) || []).length, 1);
+
+  // The single line is measured against EVERY shot, combined pessimistically.
+  // A line measured on shot one and held over twelve is the failure this shape
+  // has and the other two do not.
+  const { combineSpots } = await import('../src/video/overlay.js');
+  const spot = (y, contrast, shadow, assist) => ({
+    x: 0.5, y, contrast, shadow, assist, onDark: true, color: '#fff',
+    spread: { best: contrast, worst: contrast },
+  });
+  const combined = combineSpots([spot(0.25, 9, 0.1, 0), spot(0.26, 3.2, 0.8, 0.4), spot(0.24, 7, 0.2, 0.1)]);
+  eq('the WORST contrast decides the treatment', combined.contrast, 3.2);
+  eq('the heaviest shadow any shot asked for wins', combined.shadow, 0.8);
+  eq('and the strongest wash', combined.assist, 0.4);
+  eq('it counts shots, not frames', combined.frames, 3);
+  eq('and how many agreed on the band', combined.agreed, 3);
+  eq('nothing measurable means the default placement', combineSpots([null, null]), null);
+
+  // A shot in the other band does not drag the agreed count silently.
+  const split = combineSpots([spot(0.25, 9, 0, 0), spot(0.42, 2, 0, 0), spot(0.26, 8, 0, 0)]);
+  eq('a shot in the other band is excluded from the band vote', split.agreed, 2);
+  eq('but still counted as a shot', split.frames, 3);
+  ok('so the card can say 2/3 and warn', split.agreed < split.frames);
 }
 
 /* -------------------------------------------------------------------------- */

@@ -808,6 +808,158 @@ export async function burnCuts(segments, { outFile, id = '', track = null } = {}
   };
 }
 
+/**
+ * Combine several shots' measurements into one placement.
+ *
+ * A montage burns ONE line over footage that cuts every second and a half, so
+ * the line has to survive every shot rather than the one it was measured on.
+ * Same logic measureClip already applies across the frames of a single clip,
+ * one level up: the band most shots agree on, the WORST contrast inside it, and
+ * the largest shadow and wash any shot asked for.
+ *
+ * Pessimistic on purpose and in the expensive direction. Averaging would give a
+ * treatment that is correct on no shot in the video, and the failure mode of a
+ * montage is precise: the line is perfectly legible for four seconds and then a
+ * snowfield arrives and it is gone, which is worse than a line that was always
+ * a little heavier than it needed to be.
+ *
+ * Null when nothing could be measured, which the caller treats exactly as
+ * measureClip's null: the unmeasured default placement.
+ */
+export function combineSpots(spots) {
+  const all = spots.filter(Boolean);
+  if (!all.length) return null;
+  const ov = postConfig().clips.overlay;
+
+  const mid = (ov.bands.upper[1] + ov.bands.mid[0]) / 2;
+  const upper = all.filter((s) => s.y < mid);
+  const band = upper.length >= all.length / 2 ? upper : all.filter((s) => s.y >= mid);
+  const chosen = band.length ? band : all;
+
+  const worst = chosen.reduce((a, b) => (b.contrast < a.contrast ? b : a));
+  return {
+    ...worst,
+    width: ov.width,
+    shadow: Math.max(...chosen.map((s) => s.shadow ?? 0)),
+    assist: Math.max(...chosen.map((s) => s.assist ?? 0)),
+    // How many SHOTS agreed, not how many frames. The approval card prints
+    // this, and on a montage "4/9 shots" is the number that says the line is
+    // going to be fighting the footage for most of the video.
+    frames: all.length,
+    agreed: chosen.length,
+    spread: {
+      best: Math.max(...chosen.map((s) => s.contrast)),
+      worst: Math.min(...chosen.map((s) => s.contrast)),
+    },
+  };
+}
+
+/**
+ * Many short shots, cut together, under ONE line that never changes.
+ *
+ * THE THIRD SHAPE, and it is the two existing ones' halves swapped.
+ *
+ *   held      one shot, one line. The line holds; the picture never moves.
+ *   cuts      several shots, a line on each. The picture moves; the line changes.
+ *   montage   many shots, ONE line. Both, which is what was wanted all along.
+ *
+ * The note above burnClip explains why a line may not change over a shot that
+ * does not cut, and this shape never tests that rule: the text is identical from
+ * the first frame to the last, and what moves underneath it is new footage every
+ * second and a half. It is the safest of the three by that argument and the most
+ * alive by any other.
+ *
+ * ONE OVERLAY OVER THE CONCATENATION, not one per segment. burnCuts composites a
+ * PNG onto each shot before joining them, because each shot carries a different
+ * label. Here the line is the same on all of them, so it goes on once, after the
+ * join — which is not only simpler but strictly better: N PNGs of identical text
+ * would be N Chromium renders, and worse, each measured against its own shot, so
+ * a line that shifted band between shots would appear to jump while reading as
+ * unchanged.
+ *
+ * `segments` is [{ source, duration, seconds }] in play order. No `text` and no
+ * `pngFile` per segment, which is the difference from burnCuts in one line.
+ */
+export async function burnMontage(segments, { text, outFile, pngFile, id = '', track = null } = {}) {
+  const cfg = postConfig().clips.video;
+  const { width: w, height: h, fps, crf, preset, loopSource } = cfg;
+  const perCut = postConfig().clips.montage.secondsPerCut;
+  const secondsOf = (seg) => {
+    const n = Number(seg?.seconds);
+    return Number.isFinite(n) && n > 0 ? n : perCut;
+  };
+
+  if (segments.length < 2) throw new Error(`a montage needs at least two shots (got ${segments.length})`);
+
+  // Every shot measured, then combined into the one placement the single line
+  // gets. Sequential rather than parallel for the reason burnCuts gives: each
+  // measurement spawns a Chromium context, and ten at once on a 1GB VPS is how
+  // this starts failing on the box it works on locally.
+  const spots = [];
+  for (const seg of segments) {
+    const hold = secondsOf(seg);
+    const startAt = await pickWindow(seg.source, seg.duration).catch(() => cfg.startAt);
+    const span = seg.duration ? Math.min(hold, Math.max(1, seg.duration - startAt)) : hold;
+    const spot = await measureClip(seg.source, { startAt, seconds: span }).catch(() => null);
+    spots.push({ startAt, spot });
+  }
+  const spot = combineSpots(spots.map((s) => s.spot));
+  await renderOverlayPng(text, { width: w, height: h, file: pngFile, spot, id });
+
+  const args = ['-y', '-hide_banner', '-loglevel', 'error'];
+  for (const [i, seg] of segments.entries()) {
+    args.push('-ss', String(spots[i].startAt));
+    if (loopSource) args.push('-stream_loop', '-1');
+    args.push('-t', String(secondsOf(seg)), '-i', seg.source);
+  }
+  // The single overlay, after all the sources, so it is input N.
+  args.push('-i', pngFile);
+
+  // One bed across the whole thing, at input N+1. Same argument burnCuts makes
+  // and it applies harder here: at a second and a half a cut, audio that
+  // changed with the picture would be unlistenable.
+  const seconds = segments.reduce((t, seg) => t + secondsOf(seg), 0);
+  const audio = audioChain(track, { inputIndex: segments.length + 1, seconds, id });
+
+  const chains = segments.map((_, i) => `[${i}:v]${coverFilter(w, h, fps)}[v${i}]`);
+  const joined = segments.map((_, i) => `[v${i}]`).join('');
+  const filter = [
+    `${chains.join(';')};${joined}concat=n=${segments.length}:v=1:a=0[cat];` +
+      // Ungated, exactly like burnClip's. There is nothing to switch to.
+      `[cat][${segments.length}:v]overlay=0:0:format=auto[out]`,
+    audio?.filter,
+  ]
+    .filter(Boolean)
+    .join(';');
+
+  if (audio) args.push(...audio.input);
+
+  args.push(
+    '-filter_complex', filter,
+    '-map', '[out]',
+    ...(audio ? audio.map : ['-an']),
+    '-c:v', 'libx264',
+    '-profile:v', 'high',
+    '-pix_fmt', 'yuv420p',
+    '-crf', String(crf),
+    '-preset', preset,
+    '-movflags', '+faststart',
+    outFile
+  );
+
+  await run(ffmpegPath(), args, { maxBuffer: 1 << 24 });
+  if (!existsSync(outFile)) throw new Error('ffmpeg reported success but wrote no file');
+  return {
+    file: outFile,
+    cuts: segments.length,
+    seconds,
+    spot,
+    spots: spots.map((s) => s.spot),
+    startAts: spots.map((s) => s.startAt),
+    audio: audioNote(audio),
+  };
+}
+
 /** Pull the source clip down to disk. Pexels serves these straight from its CDN. */
 export async function download(url, file, { timeoutMs = 60_000 } = {}) {
   const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });

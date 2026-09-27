@@ -94,7 +94,7 @@ slideshow in the grid looks like the account that posted it. Same words, same
 photographs, two designs: one deck published twice, never two decks.
 
 A **clip** is vertical stock video with Hebrew burned into it, and it comes in
-**two shapes that alternate**.
+**three shapes that cycle**.
 
 A **held** clip is the original: eight seconds, one shot, one line, held for its
 whole length. A **cuts** clip is four or five shots of four seconds each, joined
@@ -104,6 +104,33 @@ four lines over ONE unbroken shot and that was reverted on sight, the footage
 became wallpaper for a caption rewriting itself. The fix was never fewer lines;
 it was that every line change has to be a cut, which is what this shape is. See
 [`BRIEF.md`](BRIEF.md#a-clip-grew-a-middle-and-then-gave-it-back).
+
+A **montage** is the third, and it is the other two's halves swapped: twelve
+shots at a second and a half, **one line that never changes**, no labels on
+anything. `held` holds its line over a picture that never moves; `cuts` moves but
+rewrites the line on every cut; this moves *and* holds one line. It needs a
+**narrowed search** to exist at all — measured on a live run, a broad search
+across twenty-six destinations returned fourteen judged clips spread over nine
+places, the best-covered with two, and no `limit` fixes that because the breadth
+is what causes it. So a montage day searches one destination's query instead, on
+the same vision budget rather than a second one.
+
+**It is grouped by the search, not by the judge's verdict per shot.** The first
+version required every shot to be individually placed and never assembled once:
+`meteora greece` returned eleven usable shots and the judge placed three, which
+is `placeMinConfidence` working exactly as designed, since most frames of a cliff
+are not identifiable as any particular cliff. A cuts video burns a name onto
+every shot and must have them all; a montage burns none, and its evidence that
+the shots are one place is that one search for that place returned them. The
+*name* still comes from the shots the judge did place, by majority, so a single
+frame misread as Austria cannot rename a Dolomites post — and a site is printed
+only when more than one shot agreed on it.
+
+The risk this shape has and the other two do not is that **one line is set once
+and held over twelve different backgrounds**, so the approval card leads on
+`agreed/shots` and lists the shots worst-contrast first. A line comfortable on
+nine and marginal on three is a video that goes unreadable for four seconds in
+the middle, and nothing in a Telegram preview would tell you.
 
 **A beat in a cuts clip is a label, not a claim.** The parked advice formats
 ("3 טעויות שישראלים עושים בגאורגיה") put four unsourced facts on screen per

@@ -214,6 +214,148 @@ export function pickCuts(clips, cfg = postConfig().clips.cuts) {
 }
 
 /**
+ * Choose the shots for one MONTAGE, which is the opposite selection to pickCuts.
+ *
+ * A cuts video is a LIST: several places, a name burned on each, and the hook
+ * counting them. Its hard rule is that no two shots may be the same place,
+ * because a list that repeats an entry is a miscount a viewer can see.
+ *
+ * A montage is one PLACE seen many ways: eight or ten shots at a second and a
+ * half, one line held over all of them, no labels. So every rule pickCuts has
+ * about distinctness inverts. Two shots of the same valley are not a collision
+ * here, they are the point, and the selection is not "find me different places"
+ * but "find me the place I have the most footage of".
+ *
+ * GROUPED BY SITE, FALLING BACK TO COUNTRY, and the fallback is doing real work
+ * rather than being a courtesy. The vision judge names a specific site on a
+ * minority of candidates - that scarcity is what makes a cuts video hard to
+ * assemble and is written down in cutsReason. A montage does not need the name
+ * burned onto anything: one line names the place once, so "eight shots the
+ * judge agreed are in Iceland" is a perfectly good montage where it would be a
+ * geography lesson as a cuts video.
+ *
+ * The site group still wins when it is big enough, because "eight shots of
+ * Lauterbrunnen" is a stronger post than "eight shots of Switzerland" and the
+ * line can then be about somewhere specific.
+ *
+ * Returns `{ cuts, place, site }` rather than a bare list: the caller has to
+ * tell the hook writer WHICH place this is about, and re-deriving it by reading
+ * the shots back is how the line and the footage drift apart.
+ */
+export function pickMontage(clips, cfg = postConfig().clips.montage) {
+  const { cutsMin, cutsMax } = cfg;
+
+  // GROUPED BY THE SEARCH QUERY, NOT BY THE JUDGE'S PER-SHOT VERDICT, and that
+  // is the correction that made this shape buildable at all.
+  //
+  // The first version required every shot to be individually placed, inherited
+  // straight from pickCuts. It never assembled once. Measured, on a live run
+  // narrowed to a single destination: "meteora greece" returned eleven usable
+  // shots and the judge placed THREE of them. That is not a fault - the place
+  // fields are gated behind placeMinConfidence precisely so a name only gets
+  // printed when the judge is sure, and most frames of a cliff are not
+  // identifiable as any particular cliff.
+  //
+  // But a cuts video BURNS a name onto every shot, and a montage burns none.
+  // What it needs is that the shots be the same place, and the strongest
+  // evidence of that is not eleven separate recognitions of a rock face: it is
+  // that all eleven came back from one search for that place. The judge's own
+  // prompt says as much - the search phrase "usually names the place already"
+  // and its job is confirming rather than recognising.
+  //
+  // So the query groups the shots, the judge still vetoes them one by one
+  // (destination score, a person in frame, a contradicted country - all applied
+  // before these ever reach here), and the NAME comes from whichever shots the
+  // judge did place. Three independent confirmations plus the query is a better
+  // sourced claim than this pipeline requires anywhere else.
+  const byQuery = new Map();
+  for (const c of clips) {
+    const key = c.query || '';
+    if (!byQuery.has(key)) byQuery.set(key, []);
+    byQuery.get(key).push(c);
+  }
+  const biggest = [...byQuery.entries()].sort((a, b) => b[1].length - a[1].length)[0];
+  if (!biggest || biggest[1].length < cutsMin) return { cuts: [], place: null, site: null };
+
+  const group = biggest[1].slice(0, cutsMax);
+
+  // What the group may be CALLED, from the shots the judge was sure about. A
+  // majority rather than the first one: a search for Meteora that returned one
+  // frame the judge read as Italy should not name the post Italy.
+  const tally = (of) => {
+    const counts = new Map();
+    for (const c of group) {
+      const v = of(c);
+      if (v) counts.set(v, (counts.get(v) || 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1])[0] || null;
+  };
+
+  const country = tally((c) => (cutLabel(c) ? String(cutLabel(c)).split(',').pop().trim() : null));
+  // A site is named only when MORE THAN ONE shot agreed on it. One recognition
+  // out of twelve is a guess, and unlike the country it would put a specific
+  // valley's name on footage from all over a region.
+  const site = tally((c) => cutSite(c));
+  const namedSite = site && site[1] > 1 ? site[0] : null;
+
+  // ONE SHOT REPRESENTS THE GROUP, and it is returned whole rather than
+  // assembled.
+  //
+  // The first version built a synthetic verdict: the tallied site written into
+  // `vision.site`, the lead shot's spelling left in `vision.siteHe`. Those two
+  // fields are an English name and its Hebrew transliteration, and crossing
+  // them put TWO DIFFERENT PLACES on one post - the approval card read "גשר
+  // קרל, צ׳כיה" off one field while the published caption read "קתדרלת סנט
+  // ויטוס, צ׳כיה" off the other, on the same Prague montage.
+  //
+  // So nothing is assembled. The representative is a real shot whose reading
+  // won the tally, its `vision` travels intact, and every existing reader -
+  // clipPlaceLabel for the pin, clipSiteName for the spelling,
+  // clipDestinationTag for the hashtag - works on it unchanged. The only edit
+  // is blanking the site when the group did not agree on one, which is the same
+  // edit buildCutClip already makes for the same reason.
+  const rep =
+    (namedSite ? group.find((c) => cutSite(c) === namedSite) : null) ||
+    (country ? group.find((c) => cutLabel(c) && String(cutLabel(c)).split(',').pop().trim() === country[0]) : null) ||
+    null;
+
+  return {
+    cuts: group,
+    // The candidate's `clip.vision`, ready to use. Null when the judge placed
+    // nothing in the group, which downstream already handles: no pin, and the
+    // country hashtag slot falls back to the niche pool.
+    vision: rep ? (namedSite ? rep.vision : { ...rep.vision, site: '', siteHe: '' }) : null,
+    site: namedSite,
+    // How much of the group the judge actually placed, so the caller can say so
+    // on the approval card. A montage named from two shots out of twelve is
+    // weaker evidence than one named from ten, and only this function knows.
+    placed: country ? country[1] : 0,
+  };
+}
+
+/**
+ * Why a montage could not be built from these shots.
+ *
+ * Different numbers from cutsReason and deliberately so: this shape fails for
+ * the opposite reason. A cuts video fails when the shots are all the same
+ * place; a montage fails when they are all DIFFERENT places, which is a search
+ * spread across twenty-six queries doing exactly what it was asked to do.
+ */
+export function montageReason(clips, cfg = postConfig().clips.montage) {
+  const counts = new Map();
+  for (const c of clips) counts.set(c.query || '?', (counts.get(c.query || '?') || 0) + 1);
+  const best = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
+  return (
+    `need ${cfg.cutsMin} usable shots from one search - ` +
+    `${clips.length} survived the judge, ` +
+    `the best-covered query is ${best ? `"${best[0]}" with ${best[1]}` : 'none'}` +
+    // The fix, named, because it is a one-line config change and the message is
+    // where somebody will be standing when they need to know it.
+    `. Raise clips.search.visionMaxCandidates or lower montage.cutsMin.`
+  );
+}
+
+/**
  * Why a cuts clip could not be built from these shots.
  *
  * Three numbers, because they are three different fixes. Nothing judged at all

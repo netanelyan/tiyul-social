@@ -2,13 +2,13 @@ import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { rmSync } from 'node:fs';
 import { findClips } from './pexels.js';
-import { burnClip, burnCuts, download, clipOutputDir, ffmpegReady } from './overlay.js';
+import { burnClip, burnCuts, burnMontage, download, clipOutputDir, ffmpegReady } from './overlay.js';
 import { clipHook, postConfig } from '../postConfig.js';
 import { writeHook, hasApiKey, namesOtherCountry, trailsOff } from './hooks.js';
-import { pickCuts, cutLabel, cutsReason, writeCutsHook, beatCountMismatch } from './cuts.js';
+import { pickCuts, cutLabel, cutsReason, writeCutsHook, beatCountMismatch, pickMontage, montageReason } from './cuts.js';
 import { pickTrack, audioConfigured } from './tracks.js';
 import { assertNoUrl } from '../format.js';
-import { clipCaption, captionFollow } from '../hashtags.js';
+import { clipCaption, captionFollow, clipPlaceLabel } from '../hashtags.js';
 import { targetsForKind } from '../publish/targets.js';
 
 // A stock clip and a Hebrew line become something you can approve.
@@ -286,6 +286,188 @@ export async function buildClip(found, { outDir = clipOutputDir(), hook = null, 
 }
 
 /**
+ * Build one MONTAGE from several shots of the same place.
+ *
+ * THE THIRD SHAPE. Many shots at a second and a half, one line that never
+ * changes, no labels on anything. See burnMontage for why this is the two
+ * existing shapes' halves swapped, and clips.montage in postConfig for the
+ * rhythm.
+ *
+ * THE LINE IS WRITTEN BY THE HELD SHAPE'S WRITER, and reusing it rather than
+ * adding a third prompt is the whole reason this shape was cheap to build. A
+ * held clip's hook does exactly this job: one line, about one place, naming it
+ * or not. `writeCutsHook` could not be reused because its entire contract is a
+ * COUNT that has to match how many labelled shots arrived, and a montage
+ * carries no labels and makes no count - a hook promising "5 מקומות" over
+ * twelve unlabelled shots of one valley is the broken promise that format
+ * exists to avoid, arriving from the other direction.
+ *
+ * So the writer is told about the best shot of the group, and the place the
+ * group agreed on is what the line may name. The fallback pool applies exactly
+ * as it does for a held clip: a slightly repetitive post beats no post.
+ */
+export async function buildMontageClip(found, { outDir = clipOutputDir(), used = new Set(), keepSource = false, tracksUsed = new Set() } = {}) {
+  const cfg = postConfig().clips.montage;
+  if (!cfg.on) throw new Error('the montage shape is off (clips.montage.on)');
+
+  const { cuts, vision, site, placed } = pickMontage(found, cfg);
+  if (!cuts.length) throw new Error(montageReason(found, cfg));
+
+  // ONE derivation of the place, shared by the card and the caption. They read
+  // it off the same `vision` through the same function, which is the arrangement
+  // that stops them naming two different places on one post.
+  const place = clipPlaceLabel({ clip: { vision } });
+
+  // The shot the writer is shown has to be one the judge PLACED, or the line is
+  // written about a frame with no country attached and the country guard below
+  // has nothing to check it against. Falls back to the best-ranked shot when
+  // the judge placed none, which is the same position a held clip is in.
+  const lead = cuts.find((c) => c.vision?.place) || cuts[0];
+
+  // Written against the BEST shot of the group, which is cuts[0] because
+  // findClips ranked them and pickMontage kept that order. The writer needs one
+  // clip to look at and the group has already agreed what it is about.
+  let line = null;
+  let written = false;
+  let hookNote = null;
+  if (hasApiKey()) {
+    try {
+      const res = await writeHook(lead, { used });
+      if (res.text) {
+        line = res.text;
+        written = true;
+        if (res.rejected?.length) hookNote = `${res.rejected.length} candidate(s) rejected`;
+      } else {
+        hookNote = res.error || 'no usable line';
+      }
+    } catch (e) {
+      hookNote = e.message;
+    }
+  } else {
+    hookNote = 'ANTHROPIC_API_KEY is not set';
+  }
+  if (!line) line = clipHook();
+
+  assertNoUrl(line, 'the montage hook');
+  const unfinished = trailsOff(line);
+  if (unfinished) throw new Error(`the hook ${unfinished}: "${line}"`);
+
+  // The same country check a held clip makes, and it matters more here: the
+  // line is the only text in the video and it is held over twelve shots that
+  // all agreed on one place. A line naming a different country is wrong for
+  // eighteen seconds rather than eight.
+  const placeHe = place ? String(place).split(',').pop().trim() : null;
+  const clash = namesOtherCountry(line, placeHe);
+  if (clash) {
+    throw new Error(`the line names ${clash} and this montage is ${placeHe || 'not placed'}`);
+  }
+
+  const id = clipId(cuts.map((c) => c.id).join('+'), line);
+  const file = join(outDir, `clip-${id}.mp4`);
+  const sources = cuts.map((c) => join(outDir, `src-${c.id}.mp4`));
+  // ONE png for the whole video, which is the shape's defining property
+  // expressed as a filename. See burnMontage.
+  const png = join(outDir, `txt-${id}.png`);
+  const track = pickTrack(tracksUsed);
+  // Drawn for the description only. A montage never burns one in, for the
+  // reason the held shape does not: the text does not change.
+  const follow = captionFollow();
+  assertNoUrl(follow.lineHe, 'the clip closing line');
+
+  let burned = null;
+  try {
+    for (const [i, c] of cuts.entries()) await download(c.src, sources[i]);
+    burned = await burnMontage(
+      cuts.map((c, i) => ({ source: sources[i], duration: c.duration, seconds: cfg.secondsPerCut })),
+      { text: line, outFile: file, pngFile: png, id, track }
+    );
+  } finally {
+    if (!keepSource) for (const s of sources) rmSync(s, { force: true });
+    rmSync(png, { force: true });
+  }
+
+  const video = postConfig().clips.video;
+  const cand = {
+    kind: 'clip',
+    id,
+    hook: line,
+    headline: line,
+    hookWritten: written,
+    hookNote,
+    sourceName: `Pexels · ${[...new Set(cuts.map((c) => c.credit).filter(Boolean))].join(', ') || 'unknown'}`,
+    sourceUrl: cuts[0].page,
+    pillar: 'day',
+    tags: [],
+    createdAt: new Date().toISOString(),
+    publishTargets: targetsForKind('clip'),
+    tiktokDraft: true,
+    overrides: [],
+    notes: [],
+    clip: {
+      shape: 'montage',
+      file,
+      audio: burned.audio,
+      seconds: burned.seconds,
+      follow,
+      // Never. Same as the held shape and for the same reason.
+      followAt: null,
+      width: video.width,
+      height: video.height,
+      // What the group agreed on, which is the one fact the line was allowed to
+      // use. Kept so a re-render and the approval card can both say it without
+      // re-deriving it from the shots.
+      montagePlace: place,
+      montageSite: site,
+      // How many of the shots the judge actually placed. A montage named from
+      // two out of twelve is weaker evidence than one named from ten, and the
+      // approval card is where that difference has to be visible.
+      montagePlaced: placed,
+      cuts: cuts.map((c, i) => ({
+        pexelsId: c.id,
+        title: c.title,
+        query: c.query,
+        credit: c.credit,
+        page: c.page,
+        vision: c.vision || null,
+        rank: c.rank ?? null,
+        startAt: burned.startAts[i] ?? null,
+        spot: spotNote(burned.spots[i]),
+      })),
+      // THE WHOLE GROUP'S reading, not the first shot's. Every shot here agreed
+      // on the place - that is what pickMontage selected for - so the pin under
+      // the post and the country hashtag are as sourced as they are on a held
+      // clip. The site is kept only when the group agreed on one: a montage
+      // grouped by country has shots from several valleys and naming one of
+      // them would be the error buildCutClip's note describes.
+      // THE GROUP'S reading, not one shot's. `place` was tallied across the
+      // shots the judge placed, so the pin under the post and the country
+      // hashtag rest on a majority rather than on whichever frame sorted
+      // first. The site survives only when more than one shot agreed on it,
+      // which is pickMontage's rule and the reason a montage of a whole region
+      // is not pinned to one valley inside it.
+      vision,
+      // The combined placement the single line was set against, which is the
+      // number that says whether it is legible for the WHOLE video rather than
+      // for the shot it happened to be measured on.
+      spot: spotNote(burned.spot),
+      title: `${place} · ${cuts.length} שוטים`,
+      query: cuts[0].query,
+      score: cuts[0].score,
+      credit: cuts[0].credit,
+      page: cuts[0].page,
+      provenance: 'pexels',
+    },
+    card: { file },
+  };
+
+  cand.tiktokCaption = assertNoUrl(clipCaption(cand, { follow }), 'the clip description');
+  cand.instagramCaption = cand.tiktokCaption;
+  cand.channelCaption = cand.tiktokCaption;
+
+  return cand;
+}
+
+/**
  * Build one CUTS clip from several search results.
  *
  * The second shape. Four or five shots, four seconds each, the written hook on
@@ -501,13 +683,29 @@ export async function buildCutClip(found, { outDir = clipOutputDir(), used = new
  * Cuts leads on a fresh box because it is the stronger shape: it carries more
  * information and it moves.
  */
-export function nextShapes(count, { after = null, cutsOn = true } = {}) {
-  if (!cutsOn) return Array.from({ length: count }, () => 'held');
+export function nextShapes(count, { after = null, cutsOn = true, montageOn = true } = {}) {
+  // WHICH SHAPES ARE IN THE ROTATION AT ALL, in a fixed order so the cycle is
+  // readable rather than emergent. `held` is always in it: it needs one shot
+  // and therefore cannot fail for want of footage, which makes it the floor the
+  // other two fall back to.
+  //
+  // A THIRD SHAPE DOES NOT BREAK THE ARGUMENT THIS FUNCTION WAS WRITTEN ON. The
+  // note below is about a strict alternation beating a weighting, because a
+  // weighting permits a run of five of the same thing. A strict CYCLE over three
+  // keeps that property exactly: the most any shape can appear in a row is once.
+  const ring = ['cuts', 'montage', 'held'].filter(
+    (s) => (s !== 'cuts' || cutsOn) && (s !== 'montage' || montageOn)
+  );
+  if (ring.length === 1) return Array.from({ length: count }, () => ring[0]);
+
   const out = [];
-  let prev = after === 'cuts' || after === 'held' ? after : null;
-  for (let i = 0; i < count; i++) {
-    prev = prev === 'cuts' ? 'held' : 'cuts';
-    out.push(prev);
+  // Where in the ring the last clip left off. An unknown shape, or one that has
+  // since been switched off, starts the cycle from the top - which is what a
+  // fresh box and a just-disabled shape both want.
+  let i = ring.indexOf(after);
+  for (let n = 0; n < count; n++) {
+    i = (i + 1) % ring.length;
+    out.push(ring[i]);
   }
   return out;
 }
@@ -524,7 +722,17 @@ export function nextShapes(count, { after = null, cutsOn = true } = {}) {
  * Here rather than in bot.js because bot.js starts a Telegram bot when it is
  * imported, so nothing in it can be tested except by reading it as text.
  */
-const CLIP_SHAPES = { cuts: 'cuts', חתוך: 'cuts', held: 'held', בודד: 'held', static: 'held' };
+const CLIP_SHAPES = {
+  cuts: 'cuts',
+  חתוך: 'cuts',
+  held: 'held',
+  בודד: 'held',
+  static: 'held',
+  montage: 'montage',
+  רצף: 'montage',
+  'מונטאז׳': 'montage',
+  מונטאז: 'montage',
+};
 export function clipShapeArg(arg) {
   for (const word of String(arg || '').toLowerCase().split(/\s+/)) {
     if (CLIP_SHAPES[word]) return CLIP_SHAPES[word];
@@ -553,8 +761,46 @@ export async function buildClips({ count = 5, seen = new Set(), outDir = clipOut
   // search has to be asked for enough for the worst case or the second half of
   // the batch is built from nothing. The x3 was already there for the held
   // shape's own rejection rate; this multiplies the per-item cost, not it.
-  const perItem = cuts.on ? cuts.cutsMax : 1;
-  const { clips: found, total, vetoed, errors, nowhere } = await findClips({ limit: count * 3 * perItem, seen });
+  // A montage needs montage.cutsMin shots of the SAME place, which is far more
+  // demanding of one search than cuts.cutsMax shots of different ones: the
+  // queries are spread across twenty-six destinations, so the shots of any one
+  // of them are a fraction of what comes back. Asking for the larger of the two
+  // costs nothing when the montage is off and is the difference between the
+  // shape assembling and never assembling when it is on.
+  const montage = postConfig().clips.montage;
+  const perItem = Math.max(cuts.on ? cuts.cutsMax : 1, montage.on ? montage.cutsMax : 1);
+
+  // THE SHAPES ARE DECIDED BEFORE THE SEARCH, because one of them needs a
+  // different search.
+  //
+  // This used to be the other way round: search once, then decide. That is
+  // right for two of the three shapes and impossible for the montage, which
+  // needs six or more shots of ONE place. A broad search across twenty-six
+  // destinations cannot supply that at any `limit` - the breadth is what
+  // prevents it - so a montage narrows the search to a single destination's
+  // queries instead.
+  //
+  // Spending the SAME budget rather than more, which is the point of deciding
+  // first. A montage day runs one targeted search; it does not run the broad
+  // one and then a second search on top, which would double the vision bill on
+  // a shape that was meant to be free.
+  const order = shapes || nextShapes(count, { after, cutsOn: cuts.on, montageOn: montage.on });
+  const needsBroad = order.some((s) => s !== 'montage');
+  const onlyMontage = !needsBroad && order.length > 0;
+
+  // Which destination a montage is about. One query, chosen at random from the
+  // configured list, because nothing here knows better: every query names a
+  // place this account already wants to post about, and picking the "best" one
+  // would need a search per query to find out.
+  const montageQuery = onlyMontage
+    ? postConfig().clips.search.queries[Math.floor(Math.random() * postConfig().clips.search.queries.length)]
+    : null;
+
+  const { clips: found, total, vetoed, errors, nowhere } = await findClips({
+    limit: count * 3 * perItem,
+    seen,
+    ...(montageQuery ? { queries: [montageQuery], pages: 4 } : {}),
+  });
 
   const built = [];
   const failed = [];
@@ -567,10 +813,6 @@ export async function buildClips({ count = 5, seen = new Set(), outDir = clipOut
   // same batch under the same track is the repetition a viewer scrolling a
   // profile notices first, and it is free to avoid while there is a track left.
   const tracksUsed = new Set();
-
-  // The shapes to build, in order. Overridable so a lab or a test can ask for
-  // one shape without reaching into the config.
-  const order = shapes || nextShapes(count, { after, cutsOn: cuts.on });
 
   // Shots not yet spent by an earlier clip in this batch. A cuts clip takes
   // four or five off the front, and without removing them the next clip in the
@@ -585,6 +827,14 @@ export async function buildClips({ count = 5, seen = new Set(), outDir = clipOut
   const one = async (shape) => {
     if (shape === 'cuts') {
       const clip = await buildCutClip(pool, { outDir, used, tracksUsed });
+      spend(clip.clip.cuts.map((c) => c.pexelsId));
+      return clip;
+    }
+    // A montage consumes the most footage of the three - up to montage.cutsMax
+    // shots, all of one place - so like a cuts clip it is handed the whole pool
+    // and spends what it actually took.
+    if (shape === 'montage') {
+      const clip = await buildMontageClip(pool, { outDir, used, tracksUsed });
       spend(clip.clip.cuts.map((c) => c.pexelsId));
       return clip;
     }
@@ -604,7 +854,12 @@ export async function buildClips({ count = 5, seen = new Set(), outDir = clipOut
     // nothing at all - and the timer builds one clip a day, so "nothing at all"
     // is the whole day. The reverse fallback does not exist and should not: a
     // held clip fails on its own footage, and cuts would fail on the same.
-    const attempts = shape === 'cuts' ? ['cuts', 'held'] : ['held'];
+    // A montage needs the most from the search of the three - montage.cutsMin
+    // shots of ONE place - so it falls through furthest. Cuts is tried next
+    // rather than held, because a batch with enough named places for a list is
+    // a better post than one shot of the best of them.
+    const attempts =
+      shape === 'cuts' ? ['cuts', 'held'] : shape === 'montage' ? ['montage', 'cuts', 'held'] : ['held'];
     for (const s of attempts) {
       if (!pool.length) break;
       try {
@@ -636,6 +891,11 @@ export async function buildClips({ count = 5, seen = new Set(), outDir = clipOut
     // facts about the account.
     asked: order,
     shapes: built.map((c) => c.clip?.shape || 'held'),
+    // Which destination the search was narrowed to, or null for a broad one.
+    // Printed by /clip, because "the montage failed" and "the montage was
+    // pointed at a query that returned nothing today" are different problems
+    // and the query is the one you would act on.
+    query: montageQuery,
     // Which candidates the vision judge turned down and why.
     //
     // findClips has always returned this and buildClips has never passed it on,
@@ -718,9 +978,83 @@ export function audioLine(cand) {
   return `🎵 ${a.title} · ${a.credit} · ${a.licence}${a.offset ? ` · מ-${a.offset}ש׳` : ''}`;
 }
 
+/**
+ * What you are shown before deciding, for a MONTAGE.
+ *
+ * The thing that can go wrong here is not the thing that goes wrong on the
+ * other two shapes, so the card leads on it.
+ *
+ * A held clip risks a bad shot; a cuts clip risks a hook whose count does not
+ * match its labels. A montage risks ONE LINE BEING ILLEGIBLE OVER SOME OF THE
+ * FOOTAGE. It is set once, against a placement combined pessimistically across
+ * every shot (see combineSpots), and it holds for the whole video — so a line
+ * measured comfortable on nine shots and marginal on three is a video that goes
+ * blank for four and a half seconds in the middle, and nothing in a Telegram
+ * preview on a phone would tell you that.
+ *
+ * So `agreed/shots` is printed large, and the per-shot contrasts under it, worst
+ * first. That ordering is the point: the shot most likely to swallow the line is
+ * the one you want at the top of the list, not buried at position nine.
+ */
+export function montageApprovalMessage(cand) {
+  const c = cand.clip || {};
+  const cuts = c.cuts || [];
+  const spot = c.spot;
+
+  // Worst first, which is the opposite of play order and the right order for
+  // this question. Play order is in the video; this list is for judging.
+  const byRisk = cuts
+    .map((cut, i) => ({ ...cut, n: i + 1 }))
+    .filter((cut) => cut.spot)
+    .sort((a, b) => a.spot.worstContrast - b.spot.worstContrast);
+
+  const lines = [
+    `🎬 מונטאז׳ · ${cuts.length} שוטים · ${c.seconds}ש׳ · ${c.width}x${c.height}`,
+    // The place, and HOW WELL SOURCED it is. A montage is grouped by the search
+    // that found it, so the pin rests on however many of the shots the judge
+    // independently placed. Two out of twelve is a weaker claim than ten, and
+    // that difference is invisible in the video.
+    `📍 ${c.montagePlace || '⚠️ לא זוהה - בלי פין ובלי תגית מדינה'}` +
+      (c.montagePlace ? ` · ${c.montagePlaced}/${cuts.length} שוטים אושרו על ידי השיפוט` : '') +
+      (c.montagePlace && !c.montageSite ? ' · מדינה בלבד' : ''),
+    '',
+    `✍️ השורה: ${cand.hook}`,
+    cand.hookWritten ? '   (נכתבה לקליפ הזה)' : `   ⚠️ מהמאגר - ${cand.hookNote || 'לא נכתבה שורה'}`,
+    '   השורה לא מתחלפת לאורך כל הסרטון',
+    '',
+    // The one number that decides whether this post works.
+    spot
+      ? `🔤 טקסט ${spot.onDark ? 'בהיר' : 'כהה'} · ניגודיות גרועה ביותר ${spot.worstContrast} · ${spot.agreed}/${spot.frames} שוטים מסכימים`
+      : '🔤 ⚠️ לא נמדד - מיקום ברירת מחדל',
+    spot && spot.agreed < spot.frames
+      ? `   ⚠️ ${spot.frames - spot.agreed} שוטים נמדדו אחרת - בדקו שהשורה נקראת גם עליהם`
+      : null,
+    '',
+    audioLine(cand),
+    '',
+    `🏷️ ${cand.tiktokCaption || '(אין תיאור)'}`,
+    '',
+    '🎞️ השוטים, מהמסוכן לטקסט לבטוח:',
+  ].filter((l) => l !== null);
+
+  for (const cut of byRisk.slice(0, 6)) {
+    const v = cut.vision || null;
+    const flags = v ? [v.aerial && 'רחפן', v.personSubject && '⚠️ אדם בפריים'].filter(Boolean) : [];
+    lines.push(
+      `   ${cut.n}. ניגודיות ${cut.spot.worstContrast} · Pexels ${cut.pexelsId} · ${cut.credit || 'ללא שם'}` +
+        (flags.length ? ` · ${flags.join(' · ')}` : '')
+    );
+  }
+  if (byRisk.length > 6) lines.push(`   ...ועוד ${byRisk.length - 6}`);
+
+  lines.push('', `🔗 ${cuts[0]?.page || c.page || ''}`);
+  return lines.join('\n');
+}
+
 export function clipApprovalMessage(cand) {
   const c = cand.clip || {};
   if (c.shape === 'cuts') return cutApprovalMessage(cand);
+  if (c.shape === 'montage') return montageApprovalMessage(cand);
   // What the judge thought, in the two lines it takes to say it.
   //
   // This was the one thing the card did not carry, and its absence cost a
