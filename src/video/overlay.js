@@ -570,6 +570,23 @@ function audioChain(track, { inputIndex, seconds, id }) {
  * also a CUT, and it is in git — see the note at the top of video/hooks.js.
  * Here there is one PNG and one overlay filter again.
  *
+ * AND THAT RULE ALREADY OUTLASTED ONE EXCEPTION. A closing frame was added
+ * here: the hook for six seconds, then a reason to follow for the last two, on
+ * the argument that a viewer who watched to the end had not been told why they
+ * would want the next one. Every word of that is still true and it was still
+ * wrong, because it is the same swap the beats were, with a better motive and
+ * a smaller count. One unbroken shot with the words changing over it is the
+ * thing this shape exists not to be, and two seconds of it at the end is where
+ * a viewer is deciding whether the video was worth the eight — which is exactly
+ * the wrong moment to look like an advertisement.
+ *
+ * The owner's call, made knowing the price: fewer follows from a clip that
+ * never breaks its own rule. The reason to follow is still on every post, in
+ * the description, where it costs the video nothing. A CUTS clip still closes
+ * on one, and that is not an inconsistency — there the closing line arrives
+ * with new footage under it, which is the whole condition this paragraph is
+ * about.
+ *
  * `-ss` before `-i` so the seek is done on the input rather than by decoding
  * and discarding — on a 25-second 4K source that is the difference between a
  * second and twenty.
@@ -580,7 +597,7 @@ function audioChain(track, { inputIndex, seconds, id }) {
  * from five seconds up, so without it the shortest sources ship two seconds
  * under length.
  */
-export async function burnClip(source, { text, outFile, pngFile, followText = null, followPngFile = null, id = '', duration = null, track = null }) {
+export async function burnClip(source, { text, outFile, pngFile, id = '', duration = null, track = null }) {
   const cfg = postConfig().clips.video;
   const { width: w, height: h, seconds, fps, crf, preset, keepAudio, loopSource } = cfg;
 
@@ -599,28 +616,9 @@ export async function burnClip(source, { text, outFile, pngFile, followText = nu
   const spot = await measureClip(source, { startAt, seconds: span }).catch(() => null);
   await renderOverlayPng(text, { width: w, height: h, file: pngFile, spot, id });
 
-  // THE CLOSING FRAME, AND WHY THIS IS NOT THE BEATS COMING BACK.
-  //
-  // The note above records that this function once gated a chain of overlays to
-  // their own windows and that it was reverted: four or five lines changing over
-  // one unbroken shot turns the footage into wallpaper for a caption rewriting
-  // itself. That argument is about the BODY of the clip, where the picture is
-  // supposed to be what the line answers.
-  //
-  // This is one line at the END, for the last two seconds, and it swaps the hook
-  // out rather than joining it. By second six the hook has been read; what a
-  // viewer who watched to here has not been told is why they would want the next
-  // one. Taking the same measured position means the closing line lands where the
-  // frames proved text is legible, instead of being placed somewhere nothing
-  // sampled.
-  const followAt = followText && followPngFile ? Math.max(0, seconds - postConfig().clips.follow.seconds) : null;
-  if (followAt !== null) {
-    await renderOverlayPng(followText, { width: w, height: h, file: followPngFile, spot, id: `${id}-follow` });
-  }
-
-  // The bed, if there is one. After the source and the overlay PNGs, so its
-  // index moves with them: two inputs normally, three with a closing frame.
-  const audio = audioChain(track, { inputIndex: followAt === null ? 2 : 3, seconds, id });
+  // The bed, if there is one. After the source and the single overlay PNG, so
+  // input 2 is where it lands.
+  const audio = audioChain(track, { inputIndex: 2, seconds, id });
 
   const args = [
     '-y',
@@ -631,18 +629,12 @@ export async function burnClip(source, { text, outFile, pngFile, followText = nu
     '-t', String(seconds),
     '-i', source,
     '-i', pngFile,
-    ...(followAt === null ? [] : ['-i', followPngFile]),
     ...(audio?.input || []),
     '-filter_complex',
     [
-      // One overlay when there is no closing frame, exactly as before. With one,
-      // the two windows are complementary — `lt` then `gte` on the same instant —
-      // so there is never a moment with both lines on screen or neither.
-      followAt === null
-        ? `[0:v]${coverFilter(w, h, fps)}[v];[v][1:v]overlay=0:0:format=auto[out]`
-        : `[0:v]${coverFilter(w, h, fps)}[v];` +
-          `[v][1:v]overlay=0:0:format=auto:enable='lt(t,${followAt})'[vh];` +
-          `[vh][2:v]overlay=0:0:format=auto:enable='gte(t,${followAt})'[out]`,
+      // ONE overlay, ungated. No `enable` window, because there is nothing to
+      // switch to: the line that is on the first frame is on the last one.
+      `[0:v]${coverFilter(w, h, fps)}[v];[v][1:v]overlay=0:0:format=auto[out]`,
       audio?.filter,
     ]
       .filter(Boolean)
@@ -669,11 +661,7 @@ export async function burnClip(source, { text, outFile, pngFile, followText = nu
 
   await run(ffmpegPath(), args, { maxBuffer: 1 << 24 });
   if (!existsSync(outFile)) throw new Error('ffmpeg reported success but wrote no file');
-  // `followAt` is reported rather than recomputed from the config: it is when the
-  // closing line actually appears in THIS file, and the config can be edited
-  // afterwards. The approval card prints it, because a two-second end card is the
-  // easiest thing in a video to miss on a phone in a Telegram preview.
-  return { file: outFile, spot, startAt, seconds, followAt, audio: audioNote(audio) };
+  return { file: outFile, spot, startAt, seconds, audio: audioNote(audio) };
 }
 
 /**

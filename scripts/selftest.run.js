@@ -4914,6 +4914,68 @@ group('clip length - one line, one length, and a source long enough to fill it')
 }
 
 /* -------------------------------------------------------------------------- */
+group('a held clip never changes its text - not even to ask for a follow');
+
+// THE OWNER'S RULE, AND IT HAS NOW BEEN BROKEN TWICE BY DIFFERENT CODE.
+//
+// First by `beats`: four or five lines gated to their own windows over one
+// unbroken stock shot, which turned the footage into wallpaper for a caption
+// rewriting itself. Reverted, and the reasoning written down above burnClip.
+//
+// Then by the closing frame, which is the same swap with a better motive - the
+// hook for six seconds, a reason to follow for the last two. Every argument for
+// it was true and it was still the text changing over a picture that never
+// cuts, at the exact moment a viewer is deciding whether the eight seconds were
+// worth it. The owner's instruction is that a single-shot clip keeps one line
+// from the first frame to the last, in exchange for fewer follows.
+//
+// Twice is what makes this a test. The next person to notice that a held clip
+// ends on nothing will be right about the reach and wrong about the post, and
+// the argument is in overlay.js where a reader will only find it after the
+// change is written. This fails first.
+{
+  const overlay = readFileSync(new URL('../src/video/overlay.js', import.meta.url), 'utf8');
+  const held = overlay.slice(overlay.indexOf('export async function burnClip'), overlay.indexOf('export async function burnCuts'));
+
+  ok('burnClip takes no closing-frame arguments', !/followText|followPngFile/.test(held));
+  // The mechanism, not just the arguments. A second overlay gated by `enable`
+  // IS the text changing, whatever the thing it switches to is called.
+  ok('and burns exactly one overlay', (held.match(/overlay=0:0:format=auto/g) || []).length === 1, held.match(/overlay=[^[]*/g)?.join(' | '));
+  ok('with no window on it', !/enable='/.test(held), "an `enable` window means the line changes partway through");
+  // Two inputs: the footage and one PNG. A third would be another line.
+  ok('and feeds ffmpeg one text image', (held.match(/'-i', pngFile/g) || []).length === 1);
+
+  // The CUTS shape keeps its closing frame, and that is not an inconsistency:
+  // there the line arrives with new footage under it, which is the condition
+  // the whole rule is about. A test that killed both would be over-applying it.
+  const cuts = readFileSync(new URL('../src/video/clip.js', import.meta.url), 'utf8');
+  const cutBuild = cuts.slice(cuts.indexOf('export async function buildCutClip'), cuts.indexOf('export function nextShapes'));
+  ok('a cuts clip still closes on a reason to follow', /followPng/.test(cutBuild));
+  ok('and it is still one more CUT rather than a swap', /source: sources\[0\]/.test(cutBuild));
+
+  // The description carries the reason on every post either way. That was never
+  // the part in question and removing it here would be answering a different
+  // instruction than the one given.
+  const heldBuild = cuts.slice(cuts.indexOf('export async function buildClip'), cuts.indexOf('export async function buildCutClip'));
+  ok('a held clip still draws a follow for its description', /const follow = captionFollow\(\)/.test(heldBuild));
+  ok('and passes it to the caption', /clipCaption\(cand, \{ follow \}\)/.test(heldBuild));
+  ok('but records no second for it', /followAt: null/.test(heldBuild));
+
+  // And the approval card says WHICH kind of nothing, because three states look
+  // identical in a Telegram video preview on a phone.
+  const { followFrameLine } = await import('../src/video/clip.js');
+  const follow = { askHe: 'תעקבו', whyHe: 'מחר יש עוד', lineHe: 'מחר יש עוד. תעקבו' };
+  ok('a held clip says its line does not change',
+    /לא מתחלפת/.test(followFrameLine({ clip: { shape: 'held', follow, followAt: null } })));
+  ok('and still shows what the description closes on',
+    followFrameLine({ clip: { shape: 'held', follow, followAt: null } }).includes(follow.lineHe));
+  ok('a cuts clip names the second it starts',
+    /מ-16ש׳/.test(followFrameLine({ clip: { shape: 'cuts', follow, followAt: 16 } })));
+  ok('and the switch being off is still its own answer',
+    /כבוי/.test(followFrameLine({ clip: { shape: 'cuts', follow: null, followAt: null } })));
+}
+
+/* -------------------------------------------------------------------------- */
 group('the em dash, banned everywhere a reader can see one');
 
 // An owner's instruction, and an absolute one. The reason it is a test rather

@@ -447,21 +447,29 @@ function clips(raw) {
     },
     audio: audioConfig(raw.audio || {}),
     cuts: cutsConfig(raw.cuts || {}),
-    // THE CLOSING FRAME: the reason to follow, at the end of every clip.
+    // THE CLOSING FRAME: the reason to follow, at the end of a CUTS clip.
     //
     // The owner's instruction is that a post ends on one. A slideshow ends on a
     // slide (src/deck/follow.js); a video has no slides, so it ends on its last
-    // seconds carrying the line instead - the hook comes off, the reason goes on,
-    // in the place the measurement already proved legible.
+    // seconds carrying the line instead.
+    //
+    // A CUTS CLIP ONLY, AND THIS SETTING NO LONGER REACHES THE HELD SHAPE.
+    //
+    // It did, and the owner's instruction is that it must not: a clip built
+    // from one unbroken shot keeps one line from the first frame to the last,
+    // even at a cost in follows. On a cuts clip the closing line arrives with
+    // new footage under it, which is the condition the whole shape is built on
+    // and the reason the same frame is right there and wrong here. The full
+    // argument is above burnClip in src/video/overlay.js.
+    //
+    // So this is the dial for the cuts shape. The held shape has no dial,
+    // because "sometimes the text changes" is the thing being ruled out rather
+    // than a setting. The description still carries its reason to follow on
+    // both - that one is not optional.
     //
     // TWO SECONDS, and the number is doing the same job hookSeconds does at the
     // other end: long enough to read one short line, short enough that nothing
-    // is held after it has been understood. On an eight-second held clip that is
-    // a quarter of the running time, which is why it is not three.
-    //
-    // `on: false` removes it from both shapes at once, which is the dial to
-    // reach for if the videos start feeling like advertisements. The description
-    // still carries its reason to follow - that one is not optional.
+    // is held after it has been understood.
     follow: {
       on: (raw.follow || {}).on !== false,
       seconds: Math.max(0.8, num((raw.follow || {}).seconds, 2)),

@@ -868,7 +868,7 @@ share to draw against: a follow is what turns this post's reach into the next
 post's baseline, so it is on all of them. Each entry is an ask and a reason, in
 two fields, because the same drawn entry is published twice: the reason then the
 ask as the last line of the description, and the ask large with the reason under
-it on the last slide of a slideshow or the last two seconds of a clip. The two
+it on the last slide of a slideshow or the last cut of a cuts clip. The two
 follow asks that used to sit in `caption.ctas` came out when this arrived, or the
 same request would appear twice in one description. The reasons may only promise
 what this pipeline does, a destination most days, facts quoted from an official
@@ -876,6 +876,25 @@ page, an itinerary with its prices, because a follow bought with anything else i
 an unfollow a week later. A slideshow that already ends on an ask, an itinerary
 with the giveaway on, keeps that one instead; `clips.follow.on` turns the closing
 frame off without touching the description.
+
+**A held clip is the one post that does not close on it, and that is a decision
+rather than an omission.** A single-shot clip keeps one line from the first frame
+to the last. It did close on a follow frame for two seconds, and the argument for
+it was sound — by second six the hook has been read, and a viewer who watched to
+the end had not been told why they would want the next one. It was still the text
+changing over a picture that never cuts, which is the exact thing this shape
+exists not to be, and it landed at the moment a viewer is deciding whether the
+eight seconds were worth it. The owner's call, made with the cost on the table:
+fewer follows from a clip that never breaks its own rule. A **cuts** clip still
+closes on one, and that is not an inconsistency — there the closing line arrives
+with new footage under it, which is the whole condition. The description carries
+the reason either way, where it costs the video nothing.
+
+The rule has now been broken twice by different code, first by `beats` and then
+by the closing frame, which is why it is a selftest rather than a comment:
+`burnClip` must take no closing-frame arguments, burn exactly one overlay, and
+carry no `enable` window — because a second overlay gated to a time window *is*
+the text changing, whatever the thing it switches to is called.
 
 **The ask is `תעקבו`, never `עקבו`, and the selftest holds it.** The bare
 imperative is what a sign says; the future form is what you say to somebody you

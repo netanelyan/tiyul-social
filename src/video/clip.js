@@ -140,32 +140,36 @@ export async function buildClip(found, { outDir = clipOutputDir(), hook = null, 
   const id = clipId(found.id, line);
   const source = join(outDir, `src-${found.id}.mp4`);
   const png = join(outDir, `txt-${id}.png`);
-  const followPng = join(outDir, `txt-${id}-follow.png`);
   const file = join(outDir, `clip-${id}.mp4`);
 
-  // The reason to follow, drawn once for this clip and used twice: burned into
-  // the last two seconds of the video and printed as the last line of the
-  // description. Two draws would close the video on one reason and the caption on
-  // another, which reads as two people making one post.
-  const follow = postConfig().clips.follow.on ? captionFollow() : null;
-  if (follow) assertNoUrl(follow.lineHe, 'the clip closing line');
+  // The reason to follow, drawn once and used ONCE: the description closes on
+  // it, and the video does not.
+  //
+  // It was burned into the last two seconds here too. The owner's instruction
+  // is that a held clip never changes its text, and the follow frame was the
+  // only thing that made it — so it is gone from this shape, deliberately and
+  // at a known cost in follows. See the long note above burnClip for the
+  // argument; the short version is that a line may change when the PICTURE
+  // changes, and on one unbroken shot it never does.
+  //
+  // Still drawn rather than skipped, because the description carries it on
+  // every post and that part is not optional. A cuts clip still closes on one.
+  const follow = captionFollow();
+  assertNoUrl(follow.lineHe, 'the clip closing line');
 
   await download(found.src, source);
   let spot = null;
   let startAt = null;
   let seconds = null;
-  let followAt = null;
   let audio = null;
   // The bed. Null when assets/audio/tracks.json names nothing, which is where
   // this project starts and which renders exactly what it rendered before.
   const track = pickTrack(tracksUsed);
   try {
-    ({ spot, startAt, seconds, followAt, audio } = await burnClip(source, {
+    ({ spot, startAt, seconds, audio } = await burnClip(source, {
       text: line,
       outFile: file,
       pngFile: png,
-      followText: follow?.lineHe || null,
-      followPngFile: follow ? followPng : null,
       id,
       duration: found.duration,
       track,
@@ -176,7 +180,6 @@ export async function buildClip(found, { outDir = clipOutputDir(), hook = null, 
     // is impossible to argue about without the original.
     if (!keepSource) rmSync(source, { force: true });
     rmSync(png, { force: true });
-    rmSync(followPng, { force: true });
   }
 
   const cfg = postConfig().clips.video;
@@ -226,11 +229,16 @@ export async function buildClip(found, { outDir = clipOutputDir(), hook = null, 
       // for. They agree today — every clip is cfg.seconds long — and the
       // fallback is what a clip built before the encoder reported it gets.
       seconds: seconds ?? cfg.seconds,
-      // The closing line and the second it appears on. Stored because it is the
-      // one thing in the video that is not in the footage or the hook, and it is
-      // two seconds long at the end of a clip nobody watches twice on a phone.
-      follow: follow || null,
-      followAt: followAt ?? null,
+      // The reason to follow this clip's DESCRIPTION closes on. Recorded even
+      // though nothing is burned in, because a re-render has to reach the same
+      // one — the caption is built from it and a second draw would close the
+      // description on a different reason than the stored candidate claims.
+      follow,
+      // Null, and always null on this shape. Kept as a field rather than
+      // dropped so the approval card can tell "a held clip, which never has
+      // one" from "a cuts clip whose closing frame went missing", which are
+      // different facts and only one of them is a bug.
+      followAt: null,
       width: cfg.width,
       height: cfg.height,
       pexelsId: found.id,
@@ -681,14 +689,26 @@ export async function buildClips({ count = 5, seen = new Set(), outDir = clipOut
 /**
  * The closing line, for an approval card.
  *
- * Printed on every clip, and when there is none it says so. A two-second end
- * card at the end of an eight-second video is the easiest thing here to miss in a
- * Telegram preview on a phone, and the two states — "it closes on a reason to
- * follow" and "clips.follow.on is off" — look identical from the outside.
+ * Printed on every clip, and when there is none it says WHICH none. A
+ * two-second end card at the end of an eight-second video is the easiest thing
+ * here to miss in a Telegram preview on a phone, and three states that look
+ * identical from the outside are not the same:
+ *
+ *   - a cuts clip closing on a reason to follow, with the second it starts;
+ *   - a HELD clip, which never closes on one and is not meant to. The text of a
+ *     single-shot clip does not change, by decision — see burnClip — so this
+ *     line says that rather than reading as something that failed;
+ *   - clips.follow.on switched off, which turns it off for the cuts shape too.
  */
 export function followFrameLine(cand) {
   const c = cand.clip || {};
+  // Shape first, because "held" is an answer and the absence of a follow frame
+  // on one is not a fault to report. Legacy candidates have no shape field and
+  // fall through to the general answers below, which is right: a clip built
+  // before the shapes were named cannot be classified now.
+  if (c.shape === 'held') return `👋 סיום: השורה לא מתחלפת (שוט אחד)${c.follow ? ` · בתיאור: ${c.follow.lineHe}` : ''}`;
   if (!c.follow) return '👋 סיום: אין (clips.follow.on כבוי)';
+  if (c.followAt == null) return `👋 סיום: ${c.follow.lineHe}`;
   return `👋 סיום מ-${c.followAt}ש׳: ${c.follow.lineHe}`;
 }
 
