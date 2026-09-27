@@ -4568,8 +4568,30 @@ group('cuts - the second clip shape, where every line change is a cut');
     eq('/clip cuts names the shape', clipShapeArg('cuts'), 'cuts');
     eq('/clip 2 held names both', clipShapeArg('2 held'), 'held');
     eq('and in Hebrew', clipShapeArg('חתוך'), 'cuts');
+    eq('/clip montage names the third', clipShapeArg('montage'), 'montage');
+    eq('and its Hebrew word too', clipShapeArg('רצף'), 'montage');
     eq('a bare count names no shape', clipShapeArg('3'), null);
     eq('and neither does nothing at all', clipShapeArg(''), null);
+
+    // AND /help HAS TO KNOW ABOUT EVERY SHAPE THERE IS.
+    //
+    // A shape was added and the help text was left saying "שתי הצורות
+    // מתחלפות" and listing two of the three. Nothing broke, nothing failed, and
+    // the owner had to ask how to reach a format that had been shipped and
+    // deployed - which is the whole cost of documentation that drifts: the
+    // feature exists and is unreachable by the only person who would use it.
+    //
+    // Checked against the argument table rather than a hardcoded list, so
+    // adding a fourth shape fails here until the help mentions it.
+    const botSrcHelp = readFileSync(new URL('../bot.js', import.meta.url), 'utf8');
+    const help = botSrcHelp.slice(botSrcHelp.indexOf("bot.command('help'"), botSrcHelp.indexOf("// Timers"));
+    for (const shape of new Set(['cuts', 'held', 'montage'])) {
+      ok(`/help mentions the ${shape} shape`, help.includes(`/clip ${shape}`),
+        'a shape the help does not name is a shape nobody can ask for');
+    }
+    ok('and does not still claim there are two',
+      !/שתי הצורות/.test(help),
+      'the help counts the shapes and the count went stale');
   }
 
   // THE MEASURED SPOT IS ROUNDED THE SAME WAY ON BOTH SHAPES. A held clip
