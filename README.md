@@ -1092,6 +1092,53 @@ published, the item goes back on the queue, up to three attempts, then it is
 dropped loudly. If *something* published, it is not retried, because retrying
 would duplicate whichever destination succeeded.
 
+## What it costs, and where the money actually went
+
+Every model call is billed from the published rates in `src/usage.js` and the
+running total is `/usage`. Two breakdowns, and the second one is newer than the
+first for a reason: **by model** answers "did the cheap tier take the volume",
+which is a check that the split in `src/models.js` is wired up, while **by kind**
+answers "which format is expensive", which is the one that decides what is worth
+leaving on a timer. Attribution is an `AsyncLocalStorage` scope wrapped around
+each job in `bot.js` rather than an argument at twenty call sites, for the same
+reason `src/override.js` uses one: `doRun` is reached from the timer, from
+`/run`, from `/redo` and from the admin site, and `src/images/curate.js` picks
+photographs for cards *and* decks, so only the caller knows which. Anything
+outside a scope is reported as `לא משויך` rather than filed under whatever ran
+last.
+
+**The clip judge was two thirds of the bill and nobody had added it up.**
+`src/video/vision.js` was the only call site in the project that did not put its
+fixed prompt in a cached `system` block, so 2,213 tokens of unchanging prompt and
+schema were billed fresh on every candidate. It was also being sent the full
+630×1200 poster Pexels returns, 1,008 image tokens, to answer three questions
+about composition. Measured against live frames: **3,273 input tokens and 1.16¢
+per call**, times the 24-candidate cap, is **28¢ every time the timer looks for a
+clip** — spent before the owner has seen anything, and spent in full on the days
+the log records as `אף אחד לא עבר את סף היעד`.
+
+A cache breakpoint cannot help a prefix that begins with a different image every
+call, so the order mattered as much as the block did. With the prompt moved to a
+cached system block and the thumbnail requested at h=640, the same call is
+**0.35¢** and a run is **9.2¢**, a two-thirds cut.
+
+The verdicts were compared rather than assumed — four clips judged at the
+poster, at 640 and at 448. Every boolean identical at both sizes, the same
+country and the same site name at the same confidence, `destination` within a
+point at 640. At 448 one clip went 9 to 8, and with `visionMinDestination` at 7
+that is close enough to the gate to be a real change rather than noise, which is
+why `visionThumbHeight` is 640 and why the comment beside it says not to lower it
+without measuring again. `visionThumb()` rewrites both dimensions together:
+Pexels serves with `fit=crop`, so halving only the height would hand the judge a
+letterboxed slice and then ask it whether a person is the subject of a shot it
+can no longer see.
+
+Two selftest guards hold the general rule, because the failure is a number on an
+invoice rather than an exception and nothing else would ever notice: every model
+call site caches its system prompt, and none of them pins a model by name. Four
+files had their own `ANTHROPIC_MODEL || 'claude-opus-5'`, so `MODEL_EDITORIAL`
+was a dial wired to half the pipeline.
+
 ## Three things that were only findable by running it
 
 **`document.fonts.check()` does not check what it sounds like it checks.** The

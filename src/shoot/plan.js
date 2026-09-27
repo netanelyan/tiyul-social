@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import Anthropic from '@anthropic-ai/sdk';
 import { record as recordUsage } from '../usage.js';
+import { modelFor } from '../models.js';
 import { postConfig, byWeight } from '../postConfig.js';
 import { URL_LIKE } from '../urlLike.js';
 import { chooseFormat, nextSeries, seriesLabels, pickAngle } from './rotation.js';
@@ -21,7 +22,13 @@ import { stripDashes } from '../dashes.js';
 //
 // So the expensive half of a shoot is a human. This makes the cheap half free.
 
-const MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-5';
+// Editorial, through the role dial rather than pinned here. This file wrote
+// `ANTHROPIC_MODEL || 'claude-opus-5'` directly, which is what modelFor exists
+// to replace: the same string in four files is four places to edit when the
+// split is retuned, and MODEL_EDITORIAL silently did not reach any of them.
+// The resolved model is unchanged - modelFor('editorial') is opus and honours
+// ANTHROPIC_MODEL exactly as before.
+const MODEL = modelFor('editorial');
 const EFFORT = process.env.SHOOT_EFFORT || 'medium';
 
 let client = null;

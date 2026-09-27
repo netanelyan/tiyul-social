@@ -3,7 +3,7 @@ loadEnv();
 
 import { Telegraf, Markup } from 'telegraf';
 import * as store from './src/store.js';
-import { usageReport } from './src/usage.js';
+import { usageReport, forKind } from './src/usage.js';
 import * as notify from './src/notify.js';
 import { runOnce, dailyTarget } from './src/pipeline.js';
 import { toCandidate, RejectedError } from './src/candidate.js';
@@ -183,6 +183,23 @@ function detach(label, work, chatId = staging) {
       await notify.send(bot.telegram, chatId, notify.withDetail(`❌ ${label} נכשל`, e)).catch(() => {});
     });
 }
+
+/**
+ * The same function, with everything it spends billed to one kind of post.
+ *
+ * Applied to the JOB rather than at the call sites, and the difference is worth
+ * being explicit about: `doRun` is reached from the timer, from /run, from
+ * /redo and from the admin site, and `buildProposal` from a button, a slash
+ * command and an HTTP request. Wrapping the declaration is the only version of
+ * this where a caller added next month cannot arrive without a scope — which
+ * matters more than it sounds, because the failure is silent. An unwrapped call
+ * does not break, it just quietly files its cost under `other` and makes the
+ * readout wrong in the direction nobody checks.
+ *
+ * Nesting is fine and happens: suggestDeck calls pickIdea and both are billed
+ * to decks, so the inner scope sets the value it already had.
+ */
+const billed = (kind, fn) => (...args) => forKind(kind, () => fn(...args));
 const staging = STAGING_CHAT_ID;
 const intervalMs = Math.max(1, Number(POST_INTERVAL_MINUTES)) * 60_000;
 const gatherIntervalMs = Math.max(0.25, Number(GATHER_EVERY_HOURS)) * 3_600_000;
@@ -736,7 +753,8 @@ async function resendCard(key, cand, chatId = staging) {
 
 const URL_RE = /https?:\/\/[^\s<>"')]+/gi;
 
-async function ingestUrl(url, ctx) {
+const ingestUrl = billed('card', ingestUrlJob);
+async function ingestUrlJob(url, ctx) {
   const authority = primaryAuthority(url);
   if (!authority) {
     return ctx.reply(
@@ -1333,7 +1351,8 @@ async function probeInstagram() {
   }
 }
 
-async function doRun({ announce = true, target } = {}) {
+const doRun = billed('card', doRunJob);
+async function doRunJob({ announce = true, target } = {}) {
   if (running) return null;
   running = true;
   try {
@@ -2058,7 +2077,9 @@ bot.command('clip', async (ctx) => {
   );
   detach(
     'קליפים',
-    async () => {
+    // Billed to clips by hand, because this one is not a wrapped job: /clip
+    // reaches buildClips directly rather than through suggestClip. See `billed`.
+    () => forKind('clip', async () => {
       const { clips, considered, nowhere, failed, written, asked, shapes: got } = await buildClips({
         count,
         seen: clipFootageSeen(),
@@ -2103,7 +2124,7 @@ ${why}`).catch(() => {});
       const real = (failed || []).filter((f) => !/^cuts: need /.test(f));
       if (real.length) notes.push(`⚠️ ${real.length} נכשלו בבנייה: ${real[0]}`);
       if (notes.length) await notify.send(bot.telegram, ctx.chat.id, notes.join('\n')).catch(() => {});
-    },
+    }),
     ctx.chat.id
   );
 });
@@ -2126,7 +2147,8 @@ ${why}`).catch(() => {});
  * printed under the album. An approved plan goes to the TikTok inbox as a draft
  * and to Instagram as a carousel.
  */
-async function suggestPlan(asked, days, chatId = staging) {
+const suggestPlan = billed('plan', suggestPlanJob);
+async function suggestPlanJob(asked, days, chatId = staging) {
   const { writePlan, resolveDestination } = await import('./src/plan/write.js');
   const { toPlanCandidate } = await import('./src/plan/candidate.js');
 
@@ -2261,7 +2283,8 @@ bot.command('deck', async (ctx) => {
   );
 });
 
-async function buildAndStageDeck(arg, chatId) {
+const buildAndStageDeck = billed('deck', buildAndStageDeckJob);
+async function buildAndStageDeckJob(arg, chatId) {
   const say = (text) => notify.send(bot.telegram, chatId, text).catch(() => {});
 
   let idea;
@@ -2411,7 +2434,8 @@ const proposalButtons = (key) =>
  * and the same fallbacks. It is the cheap half of making a deck — one call, no
  * sourcing, no renders — which is what makes suggesting a few a day reasonable.
  */
-async function pickIdea() {
+const pickIdea = billed('deck', pickIdeaJob);
+async function pickIdeaJob() {
   const history = store.recentPublished();
 
   // ONE ISRAELI ANGLE PER REQUEST, drawn against what recently went out.
@@ -2533,7 +2557,8 @@ const clipsWaiting = () => store.stagingItems().filter(({ cand }) => cand?.kind 
  * worth a sentence, not a crash. Which is also the sentence that tells you a
  * query has gone stale.
  */
-async function suggestClip() {
+const suggestClip = billed('clip', suggestClipJob);
+async function suggestClipJob() {
   const { buildClips } = await import('./src/video/clip.js');
   const { clips, considered, nowhere, written } = await buildClips({
     count: 1,
@@ -2577,7 +2602,8 @@ async function suggestClip() {
  * the rotation, and that is the right direction: the alternative is the same
  * brief arriving every day until you film it.
  */
-async function sendShoots(n, chatId) {
+const sendShoots = billed('shoot', sendShootsJob);
+async function sendShootsJob(n, chatId) {
   const { planShoot } = await import('./src/shoot/plan.js');
   const { shootMessage } = await import('./src/shoot/message.js');
 
@@ -2610,7 +2636,8 @@ async function sendShoots(n, chatId) {
  * Each still waits for its own tap: this produces five things to decide about,
  * not five decks.
  */
-async function suggestDecks(n, chatId) {
+const suggestDecks = billed('deck', suggestDecksJob);
+async function suggestDecksJob(n, chatId) {
   const ideas = await proposeIdeas({ count: n, recent: store.recentTitles() });
   if (!ideas.length) return notify.send(bot.telegram, chatId, '❌ לא חזרו רעיונות');
 
@@ -2630,7 +2657,8 @@ async function suggestDecks(n, chatId) {
   return true;
 }
 
-async function suggestDeck() {
+const suggestDeck = billed('deck', suggestDeckJob);
+async function suggestDeckJob() {
   const picked = await pickIdea();
   if (!picked) {
     console.log('deck: no ideas came back');
@@ -2655,7 +2683,8 @@ async function proposeDeck(idea, alternatives, chatId) {
  * the repeat guards, and an AsyncLocalStorage context does not survive the wait
  * for you to tap a button.
  */
-async function buildProposal(key, chatId, messageId = null, targets = ['instagram'], draft = false) {
+const buildProposal = billed('deck', buildProposalJob);
+async function buildProposalJob(key, chatId, messageId = null, targets = ['instagram'], draft = false) {
   const say = (text) => notify.send(bot.telegram, chatId, text).catch(() => {});
   const proposal = store.getProposal(key);
   if (!proposal) return say('ההצעה הזו כבר לא ממתינה');
@@ -3370,7 +3399,9 @@ const adminOps = {
       await notify
         .send(bot.telegram, staging, `🌐 ${by} ביקש ${count} קליפ(ים) באתר${shape ? ` · ${shape}` : ''}`)
         .catch(() => {});
-      detach('קליפים', async () => {
+      // Billed by hand for the same reason the /clip command is: this reaches
+      // buildClips without going through a wrapped job.
+      detach('קליפים', () => forKind('clip', async () => {
         const { clips } = await buildClips({
           count,
           seen: clipFootageSeen(),
@@ -3383,7 +3414,7 @@ const adminOps = {
           return;
         }
         for (const clip of clips) await stage(clip);
-      });
+      }));
       return { ok: true, said: `⏳ בונה ${count} קליפ(ים)` };
     }
 

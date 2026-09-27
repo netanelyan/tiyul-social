@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
+
 // Token accounting for the drafting step — the only part of this pipeline that
 // costs money per run.
 //
@@ -10,6 +12,24 @@
 // Costs are computed from the model's published rates rather than guessed, and
 // cache reads are billed at a tenth of the input rate — which is the entire
 // reason the system prompt is a frozen string.
+//
+// AND NOW BY KIND OF POST, BECAUSE "WHICH ONE IS EXPENSIVE" WAS UNANSWERABLE.
+//
+// The per-model split says whether the cheap tier took the volume. It cannot
+// say whether the money went on clips or on decks, which is the question an
+// owner actually asks — the one that decides whether a format is worth keeping
+// on a timer. Working it out meant reading the code and estimating, and the one
+// time that was done properly the estimate was out by a factor of three.
+//
+// AsyncLocalStorage rather than an argument at twenty call sites, for the same
+// reason src/override.js uses it: a parameter threaded by hand is a parameter
+// dropped in the one path nobody tested. It also gets the shared call sites
+// right, which an argument could not — src/images/curate.js picks photographs
+// for cards and for decks, and it is the CALLER that knows which.
+//
+// Anything outside a forKind() scope is recorded as `other` rather than guessed
+// at. A readout with an honest unattributed bucket is worth more than one that
+// files every stray call under whatever ran last.
 
 const RATES = {
   // $ per 1M tokens. input / output / cache write (1.25x) / cache read (0.1x).
@@ -46,9 +66,26 @@ const state = {
   // work by role: did the cheap tier actually take the volume, or is everything
   // still landing on the expensive one because a default went unchanged.
   byModel: new Map(),
+  // Same shape, different question: which KIND of post spent it.
+  byKind: new Map(),
 };
 
+const kinds = new AsyncLocalStorage();
+
+/**
+ * Run `fn` with every model call inside it billed to `kind`.
+ *
+ * Wrap the job, not the call. A clip suggestion is a search, up to
+ * twenty-four judgements and a hook writer across three modules, and the only
+ * place that knows all of that is one clip is the function that started it.
+ */
+export const forKind = (kind, fn) => kinds.run(String(kind), fn);
+
+/** Which kind is being billed here, or `other` outside any scope. */
+export const currentKind = () => kinds.getStore() || 'other';
+
 let lastCost = 0;
+let lastKind = 'other';
 
 export function record(usage, model) {
   if (!usage) return;
@@ -65,6 +102,12 @@ export function record(usage, model) {
   m.calls++;
   m.cost += lastCost;
   state.byModel.set(key, m);
+
+  lastKind = currentKind();
+  const k = state.byKind.get(lastKind) || { calls: 0, cost: 0, wasted: 0, wastedCost: 0 };
+  k.calls++;
+  k.cost += lastCost;
+  state.byKind.set(lastKind, k);
 }
 
 /**
@@ -76,6 +119,15 @@ export function recordWasted() {
   if (!state.calls) return;
   state.wasted++;
   state.wastedCost += lastCost;
+  // Charged to the kind the LAST CALL was billed to, not to whatever scope is
+  // current now. A candidate is usually thrown away a few lines after the call
+  // that drafted it, but not always inside the same scope, and "which kind
+  // wasted the money" has to follow the money.
+  const k = state.byKind.get(lastKind);
+  if (k) {
+    k.wasted++;
+    k.wastedCost += lastCost;
+  }
 }
 
 export function snapshot() {
@@ -87,6 +139,9 @@ export function snapshot() {
     byModel: [...state.byModel.entries()]
       .map(([model, m]) => ({ model, ...m }))
       .sort((a, b) => b.cost - a.cost),
+    byKind: [...state.byKind.entries()]
+      .map(([kind, k]) => ({ kind, ...k }))
+      .sort((a, b) => b.cost - a.cost),
     cacheHitRate: totalIn ? state.cacheRead / totalIn : 0,
     wasteRate: state.calls ? state.wasted / state.calls : 0,
     perCall: state.calls ? state.cost / state.calls : 0,
@@ -95,6 +150,8 @@ export function snapshot() {
 
 export function reset() {
   state.byModel.clear();
+  state.byKind.clear();
+  lastKind = 'other';
   Object.assign(state, {
     since: new Date().toISOString(),
     calls: 0,
@@ -111,6 +168,17 @@ export function reset() {
 
 const usd = (n) => (n < 0.01 ? `${(n * 100).toFixed(2)}¢` : `$${n.toFixed(2)}`);
 const pct = (n) => `${Math.round(n * 100)}%`;
+
+// What each scope is in Hebrew. `other` is deliberately named as unattributed
+// rather than dressed up: a bucket nobody can act on should say so.
+const KIND_HE = {
+  card: '📰 כרטיסים',
+  deck: '🎞️ מצגות',
+  clip: '🎬 קליפים',
+  plan: '🗺️ מסלולים',
+  shoot: '🎥 תדריכי צילום',
+  other: '❔ לא משויך',
+};
 
 /** Hebrew readout for /usage in the bot. */
 export function usageReport() {
@@ -129,6 +197,21 @@ export function usageReport() {
     '',
     `עלות: ${usd(s.cost)} · לקריאה: ${usd(s.perCall)}`,
     `בזבוז: ${usd(s.wastedCost)}`,
+    // FIRST of the two breakdowns, above the models, because it is the one that
+    // decides something. "Sonnet took the volume" is a check that the split is
+    // wired up; "clips cost four times what decks did" is a reason to change
+    // what runs on the timer.
+    ...(s.byKind.length
+      ? [
+          '',
+          '🧾 לפי סוג:',
+          ...s.byKind.map(
+            (k) =>
+              `   ${KIND_HE[k.kind] || k.kind}: ${k.calls} · ${usd(k.cost)}` +
+              (k.wasted ? ` (נזרק ${usd(k.wastedCost)})` : '')
+          ),
+        ]
+      : []),
     // Only when the work actually split. On a run pinned to one model via
     // ANTHROPIC_MODEL this is noise; on a normal run it is the line that says
     // whether the cheap tier took the volume it was supposed to.

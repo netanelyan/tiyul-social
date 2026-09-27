@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { PILLAR_KEYS, PILLARS, TAGS } from './pillars.js';
 import { LAYOUTS } from './render/templates.js';
 import { record as recordUsage } from './usage.js';
+import { modelFor } from './models.js';
 
 // The writing step: source item + the text actually fetched from its page ->
 // Hebrew headline, caption, chosen layout, and the evidence that pins every
@@ -13,7 +14,13 @@ import { record as recordUsage } from './usage.js';
 // this step is required (no silent no-op without a key) and its output is
 // checked against the source by src/verify.js rather than trusted.
 
-const MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-5';
+// Editorial, through the role dial rather than pinned here. This file wrote
+// `ANTHROPIC_MODEL || 'claude-opus-5'` directly, which is what modelFor exists
+// to replace: the same string in four files is four places to edit when the
+// split is retuned, and MODEL_EDITORIAL silently did not reach any of them.
+// The resolved model is unchanged - modelFor('editorial') is opus and honours
+// ANTHROPIC_MODEL exactly as before.
+const MODEL = modelFor('editorial');
 // Drafting is a short, well-specified writing task, not a long-horizon one.
 // `medium` is deliberate rather than a cost reflex — worth re-running the
 // sweep against real output if the Hebrew ever reads flat.

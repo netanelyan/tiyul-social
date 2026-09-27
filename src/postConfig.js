@@ -402,6 +402,18 @@ function clips(raw) {
       // decides whether a clip is used, this one becomes a factual claim.
       placeMinConfidence: num(s.placeMinConfidence, 7),
       visionMaxCandidates: Math.max(1, Math.round(num(s.visionMaxCandidates, 24))),
+      // How tall a frame the judge is sent, which is the largest single number
+      // in this pipeline's bill. Measured rather than chosen: the 1200px poster
+      // Pexels hands back is 1,008 image tokens and 640 is 287, across the cap
+      // that is the difference between 28 cents a run and 8. The verdicts were
+      // compared at both and at 448 - see the note at the top of
+      // src/video/vision.js for what moved and what did not.
+      //
+      // Floored at 240 rather than trusted. A number small enough to make the
+      // frame unreadable would not fail, it would return confident nonsense
+      // about a picture nobody could see, which is the worst shape a saving
+      // can take.
+      visionThumbHeight: Math.max(240, Math.round(num(s.visionThumbHeight, 640))),
       preferPov: s.preferPov !== false,
       rejectStaged: s.rejectStaged !== false,
       // A person filmed in front of the place, prohibited by the owner. On

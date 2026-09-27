@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { record as recordUsage } from '../usage.js';
+import { modelFor } from '../models.js';
 import { postConfig } from '../postConfig.js';
 import { URL_LIKE } from '../format.js';
 import { stripDashes } from '../dashes.js';
@@ -62,7 +63,13 @@ import { stripDashes } from '../dashes.js';
 // for "of all time", a swear, no capital letter, a run-on sentence. Polish is
 // what an advertisement has.
 
-const MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-5';
+// Editorial, through the role dial rather than pinned here. This file wrote
+// `ANTHROPIC_MODEL || 'claude-opus-5'` directly, which is what modelFor exists
+// to replace: the same string in four files is four places to edit when the
+// split is retuned, and MODEL_EDITORIAL silently did not reach any of them.
+// The resolved model is unchanged - modelFor('editorial') is opus and honours
+// ANTHROPIC_MODEL exactly as before.
+const MODEL = modelFor('editorial');
 const EFFORT = process.env.HOOKS_EFFORT || 'low';
 
 let client = null;

@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { record as recordUsage } from '../usage.js';
+import { modelFor } from '../models.js';
 import { postConfig } from '../postConfig.js';
 import { stripDashes } from '../dashes.js';
 import { URL_LIKE } from '../urlLike.js';
@@ -43,7 +44,13 @@ import { clipPlaceLabel, clipSiteName } from '../hashtags.js';
 // the broken promise that cost the beats their first outing, and the one rule
 // here that cannot be waived.
 
-const MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-5';
+// Editorial, through the role dial rather than pinned here. This file wrote
+// `ANTHROPIC_MODEL || 'claude-opus-5'` directly, which is what modelFor exists
+// to replace: the same string in four files is four places to edit when the
+// split is retuned, and MODEL_EDITORIAL silently did not reach any of them.
+// The resolved model is unchanged - modelFor('editorial') is opus and honours
+// ANTHROPIC_MODEL exactly as before.
+const MODEL = modelFor('editorial');
 const EFFORT = process.env.CUTS_EFFORT || process.env.HOOKS_EFFORT || 'low';
 
 let client = null;

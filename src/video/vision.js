@@ -20,6 +20,33 @@ import { modelFor, outputConfig } from '../models.js';
 // Cheap on purpose: the judge reads the THUMBNAIL, which the search response
 // already contains, so there is no download and no decode. One low-effort call
 // per candidate, and candidates are capped.
+//
+// IT WAS NOT AS CHEAP AS THAT PARAGRAPH CLAIMED, AND HERE IS WHAT IT COST.
+//
+// Measured against live Pexels frames rather than estimated: 3,273 input tokens
+// and 1.16 cents PER CALL, times the 24-candidate cap, is 28 cents every time
+// the timer looks for a clip — spent before the owner has seen anything, and
+// spent in full on the days the log records as "אף אחד לא עבר את סף היעד".
+//
+// Two things were wrong and neither was the model.
+//
+//   1. THE PROMPT WAS IN THE MESSAGE, BEHIND THE PICTURE. Every other model
+//      call in this project puts its fixed text in a cached `system` block;
+//      this one was the only exception, so 2,213 tokens of unchanging prompt
+//      and schema were billed fresh 24 times a run. A cache breakpoint cannot
+//      help a prefix that starts with a different image every call, which is
+//      why the order matters as much as the block does.
+//
+//   2. THE PICTURE WAS THE FULL POSTER. Pexels hands back 630x1200, which is
+//      1,008 image tokens, to answer questions about composition: is this a
+//      place worth flying to, is a person the subject, is this a drone shot.
+//      None of them needs that many pixels.
+//
+// Fixed, the same call is 0.35 cents. The verdicts were checked rather than
+// assumed — four clips, every boolean identical, the same country and the same
+// site name, `destination` within one point at h=640. At h=448 one score moved
+// 9 to 8, which is close enough to visionMinDestination to matter, so 640 is
+// where this stops.
 
 // This is the whole clip filter. A wrong destination score publishes a road.
 const MODEL = modelFor('judgement');
@@ -29,7 +56,7 @@ let client = null;
 const getClient = () => (client ??= new Anthropic());
 export const hasApiKey = () => Boolean(process.env.ANTHROPIC_API_KEY);
 
-const SCHEMA = {
+export const SCHEMA = {
   type: 'object',
   additionalProperties: false,
   properties: {
@@ -88,7 +115,7 @@ const SCHEMA = {
   ],
 };
 
-const PROMPT =
+export const PROMPT =
   'Judge this frame from a short vertical travel video.\n\n' +
   'The single most important field is `destination`: would somebody watching this want to go there? ' +
   'An iconic landmark, a dramatic landscape or a beautiful town scores high. An empty road, a car park, ' +
@@ -115,6 +142,31 @@ const PROMPT =
   'When you do name a `site`, also write it in Hebrew letters in `siteHe`. The post is published in Hebrew ' +
   'and the name is read aloud by an Israeli audience, so transliterate the SOUND of it - never translate ' +
   'the words, and never leave a Latin letter in that field.';
+
+/**
+ * The same picture, small enough to answer the question being asked of it.
+ *
+ * Pexels serves its poster through an image CDN and states the size it wants in
+ * the URL — `...jpeg?auto=compress&cs=tinysrgb&fit=crop&h=1200&w=630`. Asking
+ * for a shorter one is a rewrite of two query parameters and costs nothing at
+ * either end: their CDN resizes, we send a seventh of the bytes.
+ *
+ * THE ASPECT RATIO IS KEPT, and that is not decoration. `fit=crop` means the
+ * server crops to whatever box it is given, so halving only the height would
+ * hand the judge a letterboxed slice of a vertical frame and ask it whether a
+ * person is the subject of a shot it can no longer see. Both numbers move
+ * together, off the ones already in the URL.
+ *
+ * A URL with no `w`/`h` to rewrite is returned untouched, which is the right
+ * failure: no saving, and a picture that still arrives.
+ */
+export function visionThumb(url, height = postConfig().clips.search.visionThumbHeight) {
+  const s = String(url || '');
+  const h = Number(new URL(s, 'https://x').searchParams.get('h'));
+  const w = Number(new URL(s, 'https://x').searchParams.get('w'));
+  if (!(h > 0 && w > 0) || height >= h) return s;
+  return s.replace(/([?&])h=\d+/, `$1h=${height}`).replace(/([?&])w=\d+/, `$1w=${Math.round((w / h) * height)}`);
+}
 
 /** What the stock library already says about this clip, as a block for the prompt. */
 const leadFor = ({ query, title }) => {
@@ -155,7 +207,7 @@ const leadFor = ({ query, title }) => {
 export async function judgeThumb(url, { timeoutMs = 20_000, query = null, title = null } = {}) {
   if (!hasApiKey()) return null;
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+    const res = await fetch(visionThumb(url), { signal: AbortSignal.timeout(timeoutMs) });
     if (!res.ok) return null;
     const b64 = Buffer.from(await res.arrayBuffer()).toString('base64');
 
@@ -163,12 +215,17 @@ export async function judgeThumb(url, { timeoutMs = 20_000, query = null, title 
       model: MODEL,
       max_tokens: 600,
       output_config: outputConfig(MODEL, EFFORT, SCHEMA),
+      // The fixed half of the call, in the one place a cache breakpoint can
+      // hold it. What is left in the message is this candidate's own picture
+      // and the two strings the library said about it, which is genuinely all
+      // that differs between one call and the next twenty-three.
+      system: [{ type: 'text', text: PROMPT, cache_control: { type: 'ephemeral' } }],
       messages: [
         {
           role: 'user',
           content: [
             { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } },
-            { type: 'text', text: PROMPT + leadFor({ query, title }) },
+            { type: 'text', text: leadFor({ query, title }) || 'Judge this frame.' },
           ],
         },
       ],

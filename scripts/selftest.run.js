@@ -5686,6 +5686,40 @@ group('model tiering - the cheap tier has to be legal, not just cheaper');
     );
   }
 
+  // AND EVERY CALL SITE PUTS ITS FIXED TEXT IN A CACHED SYSTEM BLOCK.
+  //
+  // The rule the whole project already followed except in one file. A prompt in
+  // the user message is billed fresh every call, and in src/video/vision.js
+  // that was 2,213 tokens times a 24-candidate cap: 28 cents a run, on a
+  // suggestion the owner had not asked for yet. Cache reads are a tenth of the
+  // input rate, so this is the single cheapest saving available anywhere here,
+  // and it is invisible until somebody adds up the bill.
+  //
+  // Checked by reading the source rather than by making a call, for the reason
+  // the effort check above is: the failure is a number on an invoice, not an
+  // exception, so nothing else would ever notice.
+  const cachedSites = [...callSites, '../src/draft.js', '../src/plan/write.js', '../src/shoot/plan.js', '../src/video/hooks.js', '../src/video/cuts.js'];
+  for (const f of cachedSites) {
+    const src = rf(new URL(f, import.meta.url), 'utf8');
+    ok(
+      `${f.split('/').pop()} caches its system prompt`,
+      /cache_control: \{ type: 'ephemeral' \}/.test(src),
+      'a fixed prompt outside a cached system block is billed in full on every call'
+    );
+  }
+
+  // And nothing pins a model by name any more. Four files carried their own
+  // `ANTHROPIC_MODEL || 'claude-opus-5'`, so MODEL_EDITORIAL reached none of
+  // them and the split was a dial wired to half the pipeline.
+  for (const f of cachedSites) {
+    const src = rf(new URL(f, import.meta.url), 'utf8');
+    ok(
+      `${f.split('/').pop()} takes its model from the role dial`,
+      !/const MODEL = process\.env\.ANTHROPIC_MODEL/.test(src),
+      'a model pinned in the file is a model MODEL_EDITORIAL cannot move'
+    );
+  }
+
   // Billing follows the model actually used. A call moved to the cheap tier but
   // still recorded against opus reports a saving that did not happen.
   const { costOf } = await import('../src/usage.js');
@@ -5694,6 +5728,90 @@ group('model tiering - the cheap tier has to be legal, not just cheaper');
   ok('sonnet sits between them',
     costOf(u, 'claude-haiku-4-5') < costOf(u, 'claude-sonnet-5') &&
     costOf(u, 'claude-sonnet-5') < costOf(u, 'claude-opus-5'));
+
+  // WHICH KIND OF POST SPENT IT, which the per-model split cannot answer.
+  {
+    const usage = await import('../src/usage.js');
+    usage.reset();
+    const call = { input_tokens: 1000, output_tokens: 100 };
+    // Through an await, because that is the only version worth having: a clip
+    // is a search, up to twenty-four judgements and a hook writer, and the
+    // scope has to survive every one of them.
+    await usage.forKind('clip', async () => {
+      await new Promise((r) => setTimeout(r, 1));
+      usage.record(call, 'claude-sonnet-5');
+    });
+    await usage.forKind('deck', async () => {
+      usage.record(call, 'claude-opus-5');
+      usage.recordWasted();
+    });
+    // Outside any scope. Bucketed honestly rather than filed under whatever ran
+    // last, which would make the readout confidently wrong.
+    usage.record(call, 'claude-haiku-4-5');
+
+    const byKind = Object.fromEntries(usage.snapshot().byKind.map((k) => [k.kind, k]));
+    eq('a clip call is billed to clips', byKind.clip?.calls, 1);
+    eq('across an await', byKind.clip?.cost > 0, true);
+    eq('a deck call to decks', byKind.deck?.calls, 1);
+    eq('and its waste with it', byKind.deck?.wasted, 1);
+    ok('waste is charged to the kind that spent it, not to the current scope',
+      byKind.deck?.wastedCost > 0 && !byKind.clip?.wasted);
+    eq('an unscoped call is unattributed, not guessed at', byKind.other?.calls, 1);
+    eq('nothing is lost between the buckets',
+      usage.snapshot().byKind.reduce((n, k) => n + k.calls, 0), usage.snapshot().calls);
+    ok('and the readout prints the split', /לפי סוג/.test(usage.usageReport()));
+    usage.reset();
+    eq('which resets with everything else', usage.snapshot().byKind.length, 0);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+group('the vision thumbnail - the biggest line in the bill');
+
+{
+  const { visionThumb } = await import('../src/video/vision.js');
+  const poster =
+    'https://images.pexels.com/videos/35575505/lago-35575505.jpeg?auto=compress&cs=tinysrgb&fit=crop&h=1200&w=630';
+
+  const small = visionThumb(poster, 640);
+  ok('the height asked for is the height sent', /[?&]h=640(&|$)/.test(small), small);
+  // BOTH NUMBERS MOVE. `fit=crop` means the server crops to the box it is
+  // given, so shrinking the height alone would hand the judge a letterboxed
+  // slice and then ask it whether a person is the subject of a shot it can no
+  // longer see.
+  eq('and the width comes with it, in proportion', /[?&]w=(\d+)/.exec(small)[1], '336');
+  ok('the rest of the URL is untouched', small.includes('auto=compress') && small.includes('fit=crop'));
+
+  // Never upscale. A 630x1200 poster asked for 1600 would be a bigger bill for
+  // a picture with no more detail in it.
+  eq('a request larger than the poster is left alone', visionThumb(poster, 1600), poster);
+  eq('and so is the poster at its own size', visionThumb(poster, 1200), poster);
+
+  // A URL with nothing to rewrite is the right kind of failure: no saving, and
+  // a picture that still arrives.
+  const bare = 'https://images.pexels.com/videos/1/x.jpeg';
+  eq('a URL with no size to rewrite is returned as it is', visionThumb(bare, 640), bare);
+  eq('and so is nothing at all', visionThumb(null, 640), '');
+
+  // The configured default is the one that was measured. 448 was tried and
+  // moved a `destination` score from 9 to 8, which with the gate at 7 is close
+  // enough to matter - see the comment in post-config.json.
+  const { postConfig } = await import('../src/postConfig.js');
+  const h = postConfig().clips.search.visionThumbHeight;
+  ok('the configured height is the measured one', h === 640, `visionThumbHeight=${h}`);
+  // The floor, checked in the source because postConfig() reads one file and
+  // takes no overrides, so there is no way to hand it a bad value from here. A
+  // height small enough to make the frame unreadable would not fail loudly — it
+  // would return confident nonsense about a picture nobody could see, which is
+  // the worst shape a saving can take.
+  ok('and a floor stops it being set small enough to make the frame unreadable',
+    /visionThumbHeight: Math\.max\(240,/.test(readFileSync(new URL('../src/postConfig.js', import.meta.url), 'utf8')));
+
+  // The judge fetches the SHRUNK url, not the poster. The helper existing and
+  // the call site using it are two different facts, and only the second one
+  // shows up on the bill.
+  ok('and judgeThumb fetches through it',
+    /fetch\(visionThumb\(url\)/.test(readFileSync(new URL('../src/video/vision.js', import.meta.url), 'utf8')));
 }
 
 /* -------------------------------------------------------------------------- */
