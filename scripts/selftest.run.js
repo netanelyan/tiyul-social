@@ -4959,6 +4959,110 @@ group('clip length - one line, one length, and a source long enough to fill it')
 }
 
 /* -------------------------------------------------------------------------- */
+group('the map slide - a country ringed on a night satellite photograph');
+
+// The frame that answers "where" in a slideshow that otherwise carries no text
+// at all. Everything below is pure arithmetic and string building; the network
+// halves (Nominatim's boundary, NASA's tiles) are exercised by running it.
+{
+  const { fitZoom, projectRings, ringCentre, mapHtml } = await import('../src/render/map.js');
+  const width = 1080, height = 1920;
+
+  // Finland, as Nominatim returns it: [south, north, west, east].
+  const finland = [59.4541578, 70.092293, 19.0832, 31.5867071];
+  const z = fitZoom(finland, { width, height });
+  ok('a country gets a zoom that fits it', z >= 3 && z <= 8, `zoom=${z}`);
+
+  // THE POINT OF fitZoom IS THAT IT FITS. Asserted by projecting the corners
+  // rather than by trusting the number: a country touching the frame edge reads
+  // as a screenshot of a map, and one that overflows is simply wrong.
+  const centre = { lat: (finland[0] + finland[1]) / 2, lon: (finland[2] + finland[3]) / 2 };
+  const box = {
+    type: 'Polygon',
+    coordinates: [[
+      [finland[2], finland[0]], [finland[3], finland[0]],
+      [finland[3], finland[1]], [finland[2], finland[1]], [finland[2], finland[0]],
+    ]],
+  };
+  const [ring] = projectRings(box, { zoom: z, centre, width, height });
+  const xs = ring.map((p) => p[0]);
+  const ys = ring.map((p) => p[1]);
+  ok('and the whole country lands inside the frame',
+    Math.min(...xs) >= 0 && Math.max(...xs) <= width && Math.min(...ys) >= 0 && Math.max(...ys) <= height,
+    `x ${Math.min(...xs).toFixed(0)}..${Math.max(...xs).toFixed(0)} y ${Math.min(...ys).toFixed(0)}..${Math.max(...ys).toFixed(0)}`);
+  ok('with room around it rather than touching the edge', Math.min(...xs) > 20 && Math.min(...ys) > 20);
+  // Centred, which is what makes it read as a place being pointed at.
+  ok('and centred', Math.abs((Math.min(...xs) + Math.max(...xs)) / 2 - width / 2) < 2);
+
+  // The whole world still returns a drawable zoom rather than failing. It is 1
+  // rather than 0 because at zoom 1 the world is 512px wide, which fits inside
+  // the 691px this frame has spare — the function returns the LARGEST zoom that
+  // fits, and that is the point of it.
+  const world = fitZoom([-85, 85, -180, 180], { width, height });
+  ok('the whole world still gets a drawable zoom', world >= 0 && world <= 1, `zoom=${world}`);
+
+  // Mercator is undefined at the poles. A country reaching past the limit must
+  // not produce NaN, which would silently draw nothing.
+  const polar = projectRings(
+    { type: 'Polygon', coordinates: [[[0, 89.9], [1, 89.9], [1, 88], [0, 88], [0, 89.9]]] },
+    { zoom: 3, centre: { lat: 89, lon: 0.5 }, width, height }
+  );
+  ok('a polygon reaching the pole still projects to numbers',
+    polar.every((r) => r.every(([x, y]) => Number.isFinite(x) && Number.isFinite(y))));
+
+  // DECIMATION. Nominatim returns Finland as ~20,000 points at a fidelity meant
+  // for cartography, every one of which Chromium would lay out and rasterise.
+  const dense = { type: 'Polygon', coordinates: [[]] };
+  for (let i = 0; i <= 5000; i++) {
+    const a = (i / 5000) * Math.PI * 2;
+    dense.coordinates[0].push([25 + Math.cos(a) * 5, 65 + Math.sin(a) * 3]);
+  }
+  const [thinned] = projectRings(dense, { zoom: 5, centre: { lat: 65, lon: 25 }, width, height, maxPoints: 400 });
+  ok('a dense boundary is thinned', thinned.length <= 402, `${thinned.length} points`);
+  // Closed explicitly: decimation drops the repeated last point, and an open
+  // ring leaves a visible gap in a dashed outline.
+  eq('and closed, so the dashes meet', thinned[0].join(), thinned[thinned.length - 1].join());
+
+  // Islands are separate rings, or a line is drawn through the sea to join
+  // them. Fragments too small to read are dropped whole.
+  const archipelago = {
+    type: 'MultiPolygon',
+    coordinates: [
+      [[[20, 60], [26, 60], [26, 64], [20, 64], [20, 60]]],
+      [[[19.0, 60.1], [19.01, 60.1], [19.01, 60.11], [19.0, 60.11], [19.0, 60.1]]],
+    ],
+  };
+  const many = projectRings(archipelago, { zoom: 5, centre: { lat: 62, lon: 23 }, width, height });
+  eq('a speck of an island is dropped', many.length, 1);
+
+  eq('a ring centre is the middle of its extent', ringCentre([[0, 0], [100, 0], [100, 50], [0, 50]]).join(), '50,25');
+  eq('nothing drawable returns no rings', projectRings(null, { zoom: 4, centre, width, height }).length, 0);
+
+  // THE COMPOSITING REGRESSION, AND IT IS THE REASON THIS FILE HAS A CANVAS.
+  //
+  // The tiles were seventy <img> elements. Every one laid out at the pixel it
+  // was asked for, none broken, every JPEG verified to have content — and the
+  // screenshot came back with two whole columns painted as page background.
+  // Drawing the same decoded images to a canvas at the same coordinates in the
+  // same page produced the correct pixels.
+  //
+  // So: no <img> in the basemap, ever. Anyone reverting to one will find the
+  // page looks right in a browser and renders wrong to a file, which is the
+  // worst possible shape for a bug and took a dozen measurements to corner.
+  const html = mapHtml({
+    tiles: [{ src: 'data:image/jpeg;base64,AAAA', x: -101, y: 0 }],
+    rings: [[[10, 10], [20, 10], [20, 20], [10, 10]]],
+    width, height, label: 'פינלנד',
+  });
+  ok('the basemap is a canvas', /<canvas id="map"/.test(html));
+  ok('and never an img', !/<img/.test(html), 'seventy img layers composite wrong to a screenshot');
+  ok('the tiles are handed to a draw loop', /drawImage/.test(html));
+  ok('which signals when it has finished', /__mapReady/.test(html), 'a screenshot before the draw is a black slide');
+  ok('the outline is drawn over it', /class="ring"/.test(html) && /stroke-dasharray/.test(html));
+  ok('and the label goes inside the country', html.includes('פינלנד'));
+}
+
+/* -------------------------------------------------------------------------- */
 group('the montage - many shots of ONE place under one unchanging line');
 
 // THE THIRD SHAPE, from a reference the owner supplied: "lots of clips being
