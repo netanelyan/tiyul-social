@@ -549,7 +549,11 @@ function shoot(raw, sharedAngles = []) {
       every: Math.max(0, Math.round(num(series.every, 0))),
       length: Math.max(2, Math.round(num(series.length, 3))),
       labelHe: String(series.labelHe || 'חלק {n} מתוך {of}'),
-      nextHe: String(series.nextHe || 'עקבו לחלק {n} מחר'),
+      // תעקבו, not עקבו, here and in every other fallback in this file. The
+      // bare imperative is what a sign says; the future form is what you say to
+      // somebody you are talking to, and a default that reverts to the colder
+      // one is a voice that changes the day post-config.json loses a key.
+      nextHe: String(series.nextHe || 'תעקבו לחלק {n} מחר'),
     },
     formats,
   };
@@ -626,7 +630,7 @@ function plans(raw) {
       // and nothing else, so the instruction goes on the name and the prize
       // goes under it — see askSlide in src/plan/slides.js. One string for both
       // wrapped to three lines and arrived as a paragraph in brackets.
-      actionHe: String(g.actionHe || 'עקבו ותגיבו "{keyword}"').trim(),
+      actionHe: String(g.actionHe || 'תעקבו ותגיבו "{keyword}"').trim(),
       prizeHe: String(g.prizeHe || '{winners} מכם מקבלים {premiumDays} יום פרימיום').trim(),
       captionHe: String(g.captionHe || '').trim(),
       footHe: String(g.footHe || '').trim(),

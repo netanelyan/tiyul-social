@@ -35,8 +35,25 @@ import {
 //
 // The publishing handshake:
 //   1. POST /v2/post/publish/creator_info/query/  -> who, and which privacy levels
-//   2. POST /v2/post/publish/content/init/        -> a publish_id
+//   2. POST <one of the three init endpoints>     -> a publish_id
 //   3. POST /v2/post/publish/status/fetch/        -> poll until PUBLISH_COMPLETE
+//
+// THERE ARE THREE INIT ENDPOINTS AND ONLY ONE OF THEM TAKES post_mode.
+//
+// This was written as if `content/init` were the one door and `media_type` the
+// switch, which is what the Photo Post reference reads like if you arrive at it
+// first. It is not: `media_type` is documented on that endpoint because a photo
+// post is the only thing it accepts, and a video sent through it is refused at
+// init with `Invalid media_type or post_mode` — the message every clip this
+// project has ever approved came back with, under the generic `invalid_params`
+// code, while decks drafted through the same function perfectly well.
+//
+//   photo, either mode   /v2/post/publish/content/init/      post_mode + media_type
+//   video, DIRECT_POST   /v2/post/publish/video/init/        post_info + source_info
+//   video, MEDIA_UPLOAD  /v2/post/publish/inbox/video/init/  source_info ALONE
+//
+// The third one is the one clips use, and it takes no `post_info` at all — see
+// initRequest for what that costs and who is told about it.
 
 const API = 'https://open.tiktokapis.com';
 const AUTH_URL = 'https://www.tiktok.com/v2/auth/authorize/';
@@ -610,6 +627,91 @@ export async function waitForPublish(publishId, tok, { timeoutMs = 120_000, inte
 const MAX_PHOTOS = 35;
 
 /**
+ * Which door this post goes through, and what it is allowed to carry.
+ *
+ * One function because the endpoint, the body and what the body CANNOT say are
+ * one decision, and splitting them is how the old code went wrong: it picked a
+ * body shape for every case and an endpoint for none.
+ *
+ * Returns `{ path, body, notes }`. The notes are things the OWNER has to know,
+ * not things a maintainer has to know — see the inbox branch.
+ */
+export function initRequest({ isClip, draft, title, description, privacy, videoUrl, images }) {
+  const post_info = { title: String(title || '').slice(0, 90), description: description || '' };
+
+  // A video handed to the inbox. `source_info` and nothing else: there is no
+  // `post_info` on this endpoint, no `post_mode`, no `media_type`.
+  //
+  // WHICH MEANS THE DESCRIPTION DOES NOT TRAVEL. TikTok's position is that an
+  // upload is unfinished — the creator opens the notification and writes the
+  // caption in the app, the same place they pick the sound, which is the entire
+  // reason a clip is a draft in the first place. So the caption this pipeline
+  // wrote reaches the owner instead of the API, and the note below is what says
+  // so on the publish message rather than leaving them to notice an empty
+  // caption box. The description is already sent as its own paste-ready message
+  // for the Instagram copy (see notify.descriptionToPaste), so the text is in
+  // the chat; what was missing was anything saying TikTok needs it too.
+  if (isClip && draft) {
+    return {
+      path: '/v2/post/publish/inbox/video/init/',
+      body: { source_info: { source: 'PULL_FROM_URL', video_url: videoUrl } },
+      notes: ['הסרטון נשלח לתיבה בלי תיאור - טיקטוק לא מקבלת אחד בהעלאה, הדביקו אותו באפליקציה'],
+    };
+  }
+
+  // A video posted straight to the feed. Its own endpoint, and the only one of
+  // the three that is not reachable today: every clip is a draft, because the
+  // API has no field for choosing a sound. Written out rather than left to
+  // throw, because the day the audit lands and `tiktokDraft` goes false, this
+  // is the line that has to already be right.
+  if (isClip) {
+    return {
+      path: '/v2/post/publish/video/init/',
+      body: {
+        post_info: { ...post_info, privacy_level: privacy, disable_comment: false },
+        source_info: { source: 'PULL_FROM_URL', video_url: videoUrl },
+      },
+      notes: [],
+    };
+  }
+
+  // Photos, both modes. The endpoint that genuinely takes post_mode and
+  // media_type, and the only media_type it takes is PHOTO.
+  return {
+    path: '/v2/post/publish/content/init/',
+    body: {
+      post_mode: draft ? 'MEDIA_UPLOAD' : 'DIRECT_POST',
+      media_type: 'PHOTO',
+      post_info: draft
+        ? // Only what survives the handover. privacy_level, disable_comment
+          // and auto_add_music are all decisions the creator makes in the app
+          // for an upload, and sending them would be stating a preference for
+          // settings this client does not get to set.
+          //
+          // auto_add_music in particular is the reason to use this mode at
+          // all: it is a boolean with no way to name a track, so a deck that
+          // wants a chosen sound has to be finished by hand.
+          post_info
+        : {
+            ...post_info,
+            privacy_level: privacy,
+            disable_comment: false,
+            // TikTok picks the track. There is no field for choosing one, so
+            // this is on or off — and off means a silent post, which generally
+            // reaches fewer people. Use draft mode to choose.
+            auto_add_music: true,
+          },
+      // A photo post is a list plus a cover index. Same PULL_FROM_URL and the
+      // same verified-domain requirement a video has, which is why hosting the
+      // mp4 under CARD_PUBLIC_BASE_URL reuses the whole delivery path the
+      // slides already use.
+      source_info: { source: 'PULL_FROM_URL', photo_cover_index: 0, photo_images: images },
+    },
+    notes: [],
+  };
+}
+
+/**
  * Which privacy level this post actually goes out at, and why.
  *
  * The rule that must not bend: never publish MORE widely than the owner was
@@ -980,6 +1082,24 @@ export async function publishTikTok(cand, { dryRun = false, draft = false } = {}
     : await resolvePrivacy(cand);
   if (note) notes.push(note);
 
+  // Built BEFORE the dry-run return, so a dry run reports the door as well as
+  // the privacy level. Which endpoint a kind of post uses is exactly the thing
+  // that was wrong here for the whole life of the clip format, and a rehearsal
+  // that does not name it cannot catch it going wrong again.
+  const req = initRequest({
+    isClip,
+    draft,
+    title: cand.headline,
+    description: cand.tiktokCaption,
+    privacy,
+    videoUrl,
+    images,
+  });
+  // Said whether or not the rest of the post goes well, like every other
+  // publisher note: what the API refused to carry is a fact about the post that
+  // is invisible from this side afterwards.
+  notes.push(...req.notes);
+
   if (dryRun) {
     return {
       dryRun: true,
@@ -991,49 +1111,13 @@ export async function publishTikTok(cand, { dryRun = false, draft = false } = {}
       privacySource,
       offered,
       notes,
+      endpoint: req.path,
       capUsed: used,
       cap,
     };
   }
 
-  const d = await api('/v2/post/publish/content/init/', {
-    token: t,
-    step: 'init',
-    body: {
-      post_mode: draft ? 'MEDIA_UPLOAD' : 'DIRECT_POST',
-      media_type: isClip ? 'VIDEO' : 'PHOTO',
-      post_info: draft
-        ? {
-            // Only what survives the handover. privacy_level, disable_comment
-            // and auto_add_music are all decisions the creator makes in the
-            // app for an upload, and sending them would be stating a preference
-            // for settings this client does not get to set.
-            //
-            // auto_add_music in particular is the reason to use this mode at
-            // all: it is a boolean with no way to name a track, so a deck that
-            // wants a chosen sound has to be finished by hand.
-            title: String(cand.headline || '').slice(0, 90),
-            description: cand.tiktokCaption || '',
-          }
-        : {
-            title: String(cand.headline || '').slice(0, 90),
-            description: cand.tiktokCaption || '',
-            privacy_level: privacy,
-            disable_comment: false,
-            // TikTok picks the track. There is no field for choosing one, so
-            // this is on or off — and off means a silent post, which generally
-            // reaches fewer people. Use draft mode to choose.
-            auto_add_music: true,
-          },
-      // A video is pulled by one URL; a photo post is a list plus a cover
-      // index. Same endpoint, same PULL_FROM_URL, and the same verified-domain
-      // requirement — which is why hosting the mp4 under CARD_PUBLIC_BASE_URL
-      // reuses the whole delivery path the slides already use.
-      source_info: isClip
-        ? { source: 'PULL_FROM_URL', video_url: videoUrl }
-        : { source: 'PULL_FROM_URL', photo_cover_index: 0, photo_images: images },
-    },
-  });
+  const d = await api(req.path, { token: t, step: 'init', body: req.body });
 
   // A 200 with no publish_id means TikTok accepted the request and gave us
   // nothing to track it with. Retrying is right and safe — nothing was created
@@ -1054,7 +1138,7 @@ export async function publishTikTok(cand, { dryRun = false, draft = false } = {}
   // different places (a notification in the inbox, or a post on the profile)
   // and nothing here could say which one had happened.
   console.log(
-    `tiktok: ${draft ? 'MEDIA_UPLOAD' : 'DIRECT_POST'} ${d.publish_id} -> ${status?.status || 'unknown'}` +
+    `tiktok: ${draft ? 'MEDIA_UPLOAD' : 'DIRECT_POST'} via ${req.path} ${d.publish_id} -> ${status?.status || 'unknown'}` +
       (draft ? ' (check the TikTok inbox, not the profile)' : '')
   );
 
@@ -1070,6 +1154,7 @@ export async function publishTikTok(cand, { dryRun = false, draft = false } = {}
     // not the same outcome and a log that conflates them is a log that says
     // things went out when they did not.
     draft,
+    endpoint: req.path,
     status: status?.status || null,
   };
 }

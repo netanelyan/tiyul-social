@@ -543,6 +543,19 @@ Three of TikTok's rules stop applying in that mode, and none of them by choice:
   A draft can become a public post while the app is still in review.
 - **No daily cap.** The five-per-24h limit counts posts made through the API.
 
+**And a video does not go through the same door as a deck.** `post_mode` and
+`media_type` are fields on `/v2/post/publish/content/init/`, which is the
+*photo* endpoint; the only `media_type` it accepts is `PHOTO`. A video has two
+endpoints of its own, `/v2/post/publish/video/init/` to post it and
+`/v2/post/publish/inbox/video/init/` to hand it over, and the second takes
+`source_info` alone: no `post_mode`, no `media_type`, and **no `post_info`**, so
+the description this pipeline wrote does not travel with the upload. You write
+it in the app, where you are already choosing the sound, and the publish
+notification says so. Sending a clip to the photo endpoint instead is refused at
+init with `Invalid media_type or post_mode` under the generic `invalid_params`
+code, which is what every clip this account approved came back with while decks
+drafted through the same function perfectly well.
+
 The cost is that it is not unattended: a deck waits in your inbox until you open
 TikTok, and nothing in this process can tell whether you ever did. So the
 notification says what happened per destination, `📤 פורסם לאינסטגרם` and
@@ -837,7 +850,7 @@ tags.**
 
 שלחו את זה למי שאתם טסים איתו
 
-כל יום יעד אחד, עם המקום המדויק. עקבו
+יש כאן מקום חדש כל יום. רוצים עוד? תעקבו
 
 #טיול #חופשה #איטליה #טיולים #טיפיםלטיול
 ```
@@ -863,6 +876,19 @@ page, an itinerary with its prices, because a follow bought with anything else i
 an unfollow a week later. A slideshow that already ends on an ask, an itinerary
 with the giveaway on, keeps that one instead; `clips.follow.on` turns the closing
 frame off without touching the description.
+
+**The ask is `תעקבו`, never `עקבו`, and the selftest holds it.** The bare
+imperative is what a sign says; the future form is what you say to somebody you
+are talking to, and the owner's reading of the first one is that it feels
+distant. It is one letter and it applies everywhere this pipeline asks for a
+follow, `caption.follows`, `shoots.series.nextHe` and the itinerary giveaway,
+because a voice that holds in one file and not the two others that want the same
+thing is not a voice. Four of the six entries also open on a question rather
+than an order, `עוד כאלה? תעקבו`, with the follow verb kept in the large line
+so a slide read at a glance still asks for something. The cost is a second
+question mark in a description that already carries one, which is why the asks
+in `caption.ctas` stay imperative and why two plain-`תעקבו` entries remain in
+the pool.
 
 `#פוריו` and `#ויראלי` are gone. Removing `#fyp` was right and stopped a step
 short: `#פוריו` is `#fyp` with Hebrew letters, which is the same non-pool, and

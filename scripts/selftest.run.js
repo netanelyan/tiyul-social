@@ -78,6 +78,7 @@ import {
   TikTokError,
   waitForPublish,
   assertFetchable,
+  initRequest,
 } from '../src/publish/tiktok.js';
 import { codeFrom } from './tiktok-token.js';
 import { hyphensOnly, stripEmoji, capHashtags, normalise } from '../src/draft.js';
@@ -2151,6 +2152,67 @@ eq('case does not matter', countryMismatch(swissSlides, 'ch'), null);
 eq('no region resolved means nothing to check', countryMismatch(swissSlides, null), null);
 eq('slides with no country claim likewise', countryMismatch([{}, {}], 'US'), null);
 eq('and a deck spanning countries is not a mismatch', countryMismatch([{ iso: 'CH' }, { iso: 'IT' }], 'US'), null);
+
+/* -------------------------------------------------------------------------- */
+group('TikTok init - three endpoints, and a clip was going through the wrong one');
+
+// Every clip this account approved came back `Invalid media_type or post_mode`
+// while decks drafted through the same function perfectly well, and the reason
+// was one endpoint doing the work of three: a video was being sent to
+// content/init with media_type VIDEO, which that endpoint does not accept. The
+// mode was right, the scope was right, the URL was right, and the door was
+// wrong.
+//
+// Pinned by PATH rather than by body shape, because the path is the fact that
+// was wrong and the bodies follow from it.
+{
+  const photo = { images: ['https://h/1.jpg', 'https://h/2.jpg'] };
+  const clip = { videoUrl: 'https://h/clip.mp4' };
+
+  eq(
+    'a clip drafted goes to the inbox endpoint',
+    initRequest({ isClip: true, draft: true, title: 'x', description: 'd', ...clip }).path,
+    '/v2/post/publish/inbox/video/init/'
+  );
+  eq(
+    'a clip posted directly goes to the video endpoint',
+    initRequest({ isClip: true, draft: false, title: 'x', description: 'd', privacy: 'SELF_ONLY', ...clip }).path,
+    '/v2/post/publish/video/init/'
+  );
+  eq(
+    'a deck still goes to the content endpoint',
+    initRequest({ isClip: false, draft: true, title: 'x', description: 'd', ...photo }).path,
+    '/v2/post/publish/content/init/'
+  );
+
+  // And the fields that do not belong on a video endpoint are not on one. Both
+  // halves matter: `media_type` is what TikTok refused, and `post_info` on the
+  // inbox endpoint is the field whose absence costs the description.
+  const inbox = initRequest({ isClip: true, draft: true, title: 'x', description: 'd', ...clip });
+  ok('and it carries no media_type or post_mode', !('media_type' in inbox.body) && !('post_mode' in inbox.body));
+  ok('nor a post_info TikTok would ignore', !('post_info' in inbox.body));
+  eq('the URL is pulled, not uploaded', inbox.body.source_info.source, 'PULL_FROM_URL');
+  eq('and it is the clip that was asked for', inbox.body.source_info.video_url, 'https://h/clip.mp4');
+
+  // The description cannot travel, so the owner is told rather than left to
+  // find an empty caption box in the app.
+  ok('an upload says the description has to be pasted by hand', inbox.notes.length === 1, inbox.notes.join(' | '));
+
+  // A photo post keeps the two fields that endpoint actually documents, and
+  // keeps PHOTO as the only value either of them is ever given.
+  const deck = initRequest({ isClip: false, draft: true, title: 'x', description: 'd', ...photo });
+  eq('a drafted deck is a photo upload', `${deck.body.media_type}/${deck.body.post_mode}`, 'PHOTO/MEDIA_UPLOAD');
+  eq(
+    'and a published one is a photo direct post',
+    (() => {
+      const b = initRequest({ isClip: false, draft: false, title: 'x', description: 'd', privacy: 'SELF_ONLY', ...photo }).body;
+      return `${b.media_type}/${b.post_mode}`;
+    })(),
+    'PHOTO/DIRECT_POST'
+  );
+  eq('a deck upload states no privacy level', deck.body.post_info.privacy_level, undefined);
+  ok('and nothing anywhere asks for media_type VIDEO', !JSON.stringify([inbox, deck]).includes('"VIDEO"'));
+}
 
 /* -------------------------------------------------------------------------- */
 group('TikTok scopes - the half-connection that looked connected');
@@ -5466,6 +5528,33 @@ group('the caption - a question, sometimes a CTA, and never a URL');
       cfg.follows.every((f) => f.askHe.split(/\s+/).length <= 4),
       cfg.follows.find((f) => f.askHe.split(/\s+/).length > 4)?.askHe);
     ok('every ask actually asks for a follow', cfg.follows.every((f) => /עקבו|לעקוב|עוקב/.test(f.askHe)));
+
+    // AND EVERY ONE ASKS IN THE SAME VOICE. `עקבו` is the bare imperative and
+    // the owner's reading of it is that it feels distant - it is what a sign
+    // says, where `תעקבו` is what you say to somebody you are talking to. One
+    // letter, and the difference between addressing a feed and addressing a
+    // person.
+    //
+    // Asserted across EVERY published follow ask rather than on this pool
+    // alone, because a voice that holds in one file and not in the two others
+    // that ask for the same thing is not a voice. The series pointer closes
+    // part 1 of a shoot; the giveaway line is the ask on an itinerary. All
+    // three are the account speaking, and they had drifted into two registers
+    // without anybody choosing the second one.
+    //
+    // Matched with a lookbehind so `תעקבו` passes and `עקבו` does not, which is
+    // the whole rule stated exactly once.
+    const distant = (s) => /(?<!ת)עקבו/.test(String(s || ''));
+    const everyAsk = [
+      ...cfg.follows.flatMap((f) => [f.askHe, f.whyHe, f.lineHe]),
+      ...cfg.ctas,
+      postConfig().shoot.series.nextHe,
+      postConfig().plans.giveaway.actionHe,
+      postConfig().plans.giveaway.captionHe,
+    ];
+    ok('and asks in the near voice, never the bare imperative',
+      everyAsk.every((s) => !distant(s)),
+      everyAsk.filter(distant).join(' | '));
     // A reason that promises something this pipeline cannot deliver buys a follow
     // and loses it a week later. Nothing here sends anybody anything.
     ok('and no reason promises a thing nobody will send',
