@@ -296,6 +296,11 @@ const tidy = (s) =>
     // with. "חסרונות: העיר העתיקה עמוסה" under a slide titled "החסרונות" says the
     // word twice, and the second one is inside the quote.
     .replace(/^(?:ו?ה?חסרונות|ו?החיסרון|ו?חסרון)\s*(?:אמיתיים)?\s*:\s*/, '')
+    // Punctuation at either end. The dashes are written as escapes rather than as
+    // themselves: an em dash in the source of this project is banned outright, and a
+    // literal one inside a character class is also the easiest thing in the file to
+    // break - "[.–—-]" edited carelessly becomes "[.-—-]", which is not three
+    // characters but the RANGE from "." to "—", quietly matching several hundred.
     .replace(/^[\s,;:.–—-]+/, '')
     .replace(/[\s,;:.–—-]+$/, '')
     // A one-letter Hebrew conjunction or preposition left on its own at either end.

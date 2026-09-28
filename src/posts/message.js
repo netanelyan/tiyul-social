@@ -34,7 +34,7 @@ export function postApprovalMessage(cand) {
     .join(' · ');
 
   lines.push(
-    `🧭 ${post.type} · ${post.look} · ${frameHe[post.frame] || post.frame} · ${post.where} · ${counts || '—'} שקופיות`
+    `🧭 ${post.type} · ${post.look} · ${frameHe[post.frame] || post.frame} · ${post.where} · ${counts || '-'} שקופיות`
   );
   if (post.url) lines.push(`🔗 ${post.url}`);
   lines.push('');

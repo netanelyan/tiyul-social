@@ -186,7 +186,7 @@ export function withEmoji(text, { size = '1em' } = {}) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* 1. label — TikTok's text tool over a photograph                             */
+/* 1. label - TikTok's text tool over a photograph                             */
 /* -------------------------------------------------------------------------- */
 
 /**
@@ -256,7 +256,7 @@ ${photo(slide.image)}
 }
 
 /* -------------------------------------------------------------------------- */
-/* 2. sheet — TikTok's boxed text, for two or three quoted lines               */
+/* 2. sheet - TikTok's boxed text, for two or three quoted lines               */
 /* -------------------------------------------------------------------------- */
 
 /**
@@ -316,7 +316,7 @@ ${photo(slide.image)}
 }
 
 /* -------------------------------------------------------------------------- */
-/* 3. route — one day, as something drawn for a friend                         */
+/* 3. route - one day, as something drawn for a friend                         */
 /* -------------------------------------------------------------------------- */
 
 /**
@@ -431,7 +431,7 @@ ${PROBE}
 }
 
 /* -------------------------------------------------------------------------- */
-/* 4. notes — the iPhone Notes checklist                                       */
+/* 4. notes - the iPhone Notes checklist                                       */
 /* -------------------------------------------------------------------------- */
 
 /**
@@ -499,7 +499,7 @@ ${PROBE}
 }
 
 /* -------------------------------------------------------------------------- */
-/* 5. collage — the breath between two days                                    */
+/* 5. collage - the breath between two days                                    */
 /* -------------------------------------------------------------------------- */
 
 /**
@@ -557,7 +557,7 @@ ${slide.titleHe ? `<div class="tag">${withEmoji(slide.titleHe)}</div>` : ''}
 }
 
 /* -------------------------------------------------------------------------- */
-/* 6. pinmap — the itinerary's real coordinates                                */
+/* 6. pinmap - the itinerary's real coordinates                                */
 /* -------------------------------------------------------------------------- */
 
 // The day colours, and they are a fixed sequence rather than a palette choice.

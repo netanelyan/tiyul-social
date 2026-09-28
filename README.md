@@ -59,6 +59,100 @@ are held to, and the reason the last two exist at all.
    for decks. One post drips out every four hours; a destination that fails is
    retried on its own, without re-posting to the one that worked.
 
+## What the account posts, and the evidence for it
+
+Six TikTok itinerary slideshows that worked were studied on 28 Sep 2026, against
+two flops on the same topics and against this account's own posts. Counts are as
+TikTok showed them; "saves" is TikTok's favourite count.
+
+| Post | Followers | Likes | Saves/likes | Shares/likes | Slides |
+|---|---:|---:|---:|---:|---:|
+| @teonakan, 20 things to do in Prague | 2,200 | 108.3K | 0.58 | 0.21 | 21 |
+| @juliatraveltips, Rome 3 day itinerary | - | 99.1K | 0.83 | 0.26 | 9 |
+| @liri.turgeman, המלצות לפראג אהובתי | 956 | 21.5K | 0.66 | 0.37 | 12+ |
+| @shiraztravel, תפסיקו לטוס רק לרודוס | 2,950 | 10.5K | 0.47 | 0.31 | 6 |
+| @travel.with.dorina, מסלול לחודש בתאילנד | 1,196 | 9.6K | 0.95 | 0.52 | 24 |
+| @dolci_tours, 10 ימים באיטליה | - | 2,203 | 0.54 | 0.19 | - |
+| **flop** - a designed poster of generic facts | - | **9** | - | - | 1 |
+| **flop** - one template, posted by three accounts | - | **2-4** | - | - | - |
+| **ours** - the Italian lakes deck | 1 | **9** | 0.22 | **0.00** | 6 |
+
+Every account in the top half has between 956 and 2,950 followers, which matters:
+TikTok says follower count and past performance are not direct ranking factors and
+that finishing and time spent weigh more. The bottom half is the other lesson -
+the For You feed deprioritises "reproduced or unoriginal content without any new or
+creative edits", and one template posted by three accounts is exactly that.
+
+**Seven mechanisms**, in the order they cost this account the most:
+
+1. **It is a tool, not a mood.** Saves run at 47 to 95% of likes on every winner.
+   People bookmark a plan for a trip they are actually planning. Ours were moods -
+   "places that look painted" - nice once, nothing to come back to.
+2. **It settles a group-chat decision, so it gets forwarded.** Shares run at 19 to
+   52%. Trips are planned with other people, and a post that answers "where, and
+   for how many nights" gets sent to the partner.
+3. **It holds attention slide by slide.** The winners are 9 to 24 slides and
+   structured so the viewer always knows where they are. Ours showed one name per
+   slide and could be skipped in half a second.
+4. **Proof that somebody chose.** Phone photographs, people in frame, and behind
+   them a human making trade-offs. Generic stock plus no opinions reads as an
+   aggregator.
+5. **It speaks the platform's native language.** TikTok's own text styles, emoji
+   rows, spoken Hebrew. Designed posters read as advertisements and get skipped.
+6. **The hook names a decision or voices a doubt.** "מה עושים 5 ימים בפראג? לא
+   משעמם שם?" beats "האגמים הכי יפים באיטליה".
+7. **It ends by giving, not asking.** We closed with "רוצים עוד? תעקבו", an ask
+   that offers nothing, and got one follower from 672 impressions.
+
+Two things follow that are easy to forget while editing the weights. **Distribution
+is hit-driven** - one of the posts above is 93% of its account's lifetime likes -
+so every post has to stand alone and be worth saving, and following is a side
+effect rather than a thing to ask for. And **templates die**, which makes variety
+the product rather than a nicety: the rotation, the look memory and the caption
+shapes are one mechanism, and turning any of them down turns the rotation back
+into a template.
+
+All of it, with the weights it justifies, is in `post-config.json` under
+`_posts_comment`.
+
+### The five post types
+
+Each is built from a tiyulplus.com destination page, so every fact on it is ours
+to stand behind.
+
+| | Hook shape | What it is |
+|---|---|---|
+| **plan** | `{days} ימים ב{dest}, ככה הייתי עושה את זה` | A day per slide from the site's own itinerary, in one of two looks, with a collage of that day's photographs between days, a summary, then the page. |
+| **list** | `{n} דברים לעשות ב{dest}` | Fifteen to twenty numbered places, one per slide, each with one specific line. The numbering is the completion loop. TikTok only - twenty-one slides cannot be an Instagram carousel. |
+| **instead** | `תפסיקו לטוס רק ל{default} כשיש את {alt}` | The Israeli default against three to five site destinations in the same region, each with a real reason quoted from its own page. |
+| **verdict** | `{dest}: שווה או לא?` | What is good, then the page's own drawbacks quoted verbatim, then who it is for, then the best three places. Refuses to build when the page names no drawbacks. |
+| **map** | `מפת {dest}: כל המקומות מהמסלול` | Numbered pins at the itinerary's real coordinates, coloured by day, with a scale bar. |
+
+**Four looks**, never two inside one post: `route` (stops down a dotted line with
+the real walking distance between them), `notes` (the iPhone Notes checklist, which
+is the highest-saving shape in the study), `label` (TikTok's own text tool, white
+with a dark outline, which is all @teonakan's 108K-like post is) and `sheet`
+(white rounded boxes, for a slide carrying two or three quoted lines).
+
+**Every opinion on every one of them is a verbatim quote.** A post may say that
+Prague's old town is crowded, that Sicily in a week is mostly driving, that Bali's
+south has real traffic - and each of those is a judgement, so none of them is
+written here. Each is a substring of the page's own `editorialRating.verdict`, and
+`quoted` in `src/posts/voice.js` asserts it. Nothing claims a trip nobody took:
+`assertNoExperience` refuses כשהייתי, היינו שם, טסנו and their relatives while
+permitting the planner's conditional, "ככה היינו בונים את זה", which is true.
+
+**The photographs come off our own page first.** Every place on a destination page
+carries a Wikimedia Commons file - 31 of Prague's 37 - chosen by our own editor for
+that place. That is better than a stock search on every axis: it is a visitor's
+photograph rather than a commissioned one, it is known to show what the slide names
+it, it costs one request for a whole post rather than twenty searches and twenty
+vision calls, and it cannot come back empty for a specific synagogue. The stock
+search stays as the second rung, because the places with no photograph are mostly
+the kosher entries and those are the slides this audience most wants.
+
+`npm run post-lab -- --type list --dest prague` renders one to look at.
+
 ## Five kinds of post
 
 A **card** is one verified claim from one source, 1080×1350, and it goes to
@@ -115,7 +209,7 @@ A **montage** is the third, and it is the other two's halves swapped: twelve
 shots at a second and a half, **one line that never changes**, no labels on
 anything. `held` holds its line over a picture that never moves; `cuts` moves but
 rewrites the line on every cut; this moves *and* holds one line. It needs a
-**narrowed search** to exist at all — measured on a live run, a broad search
+**narrowed search** to exist at all - measured on a live run, a broad search
 across twenty-six destinations returned fourteen judged clips spread over nine
 places, the best-covered with two, and no `limit` fixes that because the breadth
 is what causes it. So a montage day searches one destination's query instead, on
@@ -129,7 +223,7 @@ are not identifiable as any particular cliff. A cuts video burns a name onto
 every shot and must have them all; a montage burns none, and its evidence that
 the shots are one place is that one search for that place returned them. The
 *name* still comes from the shots the judge did place, by majority, so a single
-frame misread as Austria cannot rename a Dolomites post — and a site is printed
+frame misread as Austria cannot rename a Dolomites post - and a site is printed
 only when more than one shot agreed on it.
 
 The risk this shape has and the other two do not is that **one line is set once
@@ -190,7 +284,7 @@ publishes a price BAND and a visit length, not prices and not times. A band is
 not a price: printing one, or converting it to shekels, would be inventing
 exactly the figure this route exists to stop inventing. So a site plan has no
 stop prices, no day subtotal and no total slide, and what fills that space is
-the site's own facts — what kind of place it is, how long people spend there,
+the site's own facts - what kind of place it is, how long people spend there,
 and `כניסה חופשית` where the band is zero. A `/trip` with a budget still takes
 the AI route, because there is nothing to plan against.
 
@@ -574,7 +668,7 @@ carry the honesty instead:
 **What the post claims is now whichever of the two is true.** An AI plan says
 an AI planned it, which it did. A site plan says it is the site's itinerary,
 which it is, and closes on a real screenshot of the page rather than on a
-drawing of one — so the rule that no slide may imitate a screen the product
+drawing of one - so the rule that no slide may imitate a screen the product
 does not have is kept by construction rather than by care. This was the change
 the note at the top of `src/plan/write.js` said would come first; it has, and
 `src/plan/site.js` is where it lives.
@@ -714,6 +808,18 @@ message says when the slot frees.
 | `src/plan/text.js` | every word on a plan that the model did not write, filled once |
 | `src/plan/slides.js` | the itinerary expressed as deck slides, one stop, one photograph |
 | `src/plan/candidate.js` | photographs, both slide sets, and the whole plan printed for approval |
+| `src/posts/source.js` | the destination page as the facts a slide may carry: kosher, price bands, distances, the verdict split |
+| `src/posts/voice.js` | the planner's voice, and the three things it may not be: a memory, filler, an unquoted opinion |
+| `src/posts/types.js` | the rotation: which type, look, frame and caption shape, and never what the last few used |
+| `src/posts/photos.js` | the ladder: our page's own Commons file, then the stock search, then nothing |
+| `src/posts/plan.js` | one builder per type, and the two day looks |
+| `src/posts/caption.js` | the description, built from a shape rather than from one skeleton |
+| `src/posts/message.js` | what you are shown before approving: type, look, frame, and how many photographs are ours |
+| `src/images/commons.js` | the Wikimedia file the site attached to a place, with its licence and author |
+| `src/render/postSlides.js` | the looks: label, sheet, route card, notes checklist, collage, pin map |
+| `src/render/post.js` | the five types to files, with Instagram's ten-image limit enforced where it can still be acted on |
+| `src/metrics/` | what a post did, ranked on saves and shares per view, and why TikTok cannot answer |
+| `scripts/post-lab.js` | build and render one post of any type without going near Telegram |
 | `src/urlLike.js` | the link pattern, where three import chains can all reach it |
 | `src/dashes.js` | the em dash ban, and the one function every writer runs on model output |
 | `src/models.js` | which model does which job, and the effort-parameter guard |
@@ -953,20 +1059,20 @@ frame off without touching the description.
 **A held clip is the one post that does not close on it, and that is a decision
 rather than an omission.** A single-shot clip keeps one line from the first frame
 to the last. It did close on a follow frame for two seconds, and the argument for
-it was sound — by second six the hook has been read, and a viewer who watched to
+it was sound - by second six the hook has been read, and a viewer who watched to
 the end had not been told why they would want the next one. It was still the text
 changing over a picture that never cuts, which is the exact thing this shape
 exists not to be, and it landed at the moment a viewer is deciding whether the
 eight seconds were worth it. The owner's call, made with the cost on the table:
 fewer follows from a clip that never breaks its own rule. A **cuts** clip still
-closes on one, and that is not an inconsistency — there the closing line arrives
+closes on one, and that is not an inconsistency - there the closing line arrives
 with new footage under it, which is the whole condition. The description carries
 the reason either way, where it costs the video nothing.
 
 The rule has now been broken twice by different code, first by `beats` and then
 by the closing frame, which is why it is a selftest rather than a comment:
 `burnClip` must take no closing-frame arguments, burn exactly one overlay, and
-carry no `enable` window — because a second overlay gated to a time window *is*
+carry no `enable` window - because a second overlay gated to a time window *is*
 the text changing, whatever the thing it switches to is called.
 
 **The ask is `תעקבו`, never `עקבו`, and the selftest holds it.** The bare
@@ -1206,7 +1312,7 @@ schema were billed fresh on every candidate. It was also being sent the full
 630×1200 poster Pexels returns, 1,008 image tokens, to answer three questions
 about composition. Measured against live frames: **3,273 input tokens and 1.16¢
 per call**, times the 24-candidate cap, is **28¢ every time the timer looks for a
-clip** — spent before the owner has seen anything, and spent in full on the days
+clip** - spent before the owner has seen anything, and spent in full on the days
 the log records as `אף אחד לא עבר את סף היעד`.
 
 A cache breakpoint cannot help a prefix that begins with a different image every
@@ -1214,7 +1320,7 @@ call, so the order mattered as much as the block did. With the prompt moved to a
 cached system block and the thumbnail requested at h=640, the same call is
 **0.35¢** and a run is **9.2¢**, a two-thirds cut.
 
-The verdicts were compared rather than assumed — four clips judged at the
+The verdicts were compared rather than assumed - four clips judged at the
 poster, at 640 and at 448. Every boolean identical at both sizes, the same
 country and the same site name at the same confidence, `destination` within a
 point at 640. At 448 one clip went 9 to 8, and with `visionMinDestination` at 7

@@ -75,8 +75,8 @@ export function rankBy(entries, field, { min = 2 } = {}) {
   return out.sort((a, b) => (b.saveRate ?? -1) - (a.saveRate ?? -1) || (b.shareRate ?? -1) - (a.shareRate ?? -1));
 }
 
-const pct = (n) => (n == null ? '—' : `${(n * 100).toFixed(1)}%`);
-const num = (n) => (n == null ? '—' : Math.round(n).toLocaleString('en-US'));
+const pct = (n) => (n == null ? '-' : `${(n * 100).toFixed(1)}%`);
+const num = (n) => (n == null ? '-' : Math.round(n).toLocaleString('en-US'));
 /** Hebrew counts one thing differently from several. "1 פוסטים" is what a program writes. */
 const posts = (n) => (n === 1 ? 'פוסט אחד' : `${n} פוסטים`);
 
