@@ -1599,6 +1599,287 @@
       ]
     }
   },
+  "_posts_comment": [
+    "THE POST MENU. WHAT THIS ACCOUNT POSTS, AND THE EVIDENCE FOR EVERY WEIGHT.",
+    "",
+    "Written against a study of top TikTok itinerary slideshows, Hebrew and",
+    "English, read on 28 Sep 2026, compared with flops on the same topics and with",
+    "this account's own posts. Counts are as TikTok showed them; \"saves\" is",
+    "TikTok's favourite count.",
+    "",
+    "  post                                    followers  likes   saves/likes  shares/likes  slides",
+    "  @teonakan 20 things to do in Prague         2,200  108.3K         0.58          0.21      21",
+    "  @juliatraveltips Rome 3 day itinerary           -   99.1K         0.83          0.26       9",
+    "  @liri.turgeman המלצות לפראג אהובתי            956   21.5K         0.66          0.37     12+",
+    "  @shiraztravel תפסיקו לטוס רק לרודוס         2,950   10.5K         0.47          0.31       6",
+    "  @travel.with.dorina מסלול לחודש בתאילנד     1,196    9.6K         0.95          0.52      24",
+    "  @dolci_tours מסלול ל-10 ימים באיטליה            -    2.2K         0.54          0.19       -",
+    "  FLOP designed poster, מדריך מהיר לתאילנד        -       9            -             -       1",
+    "  FLOP one template posted by three accounts      -    2-4            -             -       -",
+    "  OURS Italian lakes deck                         1       9          0.22          0.00       6",
+    "",
+    "TikTok says follower count and past performance are not direct ranking",
+    "factors and that finishing and time spent weigh more. The winners above are",
+    "accounts with 956 to 2,950 followers, so that holds up. The For You feed",
+    "deprioritises \"reproduced or unoriginal content without any new or creative",
+    "edits\", which is what the three-accounts-one-template row is.",
+    "",
+    "SEVEN MECHANISMS, in the order they cost us the most:",
+    "",
+    "  1. IT IS A TOOL, NOT A MOOD. Saves run at 47 to 95% of likes on every",
+    "     winner. People bookmark a plan for a trip they are actually planning.",
+    "     Ours were moods - \"places that look painted\" - nice once, nothing to come",
+    "     back to. This is why `saveAskHe` is the default ask and why the weekly",
+    "     report ranks on saves per view rather than on likes.",
+    "  2. IT SETTLES A GROUP-CHAT DECISION, SO IT GETS FORWARDED. Shares run at 19",
+    "     to 52%. Trips are planned with other people and a post that answers",
+    "     \"where, and for how many nights\" gets sent to the partner. This is the",
+    "     whole argument for the `instead` type: a contrarian hook starts that",
+    "     conversation.",
+    "  3. IT HOLDS ATTENTION SLIDE BY SLIDE. The winners are 9 to 24 slides and",
+    "     structured so the viewer knows where they are: numbered items, \"stop,",
+    "     nights, what's there\", \"day 1, day 2\". Ours showed one name per slide and",
+    "     could be skipped in half a second. Hence slidesMin/slidesMax, and hence",
+    "     the `list` type existing at all - the numbering IS the completion loop.",
+    "  4. PROOF THAT SOMEBODY CHOSE. Phone photos, people in frame, imperfect",
+    "     framing, and behind it a human making trade-offs. Generic stock plus no",
+    "     opinions reads as an aggregator, and aggregators are what the feed",
+    "     deprioritises. This is why the photo ladder starts at the Wikimedia file",
+    "     our own editor attached to that place (src/images/commons.js) and why",
+    "     every opinion is a verbatim quote from the page's own verdict.",
+    "  5. IT SPEAKS THE PLATFORM'S NATIVE LANGUAGE. TikTok's own text styles, emoji",
+    "     rows, spoken Hebrew. Designed posters read as ads and get skipped - see",
+    "     the 9-like row above. Hence the looks below, and `overlay` above.",
+    "  6. THE HOOK NAMES A DECISION OR VOICES A DOUBT. \"מה עושים 5 ימים בפראג? לא",
+    "     משעמם שם?\" beats \"האגמים הכי יפים באיטליה\". That is what `hooks` is.",
+    "  7. IT ENDS BY GIVING, NOT ASKING. Winners close with a summary and a warm",
+    "     sign-off and get hundreds of comments. We closed with \"רוצים עוד? תעקבו\",",
+    "     an ask that offers nothing. Hence `signoffsHe`, and hence no post type",
+    "     here has a follow slide at all.",
+    "",
+    "TWO IMPLICATIONS WORTH KEEPING IN MIND WHILE EDITING THESE NUMBERS:",
+    "",
+    "  Distribution is hit-driven. One post became 93% of an account's lifetime",
+    "  likes, so every post has to stand alone and be worth saving. Following is a",
+    "  side effect, not a thing to ask for.",
+    "",
+    "  Templates die. Three accounts posting one template got 2 to 4 likes each.",
+    "  This pipeline is a template machine, so the variety is the part that has to",
+    "  be designed: `lookMemory`, `typeMemory` and the caption shapes are all one",
+    "  mechanism, and turning any of them down turns the rotation back into a",
+    "  template.",
+    "",
+    "WHAT AI MAY AND MAY NOT DO HERE. It may do the voice, the structure, the",
+    "specificity and the opinions, grounded in our data. It may NOT invent a",
+    "personal experience: no \"כשהייתי שם\", no \"we stayed at\", no fake memories, no",
+    "generated photographs. src/posts/voice.js enforces that, and the honest",
+    "version of personal is a planner - \"זה המסלול שהיינו בונים לחבר שטס לפראג\"."
+  ],
+  "posts": {
+    "types": [
+      {
+        "id": "plan",
+        "he": "המסלול",
+        "weight": 4,
+        "slidesMin": 6,
+        "slidesMax": 14,
+        "needs": ["itinerary"],
+        "desc": "The flagship. A day per slide from the site's own itinerary, a photo collage between days, a summary, then the page. Heaviest because it is the type all three top mechanisms point at: it is a tool, it settles where-and-how-many-nights, and it holds attention day by day."
+      },
+      {
+        "id": "list",
+        "he": "הרשימה הארוכה",
+        "weight": 3,
+        "slidesMin": 15,
+        "slidesMax": 20,
+        "needs": ["places15"],
+        "platforms": ["tiktok"],
+        "desc": "@teonakan's shape, which is 93% of her account's lifetime likes: one numbered place per slide, one specific line each. The count is the point - a viewer who reads \"3.\" knows there are seventeen more and stays."
+      },
+      {
+        "id": "instead",
+        "he": "תפסיקו לטוס רק ל",
+        "weight": 2,
+        "slidesMin": 5,
+        "slidesMax": 7,
+        "needs": ["region3"],
+        "desc": "The contrarian hook. Highest shares of any reference post at 0.31 to 0.52, because it starts an argument somebody forwards. Needs three or more site destinations in one region, each with a real reason from its own verdict."
+      },
+      {
+        "id": "verdict",
+        "he": "שווה או לא",
+        "weight": 2,
+        "slidesMin": 5,
+        "slidesMax": 8,
+        "needs": ["cons"],
+        "desc": "The honest answer. Pros, then the page's own drawbacks quoted verbatim, then who it is for, then the best three places. Refuses to build when the verdict names no drawbacks, because a one-sided verdict post is an advertisement."
+      },
+      {
+        "id": "map",
+        "he": "המפה",
+        "weight": 1,
+        "slidesMin": 2,
+        "slidesMax": 3,
+        "needs": ["coords8"],
+        "desc": "Numbered pins at the itinerary's real coordinates. Lightest weight and the highest save rate per slide of anything here: a map of where everything is is the one image somebody screenshots."
+      }
+    ],
+    "_looks_comment": [
+      "HOW A POST IS DRAWN, and never two in a row the same.",
+      "",
+      "The same mechanism as the clip shapes: a history in the store, and a look",
+      "that was used last time is excluded. `types` restricts a look to the post",
+      "types it makes sense for - a notes checklist is a day, so it belongs to the",
+      "plan and to nothing else, and a numbered label belongs to the list.",
+      "",
+      "NEVER TWO LOOKS INSIDE ONE POST. A post picks one and draws every slide in",
+      "it. Mixing them is how a slideshow reads as two people making one post."
+    ],
+    "looks": [
+      {
+        "id": "route",
+        "he": "כרטיס מסלול",
+        "weight": 1,
+        "types": ["plan"],
+        "desc": "Stops down a dotted line, a small photo each, the time spent, and the real distance between them marked approximate. Reads as something somebody drew for a friend."
+      },
+      {
+        "id": "notes",
+        "he": "פתקים",
+        "weight": 1,
+        "types": ["plan"],
+        "desc": "@juliatraveltips' iPhone Notes checklist, at 0.83 saves per like the highest of any reference post. Black ground, empty circles, the day's own tip last."
+      },
+      {
+        "id": "label",
+        "he": "תווית",
+        "weight": 1,
+        "types": ["list", "instead", "verdict", "map"],
+        "desc": "TikTok's native text tool: large white type with a dark outline over a full-bleed photograph. What @teonakan's 108K-like post is, and it is nothing more than that."
+      },
+      {
+        "id": "sheet",
+        "he": "לוח",
+        "weight": 1,
+        "types": ["verdict", "instead"],
+        "desc": "White rounded label boxes over a darkened photograph, the other shape TikTok's own text tool makes. For a slide carrying two or three quoted lines, where an outline alone would not separate them."
+      }
+    ],
+    "_frames_comment": [
+      "THE ASPECT-RATIO TEST, AND IT IS A REAL OPEN QUESTION.",
+      "",
+      "`tall` is 9:16, which is what TikTok's player is and what this pipeline has",
+      "always drawn. `phone` is 3:4, which is what a phone camera shoots and what",
+      "every one of the six reference posts used - none of them reframed their",
+      "photographs to fill the player.",
+      "",
+      "Which performs better is not knowable from here, so both are drawn and which",
+      "one a post used is recorded on the candidate and in the published row. The",
+      "weekly report ranks by it. Set one weight to 0 once the numbers say so.",
+      "",
+      "Instagram is not in this list: a carousel is 4:5 and that is not a variable."
+    ],
+    "frames": [
+      { "id": "tall", "w": 1080, "h": 1920, "weight": 1 },
+      { "id": "phone", "w": 1080, "h": 1440, "weight": 1 }
+    ],
+    "_hooks_comment": [
+      "THE COVER LINE, FILLED RATHER THAN WRITTEN.",
+      "",
+      "The same decision src/video/hooks.js made for a clip: a filled format is a",
+      "known sentence with our own numbers in it, and a written one is a sentence a",
+      "model chose. Every shape here is read off a post that worked.",
+      "",
+      "{dest} {days} {n} {alt} {default} {score} are filled from the page's own",
+      "data. A shape whose variables cannot be filled is skipped rather than",
+      "printed with a gap in it."
+    ],
+    "hooks": {
+      "plan": [
+        { "id": "howid", "he": "{days} ימים ב{dest}, ככה הייתי עושה את זה", "weight": 3, "desc": "Names a decision. The planner's voice, which is the honest version of personal." },
+        { "id": "doubt", "he": "מה עושים {days} ימים ב{dest}? לא משעמם שם?", "weight": 3, "desc": "@liri.turgeman's cover, 21.5K likes off 956 followers. Voices the doubt the viewer already has." },
+        { "id": "friend", "he": "המסלול ש{days} ימים ב{dest} צריך להיראות", "weight": 1, "desc": "Quieter, for the rotation's sake." },
+        { "id": "nights", "he": "{days} ימים ב{dest}: כמה לילות איפה", "weight": 2, "desc": "@travel.with.dorina's structure, the highest saves per like of any reference post at 0.95." }
+      ],
+      "list": [
+        { "id": "count", "he": "{n} דברים לעשות ב{dest}", "weight": 3, "desc": "@teonakan's cover, verbatim in translation. 108.3K likes, 21 slides, her own phone photos." },
+        { "id": "countsave", "he": "{n} דברים ב{dest} ששווה לשמור", "weight": 2, "desc": "Names the save, which is the action the whole format is for." },
+        { "id": "countdays", "he": "{n} עצירות ב{dest}, בסדר שעובד", "weight": 1, "desc": "Promises an order rather than a pile." }
+      ],
+      "instead": [
+        { "id": "stop", "he": "תפסיקו לטוס רק ל{default} כשיש את {alt}", "weight": 3, "desc": "@shiraztravel's cover. 0.31 shares per like on 2,950 followers." },
+        { "id": "everyone", "he": "כולם טסים ל{default}. ואלה {n} האלטרנטיבות", "weight": 2, "desc": "Same argument, counted, which adds the completion loop." }
+      ],
+      "verdict": [
+        { "id": "worth", "he": "{dest}: שווה או לא?", "weight": 3, "desc": "The question somebody types into the search bar." },
+        { "id": "before", "he": "לפני שאתם מזמינים ל{dest}, שתי דקות", "weight": 2, "desc": "Frames the drawbacks as a favour rather than as a complaint." },
+        { "id": "score", "he": "נתנו ל{dest} {score}. וזה למה", "weight": 1, "desc": "Uses the page's own score, which is a number we publish and stand behind." }
+      ],
+      "map": [
+        { "id": "all", "he": "מפת {dest}: כל המקומות מהמסלול", "weight": 3, "desc": "Says exactly what the image is, which is what a save is for." },
+        { "id": "where", "he": "איפה הכל נמצא ב{dest}", "weight": 2, "desc": "The question a map answers." }
+      ]
+    },
+    "_captions_comment": [
+      "THE DESCRIPTION, AS SHAPES RATHER THAN AS ONE SKELETON.",
+      "",
+      "The flop's caption was a long AI paragraph with leftover markdown asterisks.",
+      "Ours was the same four parts in the same order on every post, which is the",
+      "template problem in the one place nobody looks at it.",
+      "",
+      "A shape is an ordered list of parts. No two consecutive posts may use the",
+      "same shape or open on the same part, held by a history in the store and by a",
+      "selftest. Parts:",
+      "",
+      "  hook      the cover line restated in a spoken way",
+      "  practical one real line from the page: the flight, getting around, a season",
+      "  save      the default ask, `closing.saveAskHe`",
+      "  site      the destination-naming line, when the site has a page",
+      "  question  a real question, from `caption.questions`",
+      "  signoff   a warm close from `closing.signoffsHe`",
+      "  follow    the follow line, on SOME shapes only and never as the ask",
+      "  tags      3 to 5, always last, because a tag block is where reading stops"
+    ],
+    "captions": [
+      { "id": "toolfirst", "parts": ["hook", "practical", "save", "site", "tags"], "weight": 3 },
+      { "id": "asking", "parts": ["hook", "question", "save", "tags"], "weight": 2 },
+      { "id": "warm", "parts": ["hook", "practical", "signoff", "site", "tags"], "weight": 2 },
+      { "id": "short", "parts": ["hook", "save", "tags"], "weight": 1 },
+      { "id": "followed", "parts": ["hook", "practical", "save", "follow", "tags"], "weight": 1 }
+    ],
+    "_tags_comment": [
+      "ON EVERY POST OF THESE TYPES, ahead of the shared pools and replacing a draw",
+      "from them rather than adding to the count.",
+      "",
+      "\"פוריו\" is how Israeli TikTok writes \"for you\". It is not in hashtags.broad",
+      "because that pool is shared with cards and clips and a random draw would put",
+      "it on about one post in three - a feed tag is either on every post or it is",
+      "doing nothing at all."
+    ],
+    "tags": {
+      "alwaysHe": ["#פוריו"]
+    },
+    "closing": {
+      "saveAskHe": "שמרו את זה לטיול",
+      "_signoffs_comment": [
+        "Ends by giving, which is mechanism 7. The winners close with a summary and",
+        "a warm line and get hundreds of comments; \"רוצים עוד? תעקבו\" offers",
+        "nothing and got us one follower off 672 impressions."
+      ],
+      "signoffsHe": [
+        "מקווה שזה עוזר לתכנן 🤍",
+        "שאלות? תכתבו לנו",
+        "אם זה עזר, זה כבר שווה את זה 🤍",
+        "מה הייתם מוסיפים?"
+      ]
+    },
+    "lookMemory": 3,
+    "typeMemory": 2,
+    "days": 4,
+    "stopsMin": 3,
+    "stopsMax": 5,
+    "walkMaxKm": 3
+  },
   "_igReplies_comment": [
     "THE INSTAGRAM HALF OF \"the post points at the page\".",
     "",

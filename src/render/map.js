@@ -1,4 +1,5 @@
 import { getBrowser } from './index.js';
+import { heeboDataUri, assistantDataUri, escapeHtml } from './theme.js';
 
 // The slide that answers "where", drawn as a country ringed on a night map.
 //
@@ -336,6 +337,201 @@ window.__mapReady = (async () => {
   return true;
 })();
 </script>
+</body></html>`;
+}
+
+/* -------------------------------------------------------------------------- */
+/* the city-scale pin map                                                     */
+/* -------------------------------------------------------------------------- */
+
+// WHY THIS ONE HAS NO BASEMAP, which is the first thing anybody will ask.
+//
+// GIBS caps at zoom 8. That is stated above as "ample" and it is - for a COUNTRY,
+// which has to fit the frame. A city itinerary needs about zoom 13, and at zoom 8 one
+// tile pixel is roughly 600 metres, so every place on a Prague day lands inside the
+// same pixel. The imagery this project has a licence to use simply cannot draw this.
+//
+// The alternatives were considered and rejected:
+//
+//   OpenStreetMap's own tiles - the usage policy discourages automated bulk fetching
+//   and requires visible attribution, and "© OpenStreetMap contributors" burned into
+//   the corner of a slide is exactly the tiny corner text that marks a post as
+//   made-by-a-company.
+//
+//   A commercial basemap - every one of them wants a key and a billing relationship,
+//   which is the dependency the note at the top of this file exists to avoid.
+//
+// SO WHAT IS DRAWN IS THE GEOMETRY ITSELF, and it turns out to be the better post
+// anyway. The coordinates are real, the relative positions are true, the walking order
+// is the itinerary's own order, and a scale bar makes the distances readable. What a
+// viewer saves a map for is "what is near what and can I walk it" - and a street map
+// answers that less directly than a route diagram does, because a street map also
+// draws four hundred streets they did not ask about.
+//
+// It is NOT called a map of the city anywhere in the output. The hook says "כל
+// המקומות מהמסלול", which is what it is.
+
+/**
+ * A projection that fits a set of points into a frame.
+ *
+ * Web Mercator, exactly as the country map uses, but at a FRACTIONAL scale chosen to
+ * fit rather than at an integer tile zoom - there are no tiles here, so there is no
+ * reason to round to one. Mercator rather than plain latitude/longitude because at 50
+ * degrees north a degree of longitude is two thirds of a degree of latitude, and
+ * plotting them as a square grid stretches Prague sideways by half.
+ */
+export function fitPoints(points, { width, height, padding = 0.14 } = {}) {
+  const pts = (points || []).filter((p) => Number.isFinite(Number(p.lat)) && Number.isFinite(Number(p.lng)));
+  if (pts.length < 2) return null;
+
+  // Unit mercator, independent of zoom: x in [0,1] across the world.
+  const mx = (lon) => (Number(lon) + 180) / 360;
+  const my = (lat) => {
+    const r = (Math.max(-85, Math.min(85, Number(lat))) * Math.PI) / 180;
+    return (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2;
+  };
+
+  const xs = pts.map((p) => mx(p.lng));
+  const ys = pts.map((p) => my(p.lat));
+  const box = { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+
+  // A single-point-wide box would divide by zero, and a very thin one would scale to
+  // absurdity - two stops fifty metres apart would fill the frame and read as a map of
+  // two buildings. The floor is about 1.2km of span at this latitude.
+  const MIN = 1 / 2 ** 15;
+  const spanX = Math.max(box.x1 - box.x0, MIN);
+  const spanY = Math.max(box.y1 - box.y0, MIN);
+
+  const usable = 1 - padding * 2;
+  const scale = Math.min((width * usable) / spanX, (height * usable) / spanY);
+  const cx = (box.x0 + box.x1) / 2;
+  const cy = (box.y0 + box.y1) / 2;
+
+  const project = (p) => ({
+    x: width / 2 + (mx(p.lng) - cx) * scale,
+    y: height / 2 + (my(p.lat) - cy) * scale,
+  });
+
+  // Metres per pixel, for the scale bar.
+  //
+  // One unit of mercator x is the whole world round, 40,075,017m at the equator,
+  // narrowing by cos(latitude). So the only unknown is the latitude of the frame's
+  // centre, and `cy` is a mercator y rather than a latitude - inverted here, which is
+  // the one bit of arithmetic in this file worth writing out:
+  //
+  //   cy = (1 - asinh(tan φ) / π) / 2   =>   φ = atan(sinh(π (1 - 2 cy)))
+  const latRad = Math.atan(Math.sinh(Math.PI * (1 - 2 * cy)));
+  const metresPerPixel = (40_075_017 * Math.cos(latRad)) / scale;
+
+  return { project, scale, metresPerPixel, latDeg: (latRad * 180) / Math.PI, centre: { x: cx, y: cy } };
+}
+
+/**
+ * A round number of metres that fits in about a quarter of the frame.
+ *
+ * ROUND, because a scale bar reading "437 מ׳" is a scale bar nobody reads. The ladder
+ * is the one every map uses: 1, 2, 5 and their decades.
+ */
+export function scaleBar(metresPerPixel, width) {
+  const want = width * 0.24 * metresPerPixel;
+  const steps = [100, 200, 500, 1000, 2000, 5000, 10_000, 20_000, 50_000];
+  const metres = steps.find((s) => s >= want) || steps[steps.length - 1];
+  return {
+    metres,
+    px: Math.round(metres / metresPerPixel),
+    labelHe: metres >= 1000 ? `${metres / 1000} ק״מ` : `${metres} מ׳`,
+  };
+}
+
+/**
+ * The pin map's HTML.
+ *
+ * `points` each carry `{ lat, lng, n, dayN, nameHe }`. The day number is what colours
+ * them, because "which of these can I do together" is the question a viewer is
+ * actually asking and it is the one thing a street map would not tell them.
+ *
+ * NO LABELS ON THE PINS beyond their number. Twenty place names on one frame is a
+ * frame of overlapping text at any size that fits - the reference maps do not attempt
+ * it either. The numbers key to the list post's own numbering, which is what makes a
+ * map post worth posting alongside one.
+ */
+export function pinMapHtml({ points, width, height, titleHe = null, subHe = null, bar = null, dayColours = [] }) {
+  const pin = Math.round(width * 0.052);
+  const font = Math.round(pin * 0.52);
+
+  // Lines first, so pins sit on top of them.
+  const byDay = new Map();
+  for (const p of points) {
+    if (!byDay.has(p.dayN)) byDay.set(p.dayN, []);
+    byDay.get(p.dayN).push(p);
+  }
+  const paths = [...byDay.entries()]
+    .filter(([, pts]) => pts.length > 1)
+    .map(([day, pts]) => {
+      const d = pts.map((p, i) => `${i ? 'L' : 'M'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+      const colour = dayColours[(Number(day) - 1) % dayColours.length] || '#FFD84D';
+      return `<path class="leg" d="${d}" style="stroke:${colour}"/>`;
+    })
+    .join('\n  ');
+
+  const pins = points
+    .map((p) => {
+      const colour = dayColours[(Number(p.dayN) - 1) % dayColours.length] || '#FFD84D';
+      return `<div class="pin" style="left:${p.x.toFixed(1)}px;top:${p.y.toFixed(1)}px;background:${colour}">${p.n}</div>`;
+    })
+    .join('\n  ');
+
+  return `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><style>
+@font-face { font-family: 'Heebo'; src: url(${heeboDataUri()}) format('truetype'); font-weight: 100 900; font-display: block; }
+@font-face { font-family: 'Assistant'; src: url(${assistantDataUri()}) format('truetype'); font-weight: 200 800; font-display: block; }
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { width:${width}px; height:${height}px; overflow:hidden;
+             background:#0b0f16; font-family:'Assistant','Heebo',sans-serif; }
+/* A faint grid, at the scale bar's own spacing. It is what turns a scatter of dots
+   into something with distance in it, and it is drawn from the same number the bar
+   prints so the two cannot disagree. */
+#grid { position:absolute; inset:0; opacity:.5;
+        background-image:
+          linear-gradient(rgba(255,255,255,.055) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255,255,255,.055) 1px, transparent 1px);
+        background-size:${bar?.px || 120}px ${bar?.px || 120}px; }
+#glow { position:absolute; inset:0;
+        background:radial-gradient(ellipse at 50% 46%, rgba(80,120,190,.16), transparent 62%); }
+svg { position:absolute; inset:0; }
+.leg { fill:none; stroke-width:${Math.max(3, Math.round(width * 0.005))}px; stroke-dasharray:2 ${Math.round(width * 0.012)};
+       stroke-linecap:round; opacity:.72; }
+.pin { position:absolute; width:${pin}px; height:${pin}px; margin-left:${-pin / 2}px; margin-top:${-pin / 2}px;
+       border-radius:50%; color:#14161c; font-weight:800; font-size:${font}px;
+       display:flex; align-items:center; justify-content:center;
+       box-shadow:0 0 0 ${Math.max(2, Math.round(pin * 0.06))}px rgba(11,15,22,.9), 0 ${Math.round(pin * 0.12)}px ${Math.round(pin * 0.3)}px rgba(0,0,0,.5); }
+.head { position:absolute; inset-inline:0; top:${Math.round(height * 0.07)}px; text-align:center; padding:0 ${Math.round(width * 0.07)}px; }
+.head .t { color:#fff; font-weight:800; font-size:${Math.round(width * 0.062)}px; line-height:1.16;
+           text-shadow:0 2px 14px rgba(0,0,0,.6); }
+.head .s { color:rgba(255,255,255,.74); font-weight:600; font-size:${Math.round(width * 0.036)}px; margin-top:6px; }
+/* The scale bar. The one piece of small type on the slide that earns its place: it is
+   what makes the geometry mean something rather than being decoration. */
+.bar { position:absolute; inset-inline-start:${Math.round(width * 0.075)}px; bottom:${Math.round(height * 0.075)}px;
+       color:rgba(255,255,255,.86); font-weight:700; font-size:${Math.round(width * 0.029)}px; }
+.bar i { display:block; height:${Math.max(3, Math.round(width * 0.004))}px; background:rgba(255,255,255,.86);
+         border-radius:2px; margin-bottom:6px; }
+/* One invisible character set in Heebo, for the reason given above the base stylesheet
+   in render/postSlides.js: renderToJpeg refuses a page whose Heebo did not load, and a
+   declared face that no rule draws with is never fetched at all. */
+.font-probe { position:absolute; top:-200px; inset-inline-start:-200px; font-family:'Heebo';
+              font-weight:700; font-size:40px; color:transparent; }
+</style></head><body>
+<div class="font-probe">א</div>
+<div id="grid"></div>
+<div id="glow"></div>
+<svg viewBox="0 0 ${width} ${height}">
+  ${paths}
+</svg>
+  ${pins}
+<div class="head">
+  ${titleHe ? `<div class="t">${escapeHtml(titleHe)}</div>` : ''}
+  ${subHe ? `<div class="s">${escapeHtml(subHe)}</div>` : ''}
+</div>
+${bar ? `<div class="bar"><i style="width:${bar.px}px"></i>${escapeHtml(bar.labelHe)}</div>` : ''}
 </body></html>`;
 }
 

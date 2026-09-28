@@ -37,6 +37,10 @@ const publishedWindowMs = () =>
 // value. Declared up here rather than beside its functions because load() reads
 // it while backfilling, and load() runs before anything below this point.
 const CLIP_SHAPES_KEPT = 12;
+// Enough to answer "not the same as the last few" for three independent
+// dimensions at once, and enough that the weekly report has a window to group by.
+// Not a log: the numbers themselves live in the metrics store.
+const POST_SHAPES_KEPT = 24;
 
 const empty = {
   seen: {},
@@ -82,6 +86,20 @@ const empty = {
   // shapes alternate across days rather than only inside one batch — see
   // lastClipShape further down.
   clipShapes: [],
+  // What the last few posts of the new five types WERE, most recent first.
+  //
+  // THREE HISTORIES BECAUSE THREE THINGS HAVE TO VARY INDEPENDENTLY, and the
+  // evidence for keeping them apart is the pair of flops: three accounts posted the
+  // same template and got two to four likes each. A rotation that varies the type
+  // but always draws it the same way is still one template; one that varies the
+  // look but opens every caption with the same line is still one template in the
+  // place nobody looks.
+  //
+  // Entries are `{ type, look, hook, frame, caption, at }`. Recorded when the post
+  // is BUILT rather than when it publishes, for the same reason clipShapes is: a
+  // rejected post was still produced, and replacing it with another post of the
+  // same shape is the run of identical posts the rotation exists to prevent.
+  postShapes: [],
   // Instagram media id -> what that post was about, for the auto-reply.
   //
   // WITHOUT THIS THE WEBHOOK CANNOT ANSWER ANYTHING. A comment arrives naming
@@ -295,6 +313,10 @@ function load() {
   // the store already holds, so a box that has been running does not restart the
   // alternation from nothing.
   if (!Array.isArray(s.clipShapes)) s.clipShapes = [];
+  // The same, for the five post types. No backfill: nothing before this existed to
+  // read, and an empty history simply means the first post of each kind is free to
+  // be anything - which is correct rather than a gap.
+  if (!Array.isArray(s.postShapes)) s.postShapes = [];
 
   // Migration for stores written before publishedIds existed. Backfill from the
   // quota window — it is the only record of what went out, and recovering the
@@ -614,6 +636,31 @@ export function noteClipShape(shape) {
   const s = String(shape || '').trim();
   if (s !== 'cuts' && s !== 'held') return;
   state.clipShapes = [s, ...(state.clipShapes || [])].slice(0, CLIP_SHAPES_KEPT);
+  save();
+}
+
+// --- what the last few posts of the five new types were ---------------------
+
+/** The shapes built, most recent first. Read by the rotation in src/posts/types.js. */
+export const postShapeHistory = () => (state.postShapes || []).slice();
+
+/** The last one, or null on a box that has built none. */
+export const lastPostShape = () => state.postShapes?.[0] || null;
+
+/**
+ * Record one. Called when the post is BUILT, not when it publishes.
+ *
+ * `at` is stamped here rather than passed, so the caller cannot forget it and two
+ * callers cannot disagree about the format. Everything else is whatever the builder
+ * chose, and unknown keys are kept: section 7's report groups by these fields, and a
+ * field the store silently dropped is a column of the report that is always empty.
+ */
+export function notePostShape(shape) {
+  if (!shape?.type) return;
+  state.postShapes = [{ ...shape, at: new Date().toISOString() }, ...(state.postShapes || [])].slice(
+    0,
+    POST_SHAPES_KEPT
+  );
   save();
 }
 

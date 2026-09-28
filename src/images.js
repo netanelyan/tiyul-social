@@ -1,10 +1,21 @@
 // Image provenance.
 //
-// The brief allows exactly three origins for a photograph, and forbids one
+// The brief allows exactly four origins for a photograph, and forbids one
 // specific thing absolutely:
 //
 //   allowed:  commercial-license stock | our own catalogue | AI-generated
+//             | a freely-licensed Wikimedia Commons file
 //   never:    an image lifted from a news article or a business's own page
+//
+// COMMONS IS THE FOURTH, and it is the one the new post types reach for first. It
+// is not a loosening of the rule, it is the rule's own logic applied to an origin
+// that did not exist here yet: the constraint is about whether a photograph is
+// ours to publish, and a CC-licensed file is, in a way a photograph lifted off a
+// hotel's website never is. What makes it better than stock rather than merely
+// permitted is that the site has already attached a specific Commons file to a
+// specific place, so the photograph is known to show what the slide names it - the
+// question the vision judge exists to answer, answered by our own editorial
+// process. src/images/commons.js has the whole argument and the licence numbers.
 //
 // So this module is not a fetcher with a policy bolted on — it is the policy,
 // and fetching is what the individual providers do underneath it. Every image
@@ -24,6 +35,10 @@ export const PROVENANCE = {
   stock: 'סטוק ברישיון מסחרי',
   catalogue: 'קטלוג התמונות שלנו',
   ai: 'נוצר ב-AI (גנרי)',
+  // Named as what it is rather than as "our photo". The file is a stranger's
+  // photograph under a free licence and the credit travels with it on the
+  // approval card, so the word on the card should not suggest we took it.
+  commons: 'ויקישיתוף (רישיון חופשי)',
 };
 
 export const provenanceHe = (p) => PROVENANCE[p] || p || 'לא ידוע';
