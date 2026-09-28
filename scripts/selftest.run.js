@@ -6420,6 +6420,20 @@ group('the rotation - a pipeline is a template machine unless it is stopped');
   throws('an unknown type is an error rather than a default', () => pickType({ only: 'nonsense' }));
   throws('and so is a look that does not fit', () => pickLook('map', { only: 'notes' }));
 
+  // THE LAB MUST NOT WRITE TO THE ROTATION'S MEMORY, and `history: []` is only half of
+  // stopping it. That flag decides what the draw READS; `remember` decides what it
+  // WRITES, and for a while only the first existed - so an evening spent rendering
+  // samples filled the live store's history to its cap with lab runs, after which the
+  // next real post would have been steered by whatever the lab happened to render last.
+  // The lab's own comment claimed this was handled, which is why nobody looked.
+  {
+    const src = readFileSync(new URL('../scripts/post-lab.js', import.meta.url), 'utf8');
+    ok('the lab ignores the history', /history:\s*\[\]/.test(src));
+    ok('AND refuses to write to it', /remember:\s*false/.test(src), 'post-lab would pollute the live rotation');
+    const build = readFileSync(new URL('../src/posts/index.js', import.meta.url), 'utf8');
+    ok('and the builder honours the flag', /if \(remember\)/.test(build), 'notePostShape is called unconditionally');
+  }
+
   // THE FRAME IS NOT EXCLUDED, and that is the one dimension where a repeat is correct:
   // nobody notices two 3:4 posts in a row, and excluding one would turn a test that
   // wants an even split into a strict alternation.

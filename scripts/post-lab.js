@@ -75,11 +75,18 @@ try {
     photos: !has('no-photos'),
     search: !has('no-stock'),
     outDir,
-    // The lab must not write to the rotation's memory. A morning spent rendering
-    // fifteen list posts would otherwise leave a history that says the account has
-    // posted nothing but lists, and the next real post would avoid the one type that
-    // had actually not gone out.
+    // THE LAB MUST NOT TOUCH THE ROTATION'S MEMORY, IN EITHER DIRECTION.
+    //
+    // `history: []` makes the draw ignore what the account has posted, so a lab run
+    // gives whatever was asked for rather than being steered by last week. `remember:
+    // false` stops it writing back.
+    //
+    // Both are needed and for a while only the first was here, which is how an evening
+    // of rendering samples filled the live store's history to its twenty-four-entry cap
+    // with lab runs - after which the next real post would have avoided the types the
+    // lab happened to render last. The comment at the time claimed this was handled.
     history: [],
+    remember: false,
   });
 
   console.log('');

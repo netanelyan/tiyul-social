@@ -117,6 +117,15 @@ export async function buildPost({
   // actually want - seconds instead of minutes, with real photographs on the slides.
   search = true,
   render = true,
+  // Whether this build joins the rotation's memory.
+  //
+  // TWO HALVES, AND PASSING history: [] IS ONLY ONE OF THEM. `history` decides what the
+  // draw READS; this decides what it WRITES. The lab set the first and not the second,
+  // so an evening spent rendering samples wrote twenty-four entries into the live
+  // store - filling it to its cap - and the next real post would have been steered by
+  // whatever the lab happened to render last. That is precisely the failure the lab's
+  // own comment said it was avoiding, which is how it went unnoticed.
+  remember = true,
   outDir = cardOutputDir(),
   history = null,
   onProgress = null,
@@ -287,7 +296,11 @@ export async function buildPost({
   // Recorded when BUILT, not when published. A post that is rejected was still
   // produced, and replacing it with another of the same shape is the run of identical
   // posts the rotation exists to prevent - the argument noteClipShape already makes.
-  notePostShape({ type: shape.type, look: shape.look, hook: hook.id, frame: shape.frame, caption: shape.caption });
+  //
+  // Unless this is a lab run. See `remember` above.
+  if (remember) {
+    notePostShape({ type: shape.type, look: shape.look, hook: hook.id, frame: shape.frame, caption: shape.caption });
+  }
 
   return {
     post,
