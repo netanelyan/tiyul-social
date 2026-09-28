@@ -4,8 +4,14 @@ import { renderInstagramSlideHtml } from './deckInstagram.js';
 import { analyseSlides, measureCardScrims } from './photo.js';
 import { findTextRegion } from '../images/textbox.js';
 import { postConfig } from '../postConfig.js';
-import { followSlideFor, siteSlideFor } from '../deck/follow.js';
+import { closingSlidesFor } from '../deck/follow.js';
 import { renderSiteSlideHtml } from './siteSlide.js';
+// Lives under plan/ because a plan was the only thing that closed on the real
+// page when it was written. A deck does now too, and both renderers need the same
+// probe, so this is the one import that crosses from the renderer into plan/ - the
+// alternative was a second capture with its own page load, its own seven seconds
+// and its own visit to keep out of the site's analytics.
+import { withSiteShot } from '../plan/sitePage.js';
 
 // A deck to files on disk, twice.
 //
@@ -132,9 +138,17 @@ export async function renderDeckSize(deck, { size = 'tiktok', outDir = cardOutpu
   // phone rather than a photograph with a line on it, so it skips the
   // placement measurement below (there is no photograph to measure) and gets
   // its own renderer at the bottom of the loop.
-  const site = siteSlideFor(deck, { size, destHe: deck.where, replies: postConfig().igReplies });
-  const follow = followSlideFor(deck);
-  const items = [cover, ...deck.slides, ...(follow ? [follow] : []), ...(site ? [site] : [])];
+  // EXACTLY ONE CLOSING SLIDE, and it is not this function's decision.
+  //
+  // These were two independent lines here - `followSlideFor(deck)` and the site
+  // slide, each appended if truthy - so a deck with a destination page got both:
+  // "רוצים עוד? תעקבו" and then the screenshot. Two asks on one post, which is
+  // the exact thing src/deck/follow.js says it is preventing, and the arithmetic
+  // in that file was the only part of the build that knew. Now the list comes
+  // from closingSlidesFor, which is also what publishedSlideCount counts, so the
+  // renderer and the count cannot say different things again.
+  const closing = closingSlidesFor(deck, { size, destHe: deck.where, replies: postConfig().igReplies });
+  const items = [cover, ...deck.slides, ...closing];
 
   // The follow slide is drawn MINIMAL whatever the deck is, because the info
   // style is a name over a grid of measured fields and this slide has none: in
@@ -293,12 +307,31 @@ export async function renderDeck(deck, { outDir = cardOutputDir(), sizes = ['ins
   const want = sizes.filter((s) => SIZES[s]);
   if (!want.length) throw new Error(`renderDeck: no known size in [${sizes.join(', ')}]`);
 
+  // The screenshot, ONCE, before either size is drawn — the same probe renderPlan
+  // has always run, now that a deck can claim a page too.
+  //
+  // It is not optional politeness. renderSiteSlideHtml THROWS on a missing
+  // screenshot rather than drawing an empty phone, deliberately (see the note at
+  // the top of src/plan/sitePage.js: an advertisement for a page that appears to
+  // be broken is worse than no slide). So the first site deck to reach this
+  // function without a probe would not have produced a bad slide, it would have
+  // failed the whole render. A failed capture clears `siteSlug` instead, which
+  // puts the ordinary follow slide back and keeps every count in follow.js right
+  // without either of them knowing this happened.
+  const { deck: probed, shot: siteShot, why: siteWhy } = await withSiteShot(deck);
+  if (siteWhy) console.log(`deck: no site slide (${siteWhy})`);
+
   const out = {};
-  for (const size of want) out[size] = await renderDeckSize(deck, { size, outDir });
+  for (const size of want) out[size] = await renderDeckSize(probed, { size, outDir, siteShot });
 
   return {
     tiktok: out.tiktok || [],
     instagram: out.instagram || [],
+    // Whether the close is the screenshot or the ordinary follow ask, so the
+    // approval card can say which ending this post got rather than leaving it to
+    // be discovered in the album. The plan's render has reported this since the
+    // site slide shipped.
+    siteSlide: Boolean(probed.siteSlug),
     // What the approval message shows you is what is about to be published —
     // the first requested size, which is the destination that was chosen. A
     // deck bound for Instagram should not be reviewed in the TikTok crop.

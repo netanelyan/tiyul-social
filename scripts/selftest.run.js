@@ -5944,6 +5944,32 @@ group('the itinerary the site publishes');
   ok('the deck knows it has a page', hasSiteSlide(full));
   ok('so it does not also get a follow slide', !hasFollowSlide(full));
   eq('the count includes it', publishedSlideCount(short), 1 + short.slides.length + 1);
+
+  // ONE CLOSING SLIDE, FROM ONE FUNCTION. The renderer used to compose its own
+  // tail out of the predicates above and got a different answer from the count:
+  // it appended the follow ask AND the site slide, so a site deck published one
+  // more slide than publishedSlideCount promised. Which matters beyond the extra
+  // ask - renderPlan checks that count against Instagram's ten, so an
+  // eleven-slide carousel passed a check for ten and Instagram rejected it hours
+  // after approval. Both now read closingSlidesFor.
+  const { closingSlidesFor } = await import('../src/deck/follow.js');
+  const closeSite = closingSlidesFor(full, { size: 'tiktok', destHe: 'פראג', replies: { on: false } });
+  eq('a site deck closes on exactly one slide', closeSite.length, 1);
+  ok('and it is the page, not the follow ask', closeSite[0].site === true && !closeSite[0].follow);
+  const plainOne = closingSlidesFor({ where: 'רומא', slides: [{ nameHe: 'x' }], coverImage: null });
+  eq('a deck with no page closes on exactly one too', plainOne.length, 1);
+  ok('and that one is the follow ask', plainOne[0].follow === true);
+  const askOne = closingSlidesFor({ where: 'רומא', slides: [{ nameHe: 'x', ask: true }] });
+  eq('a deck already ending on an ask gets none', askOne.length, 0);
+  // The count IS the length of that list, for every shape, rather than
+  // arithmetic over the same predicates that could drift from it again.
+  for (const [what, d] of [
+    ['a site deck', full],
+    ['a plain deck', { where: 'רומא', slides: [{ nameHe: 'x' }, { nameHe: 'y' }] }],
+    ['one ending on an ask', { where: 'רומא', slides: [{ nameHe: 'x', ask: true }] }],
+  ]) {
+    eq(`the count matches the drawn list - ${what}`, publishedSlideCount(d), 1 + d.slides.length + closingSlidesFor(d).length);
+  }
   // The count has to run with no browser anywhere near it: renderPlan checks
   // it against Instagram's ten before rendering, and follow.js must not pull
   // the renderer in behind it.
@@ -6008,6 +6034,237 @@ group('the caption points at the page');
 
   // Without a page nothing changes: the pool and its share still decide.
   eq('no page means the old behaviour', captionCta({ rand: () => 0.99, share: 0 }), null);
+}
+
+/* -------------------------------------------------------------------------- */
+group('a plan with no prices prints no prices');
+
+{
+  const { planApprovalMessage, fillPlanPhotos } = await import('../src/plan/candidate.js');
+
+  // THE CARD IS THE ONLY PLACE A SITE PLAN CAN BE DISAGREED WITH, which is what
+  // made this the worst place to be wrong. Every stop read "· חינם" and the foot
+  // read "סה״כ 0 ₪", so the card asserted eighteen times that somebody had
+  // checked and found the whole trip free. The slides said none of that: they
+  // carry no total slide at all, by design, because the site publishes a price
+  // BAND and a band is not a price.
+  const days = [
+    {
+      n: 1,
+      titleHe: 'העיר העתיקה',
+      stops: [
+        { nameHe: 'גשר קארל', noteHe: 'אתר היסטורי · כניסה חופשית', costIls: null, timeHe: null },
+        { nameHe: 'טירת פראג', noteHe: 'אתר היסטורי · חצי יום', costIls: null, timeHe: null },
+      ],
+    },
+  ];
+  const base = {
+    headline: '4 ימים בפראג, המסלול של טיול+',
+    tiktokCaption: 'x\n\n#טיול',
+    deck: { days },
+    plan: {
+      dest: { he: 'פראג' }, days: 1, stops: 2, source: 'site', slug: 'prague',
+      url: 'https://www.tiyulplus.com/destinations/prague', siteSlide: true,
+      priced: false, total: null, stopsIls: null, costs: null, budgetIls: null,
+      totalNoteHe: 'כניסות ואטרקציות בלבד, בלי טיסה ולינה', leftHe: '', attractionsHe: 'כניסות',
+      slides: { tiktok: 4 }, dropped: [], giveaway: null,
+    },
+  };
+  const unpriced = planApprovalMessage(base);
+  ok('no shekel sign anywhere on the card', !unpriced.includes('₪'), unpriced.split('\n').find((l) => l.includes('₪')));
+  ok('and no stop is called free', !unpriced.includes('חינם'), unpriced.split('\n').find((l) => l.includes('חינם')));
+  ok('the stop count is still printed', unpriced.includes('2 עצירות'));
+  ok('and it says why there are no prices', unpriced.includes('רמת מחיר'));
+  // The entrances-only disclaimer qualifies a total. Printed under a line saying
+  // there is no total, it is the card arguing with itself.
+  ok('the total disclaimer is gone with the total', !unpriced.includes('כניסות ואטרקציות בלבד'));
+  // The stops themselves still have to be readable - that is the card's job.
+  ok('every stop is still listed', ['גשר קארל', 'טירת פראג'].every((n) => unpriced.includes(n)));
+  ok('with its note', unpriced.includes('כניסה חופשית'));
+
+  // A PRICED PLAN IS UNTOUCHED. The fix must not quietly remove the figures from
+  // the one shape where printing them is the whole bargain BRIEF.md struck when
+  // the fare ban came off.
+  const priced = planApprovalMessage({
+    ...base,
+    deck: { days: [{ ...days[0], stops: [{ ...days[0].stops[0], costIls: 0 }, { ...days[0].stops[1], costIls: 450 }] }] },
+    plan: { ...base.plan, source: 'ai', priced: true, total: 450, stopsIls: 450 },
+  });
+  ok('a priced plan still prints its total', priced.includes('סה״כ 450 ₪'), priced.split('\n').find((l) => l.includes('סה״כ')));
+  ok('and still calls a zero stop free', priced.includes('חינם'));
+  ok('and still carries the disclaimer', priced.includes('כניסות ואטרקציות בלבד'));
+  // A candidate staged before `priced` existed is an AI plan, and reads as one.
+  const legacy = planApprovalMessage({ ...base, plan: { ...base.plan, priced: undefined, total: 450, source: 'ai' } });
+  ok('a card with no `priced` field falls back to priced', legacy.includes('₪'));
+
+  // AND THE TOTAL IS NEVER RECOMPUTED INTO EXISTENCE.
+  //
+  // This is where the 0 came from. The photo step re-sums the days because a stop
+  // that lost its picture leaves and the arithmetic has to describe what survived
+  // - but summing a column of nulls is 0, and 0 renders as חינם. One line, one
+  // shape of plan it was never asked about.
+  //
+  // WITH THE LIBRARIES SWITCHED OFF FOR THE DURATION, which is what keeps this
+  // offline. cinematicImage returns null the moment neither Pexels nor Unsplash is
+  // configured, before any request leaves, so every stop loses its photograph and
+  // every day is dropped. That is the harshest version of the case: nothing
+  // survives, the sum runs over an empty list, and the answer still has to be
+  // null rather than zero.
+  {
+    const keys = { PEXELS_API_KEY: process.env.PEXELS_API_KEY, UNSPLASH_ACCESS_KEY: process.env.UNSPLASH_ACCESS_KEY };
+    delete process.env.PEXELS_API_KEY;
+    delete process.env.UNSPLASH_ACCESS_KEY;
+    try {
+      const shape = (priced) => ({
+        priced,
+        dest: { en: 'Prague', he: 'פראג' },
+        days: [{ n: 1, titleHe: 'x', stops: days[0].stops.map((s, i) => ({ ...s, costIls: priced ? i * 30 : null })) }],
+      });
+      const after = await fillPlanPhotos(shape(false), { stopsMin: 1 });
+      eq('an unpriced plan keeps a null total', after.total, null);
+      ok('and says every stop lost its photograph', after.dropped.length >= 2, JSON.stringify(after.dropped));
+      // A priced plan still gets a number, and 0 is the right number when nothing
+      // survived: the sum of no stops. The distinction the fix draws is between
+      // "no stops" and "no prices", which used to print identically.
+      eq('a priced one is still summed', (await fillPlanPhotos(shape(true), { stopsMin: 1 })).total, 0);
+    } finally {
+      Object.assign(process.env, keys);
+    }
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+group('a deck built from our own page points at it');
+
+{
+  const { slugFromUrl } = await import('../src/sources/tiyulplus.js');
+  const { hasSiteSlide } = await import('../src/deck/follow.js');
+
+  // THE STAMP IS THE ANSWER. Every slide a site deck carries records the page it
+  // was built from, and that stamp is the only thing that survives the whole
+  // build - the shortlist, the filter, the image step, the cover. So it is what
+  // the deck's `siteSlug` is read off, rather than a variable that would keep
+  // claiming the page the build set out to use.
+  eq('the slug comes out of the page URL', slugFromUrl('https://www.tiyulplus.com/destinations/prague'), 'prague');
+  eq('a trailing slash is fine', slugFromUrl('https://www.tiyulplus.com/destinations/new-york/'), 'new-york');
+  eq('and a query string', slugFromUrl('https://www.tiyulplus.com/destinations/abu-dhabi?x=1'), 'abu-dhabi');
+  // Anything that is not one of our destination pages is not one. The map route's
+  // slides carry an official website; a freeform deck's carry nothing.
+  for (const url of ['https://www.prague.eu/en', 'https://www.tiyulplus.com/about', null, '', 'https://www.tiyulplus.com/destinations/']) {
+    eq(`not a destination page: ${JSON.stringify(url)}`, slugFromUrl(url), null);
+  }
+
+  // A deck that HAS the field closes on the page. Until this shipped nothing
+  // ever set it on a deck, so the one route that knows for certain the page
+  // exists - because it just parsed it - was the route closing on "רוצים עוד?
+  // תעקבו" and advertising nothing.
+  ok('a deck with the slug knows it has a page', hasSiteSlide({ siteSlug: 'prague' }));
+  ok('and one without does not', !hasSiteSlide({ where: 'פראג' }));
+}
+
+/* -------------------------------------------------------------------------- */
+group('every siteSlug is a page that exists');
+
+{
+  // CHECKED AGAINST A SAVED COPY, not against the live API. A test that needs
+  // the internet is a test that fails on a train and then gets deleted; and the
+  // failure mode being guarded here is a TYPO in destinations.json, which a
+  // snapshot catches exactly as well as a live call.
+  const saved = JSON.parse(readFileSync(new URL('../assets/site/cities.json', import.meta.url), 'utf8'));
+  const rows = JSON.parse(readFileSync(new URL('../destinations.json', import.meta.url), 'utf8')).destinations;
+  const known = new Map(saved.options.map((o) => [o.slug, o]));
+
+  ok('the saved slug list is there', known.size > 100, `${known.size} slugs`);
+  const mapped = rows.filter((r) => r.siteSlug);
+  ok('and rows are mapped with it', mapped.length >= 24, `${mapped.length} mapped`);
+
+  for (const row of mapped) {
+    ok(`${row.id} -> ${row.siteSlug} exists`, known.has(row.siteSlug), 'no such page on the site');
+  }
+
+  // THE COUNTRY HAS TO AGREE. A valid slug for the wrong country is the mapping
+  // error a slug check cannot see: `nice -> nice-riviera` and `nice -> nicosia`
+  // both resolve, and one of them sends everybody who taps through to Cyprus.
+  // The catalogue and the site spell a few countries differently, so this
+  // compares on the site's own Hebrew name with the known aliases allowed.
+  const ALIAS = { 'ארה״ב': 'ארצות הברית' };
+  for (const row of mapped) {
+    const want = ALIAS[row.country] || row.country;
+    eq(`${row.id} is in the country the catalogue says`, known.get(row.siteSlug).country, want);
+  }
+
+  // No two rows may claim the same page. Two destinations closing on one page is
+  // two posts advertising the same thing, and the repeat detector - which keys on
+  // the destination - cannot see it.
+  const byslug = new Map();
+  for (const row of mapped) byslug.set(row.siteSlug, [...(byslug.get(row.siteSlug) || []), row.id]);
+  const shared = [...byslug].filter(([, ids]) => ids.length > 1);
+  ok('no page is claimed twice', shared.length === 0, shared.map(([s, ids]) => `${s}: ${ids.join('+')}`).join(', '));
+}
+
+/* -------------------------------------------------------------------------- */
+group('nothing promises a DM while nothing answers one');
+
+{
+  const { assertNoDm, promisesDm, DmPromiseError } = await import('../src/dmPromise.js');
+  const { postConfig } = await import('../src/postConfig.js');
+  const { siteSlideFor } = await import('../src/deck/follow.js');
+
+  // The listener is off, and this is the fact the whole guard hangs on.
+  eq('igReplies is off', postConfig().igReplies.on, false);
+
+  // WHAT THE GUARD IS FOR. Not a typo - a correct conditional being lost. Two
+  // one-line checks in two files decide between the bio wording and the comment
+  // one, and if either is lost the post looks completely normal: nothing fails,
+  // nothing logs, and the only symptom is a stranger's comment going unanswered.
+  ok('the configured DM line is recognised as a promise', promisesDm(postConfig().caption.siteCtaDmHe));
+  ok('and the slide’s version too', promisesDm(postConfig().plans.sitePage.ctaDmHe));
+  for (const line of ['תגיבו "פראג" ונשלח לכם את הלינק', 'שלחו הודעה ואשלח לך את המסלול', 'כתבו לי ב-DM']) {
+    ok(`refused while replies are off: ${line.slice(0, 22)}`, promisesDm(line), line);
+  }
+
+  // AND WHAT IT MUST NOT CATCH. The bio pointer is the honest ask and it has to
+  // survive; so does a slide saying the community takes bookings by message,
+  // which is a fact about the place rather than a promise by us.
+  for (const line of [
+    postConfig().caption.siteCtaBioHe,
+    postConfig().plans.sitePage.ctaBioHe,
+    'שמרו את זה לטיול',
+    'ארוחות שבת בהרשמה מראש, בהודעה לקהילה',
+    'מקווה שזה עוזר לתכנן 🤍',
+  ]) {
+    ok(`allowed: ${line.slice(0, 26)}`, !promisesDm(line), line);
+  }
+
+  // The assertion throws rather than stripping the sentence. A guard that edited
+  // the text would publish a post whose ending was rewritten by a regex.
+  let threw = null;
+  try {
+    assertNoDm('תגיבו "פראג" ונשלח לכם את הלינק', 'the test', { replies: { on: false } });
+  } catch (e) {
+    threw = e;
+  }
+  ok('the guard throws', threw instanceof DmPromiseError);
+  eq('with a reason', threw?.reason, 'dm_promise_while_off');
+  ok('and names where', String(threw?.message).includes('the test'));
+
+  // BOTH DIRECTIONS. A guard that cannot be switched on is a guard nothing has
+  // ever seen pass, and the day igReplies is turned on the DM line is the
+  // correct thing to publish.
+  eq(
+    'with replies on it is allowed through',
+    assertNoDm('תגיבו "פראג" ונשלח לכם את הלינק', 'the test', { replies: { on: true } }),
+    'תגיבו "פראג" ונשלח לכם את הלינק'
+  );
+
+  // The live call sites, end to end. With the config as it ships, neither
+  // platform's closing slide may ask for a comment.
+  const deck = { siteSlug: 'prague', where: 'פראג' };
+  for (const size of ['tiktok', 'instagram']) {
+    const slide = siteSlideFor(deck, { size, destHe: 'פראג', replies: postConfig().igReplies });
+    ok(`the ${size} site slide points at the bio`, slide.ctaHe.includes('בביו'), slide.ctaHe);
+    ok(`and promises no message`, !promisesDm(slide.ctaHe), slide.ctaHe);
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -6824,6 +7081,35 @@ try {
   );
   eq('a deck ending on an ask is left alone', asked.length, 7);
   ok('and closes on that ask rather than on a second one', asked.at(-1).follow === false);
+
+  // A SITE DECK, RENDERED, AND ITS CLOSING SLIDES COUNTED.
+  //
+  // The bug this covers was invisible everywhere except on disk: a deck with a
+  // destination page drew the follow ask AND the screenshot, eight files for a
+  // deck the count called seven. Only a render can catch that, because the
+  // duplication was in how the renderer composed its own list.
+  //
+  // `siteShot` is handed in rather than captured. renderDeck's probe loads the
+  // real page, and this suite does not touch the network - with no screenshot the
+  // probe would clear `siteSlug`, the deck would fall back to the follow slide,
+  // and the test would pass by testing the wrong thing. A stub PNG is enough:
+  // what is being counted is how many slides there are, not what is on them.
+  const stubShot =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==';
+  const sited = await renderDeckSize(
+    { ...deck, id: 'selftest-site', where: 'פראג', siteSlug: 'prague' },
+    { size: 'instagram', outDir, siteShot: stubShot }
+  );
+  eq('a site deck renders the cover, its places and one close', sited.length, 7);
+  ok('no follow slide among them', sited.every((s) => s.follow === false), `${sited.filter((s) => s.follow).length} follow slides`);
+  {
+    const { publishedSlideCount: count } = await import('../src/deck/follow.js');
+    eq(
+      'and the count agrees with the files',
+      count({ ...deck, where: 'פראג', siteSlug: 'prague' }),
+      sited.length
+    );
+  }
 
   const { closeBrowser } = await import('../src/render/index.js');
   await closeBrowser().catch(() => {});

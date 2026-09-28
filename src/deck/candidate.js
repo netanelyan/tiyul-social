@@ -127,6 +127,16 @@ export async function toDeckCandidate(
   const deck = { ...built, id, follow };
   const rendered = await renderDeck(deck, { sizes: sizesFor(targets) });
 
+  // A CAPTURE THAT FAILED CLEARS THE CLAIM, and it has to be cleared HERE too.
+  //
+  // renderDeck clears it on its own copy, which is what keeps the two sizes
+  // agreeing with each other. This object is the one the candidate is built from,
+  // and left alone it would go into the queue still saying "this deck closes on
+  // the page" while the slides on disk close on a follow ask. Everything that then
+  // reads the candidate rather than the render - publishedSlideCount, the approval
+  // card's slide list, the ledger - would describe a post that was not published.
+  if (!rendered.siteSlide) deck.siteSlug = null;
+
   // Drop the photographs now that they are baked into the JPEGs.
   //
   // images.js hands back each photo as a base64 data URI — a megabyte or two of
@@ -211,11 +221,32 @@ export async function toDeckCandidate(
   // are the same sentence.
   const hook = captionHook();
   const question = captionQuestion();
-  const cta = captionCta();
-  const caption = deckCaption(deck, { hook, question, cta, follow });
+
+  // THE ASK NAMES THE DESTINATION WHEN WE HAVE A PAGE FOR IT.
+  //
+  // captionCta has known how to do this since the plan format shipped, and no
+  // deck ever reached it that way: nothing passed a slug, so a deck built from
+  // our own Prague page drew a generic line out of the pool - "שלחו את זה למי
+  // שאתם טסים איתו" - and the account's reason to exist went unmentioned on the
+  // post best placed to mention it.
+  //
+  // KEYED ON THE RENDER, NOT ON THE BUILD. `deck.siteSlug` says the page was
+  // found while the deck was being built; `rendered.siteSlide` says it was
+  // reachable a moment ago. They differ when the slug is wrong, and that is
+  // exactly the case where the caption must stay quiet: a 404 would otherwise
+  // publish "המסלול המלא לפראג, בלינק בביו" pointing at nothing.
+  const site = rendered.siteSlide ? { siteSlug: deck.siteSlug, destHe: deck.where } : {};
+  // ONE draw, except where there is nothing to draw. Without a page the ask comes
+  // out of the pool at random and both captions must print the same one. With a
+  // page it is deterministic and varies only by platform, because only Instagram
+  // can turn a comment into a link.
+  const drawn = captionCta(site);
+  const ctaFor = (target) => (rendered.siteSlide ? captionCta({ ...site, target }) : drawn);
+
+  const caption = deckCaption(deck, { hook, question, cta: ctaFor('instagram'), follow });
   cand.channelCaption = [deck.titleHe, '', caption].join('\n');
   cand.instagramCaption = caption;
-  cand.tiktokCaption = deckTiktokCaption(deck, { hook, question, cta, follow });
+  cand.tiktokCaption = deckTiktokCaption(deck, { hook, question, cta: ctaFor('tiktok'), follow });
 
   // A deck publishes from its slide URLs, but Telegram uploads bytes and the
   // held/retry paths look for a file — the cover stands in as "the card".

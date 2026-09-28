@@ -6,6 +6,7 @@ import { fillImages } from '../deck/build.js';
 import { targetsForKind } from '../publish/targets.js';
 import { overrideActive, overrideNotes } from '../override.js';
 import { assertNoUrl } from '../format.js';
+import { assertNoDm } from '../dmPromise.js';
 import { planCaption, captionFollow } from '../hashtags.js';
 import { publishedSlideCount } from '../deck/follow.js';
 import { planText, planGiveaway } from './text.js';
@@ -94,7 +95,17 @@ export async function fillPlanPhotos(plan, { stopsMin = 0, onProgress = null } =
     ...plan,
     days: days.map((d, i) => ({ ...d, n: i + 1 })),
     coverImage: cover.image || null,
-    total: days.reduce((sum, d) => sum + dayTotal(d), 0),
+    // NULL STAYS NULL ON AN UNPRICED PLAN, and this is the line that broke the
+    // approval card for every site plan.
+    //
+    // The recompute is necessary: a stop that lost its photograph leaves, and a
+    // total that still includes it disagrees with the slides above it. But a site
+    // plan has no prices at all - every stop carries `costIls: null` precisely so
+    // nothing can add them up - and summing nulls produces 0, which reads as
+    // "checked, and it is free". That is the one invented fact src/plan/site.js
+    // exists to keep off the slide, arriving through the back door of an
+    // arithmetic step that did not ask which shape of plan it was holding.
+    total: plan.priced === false ? null : days.reduce((sum, d) => sum + dayTotal(d), 0),
     dropped: [...(plan.dropped || []), ...missing],
   };
 }
@@ -269,6 +280,16 @@ export async function toPlanCandidate(plan, { targets = targetsForKind('plan'), 
       url: withId.url || null,
       slug: withId.slug || null,
       siteSlide: Boolean(rendered.siteSlide),
+      // Whether this plan has prices at all, carried rather than inferred.
+      //
+      // The card used to infer it from the numbers and got it backwards: an
+      // unpriced plan's stop prices are null, `null > 0` is false, and the
+      // fallback for "not more than zero" was the word חינם. So a site plan
+      // printed "חינם" against every stop and "סה״כ 0 ₪" underneath - eighteen
+      // claims that somebody had checked and found the whole trip free, on the
+      // one card whose job is to let you disagree with the claims before they
+      // publish. planText resolves this once; the card reads its answer.
+      priced: text.priced,
       budgetIls: withId.budgetIls || null,
       costs: withId.costs || null,
       stopsIls: withId.stopsIls ?? withId.total,
@@ -313,8 +334,14 @@ export async function toPlanCandidate(plan, { targets = targetsForKind('plan'), 
   // of them may ask for a comment. Everything else about them is the same.
   const instagram = planCaption(withId, { text, giveaway, titled: true, follow, target: 'instagram' });
   const tiktok = planCaption(withId, { text, giveaway, titled: false, follow, target: 'tiktok' });
-  cand.instagramCaption = assertNoUrl(instagram, 'the plan caption');
-  cand.tiktokCaption = assertNoUrl(tiktok, 'the plan description');
+  // The plan is the kind that CAN honestly draw a DM line - `siteCtaDmHe` is
+  // reachable from planCaption whenever the itinerary came from a page - so this
+  // is the call site the guard was written for rather than a precaution. With
+  // igReplies off, Instagram's caption must come back with the bio wording; if it
+  // comes back asking for a comment, the build fails here instead of the comment
+  // going unanswered next week. See src/dmPromise.js.
+  cand.instagramCaption = assertNoDm(assertNoUrl(instagram, 'the plan caption'), 'the plan caption');
+  cand.tiktokCaption = assertNoDm(assertNoUrl(tiktok, 'the plan description'), 'the plan description');
   cand.channelCaption = cand.instagramCaption;
 
   // A plan publishes from its slide URLs, but Telegram uploads bytes and the
@@ -368,11 +395,22 @@ export function planApprovalMessage(cand) {
     '',
   ];
 
+  // WHETHER THERE ARE PRICES TO PRINT AT ALL.
+  //
+  // `priced` is carried on the plan by toPlanCandidate. It is read defensively
+  // because this function also renders candidates staged before that field
+  // existed, and those are all AI plans - which is what the fallback says.
+  const priced = p.priced !== false;
+
   for (const day of days) {
     lines.push(`📅 יום ${day.n} - ${day.titleHe}`);
     for (const stop of day.stops) {
-      const price = stop.costIls > 0 ? `${shekels(stop.costIls)} ₪` : 'חינם';
-      lines.push(`   ${stop.timeHe ? `${stop.timeHe} · ` : ''}${stop.nameHe} · ${price}`);
+      // No price column on an unpriced plan, rather than a zero or a blank one.
+      // "חינם" is a claim that somebody checked; the site publishes a price BAND
+      // and the stop's own note already carries "כניסה חופשית" wherever that band
+      // was actually 0, which is the honest version of the same information.
+      const price = priced ? (stop.costIls > 0 ? `${shekels(stop.costIls)} ₪` : 'חינם') : null;
+      lines.push(`   ${stop.timeHe ? `${stop.timeHe} · ` : ''}${stop.nameHe}${price ? ` · ${price}` : ''}`);
       lines.push(`      ${stop.noteHe}`);
     }
     lines.push('');
@@ -394,14 +432,27 @@ export function planApprovalMessage(cand) {
   }
 
   lines.push('');
-  lines.push(`💰 סה״כ ${shekels(p.total)} ₪ לאדם · ${p.stops} עצירות`);
+  // The total line, or the stop count on its own.
+  //
+  // `shekels(null)` is "0", so this printed "סה״כ 0 ₪ לאדם" on every site plan.
+  // There is no number to put here and there must not be one: the slides carry no
+  // total either (see tripDecks), so a card claiming one would be describing a
+  // post that does not exist.
+  lines.push(
+    priced
+      ? `💰 סה״כ ${shekels(p.total)} ₪ לאדם · ${p.stops} עצירות`
+      : `📋 ${p.stops} עצירות · בלי מחירים, כי הדף מפרסם רמת מחיר ולא מחיר`
+  );
   // The qualification, repeated here and not only on the slide. Approving is
   // where the number becomes the account's, so this is the moment to be told
   // what it does and does not include. Taken from the plan's own text rather
   // than written out, because the honest sentence differs between the two
   // shapes and a hardcoded one was right for only the older of them.
-  if (p.totalNoteHe) lines.push(`   ${p.totalNoteHe}`);
-  if (p.budgetIls) lines.push(`   ${p.leftHe}`);
+  // Both of these qualify a total, so neither belongs under a plan that has none.
+  // "כניסות ואטרקציות בלבד, בלי טיסה ולינה" under a line that just said there are
+  // no prices is the card arguing with itself about what it is describing.
+  if (priced && p.totalNoteHe) lines.push(`   ${p.totalNoteHe}`);
+  if (priced && p.budgetIls) lines.push(`   ${p.leftHe}`);
 
   // Who was promised what, spelled out, because the bot cannot keep this
   // promise and the person tapping approve can.
