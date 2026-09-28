@@ -31,7 +31,8 @@
     "clip-redo": "node scripts/clip-redo.js",
     "plan-lab": "node scripts/plan-lab.js",
     "admin-lab": "node scripts/admin-lab.js",
-    "redraw": "node scripts/redraw.js"
+    "redraw": "node scripts/redraw.js",
+    "ig-subscribe": "node scripts/ig-subscribe.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",

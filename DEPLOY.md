@@ -208,6 +208,129 @@ curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8787/api/state  # 401
 A 200 then a 401 is exactly right: the login page is public and everything
 behind it is not.
 
+## Instagram auto-replies
+
+When somebody comments the destination under a post, the account DMs them the
+link to that destination's page. Meta calls this a **private reply**: one
+message per comment, within seven days of the comment, and it is the only
+route Instagram offers from a feed post to a tappable link.
+
+This is four separate things and three of them are in Meta's dashboard rather
+than here. Doing them out of order is the usual reason it does not work.
+
+### 1. Permissions, and a new token
+
+Add to the app, on top of what publishing already needs:
+
+- `instagram_business_manage_messages` — to send the DM
+- `instagram_business_manage_comments` — to receive the webhook and to post
+  the short public reply under the comment
+
+Then **regenerate `IG_ACCESS_TOKEN`**. This is the step that gets skipped: the
+old token keeps publishing perfectly well and simply cannot subscribe, and the
+error it produces names a scope rather than the thing the scope was for.
+
+> **Meta's docs disagree with themselves here.** The Private Replies page
+> lists `instagram_business_basic` + `instagram_business_manage_comments`; the
+> Messaging API page lists `instagram_business_basic` +
+> `instagram_business_manage_messages`. They are describing the same call. Ask
+> for all three and let review trim it.
+
+> **Advanced Access is an open question, and it decides whether this works.**
+> Meta requires Advanced Access when an app "serves Instagram professional
+> accounts you don't own or manage". This app serves one account, its owner's,
+> which argues Standard Access is enough — but the people being messaged are
+> strangers, and nothing found says plainly which side of the line that falls.
+> Check **App Review → Permissions** in the dashboard before relying on it. If
+> Advanced is required, everything here still installs and still verifies; it
+> will answer people with a role on the app and nobody else until review
+> passes.
+
+### 2. The env, and the Caddy route
+
+```bash
+# in /opt/tiyul-social/.env
+IG_APP_SECRET=...              # from the app dashboard; every delivery is HMAC-checked
+IG_WEBHOOK_VERIFY_TOKEN=...    # any string; the dashboard must carry the same one
+IG_WEBHOOK_PORT=8788
+```
+
+Both of the first two, or the listener does not start. That is deliberate: an
+endpoint that sends direct messages must never come up unauthenticated.
+
+A block beside the other two, in the same Caddyfile:
+
+```
+hooks.tiyulplus.com {
+    reverse_proxy /ig/webhook 127.0.0.1:8788
+}
+```
+
+```bash
+sudo caddy validate --config /etc/caddy/Caddyfile
+sudo systemctl reload caddy
+pm2 restart tiyul
+```
+
+Only `/ig/webhook` is proxied. The DNS A record has to point here first or
+Caddy cannot get a certificate, and Meta will not accept an endpoint without a
+valid one.
+
+### 3. The webhook, in the dashboard
+
+**App dashboard → Webhooks → Instagram**:
+
+- Callback URL: `https://hooks.tiyulplus.com/ig/webhook`
+- Verify token: the same string as `IG_WEBHOOK_VERIFY_TOKEN`
+- Subscribe to the **`comments`** field
+
+Meta calls the URL once with a `hub.challenge` and expects it echoed back. The
+log says `ig webhook: handshake ok` when that has happened. A failure here is
+almost always the verify token differing, or the route not being proxied.
+
+### 4. Subscribe the account
+
+The dashboard says where to send events; this says that this account has them.
+
+```bash
+npm run ig-subscribe -- --on     # subscribe to `comments`
+npm run ig-subscribe             # show what it is subscribed to
+```
+
+### Turning it on
+
+The credentials above only make it possible. The editorial switch is
+`igReplies.on` in `post-config.json`, and with it off nothing replies, the
+closing slide falls back to the bio wording and so does the caption.
+
+It replaces `plans.giveaway`, which is now off: that asked for a comment and
+promised a month of premium that no code here could hand out, and this asks
+for the same comment and sends the thing it promises.
+
+### Checking it
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  'http://127.0.0.1:8788/ig/webhook?hub.mode=subscribe&hub.verify_token=WRONG'   # 403
+curl -sS -X POST -d '{}' -o /dev/null -w '%{http_code}\n' \
+  http://127.0.0.1:8788/ig/webhook                                               # 403, unsigned
+```
+
+Two 403s is right: an unsigned POST and a wrong verify token are the two
+things this must refuse. Then comment the destination under a published post
+from another account and watch `pm2 logs tiyul` for
+`ig webhook: <user> on <media> - replied (destination)`.
+
+Reasons it will decline, all of them logged and all of them normal:
+
+| Log line | What it means |
+|---|---|
+| `no record of that post` | Published before this shipped, or by hand. It cannot know which page the post was about, so it says nothing rather than guessing. |
+| `did not ask` | The comment did not name the destination or a keyword. |
+| `already answered` | Meta redelivered, or that person already asked under this post. |
+| `our own comment` | The public receipt arriving back through the webhook. |
+| `hourly cap (30) reached` | `igReplies.hourlyCap`. A blast radius, not a rate limit. |
+
 ## 5. `.env`
 
 Copy `.env.example` and fill it in, it documents every variable. Two entries

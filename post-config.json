@@ -147,6 +147,22 @@
       "שמרו את זה לטיול הבא",
       "תכננו טיול כזה בחינם, הלינק בביו"
     ],
+    "_siteCta_comment": [
+      "THE ASK ON A POST ABOUT A PAGE WE ACTUALLY HAVE.",
+      "",
+      "It replaces the draw from `ctas` entirely rather than joining the pool.",
+      "One of those six entries points at the bio and none of them says what is",
+      "there, so a slideshow about Prague mentioned the site roughly one time in",
+      "six and never told anybody what it would give them. These name the",
+      "destination and say what the page is.",
+      "",
+      "Two of them, for the reason plans.sitePage has two: on Instagram with",
+      "igReplies on, a comment is a route to a tappable link, and on TikTok",
+      "there is no route at all. Neither may contain an address; assertNoUrl",
+      "runs over both."
+    ],
+    "siteCtaBioHe": "המסלול המלא ל{dest}, עם מפה, בלינק בביו",
+    "siteCtaDmHe": "תגיבו \"{dest}\" ונשלח לכם את המסלול המלא בהודעה",
     "_follows_comment": [
       "THE REASON TO FOLLOW, AND IT IS ON EVERY POST.",
       "",
@@ -1492,7 +1508,65 @@
       "can never be negative: src/plan/write.js throws on a plan that busts its",
       "own cover, so leftHe is only ever filled with a number that is true."
     ],
+    "_source_comment": [
+      "WHERE THE ITINERARY COMES FROM, and it is no longer always a model.",
+      "",
+      "tiyulplus.com publishes an itinerary per destination and now serves it",
+      "at /api/cities. When the site has a page with a usable itinerary, the",
+      "plan IS that itinerary, in the site's own day order, and the cover says",
+      "so. When it does not, src/plan/write.js writes one as before.",
+      "",
+      "`prefer` is which route is tried first: \"site\" or \"ai\". Setting it to",
+      "\"ai\" turns this whole route off without removing it.",
+      "",
+      "`minDays` is how many days the site has to supply before it is worth",
+      "using. It is separate from daysMin because they answer different",
+      "questions: daysMin is the shortest trip worth publishing at all, and",
+      "this is the shortest one worth switching source for. A two-day site",
+      "itinerary is not better than a four-day written one.",
+      "",
+      "MEASURED ON 2026-09-27: the site covers 37 of the 102 rows in",
+      "destinations.json, and every one of those 37 has three or more days. So",
+      "about two plans in three still come from the AI route, and the ones that",
+      "do not include santorini, rhodes, thessaloniki, milan and naples, which",
+      "this account posts about often. That is a gap in the site's coverage",
+      "rather than in this code, and it is the ceiling on how much traffic the",
+      "site slide can send."
+    ],
+    "source": { "prefer": "site", "minDays": 3 },
+    "hookSiteHe": "{days} ימים ב{dest}, המסלול של טיול+",
+    "_hookSite_comment": [
+      "THE COVER SAYS WHOSE PLAN IT IS. hookHe says \"ביקשתי מ-AI לתכנן\", which",
+      "was the exact truth while a model wrote every itinerary and is a lie on a",
+      "post carrying the site's own. The two hooks are separate strings picked",
+      "off the plan's source for the same reason the budget pair is: neither",
+      "sentence is true of both shapes, and one string with a placeholder in it",
+      "would let the wrong one be filled in."
+    ],
     "hookBudgetHe": "{budget} ₪ ל-{days} ימים ב{dest}. ככה.",
+    "_sitePage_comment": [
+      "THE CLOSING SLIDE, when the site has a page for this destination.",
+      "",
+      "It is a real screenshot of that page in a phone frame, and it REPLACES",
+      "the generic follow ask rather than joining it. The follow line moves to",
+      "the description, where it costs the post nothing; the last swipe goes to",
+      "the thing the account exists to send people to.",
+      "",
+      "Two CTAs because the platforms differ in what can honestly be promised.",
+      "TikTok has no route from a comment to a link, so ctaBioHe points at the",
+      "bio. Instagram does, once igReplies is on, so ctaDmHe promises the DM",
+      "that the webhook actually sends. Promising a DM on TikTok would be the",
+      "giveaway's mistake again: an ask nothing in this program can answer.",
+      "",
+      "No URL in any of these. assertNoUrl runs over them like every other",
+      "published string, and the link lives in the bio and in the DM."
+    ],
+    "sitePage": {
+      "titleHe": "המסלול המלא ל{dest}",
+      "noteHe": "עם מפה, ואפשר לשנות כל יום",
+      "ctaBioHe": "חינם, בלי הרשמה · הלינק בביו",
+      "ctaDmHe": "תגיבו \"{dest}\" ונשלח לכם את הלינק"
+    },
     "breakdownLabelHe": "על מה הולך הכסף",
     "attractionsHe": "כניסות",
     "leftHe": "נשאר {left} ₪ מהתקציב",
@@ -1509,7 +1583,7 @@
       "covers."
     ],
     "giveaway": {
-      "on": true,
+      "on": false,
       "winners": 5,
       "premiumDays": 30,
       "keywordHe": "{dest}",
@@ -1524,6 +1598,44 @@
         "as a raffle entry, and it costs the commenter nothing to mean it."
       ]
     }
+  },
+  "_igReplies_comment": [
+    "THE INSTAGRAM HALF OF \"the post points at the page\".",
+    "",
+    "A slide can say the link is in the bio and a caption can say it again,",
+    "and on Instagram neither is tappable from a feed post. What IS reachable",
+    "is a comment: Meta's private-replies API lets an account send exactly one",
+    "DM per comment, within seven days, and that DM may carry a link. So the",
+    "closing slide asks people to comment the destination, and this block is",
+    "what answers them.",
+    "",
+    "It replaces plans.giveaway, which asked for a comment and promised a",
+    "month of premium no code here could hand out. This asks for the same",
+    "comment and the thing it promises is the thing it sends.",
+    "",
+    "dmHe MUST contain {url} and MUST NOT contain an address. The link is",
+    "built per post, with the candidate id as the campaign, so a hardcoded one",
+    "would send everybody to the same page with no way to tell which post",
+    "earned the click. src/postConfig.js refuses a literal domain here for the",
+    "same reason assertNoUrl refuses one in a caption.",
+    "",
+    "on: false until the Meta app has the permissions. With it off nothing",
+    "listens, the closing slide falls back to the bio wording, and so does the",
+    "caption: one switch, three places, the rule giveaway.on already followed."
+  ],
+  "igReplies": {
+    "on": false,
+    "hourlyCap": 30,
+    "keywords": [
+      "מסלול",
+      "מסלולים",
+      "לינק",
+      "קישור"
+    ],
+    "dmHe": "הנה המסלול המלא ל{dest} 🙂\n{url}\n\nחינם, בלי הרשמה. אפשר לשנות כל יום ולשמור.",
+    "publicReplyHe": "שלחנו לך בהודעה 📩",
+    "utmSource": "instagram",
+    "utmMedium": "dm"
   },
   "schedule": {
     "_comment": [

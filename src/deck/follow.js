@@ -1,4 +1,5 @@
 import { captionFollow } from '../hashtags.js';
+import { postConfig } from '../postConfig.js';
 
 // The closing slide of every slideshow: why to follow.
 //
@@ -61,8 +62,60 @@ export function followSlideFor(deck) {
   };
 }
 
-/** Whether this deck gets one. The count, for anything adding up slides. */
-export const hasFollowSlide = (deck) => Boolean(followSlideFor(deck));
+/**
+ * Does this deck close on the real page instead?
+ *
+ * A deck about a destination the site has a page for ends on a screenshot of
+ * that page rather than on the generic follow ask: the ask is a sentence and
+ * the screenshot is the thing the post is for. The follow line is not lost, it
+ * moves to the description, which is where it costs the post nothing.
+ *
+ * KEYED ON A SLUG, AND THAT IS LOAD BEARING. This module is imported by the
+ * approval message and by renderPlan's check against Instagram's ten-image
+ * limit, and neither may pull a browser in behind it. A string on the deck is
+ * something this file can read; the screenshot it stands for is not, and the
+ * capture can still fail later without changing any of this arithmetic (see
+ * the fallback note in src/plan/sitePage.js).
+ */
+export const hasSiteSlide = (deck) => Boolean(deck?.siteSlug);
+
+/**
+ * The words on the site slide, or null when this deck does not get one.
+ *
+ * Here rather than in the renderer for the same reason followSlideFor is: the
+ * approval message has to be able to print what the last slide will say, and
+ * the plan has to count it, and neither may import a browser to find out.
+ *
+ * THE LINE UNDERNEATH DIFFERS BY PLATFORM, AND NOT FOR STYLE. On Instagram,
+ * with private replies on, a comment is a route to a link and the slide can
+ * honestly promise one. On TikTok there is no such route, so it names where
+ * the link is instead. Promising a DM on TikTok would be a promise nothing
+ * could keep, which is the same failure the giveaway had.
+ */
+export function siteSlideFor(deck, { size = 'tiktok', destHe = null, replies = null } = {}) {
+  if (!hasSiteSlide(deck)) return null;
+  const cfg = postConfig().plans.sitePage || {};
+  const dest = destHe || deck.where || '';
+  const fill = (s) => String(s || '').replace(/\{dest\}/g, dest);
+
+  const canDm = size === 'instagram' && Boolean(replies?.on);
+  return {
+    titleHe: fill(cfg.titleHe),
+    noteHe: fill(cfg.noteHe),
+    ctaHe: fill(canDm ? cfg.ctaDmHe : cfg.ctaBioHe),
+    slug: deck.siteSlug,
+    site: true,
+  };
+}
+
+/**
+ * Whether this deck gets a follow slide. The count, for anything adding up slides.
+ *
+ * The site slide REPLACES it rather than joining it. Two closing slides is two
+ * asks on one post, which is the rule followSlideFor already applies to a plan
+ * carrying the giveaway.
+ */
+export const hasFollowSlide = (deck) => !hasSiteSlide(deck) && Boolean(followSlideFor(deck));
 
 /**
  * How many images a deck publishes: the cover, its places, and the close.
@@ -74,4 +127,4 @@ export const hasFollowSlide = (deck) => Boolean(followSlideFor(deck));
  * this.
  */
 export const publishedSlideCount = (deck) =>
-  1 + (deck?.slides || []).length + (hasFollowSlide(deck) ? 1 : 0);
+  1 + (deck?.slides || []).length + (hasFollowSlide(deck) ? 1 : 0) + (hasSiteSlide(deck) ? 1 : 0);

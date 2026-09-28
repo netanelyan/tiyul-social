@@ -54,11 +54,27 @@ export function planText(plan) {
   // both off the same flag is what makes that combination unreachable.
   const budgeted = Boolean(plan.budgetIls);
 
+  // WHOSE PLAN IT IS, and it decides the cover.
+  //
+  // "ביקשתי מ-AI לתכנן" was the exact truth for as long as a model wrote every
+  // itinerary here. On a plan lifted from the site's own page it is false, and
+  // falsely modest in the one direction that costs something: the post exists
+  // to send somebody to that page, and telling them a bot invented the route
+  // is an argument against going. Three sources, three covers, picked here so
+  // the wrong pairing cannot be assembled downstream.
+  const fromSite = plan.source === 'site';
+
   const text = {
     budgeted,
+    fromSite,
+    // Whether any number on this plan may be printed. A site plan has a visit
+    // length and a price band and no prices at all, so the slide, the caption
+    // and the approval card all have to stop asking for them, and one flag is
+    // how they agree about it.
+    priced: plan.priced !== false,
     askWhoHe: cfg.askWhoHe,
     askHe: fill(cfg.askHe, vars),
-    hookHe: fill(budgeted ? cfg.hookBudgetHe : cfg.hookHe, vars),
+    hookHe: fill(fromSite ? cfg.hookSiteHe : budgeted ? cfg.hookBudgetHe : cfg.hookHe, vars),
     hookSubHe: fill(cfg.hookSubHe, vars),
     totalLabelHe: fill(cfg.totalLabelHe, vars),
     perPersonHe: fill(cfg.perPersonHe, vars),

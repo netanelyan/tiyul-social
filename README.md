@@ -35,7 +35,7 @@ clips   destinations → Pexels → vision judge → one line → trim + burn in
 
 shoots  rotation → angle + destination → hook + beats + caption (Claude) → Telegram → YOU FILM IT
 
-plans   destination → itinerary (Claude) → render ×2 → ✅ → TikTok drafts + Instagram
+plans   destination → itinerary (the site, or Claude) → render ×2 → ✅ → TikTok drafts + Instagram
 ```
 
 Two of these are not like the other three. A **shoot** is a shot list, and
@@ -83,7 +83,13 @@ None of them may name a price, a month or a rule, which is where that register
 usually gets its punch and is exactly what a cover here cannot source.
 
 The closing slide is the reason to follow, appended by the renderer rather than
-by any of the three deck builders: see `src/deck/follow.js`.
+by any of the three deck builders: see `src/deck/follow.js`. On a post about a
+destination the site has a page for it is **a screenshot of that page** in a
+phone frame instead, captured from tiyulplus.com at build time with the
+analytics blocked so the pipeline's own visits do not inflate the site's
+numbers. The follow ask is not lost; it moves to the description, where it
+costs the post nothing. A capture that fails puts the ordinary slide back, so
+an empty phone can never publish.
 
 A deck is rendered **twice, in two design languages**. The TikTok set is
 1080×1920 with no branding on it at all and the text placed wherever the
@@ -164,9 +170,36 @@ should reach Instagram, and every other Instagram post this account makes is a
 photograph or a carousel, the two formats Instagram is least willing to show to
 people who do not already follow it.
 
-A **plan** is an itinerary an AI wrote, drawn as a deck: `ביקשתי מ-AI לתכנן 4
+A **plan** is an itinerary drawn as a deck, and **where the itinerary comes
+from is now the interesting part**. When tiyulplus.com has a page for the
+destination, the plan IS that page's itinerary, in the site's own day order,
+and the cover says so: `5 ימים בפראג, המסלול של טיול+`. When it does not, an
+AI writes one as before and the cover says that instead: `ביקשתי מ-AI לתכנן 4
 ימים ברומא`, then a photograph for every stop with its time, its price and one
-line of what to do there, then the total, then the ask. It is the only post here
+line of what to do there, then the total, then the ask.
+
+**The site covers 37 of the 102 rows in `destinations.json`**, measured on
+2026-09-27, so about two plans in three still take the AI route. The ones it
+does not cover include Santorini, Rhodes, Thessaloniki, Milan and Naples,
+which this account posts about often. That is a gap in the site's content
+rather than in this code, and it is the ceiling on how much traffic the
+closing site slide can send.
+
+**A site plan carries no numbers, and that is the whole trade.** The site
+publishes a price BAND and a visit length, not prices and not times. A band is
+not a price: printing one, or converting it to shekels, would be inventing
+exactly the figure this route exists to stop inventing. So a site plan has no
+stop prices, no day subtotal and no total slide, and what fills that space is
+the site's own facts — what kind of place it is, how long people spend there,
+and `כניסה חופשית` where the band is zero. A `/trip` with a budget still takes
+the AI route, because there is nothing to plan against.
+
+**The one editorial rule it adds is the kosher swap.** A site day has five or
+six stops and a slide set holds four, so taking the first four in order drops
+the kosher entry whenever it is not early in the day. It is swapped into the
+last slot instead: the site marks a place kosher only where supervision was
+actually reported, which makes those entries the one thing on the page this
+audience cannot get from a generic guide. It is the only post here
 where the thing being shown is the thing being sold, and the only one with no
 source behind a single line of it: an itinerary is a proposal rather than a set
 of facts, which is why the approval card prints the whole thing instead of
@@ -538,16 +571,24 @@ carry the honesty instead:
   still be in the total, so the plan is rewritten around what survived and
   every number is recomputed from it. The card names what left.
 
-**The post says an AI planned the trip, an AI did, and that is the whole claim.**
-It is not a screenshot and does not imply one; wiring the real product in is a
-change to `src/plan/write.js` and to the note at the top of it.
+**What the post claims is now whichever of the two is true.** An AI plan says
+an AI planned it, which it did. A site plan says it is the site's itinerary,
+which it is, and closes on a real screenshot of the page rather than on a
+drawing of one — so the rule that no slide may imitate a screen the product
+does not have is kept by construction rather than by care. This was the change
+the note at the top of `src/plan/write.js` said would come first; it has, and
+`src/plan/site.js` is where it lives.
 
-**The giveaway is a promise to strangers.** The last slide asks for a follow and
-a comment and offers five of them a month of premium. The bot writes the ask,
-prints who was promised what, and cannot read a single comment, picking and
-granting is yours. `plans.giveaway.on: false` removes the slide, the caption line
-and the promise together, which is why it is one switch and not three strings.
-While it is on, the bio CTA stands down: one ask per post.
+**The giveaway is off, and what replaced it keeps its promise.** The last slide
+used to ask for a comment and offer five commenters a month of premium; the bot
+wrote the ask, printed who was promised what, and could not read a single
+comment, so picking and granting were yours. `igReplies` asks for the same
+comment and sends the thing it promises: Meta's private-replies API allows one
+DM per comment, within seven days, and that DM carries the destination's page
+with a campaign tag on it. `igReplies.on` is the one switch, and with it off the
+slide and the caption both fall back to pointing at the bio. `plans.giveaway.on`
+still works and is now `false`. See [`DEPLOY.md`](DEPLOY.md) for the Meta setup,
+including the one question about Advanced Access that is not settled.
 
 ## Why TikTok posts are drafts
 
@@ -665,6 +706,10 @@ message says when the slot frees.
 | `src/shoot/rotation.js` | which shape is next, the product floor, which part of the series |
 | `src/shoot/plan.js` | the shot list: hook, beats, caption, what to film |
 | `src/shoot/message.js` | what a shoot looks like on a phone, standing up |
+| `src/plan/site.js` | the itinerary the SITE publishes, from /api/cities, with no invented numbers |
+| `src/plan/sitePage.js` | a real screenshot of the destination page, analytics blocked, null on any doubt |
+| `src/render/siteSlide.js` | that screenshot in a phone, over the blurred cover, as the closing slide |
+| `src/igReplies/` | the comment webhook: verify, match, dedupe, and one DM with the link |
 | `src/plan/write.js` | the itinerary: days, stops, times and prices, shaped and checked |
 | `src/plan/text.js` | every word on a plan that the model did not write, filled once |
 | `src/plan/slides.js` | the itinerary expressed as deck slides, one stop, one photograph |
@@ -673,6 +718,7 @@ message says when the slot frees.
 | `src/dashes.js` | the em dash ban, and the one function every writer runs on model output |
 | `src/models.js` | which model does which job, and the effort-parameter guard |
 | `scripts/plan-lab.js` | build one itinerary and render it; `fake` skips the model, `flat` the photos |
+| `scripts/ig-subscribe.js` | subscribe the account to comment webhooks, and print what it is subscribed to |
 | `scripts/clip-lab.js` | build a batch of clips to look at |
 | `scripts/clip-redo.js` | re-render specific clips with footage and line pinned |
 | `scripts/` | selftest, source probe, card-hosting check, one-off runs |

@@ -5270,6 +5270,33 @@ group('a held clip never changes its text - not even to ask for a follow');
     /כבוי/.test(followFrameLine({ clip: { shape: 'cuts', follow: null, followAt: null } })));
 }
 
+
+/**
+ * A giveaway, whatever post-config.json currently says.
+ *
+ * plans.giveaway.on is false now that igReplies replaces it, and eighteen
+ * checks below used to be wrapped in `if (give)` and simply stopped running
+ * when it went off. A test that silently does nothing is worse than a deleted
+ * one: the count still looks healthy and the coverage is gone.
+ *
+ * So the giveaway PATH is tested from a fixture of the same shape
+ * planGiveaway returns, and whether the SWITCH works is tested separately and
+ * explicitly. Those are two questions and only one of them is about the config.
+ */
+function giveawayFixture() {
+  return {
+    on: true,
+    winners: 5,
+    premiumDays: 30,
+    keyword: 'רומא',
+    titleHe: 'חודש פרימיום במתנה',
+    actionHe: 'תעקבו ותגיבו רומא',
+    prizeHe: '5 מכם מקבלים 30 יום פרימיום',
+    captionHe: 'תעקבו ותגיבו רומא, ו-5 מכם מקבלים 30 יום פרימיום',
+    footHe: '',
+  };
+}
+
 /* -------------------------------------------------------------------------- */
 group('the em dash, banned everywhere a reader can see one');
 
@@ -5315,11 +5342,11 @@ group('the em dash, banned everywhere a reader can see one');
     total: 80,
   };
   const text = planText(plan);
-  const give = planGiveaway(plan);
+  const give = giveawayFixture();
   for (const [k, v] of Object.entries(text)) {
     if (typeof v === 'string') ok(`plan text ${k} is clean`, !hasLongDash(v), v);
   }
-  if (give) {
+  {
     for (const [k, v] of Object.entries(give)) {
       if (typeof v === 'string') ok(`giveaway ${k} is clean`, !hasLongDash(v), v);
     }
@@ -5511,7 +5538,7 @@ group('the itinerary slideshow - what it says, and what it promises');
     total: 170,
   };
   const text = planText(plan);
-  const give = planGiveaway(plan);
+  const give = giveawayFixture();
 
   // The cover promises a count and the slides have to deliver it, which is the
   // same rule as a hook that says "3 טעויות".
@@ -5574,7 +5601,7 @@ group('the itinerary slideshow - what it says, and what it promises');
   ok('and the day count', text.hookHe.includes(String(plan.days.length)));
   ok('no placeholder survives filling', !/[{}]/.test([text.hookHe, text.askHe, text.dayLabelFor(1)].join(' ')));
 
-  if (give) {
+  {
     ok('the keyword is the destination', give.keyword.includes('רומא'));
     ok('the ask names the action', give.actionHe.includes(give.keyword));
     ok('and the line under it names the prize', give.prizeHe.includes(String(give.premiumDays)));
@@ -5797,6 +5824,340 @@ group('a plan with a number on the cover');
   ok('and every fixed cost under it', ['420', '300', '280', '60'].every((n) => card.includes(n)));
   ok('and what is left', card.includes('נשאר 12'));
   ok('and no longer claims entrances only', !card.includes('כניסות ואטרקציות בלבד'));
+}
+
+/* -------------------------------------------------------------------------- */
+group('the itinerary the site publishes');
+
+{
+  const site = await import('../src/plan/site.js');
+  const { planText } = await import('../src/plan/text.js');
+  const { tripDecks, deckForSize } = await import('../src/plan/slides.js');
+  const { publishedSlideCount, hasSiteSlide, hasFollowSlide, siteSlideFor } = await import('../src/deck/follow.js');
+
+  // A city exactly as /api/cities returns one, trimmed to what this reads.
+  // Five stops a day, which is what the real pages carry and one more than a
+  // slide set holds, and a short final day, which is what Prague actually has.
+  const city = {
+    slug: 'prague',
+    name: 'פראג',
+    itinerary: [
+      { day: 1, title: 'העיר העתיקה', placeIds: ['a', 'b', 'c', 'd', 'kosher'] },
+      { day: 2, title: 'המצודה', placeIds: ['e', 'f', 'g', 'h'] },
+      { day: 3, title: 'יום קצר', placeIds: ['i', 'j'] },
+      { day: 4, title: 'אחרי הקצר', placeIds: ['a', 'b', 'c', 'd'] },
+    ],
+    places: [
+      { id: 'a', name: 'גשר קארל', nameLocal: 'Charles Bridge', category: 'historic', priceLevel: 0, durationMin: 45 },
+      { id: 'b', name: 'טירת פראג', nameLocal: 'Prague Castle', category: 'historic', priceLevel: 2, durationMin: 210 },
+      { id: 'c', name: 'המוזיאון', nameLocal: 'National Museum', category: 'museum', priceLevel: 1, durationMin: 120 },
+      { id: 'd', name: 'כיכר ואצלב', nameLocal: 'Wenceslas Square', category: 'attraction', priceLevel: 0 },
+      { id: 'e', name: 'סטרהוב', nameLocal: 'Strahov', category: 'historic', durationMin: 90 },
+      { id: 'f', name: 'מאלה סטראנה', nameLocal: 'Mala Strana', category: 'historic', durationMin: 60 },
+      { id: 'g', name: 'פטרשין', nameLocal: 'Petrin', category: 'nature', durationMin: 120 },
+      { id: 'h', name: 'לטנה', nameLocal: 'Letna', category: 'viewpoint', durationMin: 45 },
+      { id: 'i', name: 'קוטנה הורה', nameLocal: 'Kutna Hora', category: 'historic', durationMin: 400 },
+      { id: 'j', name: 'סדלץ', nameLocal: 'Sedlec', category: 'historic', durationMin: 60 },
+      { id: 'kosher', name: 'דיניץ', nameLocal: 'Dinitz', category: 'kosher-food', durationMin: 60 },
+    ],
+  };
+  const cfg = { days: 4, daysMin: 3, daysMax: 5, stopsMin: 3, stopsMax: 4, source: { prefer: 'site', minDays: 3 } };
+  const built = site.planDaysFrom(city, { days: 5, stopsMin: cfg.stopsMin, stopsMax: cfg.stopsMax });
+
+  // STOPS AT THE SHORT DAY, DOES NOT SKIP IT. Day 3 has two stops and the
+  // floor is three, so the plan is two days. Skipping it and taking day 4
+  // would renumber the rest, and the post would then disagree with the page it
+  // is advertising about what יום 3 is.
+  eq('the plan stops at the first short day', built.days.length, 2);
+  ok('and says why', built.dropped.some((d) => d.includes('יום 3')));
+  eq('the day numbers are the site’s own', built.days.map((d) => d.n).join(','), '1,2');
+
+  // THE KOSHER SWAP. Day 1 has five stops with the kosher one fifth, so taking
+  // the first four in order would drop it. It is the strongest Israeli angle
+  // on the page and the site only marks a place kosher where supervision was
+  // reported, so it replaces the last kept stop instead.
+  const day1 = built.days[0].stops.map((s) => s.nameHe);
+  eq('a day is cut to the slide limit', day1.length, 4);
+  ok('and the kosher place is swapped in', day1.includes('דיניץ'), day1.join(' '));
+  ok('replacing the last stop, not appending', !day1.includes('כיכר ואצלב'), day1.join(' '));
+  // A day already carrying one is left alone rather than given a second.
+  const already = site.stopsForDay(['kosher', 'a', 'b', 'c', 'd'], new Map(city.places.map((p) => [p.id, p])), { stopsMax: 4 });
+  eq('a day that already has one is untouched', already.map((p) => p.id).join(','), 'kosher,a,b,c');
+
+  // NO INVENTED NUMBERS. The site has a price BAND and no times at all.
+  const stops = built.days.flatMap((d) => d.stops);
+  ok('no stop carries a time', stops.every((s) => s.timeHe === null));
+  ok('and none carries a price', stops.every((s) => s.costIls === null));
+  // null rather than 0, because 0 renders as חינם, which is a claim that
+  // somebody checked. Nobody checked; the site publishes a band.
+  ok('not even zero', stops.every((s) => s.costIls !== 0));
+
+  // The note is built from the site's own facts.
+  eq('free entry is said', site.noteFor(city.places[0]), 'אתר היסטורי · כניסה חופשית');
+  eq('a visit length is said the way people say it', site.noteFor(city.places[4]), 'אתר היסטורי · כשעה וחצי');
+  eq('a paid place shows its length, not its band', site.noteFor(city.places[1]), 'אתר היסטורי · חצי יום');
+  eq('minutes are never printed', site.durationHe(45), 'כשעה');
+  eq('and neither is a band', site.noteFor({ category: 'museum', priceLevel: 3 }), 'מוזיאון');
+  // An unknown category contributes nothing rather than printing English onto
+  // a Hebrew slide, which is the rule deck/hebrew.js applies to names.
+  eq('an unknown category is left out', site.noteFor({ category: 'nightlife', durationMin: 60 }), 'כשעה');
+
+  // The slug, from the row, with the override winning.
+  eq('the id is the slug', site.siteSlugFor({ id: 'prague', en: 'Prague' }), 'prague');
+  eq('an override wins', site.siteSlugFor({ id: 'nyc', siteSlug: 'new-york', en: 'New York' }), 'new-york');
+  eq('the English name is the fallback', site.siteSlugFor({ en: 'Lake Como' }), 'lake-como');
+
+  // THE COVER SAYS WHOSE PLAN IT IS. "ביקשתי מ-AI" on a post carrying the
+  // site's own itinerary is false, and false in the direction that costs
+  // traffic: it argues against opening the page.
+  const plan = {
+    id: 'sitetest01',
+    source: 'site',
+    slug: 'prague',
+    url: 'https://www.tiyulplus.com/destinations/prague',
+    dest: { id: 'prague', he: 'פראג', en: 'Prague', country: 'צ׳כיה' },
+    days: built.days,
+    priced: false,
+    total: null,
+    stopsIls: null,
+    costs: null,
+    budgetIls: null,
+  };
+  const text = planText(plan);
+  ok('a site plan says it is the site’s', text.hookHe.includes('טיול+'), text.hookHe);
+  ok('and never says an AI wrote it', !text.hookHe.includes('AI'), text.hookHe);
+  ok('it is flagged unpriced', text.priced === false);
+
+  const decks = tripDecks(plan, { text, giveaway: null });
+  const full = deckForSize(decks, 'tiktok');
+  const short = deckForSize(decks, 'instagram');
+
+  // NO TOTAL SLIDE, because the slide's whole content is a number and there is
+  // no number. Not an empty one and not a zero.
+  ok('there is no total slide', !full.slides.some((s) => /₪/.test(s.nameHe || '')), full.slides.map((s) => s.nameHe).join(' | '));
+  ok('and no day subtotal either', !short.slides.some((s) => /₪/.test(s.bullets?.[0]?.text || '')));
+  ok('a stop slide carries the note alone', full.slides[0].bullets[0].text === built.days[0].stops[0].noteHe);
+  ok('with no חינם in front of it', !full.slides[0].bullets[0].text.startsWith('חינם'));
+
+  // THE SLIDE COUNT INCLUDES THE SITE SLIDE, and it replaces the follow ask
+  // rather than joining it. Two closing slides is two asks on one post.
+  ok('the deck knows it has a page', hasSiteSlide(full));
+  ok('so it does not also get a follow slide', !hasFollowSlide(full));
+  eq('the count includes it', publishedSlideCount(short), 1 + short.slides.length + 1);
+  // The count has to run with no browser anywhere near it: renderPlan checks
+  // it against Instagram's ten before rendering, and follow.js must not pull
+  // the renderer in behind it.
+  const followSrc = readFileSync(new URL('../src/deck/follow.js', import.meta.url), 'utf8');
+  ok('and follow.js imports no renderer', !/from '\.\.\/render\//.test(followSrc), 'follow.js now needs a browser');
+
+  // The words differ by platform because the platforms differ in what can
+  // honestly be promised. TikTok has no route from a comment to a link.
+  const tk = siteSlideFor(full, { size: 'tiktok', destHe: 'פראג', replies: { on: true } });
+  const ig = siteSlideFor(full, { size: 'instagram', destHe: 'פראג', replies: { on: true } });
+  const igOff = siteSlideFor(full, { size: 'instagram', destHe: 'פראג', replies: { on: false } });
+  ok('the title names the destination', tk.titleHe.includes('פראג'));
+  ok('TikTok points at the bio', tk.ctaHe.includes('בביו'));
+  ok('Instagram asks for a comment when replies are on', ig.ctaHe.includes('תגיבו'));
+  ok('and points at the bio when they are off', igOff.ctaHe.includes('בביו'));
+  ok('no slide text carries a URL', ![tk, ig].some((s) => /https?:|www\.|\.com/.test(`${s.titleHe} ${s.noteHe} ${s.ctaHe}`)));
+  ok('a deck with no page gets no site slide', siteSlideFor({ where: 'רומא' }) === null);
+
+  // THE SWITCH, tested separately from the giveaway's own behaviour.
+  //
+  // The eighteen checks on what a giveaway LOOKS like now run off a fixture
+  // (giveawayFixture) so they keep running with the feature off. That leaves
+  // exactly one thing the config decides, and this is it: whether the promise
+  // is made at all. It is off because igReplies replaces it - the giveaway
+  // asked for a comment and offered a month of premium that nothing here could
+  // hand out, and the replacement asks for the same comment and sends the
+  // thing it promised.
+  const { planGiveaway } = await import('../src/plan/text.js');
+  const { postConfig: cfgNow } = await import('../src/postConfig.js');
+  eq('the giveaway is off', cfgNow().plans.giveaway.on, false);
+  eq('so no plan carries one', planGiveaway(plan), null);
+  // And with it off, a plan that has no site page falls back to the ordinary
+  // follow slide rather than closing on nothing.
+  const plain = { ...plan, source: 'ai', slug: null, priced: true, total: 0 };
+  const plainDeck = deckForSize(tripDecks(plain, { text: planText(plain), giveaway: null }), 'tiktok');
+  ok('a plain plan still closes on a follow ask', hasFollowSlide(plainDeck));
+}
+
+/* -------------------------------------------------------------------------- */
+group('the caption points at the page');
+
+{
+  const { captionCta } = await import('../src/hashtags.js');
+  const { postConfig } = await import('../src/postConfig.js');
+
+  // The 1-in-6 problem this replaces: one of six pool entries mentions the bio
+  // and none says what is there, so a post about a city we cover mentioned the
+  // site about one time in six. With a page, the ask is not drawn at all.
+  const bio = captionCta({ siteSlug: 'prague', destHe: 'פראג', target: 'tiktok', rand: () => 0.99 });
+  ok('a site post always gets the site ask', Boolean(bio));
+  ok('and it names the destination', bio.includes('פראג'), bio);
+  ok('even when the random draw would have skipped one', !postConfig().caption.ctas.includes(bio));
+
+  // Instagram may ask for a comment ONLY when something answers comments.
+  const off = captionCta({ siteSlug: 'prague', destHe: 'פראג', target: 'instagram', rand: () => 0.99 });
+  ok('with replies off Instagram points at the bio too', off.includes('בביו'), off);
+
+  // No URL, ever, in either of them. Same rule as every other published string.
+  for (const line of [postConfig().caption.siteCtaBioHe, postConfig().caption.siteCtaDmHe]) {
+    ok(`the site ask carries no URL: ${line.slice(0, 24)}`, !/https?:|www\.|\.com|\.co\.il/.test(line));
+  }
+
+  // Without a page nothing changes: the pool and its share still decide.
+  eq('no page means the old behaviour', captionCta({ rand: () => 0.99, share: 0 }), null);
+}
+
+/* -------------------------------------------------------------------------- */
+group('answering a comment with the link');
+
+{
+  const { asksForLink, words, stem } = await import('../src/igReplies/match.js');
+  const { verifySignature } = await import('../src/igReplies/verify.js');
+  const { commentsIn, handleComment } = await import('../src/igReplies/server.js');
+  const { linkFor, replyText, messagesEndpoint } = await import('../src/igReplies/send.js');
+  const { createHmac } = await import('node:crypto');
+
+  // WHAT COUNTS AS ASKING. The slide says תגיבו "פראג" and what arrives is
+  // every one of these. A matcher that only takes the bare word answers about
+  // half of them, which is worse than not asking: somebody did as they were
+  // told and got nothing.
+  const ask = (t) => asksForLink(t, { destHe: 'פראג', keywords: ['מסלול', 'לינק'] });
+  for (const t of ['פראג', 'לפראג', 'בפראג', '"פראג"', 'פראג!!', 'פראג 😍', 'אני רוצה לפראג בבקשה', 'פְּרָאג']) {
+    ok(`"${t}" is asking`, Boolean(ask(t)), t);
+  }
+  eq('and it says why', ask('לפראג').why, 'destination');
+  eq('a keyword counts too', ask('מסלול בבקשה').why, 'keyword');
+  eq('with a prefix on it', ask('המסלול?').why, 'keyword');
+
+  // AND WHAT DOES NOT. Every match DMs a stranger, so the failure to avoid is
+  // a reply nobody asked for.
+  for (const t of ['יפה מאוד', 'הייתי שם בקיץ', '', '❤️❤️', 'budapest']) {
+    ok(`"${t}" is not asking`, ask(t) === null, t);
+  }
+  // Whole words only. A keyword inside a longer word is not a request.
+  ok('a keyword inside a word does not count', asksForLink('לינקולן', { destHe: 'פראג', keywords: ['לינק'] }) === null);
+  eq('words are split on punctuation and emoji', words('פראג, בבקשה! 😍').join('|'), 'פראג|בבקשה');
+  eq('a prefix is stripped only when something is left', stem('לפראג'), 'פראג');
+  eq('and a short word keeps its letters', stem('לי'), 'לי');
+
+  // THE SIGNATURE. Everything behind this endpoint sends a DM to a stranger,
+  // so an unsigned delivery is an open relay for the account's messages.
+  const body = Buffer.from(JSON.stringify({ object: 'instagram', entry: [] }), 'utf8');
+  const good = `sha256=${createHmac('sha256', 'topsecret').update(body).digest('hex')}`;
+  ok('a correct signature passes', verifySignature(body, good, 'topsecret'));
+  ok('the wrong secret fails', !verifySignature(body, good, 'other'));
+  ok('a tampered body fails', !verifySignature(Buffer.concat([body, Buffer.from('x')]), good, 'topsecret'));
+  ok('no header fails', !verifySignature(body, null, 'topsecret'));
+  ok('no secret fails', !verifySignature(body, good, ''));
+  ok('a short hex digest fails rather than throwing', !verifySignature(body, 'sha256=abcd', 'topsecret'));
+  ok('non-hex fails rather than throwing', !verifySignature(body, 'sha256=zzzz', 'topsecret'));
+  ok('an unprefixed digest fails', !verifySignature(body, good.slice(7), 'topsecret'));
+
+  // The payload shape, and the entries that are not comments.
+  const found = commentsIn({
+    entry: [
+      { changes: [{ field: 'comments', value: { id: 'c1', text: 'פראג', media: { id: 'm1' }, from: { id: 'u1', username: 'dana' } } }] },
+      { changes: [{ field: 'mentions', value: { id: 'x', media: { id: 'm1' } } }] },
+      { changes: [{ field: 'comments', value: { id: 'c2', text: 'hi' } }] },
+    ],
+  });
+  eq('only comments are read', found.length, 1);
+  eq('and only ones naming their media', found[0].commentId, 'c1');
+
+  // THE LINK, with the campaign on it. The candidate id rather than the
+  // destination, because two posts about Prague are two posts.
+  const link = linkFor('prague', 'cand123');
+  ok('the link is the destination page', link.includes('/destinations/prague'));
+  ok('tagged by source', link.includes('utm_source=instagram'));
+  ok('and medium', link.includes('utm_medium=dm'));
+  ok('and the campaign is the post', link.includes('utm_campaign=cand123'));
+  ok('the DM carries it', replyText({ destHe: 'פראג', slug: 'prague', candidateId: 'cand123' }).includes(link));
+  ok('and no placeholder survives', !/[{}]/.test(replyText({ destHe: 'פראג', slug: 'prague', candidateId: 'c' })));
+
+  // THE REQUEST SHAPE, against a mocked fetch. Whether Meta accepts it is not
+  // knowable offline; that it is the documented call is.
+  {
+    const saved = { ...process.env };
+    process.env.IG_USER_ID = '17841400000000000';
+    process.env.IG_ACCESS_TOKEN = 'tok-abc';
+    delete process.env.IG_AUTH;
+    const { sendPrivateReply } = await import('../src/igReplies/send.js');
+    let seen = null;
+    await sendPrivateReply(
+      { commentId: 'c1', destHe: 'פראג', slug: 'prague', candidateId: 'cand123' },
+      {
+        fetchImpl: async (url, init) => {
+          seen = { url, init };
+          return { ok: true, json: async () => ({ message_id: 'mid_1' }) };
+        },
+      }
+    );
+    ok('it posts to the messages endpoint', seen.url.includes('/17841400000000000/messages'), seen.url);
+    ok('on graph.instagram.com in Instagram Login mode', seen.url.startsWith('https://graph.instagram.com/'), seen.url);
+    eq('as a POST', seen.init.method, 'POST');
+    // A Bearer header rather than ?access_token=, which would put the token in
+    // every access log and proxy in front of this.
+    eq('with a bearer token', seen.init.headers.authorization, 'Bearer tok-abc');
+    ok('no token in the query string', !seen.url.includes('access_token'));
+    const sent = JSON.parse(seen.init.body);
+    eq('the recipient is the comment', sent.recipient.comment_id, 'c1');
+    ok('and the message carries the link', sent.message.text.includes('utm_campaign=cand123'));
+    ok('the endpoint moves with the auth mode', (() => {
+      process.env.IG_AUTH = 'facebook';
+      process.env.IG_PAGE_ID = '99';
+      const u = messagesEndpoint();
+      return u.startsWith('https://graph.facebook.com/') && u.includes('/99/messages');
+    })());
+    for (const k of ['IG_USER_ID', 'IG_ACCESS_TOKEN', 'IG_AUTH', 'IG_PAGE_ID']) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  }
+
+  // DEDUPE, which is the rule Meta itself enforces (one private reply per
+  // comment) and the one a redelivered webhook would break.
+  {
+    const store = await import('../src/store.js');
+    const mediaId = 'm-dedupe';
+    const cid = `c-${Date.now()}`;
+    store.noteIgPost(mediaId, { slug: 'prague', destHe: 'פראג', candidateId: 'cand1' });
+    ok('a published post is remembered', Boolean(store.igPost(mediaId)));
+    eq('with the page it was about', store.igPost(mediaId).slug, 'prague');
+    ok('the first claim is granted', store.claimIgReply(cid, { mediaId, userId: 'u1' }));
+    ok('the same comment cannot be claimed twice', !store.claimIgReply(cid, { mediaId, userId: 'u1' }));
+    ok('nor the same person again under that post', !store.claimIgReply('c-other', { mediaId, userId: 'u1' }));
+    ok('but somebody else may be', store.claimIgReply('c-third', { mediaId, userId: 'u2' }));
+    ok('and it reads back as answered', store.igReplied(cid, { mediaId, userId: 'u1' }));
+    ok('the hourly count sees them', store.igRepliesLastHour() >= 2);
+  }
+
+  // THE HANDLER'S REFUSALS, which are most of what it does.
+  {
+    const store = await import('../src/store.js');
+    const { postConfig } = await import('../src/postConfig.js');
+    const on = postConfig().igReplies.on;
+    const never = async () => { throw new Error('should not have sent'); };
+    const base = { mediaId: 'm-h', userId: 'u9', text: 'פראג', commentId: 'c-h1' };
+    store.noteIgPost('m-h', { slug: 'prague', destHe: 'פראג', candidateId: 'c' });
+
+    eq('a post it has no record of is ignored',
+      await handleComment({ ...base, mediaId: 'nope' }, { deps: { sendPrivateReply: never } }),
+      on ? 'no record of that post' : 'replies are off');
+
+    const savedUser = process.env.IG_USER_ID;
+    process.env.IG_USER_ID = 'u9';
+    eq('and it never answers itself',
+      await handleComment(base, { deps: { sendPrivateReply: never } }),
+      on ? 'our own comment' : 'replies are off');
+    if (savedUser === undefined) delete process.env.IG_USER_ID; else process.env.IG_USER_ID = savedUser;
+
+    eq('a comment that did not ask is left alone',
+      await handleComment({ ...base, text: 'יפה מאוד' }, { deps: { sendPrivateReply: never } }),
+      on ? 'did not ask' : 'replies are off');
+  }
 }
 
 /* -------------------------------------------------------------------------- */

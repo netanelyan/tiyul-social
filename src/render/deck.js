@@ -4,7 +4,8 @@ import { renderInstagramSlideHtml } from './deckInstagram.js';
 import { analyseSlides, measureCardScrims } from './photo.js';
 import { findTextRegion } from '../images/textbox.js';
 import { postConfig } from '../postConfig.js';
-import { followSlideFor } from '../deck/follow.js';
+import { followSlideFor, siteSlideFor } from '../deck/follow.js';
+import { renderSiteSlideHtml } from './siteSlide.js';
 
 // A deck to files on disk, twice.
 //
@@ -90,7 +91,7 @@ function blockHeight(slide, { cover = false, style = 'minimal' } = {}) {
  * colour are properties of the photograph, and the renderer cannot know either
  * of them from the HTML.
  */
-export async function renderDeckSize(deck, { size = 'tiktok', outDir = cardOutputDir(), only = null } = {}) {
+export async function renderDeckSize(deck, { size = 'tiktok', outDir = cardOutputDir(), only = null, siteShot = null } = {}) {
   if (!SIZES[size]) throw new Error(`unknown deck size: ${size}`);
   const geometry = SIZES[size];
   const style = isStyle(deck.style) ? deck.style : 'minimal';
@@ -125,8 +126,15 @@ export async function renderDeckSize(deck, { size = 'tiktok', outDir = cardOutpu
   // that array reads it as the places: the approval message lists their sources,
   // the evidence report quotes them, and a closing slide filed among them would
   // be a place with no country, no source and nothing to verify.
+  // The site slide closes the deck instead of the follow ask when this post is
+  // about a destination the site has a page for. It is appended here with the
+  // others, but it is NOT drawn by the same template: it is a screenshot in a
+  // phone rather than a photograph with a line on it, so it skips the
+  // placement measurement below (there is no photograph to measure) and gets
+  // its own renderer at the bottom of the loop.
+  const site = siteSlideFor(deck, { size, destHe: deck.where, replies: postConfig().igReplies });
   const follow = followSlideFor(deck);
-  const items = [cover, ...deck.slides, ...(follow ? [follow] : [])];
+  const items = [cover, ...deck.slides, ...(follow ? [follow] : []), ...(site ? [site] : [])];
 
   // The follow slide is drawn MINIMAL whatever the deck is, because the info
   // style is a name over a grid of measured fields and this slide has none: in
@@ -146,7 +154,12 @@ export async function renderDeckSize(deck, { size = 'tiktok', outDir = cardOutpu
   // cover would spend a whole deck's budget on it. The indices are carried
   // through rather than the filtered array's own, so `i === 0` still means the
   // cover and the answers still land back on the slide they describe.
-  const analysed = items.map((_, i) => i).filter(wanted);
+  // The site slide carries a screenshot rather than a photograph, so there is
+  // nothing for the placement search to measure and nothing it could tell us:
+  // its type is at fixed positions in its own template. Analysing it would
+  // hand analyseSlides a null src and spend a slot of the deck's image budget
+  // asking where the words go on a picture that does not exist.
+  const analysed = items.map((_, i) => i).filter((i) => wanted(i) && !items[i].site);
   const measured = size === 'instagram' ? [] : await analyseSlides(
     analysed.map((i) => ({
       src: items[i].image?.src || null,
@@ -225,8 +238,9 @@ export async function renderDeckSize(deck, { size = 'tiktok', outDir = cardOutpu
     // over a video player's furniture with no branding on it; the Instagram one
     // is a card, because it lands in a feed beside our own news cards and
     // should look like the same account made it.
-    const html =
-      size === 'instagram'
+    const html = slide.site
+      ? renderSiteSlideHtml({ ...slide, shot: siteShot, coverImage: cover.image?.src || null }, { size })
+      : size === 'instagram'
         ? renderInstagramSlideHtml(drawn, {
             cover: i === 0,
             style: styleAt(i),
