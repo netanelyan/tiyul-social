@@ -6638,6 +6638,77 @@ group('the map says what it can honestly say');
 }
 
 /* -------------------------------------------------------------------------- */
+group('measuring - saves and shares, never likes');
+
+{
+  const { rates } = await import('../src/metrics/store.js');
+  const { rankBy, window: reportWindow, weeklyReport } = await import('../src/metrics/report.js');
+  const { available: tiktokAvailable, hasListScope, LIST_SCOPE } = await import('../src/metrics/tiktok.js');
+  const { SCOPES } = await import('../src/publish/tiktok.js');
+
+  // PER VIEW, WHICH IS THE WHOLE POINT. A post with 40 saves off 20,000 views did worse
+  // than one with 12 off 400, and ranking by the raw count says the opposite.
+  const big = rates({ views: 20_000, saved: 40, shares: 10 });
+  const small = rates({ views: 400, saved: 12, shares: 8 });
+  ok('the smaller post ranks higher', small.saveRate > big.saveRate, `${small.saveRate} vs ${big.saveRate}`);
+
+  // NULL RATHER THAN ZERO when there is nothing to divide by. A post with no views yet
+  // has no rate, and calling it zero ranks it below a post that genuinely failed.
+  eq('no views means no rate', rates({ views: 0, saved: 5 }).saveRate, null);
+  eq('and neither does a missing stats object', rates(null).saveRate, null);
+  // Reach stands in for views where views is absent, because it is the same question
+  // asked of people rather than of plays.
+  ok('reach stands in for views', rates({ reach: 500, saved: 50 }).saveRate === 0.1);
+
+  const now = Date.parse('2026-09-28T12:00:00Z');
+  const at = (daysAgo) => new Date(now - daysAgo * 86_400_000).toISOString();
+  const rows = [
+    { id: 'a', at: at(1), shape: { type: 'plan', look: 'route', frame: 'tall' }, stats: { instagram: { views: 2000, saved: 120, shares: 40 } } },
+    { id: 'b', at: at(2), shape: { type: 'plan', look: 'notes', frame: 'phone' }, stats: { instagram: { views: 1500, saved: 150, shares: 60 } } },
+    { id: 'c', at: at(3), shape: { type: 'list', look: 'label', frame: 'tall' }, stats: { instagram: { views: 3000, saved: 60, shares: 10 } } },
+    { id: 'd', at: at(4), shape: { type: 'list', look: 'label', frame: 'phone' }, stats: { instagram: { views: 2500, saved: 75, shares: 15 } } },
+    { id: 'old', at: at(40), shape: { type: 'verdict', look: 'sheet', frame: 'tall' }, stats: { instagram: { views: 9999, saved: 9999, shares: 9999 } } },
+  ];
+
+  eq('the window excludes what is outside it', reportWindow(7, { rows, now }).length, 4);
+  ok('however good it was', !reportWindow(7, { rows, now }).some((r) => r.id === 'old'));
+
+  const byType = rankBy(reportWindow(7, { rows, now }), 'type');
+  eq('the better-saved type leads', byType[0].key, 'plan');
+  // THE MEAN OF THE RATES, NOT THE RATE OF THE TOTALS. Summing saves and dividing by
+  // summed views lets one post that reached far more people decide the whole row -
+  // which is exactly the post least like the others.
+  ok('plan averages its two posts', Math.abs(byType[0].saveRate - (0.06 + 0.1) / 2) < 1e-9, String(byType[0].saveRate));
+  eq('and the counts are reported', byType[0].posts, 2);
+  ok('a two-post group is not called thin', !byType[0].thin);
+  ok('a one-post group is', rankBy(reportWindow(40, { rows, now }), 'type').find((r) => r.key === 'verdict').thin);
+
+  // Every dimension the report groups by is a field the builder actually records, or
+  // the column is always empty and nobody notices for a month.
+  for (const field of ['type', 'look', 'frame']) {
+    ok(`${field} groups`, rankBy(reportWindow(7, { rows, now }), field).length >= 2, `${field} produced no groups`);
+  }
+
+  const text = weeklyReport({ days: 7, rows, now });
+  ok('the report names the ratios it ranks on', text.includes('שמירות') && text.includes('שיתופים'));
+  ok('and never ranks on likes', !/לייק/.test(text), 'a likes column crept into the report');
+  ok('it suggests rather than changes', text.includes('לא משנה כלום לבד'));
+  ok('and says where the edit is made', text.includes('post-config.json'));
+  ok('an empty window says so plainly', weeklyReport({ days: 1, rows: [], now }).includes('לא פורסם כלום'));
+
+  // TIKTOK, SAID IN WORDS. The scope was never requested and cannot be gained by
+  // refreshing, and the endpoint is documented as returning videos while every post
+  // here is a photo carousel. The report has to name the blocker rather than print an
+  // empty table, which reads as a bad week.
+  ok(`${LIST_SCOPE} is not among the scopes this app asked for`, !SCOPES.includes(LIST_SCOPE), SCOPES.join(','));
+  ok('so the list scope is not held', !hasListScope());
+  const gate = tiktokAvailable();
+  ok('and TikTok metrics report themselves unavailable', !gate.ok);
+  ok('with a reason somebody can act on', gate.why.length > 20, gate.why);
+  ok('the report says it too', text.includes('טיקטוק'));
+}
+
+/* -------------------------------------------------------------------------- */
 group('nothing promises a DM while nothing answers one');
 
 {

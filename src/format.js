@@ -6,6 +6,7 @@ import { privacyHe } from './publish/tiktok.js';
 import { KINDS } from './sources/places.js';
 import { clipApprovalMessage } from './video/clip.js';
 import { planApprovalMessage } from './plan/candidate.js';
+import { postApprovalMessage } from './posts/message.js';
 import { postConfig } from './postConfig.js';
 import { hashtagLine, captionQuestion, captionCta, captionFollow, followLine } from './hashtags.js';
 import { followSlideFor, hasFollowSlide, hasSiteSlide, publishedSlideCount } from './deck/follow.js';
@@ -484,6 +485,11 @@ export function approvalMessage(cand) {
   // none of them visible on the cover image, so the card prints the itinerary
   // itself. See the note above planApprovalMessage.
   if (cand.kind === 'plan') return planApprovalMessage(cand);
+  // And a post has a fifth: a type, a look and an aspect ratio chosen by a rotation and
+  // invisible in the album, plus the one number that decides how much to trust the
+  // pictures - how many came off our own page rather than a stock library. See
+  // postApprovalMessage.
+  if (cand.kind === 'post') return postApprovalMessage(cand);
 
   const lines = [];
 
