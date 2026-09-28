@@ -6203,6 +6203,441 @@ group('every siteSlug is a page that exists');
 }
 
 /* -------------------------------------------------------------------------- */
+group('the voice - a planner who has not been anywhere');
+
+{
+  const { claimsExperience, assertNoExperience, assertNoFiller, quoted, line, assertPostVoice, VoiceError } =
+    await import('../src/posts/voice.js');
+
+  // THE GUARD THAT NEVER FIRED, AND WHY IT IS THE FIRST THING TESTED HERE.
+  //
+  // The first version of this used \b, which is defined on ASCII word characters.
+  // Hebrew letters are not among them, so in /\bהיינו\b/ the "boundary" sits between a
+  // space and a Hebrew letter - two non-word characters, no boundary at all. Every
+  // pattern tested false against the exact sentence it was written to refuse. Nothing
+  // failed, nothing logged, and the most important honesty check in this change was
+  // dead for as long as nobody wrote this test.
+  for (const s of [
+    'היינו שם בקיץ',
+    'כשהיינו בפראג התחלנו מוקדם',
+    'טסנו לשם באוגוסט',
+    'אכלנו במסעדה הזאת',
+    'ביקרנו בטירה',
+    'הייתי שם',
+    'מניסיון, כדאי להזמין מראש',
+    'בטיול שלנו לרומא',
+    'וטסנו לשם',
+  ]) {
+    ok(`refused: ${s}`, claimsExperience(s), 'the experience guard did not fire');
+  }
+
+  // AND THE VOICE IT MUST NOT REFUSE, which is the whole point of the distinction.
+  //
+  // "ככה היינו בונים את זה" is a planner talking about a plan. It is true - building
+  // itineraries is what the site does - and it is the exact sentence the brief names as
+  // the honest version of personal. It begins with the same word as "היינו שם", so the
+  // conditional is whitelisted by the verb that follows rather than the experience being
+  // guessed at from context.
+  for (const s of [
+    'ככה היינו בונים את זה',
+    'המסלול שהיינו בונים לחבר שטס לפראג',
+    'היינו ממליצים על יומיים',
+    'מה הייתם מוסיפים?',
+    'הייתם שם?',
+    'תתחילו מוקדם, העיר העתיקה עמוסה',
+    'שמרו את זה לטיול',
+  ]) {
+    ok(`allowed: ${s}`, !claimsExperience(s), 'the guard refused the planner voice');
+  }
+
+  throws('assertNoExperience throws rather than warning', () => assertNoExperience('היינו שם', 'a slide'), 'invented_experience');
+
+  // Filler and markup artefacts. The flop post gave itself away with leftover
+  // markdown asterisks in its caption; the em dash is banned project-wide.
+  for (const s of ['פראג מושלמת', 'נוף עוצר נשימה', 'יעד קסום']) {
+    throws(`filler refused: ${s}`, () => assertNoFiller(s, 'a slide'), 'filler');
+  }
+  for (const s of ['פראג — עיר יפה', '**פראג**', 'ימים ב{dest}']) {
+    throws(`artefact refused: ${s.slice(0, 14)}`, () => assertNoFiller(s, 'a slide'), 'artefact');
+  }
+  ok('an ordinary line passes both', assertNoFiller(assertNoExperience('העיר העתיקה עמוסה מאוד', 'x'), 'x').length > 0);
+
+  // EVERY OPINION IS A QUOTE. The rule that makes it safe for these posts to have
+  // opinions at all: the judgement is the site's and the assertion is that we did not
+  // write it.
+  const page = 'אחת הערים היפות באירופה. חסרונות: העיר העתיקה עמוסה מאוד כמעט כל השנה.';
+  eq('a verbatim quote passes', quoted('העיר העתיקה עמוסה מאוד', page, 'a drawback'), 'העיר העתיקה עמוסה מאוד');
+  ok('whitespace is normalised on both sides', quoted('העיר  העתיקה\nעמוסה מאוד', page, 'x'));
+  throws('a paraphrase is refused', () => quoted('העיר העתיקה די עמוסה', page, 'a drawback'), 'unquoted_opinion');
+  throws('and so is an invention', () => quoted('המחירים זולים', page, 'a drawback'), 'unquoted_opinion');
+
+  // THE WHOLE-OBJECT PASS. Builders call `line` on what they write, and this runs over
+  // the result - so a field somebody adds next year is covered by a check nobody had to
+  // remember to write.
+  const bad = { slides: [{ titleHe: 'יום 1', rows: [{ text: 'כשהיינו שם אכלנו כאן' }] }] };
+  throws('the object walk finds a line no builder guarded', () => assertPostVoice(bad), 'invented_experience');
+  const good = { slides: [{ titleHe: 'יום 1', rows: [{ text: 'גשר קארל' }], image: { src: 'data:image/jpeg;base64,AAAA' } }] };
+  ok('and passes a clean post', Boolean(assertPostVoice(good)));
+  // The image data URI is skipped rather than scanned. A megabyte of base64 through
+  // seven regular expressions per slide is the kind of cost that gets a guard removed.
+  ok('an English field is left alone', Boolean(assertPostVoice({ nameEn: 'Charles Bridge was here' })));
+}
+
+/* -------------------------------------------------------------------------- */
+group('what a place is allowed to say about itself');
+
+{
+  const src = await import('../src/posts/source.js');
+
+  // THE KOSHER RULE, AND IT IS THE SHARPEST GUARD IN THE WHOLE CHANGE.
+  //
+  // The site records where it learned each kashrut fact. `community` means somebody
+  // read the community's own page on a date; `legacy-unverified` means the catalogue
+  // recorded it once and nobody has confirmed it. A slide printing "בהשגחת רבנות פראג"
+  // off a legacy entry is making a kashrut claim on a rabbinate's behalf, sourced to a
+  // note in our own database - and somebody eats there because a post said so.
+  const certified = {
+    category: 'kosher-food',
+    name: 'שלום',
+    kashrut: {
+      knowledge: 'certified',
+      certifications: [{ body: 'הרבנות הראשית של קהילת פראג' }],
+      provenance: { source: 'https://www.kehilaprag.cz/', sourceType: 'community', checked: '2026-08-19' },
+    },
+  };
+  const legacy = {
+    category: 'kosher-food',
+    name: 'דיניץ',
+    kashrut: {
+      knowledge: 'certified',
+      certifications: [{ body: 'רבנות פראג', descriptors: ['גלאט'] }],
+      provenance: { source: 'קטלוג טיול+ (דיווח קודם)', sourceType: 'legacy-unverified', checked: null },
+      legacySupervision: 'גלאט, בהשגחת רבנות פראג',
+    },
+  };
+
+  ok('a checked entry may name its supervision', src.mayNameSupervision(certified));
+  ok('a legacy entry may not', !src.mayNameSupervision(legacy));
+  ok('and the line says so', src.kosherLine(certified).includes('הרבנות הראשית'), src.kosherLine(certified));
+  eq('while the legacy one says only that it is kosher', src.kosherLine(legacy), 'מסעדה כשרה');
+  ok('never leaking the unconfirmed body', !src.kosherLine(legacy).includes('רבנות'), src.kosherLine(legacy));
+  ok('nor the descriptor', !src.kosherLine(legacy).includes('גלאט'));
+  eq('a market says what it is', src.kosherLine({ ...legacy, category: 'kosher-market' }), 'מכולת כשרה');
+  // A place with no kosher status says NOTHING, rather than "not kosher" - which is a
+  // claim nobody made.
+  eq('a place with no kashrut field gets no line', src.kosherLine({ category: 'museum' }), null);
+
+  // PRICE BANDS ARE NOT PRICES. Only 0 may be printed, and it is printed as a fact
+  // about entry rather than as a number.
+  ok('free entry is said', src.placeLine({ category: 'historic', priceLevel: 0 }).includes('כניסה חופשית'));
+  ok('a band is never printed', !/[₪]|\d/.test(src.placeLine({ category: 'museum', priceLevel: 3, durationMin: 90 }) || ''));
+  eq('a duration is said the way people say it', src.placeLine({ priceLevel: 2, durationMin: 90 }), 'כשעה וחצי');
+  ok('and never to the minute', !/90|דקות/.test(src.placeLine({ priceLevel: 2, durationMin: 90 })));
+  // The kosher fact outranks both, because it is the one that decides whether this
+  // audience goes at all.
+  ok('kosher leads the line', src.placeLine(certified).startsWith('בהשגחת'), src.placeLine(certified));
+
+  // DISTANCES ARE HEDGED, ALWAYS. The number is a straight line between two database
+  // coordinates and nobody walks in a straight line.
+  const a = { lat: 50.0865, lng: 14.4114 };
+  const near = { lat: 50.0875, lng: 14.4124 };
+  const mid = { lat: 50.0905, lng: 14.4204 };
+  const far = { lat: 49.948, lng: 15.268 };
+  ok('a short walk is approximate', src.distanceHe(a, near).startsWith('~'), src.distanceHe(a, near));
+  ok('and coarsely rounded', /^~\d{3} מ׳$/.test(src.distanceHe(a, near)), src.distanceHe(a, near));
+  ok('a longer walk too', src.distanceHe(a, mid).startsWith('~'), src.distanceHe(a, mid));
+  eq('and past the walking threshold it stops giving a number', src.distanceHe(a, far), 'נסיעה');
+  ok('no distance is ever exact', !/\d+\.\d\d/.test(src.distanceHe(a, mid) || ''));
+  eq('two places with no coordinates get no line', src.distanceHe({}, {}), null);
+
+  // THE VERDICT SPLITTER. Cue-anchored, and it refuses rather than guessing - because
+  // guessing wrong prints a drawback as a selling point.
+  const cued = {
+    tagline: 'עיר הזהב: גשרים, טירות והרובע היהודי המפורסם בעולם',
+    editorialRating: { score: 4.7, verdict: 'אחת הערים היפות באירופה. חסרונות: העיר העתיקה עמוסה מאוד כמעט כל השנה.' },
+  };
+  const v = src.verdictOf(cued);
+  ok('the cue is found', v.cued);
+  ok('the drawback is quoted verbatim', v.source.includes(v.consHe[0]), v.consHe[0]);
+  ok('and the label is not repeated inside the quote', !v.consHe[0].startsWith('חסרונות'), v.consHe[0]);
+  ok('the good side comes from the verdict and the tagline', v.prosHe.length >= 2, JSON.stringify(v.prosHe));
+  ok('every pro is verbatim too', v.prosHe.every((p) => v.source.includes(p)));
+
+  const uncued = { tagline: 'אי יפה', editorialRating: { score: 4.2, verdict: 'אי יפה מאוד עם חופים ארוכים.' } };
+  const u = src.verdictOf(uncued);
+  ok('a verdict with no cue reports no drawbacks', !u.cued && u.consHe.length === 0);
+  // NOT the same as "this place has no drawbacks" - which is why canBuild refuses on it
+  // rather than publishing one side of an argument.
+  const { canBuild } = await import('../src/posts/types.js');
+  const page = { places: [], itinerary: [] };
+  ok('so a verdict post cannot be built from it', !canBuild('verdict', page, { verdict: u }).ok);
+  ok('and it says why', canBuild('verdict', page, { verdict: u }).why.includes('drawbacks'));
+  ok('while a cued one can', canBuild('verdict', page, { verdict: v }).ok);
+}
+
+/* -------------------------------------------------------------------------- */
+group('the rotation - a pipeline is a template machine unless it is stopped');
+
+{
+  const { drawWeighted, pickType, pickLook, pickCaptionShape, nextShape, platformsFor } =
+    await import('../src/posts/types.js');
+  const { postConfig } = await import('../src/postConfig.js');
+
+  // THE EXCLUSION IS APPLIED BEFORE THE WEIGHTS, NOT AFTER. A post-weighting filter
+  // re-normalises across the survivors and lets the heavy favourite dominate the
+  // remainder, which is the run being prevented.
+  const pool = [{ id: 'a', weight: 9 }, { id: 'b', weight: 1 }];
+  eq('the favourite wins an ordinary draw', drawWeighted(pool, { rand: () => 0.5 }).id, 'a');
+  eq('and is excluded when it was last', drawWeighted(pool, { avoid: ['a'], rand: () => 0.5 }).id, 'b');
+  // Exhausting the pool falls back rather than refusing: with a memory of three and a
+  // pool of four, a run does exhaust it, and repeating the oldest beats building nothing.
+  eq('an exhausted pool falls back', drawWeighted(pool, { avoid: ['a', 'b'], rand: () => 0.99 }).id, 'b');
+  eq('a zero weight is never drawn', drawWeighted([{ id: 'z', weight: 0 }, { id: 'y', weight: 1 }], { rand: () => 0.99 }).id, 'y');
+
+  // No two consecutive posts share a type, a look or a caption shape.
+  const hist = [{ type: 'plan', look: 'route', caption: 'toolfirst', hook: 'howid' }];
+  for (let i = 0; i < 40; i++) {
+    const r = i / 40;
+    ok(`type varies at rand=${r.toFixed(2)}`, pickType({ history: hist, rand: () => r }).id !== 'plan');
+  }
+  const looks = new Set();
+  for (let i = 0; i < 40; i++) looks.add(pickLook('plan', { history: hist, rand: () => i / 40 }).id);
+  ok('a plan look is never the one used last', !looks.has('route'), [...looks].join(','));
+  const shapes = new Set();
+  for (let i = 0; i < 40; i++) shapes.add(pickCaptionShape({ history: hist, rand: () => i / 40 }).id);
+  ok('nor is the caption shape', !shapes.has('toolfirst'), [...shapes].join(','));
+
+  // A look only ever draws the types that declare it. A notes checklist is a day.
+  for (const look of postConfig().posts.looks) {
+    for (const type of look.types) {
+      ok(`${look.id} accepts ${type}`, postConfig().posts.types.some((t) => t.id === type), 'a look names a type that does not exist');
+    }
+  }
+  for (const type of postConfig().posts.types) {
+    ok(`${type.id} has a look`, postConfig().posts.looks.some((l) => l.types.includes(type.id)));
+    ok(`${type.id} has a hook shape`, (postConfig().posts.hooks[type.id] || []).length > 0);
+  }
+  throws('an unknown type is an error rather than a default', () => pickType({ only: 'nonsense' }));
+  throws('and so is a look that does not fit', () => pickLook('map', { only: 'notes' }));
+
+  // THE FRAME IS NOT EXCLUDED, and that is the one dimension where a repeat is correct:
+  // nobody notices two 3:4 posts in a row, and excluding one would turn a test that
+  // wants an even split into a strict alternation.
+  const frames = new Set();
+  for (let i = 0; i < 20; i++) frames.add(nextShape({ history: hist, rand: () => i / 20 }).frame);
+  ok('both frames are reachable', frames.size === 2, [...frames].join(','));
+
+  // WHERE A TYPE MAY GO. A list post is twenty-one slides because its hook promises
+  // twenty things; there is no honest nine-slide version for an Instagram carousel.
+  eq('a list post is TikTok only', platformsFor('list').join(','), 'tiktok');
+  eq('a plan post goes to both', platformsFor('plan').join(','), 'instagram,tiktok');
+
+  // And the limit it exists to respect, enforced where it can still be acted on.
+  const { fitTo, IG_MAX } = await import('../src/render/post.js');
+  const many = Array.from({ length: 21 }, (_, i) => ({ titleHe: `${i}` }));
+  eq('TikTok is never trimmed', fitTo(many, 'tiktok').length, 21);
+  throws('and Instagram refuses what it cannot carry', () => fitTo(many, 'instagram', 'list'));
+  // A plan fits by dropping its collages, which are the breath in the post rather than
+  // its content - so nothing it promised is lost.
+  const plan = [
+    ...Array.from({ length: 6 }, (_, i) => ({ titleHe: `day${i}` })),
+    ...Array.from({ length: 4 }, (_, i) => ({ titleHe: `c${i}`, optional: true })),
+  ];
+  eq('a plan is trimmed to fit', fitTo(plan, 'instagram', 'plan').length, 6);
+  ok('and it is the collages that went', fitTo(plan, 'instagram', 'plan').every((s) => !s.optional));
+  eq('the ceiling is Instagram’s own', IG_MAX, 10);
+}
+
+/* -------------------------------------------------------------------------- */
+group('captions vary, and the emoji are pictures');
+
+{
+  const { buildCaption, captionsRepeat, tagsFor, siteLine } = await import('../src/posts/caption.js');
+  const { postConfig } = await import('../src/postConfig.js');
+  const { withEmoji } = await import('../src/render/postSlides.js');
+
+  const post = {
+    where: 'פראג',
+    countryHe: 'צ׳כיה',
+    titleHe: '4 ימים בפראג',
+    captionHookHe: '4 ימים בפראג, ככה היינו בונים את זה',
+    practicalHe: 'טיסות ישירות מנתב"ג - כ-4 שעות',
+    signoffHe: 'מקווה שזה עוזר לתכנן 🤍',
+    siteSlug: 'prague',
+    slides: [{ countryHe: 'צ׳כיה' }],
+    category: 'plan',
+  };
+  const shapes = postConfig().posts.captions;
+
+  // NO TWO SHAPES PRODUCE THE SAME CAPTION. The old pipeline had one skeleton and
+  // varied only the words in it, which is the template problem in the place nobody
+  // looks at closely.
+  const built = shapes.map((s) => ({ shape: s.id, instagram: buildCaption(post, { shape: s, titled: true, question: 'מה הייתם מוסיפים?' }) }));
+  ok('every shape is a different caption', new Set(built.map((b) => b.instagram)).size === shapes.length);
+  ok('and the shapes differ in length', new Set(built.map((b) => b.instagram.split('\n\n').length)).size > 1);
+
+  // NOT EVERY SHAPE OPENS ON THE SAME PART, and this is what the first run of this
+  // test found: all five skeletons began with `hook`, so five different shapes produced
+  // five captions with an identical first line - the template problem moved one line
+  // down, onto the line Instagram shows before the fold.
+  const firstParts = new Set(shapes.map((s) => s.parts[0]));
+  ok('the shapes open on more than one part', firstParts.size >= 3, [...firstParts].join(','));
+
+  // CONSECUTIVE POSTS, which is what the rule is actually about. Two posts in a row are
+  // never the same TYPE - the rotation sees to that - so their hooks name different
+  // destinations and the openings differ even where the shapes do not. What this
+  // asserts is that `captionsRepeat` catches both ways of repeating.
+  const other = {
+    ...post,
+    where: 'רומא',
+    countryHe: 'איטליה',
+    captionHookHe: '3 ימים ברומא, ככה היינו בונים את זה',
+    siteSlug: 'rome',
+    slides: [{ countryHe: 'איטליה' }],
+  };
+  const a = { shape: shapes[0].id, instagram: buildCaption(post, { shape: shapes[0], titled: true, question: 'x' }) };
+  const b = { shape: shapes[1].id, instagram: buildCaption(other, { shape: shapes[1], titled: true, question: 'y' }) };
+  ok('two consecutive posts do not repeat', captionsRepeat(a, b).length === 0, captionsRepeat(a, b).join(', '));
+  ok('the same shape twice IS a repeat', captionsRepeat(a, a).some((r) => r.includes('shape')));
+  ok(
+    'and so is the same opening under a different shape',
+    captionsRepeat(a, { shape: 'elsewhere', instagram: a.instagram }).some((r) => r.includes('opening'))
+  );
+
+  // The tags: exactly the configured count, the feed tag always first, the destination
+  // among them, and no duplicates.
+  const tags = tagsFor(post).split(' ');
+  eq('the tag count is fixed', tags.length, postConfig().hashtags.broadCount + postConfig().hashtags.nicheCount);
+  eq('the feed tag leads', tags[0], '#פוריו');
+  ok('the destination is tagged', tags.includes('#צ׳כיה'), tags.join(' '));
+  eq('no tag appears twice', new Set(tags).size, tags.length);
+
+  // TikTok opens with the pin because the hook is already the post title; Instagram has
+  // no title field on a carousel, so it must open with the hook or the post has none.
+  const ig = buildCaption(post, { shape: shapes[0], titled: true, question: 'x' });
+  const tk = buildCaption(post, { shape: shapes[0], titled: false, question: 'x' });
+  ok('Instagram opens on the hook', ig.startsWith('4 ימים בפראג'), ig.split('\n')[0]);
+  ok('TikTok opens on the pin', tk.startsWith('📍'), tk.split('\n')[0]);
+  ok('the tags are last on both', ig.trim().split('\n').pop().startsWith('#') && tk.trim().split('\n').pop().startsWith('#'));
+
+  // A post with no page drops the site part rather than substituting a random ask into
+  // a shape that was not designed to carry one.
+  const noPage = buildCaption({ ...post, siteSlug: null }, { shape: shapes[0], titled: true, question: 'x' });
+  ok('no page means no site line', !noPage.includes('בלינק בביו'));
+  ok('and the rest of the shape survives', noPage.includes('שמרו את זה לטיול'));
+  // An `instead` post names the page it LINKS to, not the destination it argues about.
+  eq(
+    'the site line names the linked page',
+    siteLine({ siteSlug: 'crete', destHe: 'כרתים', target: 'tiktok' }).includes('כרתים'),
+    true
+  );
+
+  // EMOJI ARE PICTURES, NOT CHARACTERS. A flag set as text came out as the letters
+  // "GR" in the middle of a Hebrew line, because the rendering machine's font has no
+  // glyph for a regional-indicator pair - and the machine that publishes is not the
+  // machine that was reviewed on.
+  ok('a flag becomes an image', withEmoji('🇬🇷 כרתים').includes('<img'), withEmoji('🇬🇷 כרתים'));
+  ok('so does an emoji inside a line', withEmoji('📍 גשר קארל').includes('<img'));
+  ok('the text around it survives', withEmoji('📍 גשר קארל').includes('גשר קארל'));
+  ok('and is still escaped', withEmoji('<b>x</b>').includes('&lt;b&gt;'), withEmoji('<b>x</b>'));
+  eq('a line with no emoji is just escaped text', withEmoji('גשר קארל'), 'גשר קארל');
+
+  // Every emoji these posts can draw has committed artwork, so none of them depends on
+  // the host font. The flag proved why: it rendered perfectly in review and would not
+  // have on the box that publishes.
+  const { haveArtFor } = await import('../src/render/emojiArt.js');
+  for (const e of ['🏰', '🏛️', '🎡', '🌿', '🌄', '☕', '🍽️', '🧺', '🛍️', '🥙', '🛒', '📍', '⭐', '🤍']) {
+    ok(`artwork for ${e}`, haveArtFor(e), 'run npm run fetch-emoji');
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+group('the photograph ladder starts on our own page');
+
+{
+  const commons = await import('../src/images/commons.js');
+  const { PROVENANCE } = await import('../src/images.js');
+
+  // The file name out of the URL the site publishes. A thumbnail URL carries the name
+  // TWICE and it is the first one that is the file - taking the last path segment asks
+  // the API for "500px-Name.jpg", which does not exist.
+  eq(
+    'a thumbnail URL yields the file',
+    commons.titleFromUrl('https://upload.wikimedia.org/wikipedia/commons/thumb/5/5e/Karl%C5%AFv_most.jpg/500px-Karl%C5%AFv_most.jpg'),
+    'Karlův most.jpg'
+  );
+  eq(
+    'and so does a full-size one',
+    commons.titleFromUrl('https://upload.wikimedia.org/wikipedia/commons/5/5e/Karl%C5%AFv_most.jpg'),
+    'Karlův most.jpg'
+  );
+  eq('underscores become spaces, as the API wants', commons.titleFromUrl('https://upload.wikimedia.org/wikipedia/commons/a/ab/Old_Town.jpg'), 'Old Town.jpg');
+
+  // ANYTHING THAT IS NOT A COMMONS FILE IS NOT ONE. The day the site starts publishing
+  // photographs from a stock library or a hotel's own page, this route goes quiet and
+  // the search ladder takes over - which is the correct outcome, because a photograph
+  // on a business's own page is the one origin BRIEF.md forbids outright.
+  for (const url of [
+    'https://images.unsplash.com/photo-1541849546',
+    'https://wikimedia-mirror.example.com/wikipedia/commons/a/ab/X.jpg',
+    'https://www.tiyulplus.com/x.jpg',
+    null,
+    '',
+    'not a url',
+  ]) {
+    eq(`refused: ${JSON.stringify(url)}`, commons.titleFromUrl(url), null);
+  }
+
+  // The provenance is declared, so the approval card names it rather than printing
+  // "לא ידוע", and findImage's policy check would accept it.
+  ok('commons is a declared provenance', Boolean(PROVENANCE.commons), 'src/images.js does not know about it');
+  ok('and it does not claim the photograph is ours', !PROVENANCE.commons.includes('שלנו'), PROVENANCE.commons);
+  eq('the credit carries the author and the licence', commons.creditFor({ author: 'Tilman2007', license: 'CC BY-SA 4.0' }), 'Tilman2007 / CC BY-SA 4.0');
+  ok('a half-known credit is still a credit', commons.creditFor({ license: 'CC BY 2.0' }).includes('CC BY 2.0'));
+  ok('and an unknown one names the source', commons.creditFor({}).includes('Commons'));
+}
+
+/* -------------------------------------------------------------------------- */
+group('the map says what it can honestly say');
+
+{
+  const { fitPoints, scaleBar } = await import('../src/render/map.js');
+  const { coreOf } = await import('../src/posts/mapPost.js');
+
+  // Prague: a walkable centre plus day trips sixty to a hundred and seventy kilometres
+  // out. At full extent twenty-six of thirty-two pins land on top of each other, which
+  // is why the core is the map and the wide view is conditional.
+  const centre = [
+    { lat: 50.0865, lng: 14.4114, n: 1, dayN: 1 },
+    { lat: 50.0875, lng: 14.4204, n: 2, dayN: 1 },
+    { lat: 50.089, lng: 14.4004, n: 3, dayN: 2 },
+    { lat: 50.081, lng: 14.4004, n: 4, dayN: 2 },
+    { lat: 50.09, lng: 14.42, n: 5, dayN: 3 },
+  ];
+  const withTrip = [...centre, { lat: 49.948, lng: 15.268, n: 6, dayN: 4 }];
+
+  const core = coreOf(withTrip);
+  eq('the day trip is left off the core map', core.length, centre.length);
+  ok('and the numbers are kept rather than reassigned', core.map((p) => p.n).join(',') === '1,2,3,4,5');
+
+  // The projection fits, and the scale bar is a round number rather than a measurement.
+  const fit = fitPoints(centre, { width: 1080, height: 1920 });
+  ok('every point lands inside the frame', centre.every((p) => {
+    const { x, y } = fit.project(p);
+    return x >= 0 && x <= 1080 && y >= 0 && y <= 1920;
+  }));
+  ok('the scale is plausible for a city', fit.metresPerPixel > 0.5 && fit.metresPerPixel < 20, `${fit.metresPerPixel} m/px`);
+  const bar = scaleBar(fit.metresPerPixel, 1080);
+  ok('the bar is a round number', [100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000].includes(bar.metres), String(bar.metres));
+  ok('and it fits across the frame', bar.px > 0 && bar.px < 1080, String(bar.px));
+  ok('labelled in the unit a person would use', /מ׳|ק״מ/.test(bar.labelHe), bar.labelHe);
+  // Two points in the same doorway must not scale to a map of two buildings.
+  const tiny = fitPoints([{ lat: 50.0865, lng: 14.4114 }, { lat: 50.0866, lng: 14.4115 }], { width: 1080, height: 1920 });
+  ok('a degenerate box is floored rather than divided by zero', Number.isFinite(tiny.metresPerPixel) && tiny.metresPerPixel > 0);
+  eq('one point is not a map', fitPoints([{ lat: 1, lng: 1 }], { width: 1080, height: 1920 }), null);
+}
+
+/* -------------------------------------------------------------------------- */
 group('nothing promises a DM while nothing answers one');
 
 {

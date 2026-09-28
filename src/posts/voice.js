@@ -43,25 +43,52 @@ export class VoiceError extends Error {
 
 // Saying we were there.
 //
-// Built from the SHAPE of the claim rather than from a word list, because the list
-// is endless and the shape is not. Three shapes cover it:
+// \b DOES NOT WORK HERE AND THE FIRST VERSION OF THIS GUARD NEVER FIRED ONCE.
 //
-//   a past-tense verb of travel in the first person   הייתי, היינו, טסנו, ישנו
-//   a first-person verb plus a place preposition      אכלנו ב, ביקרנו ב, נשארנו ב
-//   a time-and-place frame                            כשהיינו, כשביקרנו, בפעם ש
+// JavaScript's \b is defined on ASCII word characters. Hebrew letters are not among
+// them, so in `/\bהיינו\b/` the "boundary" is between a space and a Hebrew letter -
+// two non-word characters - and there is no boundary there at all. Every pattern in
+// the first version tested false against the exact sentences it was written to refuse,
+// including "היינו שם בקיץ". The most important guard in this change was dead, and
+// silently: nothing failed, so nothing said so.
 //
-// Second person is NOT here and must not be: "תתחילו מוקדם" and "תשמרו את זה" are
-// instructions to the reader, which is most of what these posts say. Only a claim
-// about OUR past is refused.
+// The replacement is a Unicode letter lookaround, which means what \b was meant to
+// mean: not preceded or followed by a letter of any script.
+const W = '\\p{L}\\p{N}';
+const edge = (body) => new RegExp(`(?<![${W}])(?:ו|ש|כש|וש)?(?:${body})(?![${W}])`, 'u');
+
+// The planner's conditional, WHICH IS THE VOICE THIS WHOLE CHANGE ASKS FOR.
+//
+// "ככה היינו בונים את זה" is not a claim about a trip - it is what a planner says
+// about a plan, it is true, and the prompt names it as the honest version of personal.
+// "היינו שם" is a claim about a trip and it is a lie. Both start with the same word.
+//
+// So the conditional is WHITELISTED by the verb that follows it rather than the
+// experience being detected by what follows it. That direction is deliberate: a list of
+// planning verbs is short and knowable, and a list of the ways a sentence can name a
+// place is neither. Anything not on this list is refused, which is the safe default.
+const PLANNER_VERBS =
+  'בונים|בונה|עושים|עושה|ממליצים|ממליץ|מוסיפים|מוסיף|מורידים|מוריד|מתחילים|מתחיל|מסיימים|' +
+  'בוחרים|בוחר|שמים|משאירים|מדלגים|לוקחים|הולכים|נשארים|מתכננים|משלבים|מחלקים|קובעים|מוותרים';
+
 const FIRST_PERSON_PAST = [
-  // היינו / הייתי, and the compound frames built on them.
-  /\b(?:כש)?היי(?:נו|תי)\b/,
-  // A travel verb in the first person past: טסנו, טסתי, נסענו, נסעתי, חזרנו...
-  /\b(?:טס|נסע|חזר|הגע|ביקר|ישנ|אכלנ|שתינ|גרנ|נשאר|עבר|טייל|צילמ|קנינ|שילמ|המתנ|חיכינ)(?:נו|תי|ו?נו)\b/,
+  // A temporal frame is always a claim about a trip, whatever follows it: "כשהיינו
+  // בפראג" cannot be conditional, because the conditional has no "when".
+  edge('כשהי(?:ינו|יתי)'),
+  // היינו / הייתי on its own, unless the planner's conditional follows.
+  new RegExp(`(?<![${W}])(?:ו|ש)?הי(?:ינו|יתי)(?![${W}])(?!\\s+(?:${PLANNER_VERBS})(?![${W}]))`, 'u'),
+  // A travel verb in the first person past. Spelled out rather than built from stems,
+  // because a stem plus an ending matches words that are neither - "נסענו" is a claim
+  // and "נסע" inside another word is not.
+  edge(
+    'טסנו|טסתי|נסענו|נסעתי|חזרנו|חזרתי|הגענו|הגעתי|ביקרנו|ביקרתי|ישנו|ישנתי|אכלנו|אכלתי|' +
+      'שתינו|שתיתי|גרנו|גרתי|נשארנו|נשארתי|טיילנו|טיילתי|צילמנו|צילמתי|קנינו|קניתי|' +
+      'שילמנו|שילמתי|המתנו|חיכינו|חיכיתי|עברנו|עברתי|ראינו|ראיתי|מצאנו|מצאתי'
+  ),
   // "בפעם שהיינו", "בביקור שלנו", "בטיול שלנו" - a possessive on a visit.
-  /\b(?:הביקור|הטיול|הנסיעה|החופשה)\s+(?:ש|של)ל?נו\b/,
-  // "מניסיון", "מהניסיון שלנו" - experience as the source of the claim.
-  /\bמ(?:ה)?ניסיון\b/,
+  new RegExp(`(?<![${W}])(?:ב|ה)?(?:ביקור|טיול|נסיעה|חופשה)\\s+(?:ש|של)ל?נו(?![${W}])`, 'u'),
+  // "מניסיון", "מהניסיון שלנו" - experience offered as the source of the claim.
+  edge('מ(?:ה)?ניסיון'),
 ];
 
 /**
@@ -259,3 +286,18 @@ export function hookShape(type, { rand = Math.random, avoid = [] } = {}) {
 /** `{dest}`, `{days}`, `{n}` and friends, filled from one object. */
 export const fill = (template, vars = {}) =>
   String(template || '').replace(/\{(\w+)\}/g, (m, k) => (vars[k] == null ? m : String(vars[k])));
+
+/**
+ * The question this post ends on, from the type's own pool.
+ *
+ * Falls back to the shared `caption.questions`, which is what every other kind of post
+ * uses. The fallback is deliberate rather than defensive: a type with no pool of its
+ * own is not broken, it just has nothing type-specific to ask yet, and a generic
+ * question is better than none - the slide and the caption both want one.
+ */
+export function questionFor(type, { rand = Math.random } = {}) {
+  const cfg = postConfig();
+  const own = cfg.posts.questions[type] || [];
+  const pool = own.length ? own : cfg.caption.questions;
+  return pool.length ? pool[Math.floor(rand() * pool.length)] : null;
+}

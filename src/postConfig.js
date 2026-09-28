@@ -889,6 +889,24 @@ function posts(raw) {
     .filter((f) => f.id && f.w > 0 && f.h > 0);
   if (!frames.length) throw new Error('post-config.json: posts.frames is empty - a slide needs a size');
 
+  // Questions per type, falling back to the shared pool.
+  //
+  // A QUESTION HAS TO FIT THE POST, and the shared pool cannot know which post it is
+  // on. `caption.questions` was written for cards and clips and it contains "מי מכיר
+  // טיסה ישירה לשם?" - which landed under a Rome verdict post whose own slide quotes
+  // the page saying there is a direct flight of about three and a half hours. The post
+  // answered its own question two slides earlier, which reads as nobody having looked.
+  //
+  // These are also the line the reference posts get their comments from: the winners
+  // end on a real question and collect hundreds of replies. A generic one collects
+  // none, so they are written per type - a plan asks what you would add, a verdict asks
+  // whether you would still go.
+  const questionsFor = {};
+  for (const [type, entries] of Object.entries(raw.questions || {})) {
+    if (type.startsWith('_')) continue;
+    questionsFor[type] = list(entries);
+  }
+
   // Hook shapes per type. Filled formats rather than free writing, the decision
   // src/video/hooks.js made for a clip: a filled format is a known sentence with
   // our own numbers in it.
@@ -945,6 +963,7 @@ function posts(raw) {
     frames,
     hooks,
     captions,
+    questions: questionsFor,
     alwaysTags: always,
     // How many of the recent posts the rotation looks back over when refusing a
     // repeat. Two is the minimum that means anything ("not the same as last time");

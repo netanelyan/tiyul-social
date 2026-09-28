@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { postConfig } from '../postConfig.js';
-import { captionQuestion, captionFollow } from '../hashtags.js';
+import { captionFollow } from '../hashtags.js';
 import { targetsForKind } from '../publish/targets.js';
 import { overrideActive, overrideNotes } from '../override.js';
 import { cardOutputDir } from '../render/index.js';
@@ -8,7 +8,7 @@ import { renderPost } from '../render/post.js';
 import { notePostShape } from '../store.js';
 import { loadCity, verdictOf, firstClause } from './source.js';
 import { nextShape, canBuild, platformsFor } from './types.js';
-import { hookShape, fill, assertPostVoice } from './voice.js';
+import { hookShape, fill, assertPostVoice, questionFor } from './voice.js';
 import { fillPostPhotos, coverPhoto } from './photos.js';
 import { captionsFor } from './caption.js';
 import { buildPlanPost } from './plan.js';
@@ -156,7 +156,11 @@ export async function buildPost({
   // slides and to both captions. Two draws would give a post whose closing slide asks
   // one thing and whose description asks another - one post apparently written by two
   // people, which is the bug the deck's single hook draw already fixed once.
-  const questionHe = captionQuestion({ rand });
+  // From the TYPE's pool, not the shared one. See questionFor and the note beside
+  // posts.questions in post-config.json: the shared pool cannot know which post it is
+  // on, and it put "מי מכיר טיסה ישירה לשם?" under a post that had just quoted the
+  // flight time two slides earlier.
+  const questionHe = questionFor(shape.type, { rand });
   const follow = captionFollow({ rand });
   const signoffs = postConfig().posts.signoffsHe;
   const signoffHe = signoffs.length ? signoffs[Math.floor(rand() * signoffs.length)] : null;

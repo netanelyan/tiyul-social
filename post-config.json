@@ -1831,6 +1831,12 @@
       "same shape or open on the same part, held by a history in the store and by a",
       "selftest. Parts:",
       "",
+      "NOT EVERY SHAPE OPENS ON THE HOOK, and that is the point of having shapes at",
+      "all. Five skeletons that all begin with the same part produce five captions with",
+      "the same first line, which is the template problem moved one line down - and the",
+      "first line is the one Instagram shows before the fold. `factfirst` opens on the",
+      "real fact off the page and `askfirst` opens on the question.",
+      "",
       "  hook      the cover line restated in a spoken way",
       "  practical one real line from the page: the flight, getting around, a season",
       "  save      the default ask, `closing.saveAskHe`",
@@ -1842,11 +1848,52 @@
     ],
     "captions": [
       { "id": "toolfirst", "parts": ["hook", "practical", "save", "site", "tags"], "weight": 3 },
+      { "id": "factfirst", "parts": ["practical", "hook", "save", "site", "tags"], "weight": 2 },
+      { "id": "askfirst", "parts": ["question", "hook", "save", "tags"], "weight": 1 },
       { "id": "asking", "parts": ["hook", "question", "save", "tags"], "weight": 2 },
       { "id": "warm", "parts": ["hook", "practical", "signoff", "site", "tags"], "weight": 2 },
       { "id": "short", "parts": ["hook", "save", "tags"], "weight": 1 },
       { "id": "followed", "parts": ["hook", "practical", "save", "follow", "tags"], "weight": 1 }
     ],
+    "_questions_comment": [
+      "THE LINE THE COMMENTS COME FROM, and it is written per type.",
+      "",
+      "Every reference post that worked ends on a real question and collects hundreds",
+      "of replies - @travel.with.dorina's itinerary has 252. `caption.questions` was",
+      "written for cards and clips and cannot know which post it is on: \"מי מכיר טיסה",
+      "ישירה לשם?\" landed under a Rome verdict post whose own slide quotes the page",
+      "saying there is a direct flight of about three and a half hours. A post that",
+      "answers its own question two slides earlier reads as nobody having looked.",
+      "",
+      "A type with no entry here falls back to the shared pool, so this list does not",
+      "have to be complete to be useful."
+    ],
+    "questions": {
+      "plan": [
+        "מה הייתם מוסיפים ליום הזה?",
+        "4 ימים מספיק, או שצריך יותר?",
+        "מה הייתם מורידים מהמסלול?"
+      ],
+      "list": [
+        "מה פספסנו ברשימה?",
+        "באיזה מהם הייתם מתחילים?",
+        "מי כבר היה באחד מהם?"
+      ],
+      "instead": [
+        "אז לאן אתם טסים?",
+        "מי בעד ומי נגד?",
+        "יש עוד אחד שהיינו צריכים להכניס?"
+      ],
+      "verdict": [
+        "עדיין הייתם טסים?",
+        "מסכימים או שהגזמנו?",
+        "מי היה ויכול להגיד אם זה מדויק?"
+      ],
+      "map": [
+        "איפה הייתם מתחילים?",
+        "מה הייתם מוסיפים למפה?"
+      ]
+    },
     "_tags_comment": [
       "ON EVERY POST OF THESE TYPES, ahead of the shared pools and replacing a draw",
       "from them rather than adding to the count.",
