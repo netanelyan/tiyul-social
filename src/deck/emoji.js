@@ -54,6 +54,16 @@ export const ALL_USED = [
   // exactly these facts — a boot for difficulty, a ruler for distance, a rising
   // chart for ascent, a stopwatch for time.
   '🥾', '📏', '📈', '⏱️', '🗻', '🧭', '🌡️', '🎿', '🚡', '🛤️',
+  // The post-type set: one per category the site files a place under, plus the
+  // three the new formats use as furniture.
+  //
+  // ADDED BECAUSE THEY RENDERED ANYWAY, WHICH IS THE PROBLEM. Every one of these
+  // drew correctly in review on Windows, out of Segoe UI Emoji - and that is
+  // exactly the silent host-font dependency the note above ALL_USED describes.
+  // The publishing box is Ubuntu. A flag already proved the point on the way in:
+  // 🇬🇷 set as text came out as the letters "GR" in the middle of a Hebrew line,
+  // because regional-indicator pairs have no glyph in the Windows font either.
+  '🎡', '🌿', '🌄', '🧺', '🛍️', '🥙', '📍', '🤍',
 ];
 
 /**

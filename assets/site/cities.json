@@ -1,0 +1,898 @@
+{
+ "_comment": [
+  "A SAVED COPY OF /api/cities?options=1, taken on 2026-09-28.",
+  "",
+  "Every slug the site publishes a destination page for, and nothing else: the",
+  "live response also carries nameLocal, a flag and a search haystack, none of",
+  "which this is for. What it is for is one selftest - that every siteSlug in",
+  "destinations.json resolves to a page that exists - and that test must not",
+  "make a network call, because a test that needs the internet is a test that",
+  "fails on a train and gets deleted.",
+  "",
+  "It WILL go stale, and staleness here is safe in the direction that matters.",
+  "A slug the site has since renamed fails the selftest loudly, which is the",
+  "moment to re-take this file; a destination the site has ADDED since simply",
+  "is not in here, and nothing claims it should be. Re-take it with:",
+  "  node -e \"fetch(...).then(...)\"  - or just curl the URL and keep slug,",
+  "name and country."
+ ],
+ "takenAt": "2026-09-28",
+ "source": "/api/cities?options=1",
+ "options": [
+  {
+   "slug": "vienna",
+   "name": "וינה",
+   "country": "אוסטריה"
+  },
+  {
+   "slug": "bratislava",
+   "name": "ברטיסלבה",
+   "country": "סלובקיה"
+  },
+  {
+   "slug": "prague",
+   "name": "פראג",
+   "country": "צ׳כיה"
+  },
+  {
+   "slug": "budapest",
+   "name": "בודפשט",
+   "country": "הונגריה"
+  },
+  {
+   "slug": "rome",
+   "name": "רומא",
+   "country": "איטליה"
+  },
+  {
+   "slug": "athens",
+   "name": "אתונה",
+   "country": "יוון"
+  },
+  {
+   "slug": "madrid",
+   "name": "מדריד",
+   "country": "ספרד"
+  },
+  {
+   "slug": "barcelona",
+   "name": "ברצלונה",
+   "country": "ספרד"
+  },
+  {
+   "slug": "berlin",
+   "name": "ברלין",
+   "country": "גרמניה"
+  },
+  {
+   "slug": "ayutthaya-krabi",
+   "name": "איוטהאיה וקראבי",
+   "country": "תאילנד"
+  },
+  {
+   "slug": "bangkok",
+   "name": "בנגקוק",
+   "country": "תאילנד"
+  },
+  {
+   "slug": "dubai",
+   "name": "דובאי",
+   "country": "איחוד האמירויות"
+  },
+  {
+   "slug": "abu-dhabi",
+   "name": "אבו דאבי",
+   "country": "איחוד האמירויות"
+  },
+  {
+   "slug": "tbilisi",
+   "name": "טביליסי",
+   "country": "גאורגיה"
+  },
+  {
+   "slug": "phuket",
+   "name": "פוקט",
+   "country": "תאילנד"
+  },
+  {
+   "slug": "baku",
+   "name": "באקו",
+   "country": "אזרבייג׳ן"
+  },
+  {
+   "slug": "almaty",
+   "name": "אלמטי",
+   "country": "קזחסטן"
+  },
+  {
+   "slug": "kotor",
+   "name": "קוטור ומפרץ בוקה",
+   "country": "מונטנגרו"
+  },
+  {
+   "slug": "budva",
+   "name": "בודווה",
+   "country": "מונטנגרו"
+  },
+  {
+   "slug": "petra",
+   "name": "פטרה וואדי ראם",
+   "country": "ירדן"
+  },
+  {
+   "slug": "nicosia",
+   "name": "ניקוסיה",
+   "country": "קפריסין"
+  },
+  {
+   "slug": "larnaca",
+   "name": "לרנקה",
+   "country": "קפריסין"
+  },
+  {
+   "slug": "kazbegi-mtskheta",
+   "name": "קזבגי ומצחטה",
+   "country": "גאורגיה"
+  },
+  {
+   "slug": "batumi",
+   "name": "באטומי",
+   "country": "גאורגיה"
+  },
+  {
+   "slug": "santorini-mykonos",
+   "name": "סנטוריני ומיקונוס",
+   "country": "יוון"
+  },
+  {
+   "slug": "crete",
+   "name": "כרתים",
+   "country": "יוון"
+  },
+  {
+   "slug": "munich",
+   "name": "מינכן והרי בוואריה",
+   "country": "גרמניה"
+  },
+  {
+   "slug": "venice",
+   "name": "ונציה",
+   "country": "איטליה"
+  },
+  {
+   "slug": "florence",
+   "name": "פירנצה",
+   "country": "איטליה"
+  },
+  {
+   "slug": "dolomites",
+   "name": "הדולומיטים",
+   "country": "איטליה"
+  },
+  {
+   "slug": "salzburg",
+   "name": "זלצבורג ואזור האגמים",
+   "country": "אוסטריה"
+  },
+  {
+   "slug": "mallorca",
+   "name": "מיורקה",
+   "country": "ספרד"
+  },
+  {
+   "slug": "interlaken",
+   "name": "אינטרלאקן ועמק היונגפראו",
+   "country": "שווייץ"
+  },
+  {
+   "slug": "tokyo",
+   "name": "טוקיו והר פוג׳י",
+   "country": "יפן"
+  },
+  {
+   "slug": "serengeti",
+   "name": "סרנגטי וקילימנג׳רו",
+   "country": "טנזניה"
+  },
+  {
+   "slug": "cusco",
+   "name": "קוסקו ומאצ׳ו פיצ׳ו",
+   "country": "פרו"
+  },
+  {
+   "slug": "queenstown",
+   "name": "קווינסטאון והאי הדרומי",
+   "country": "ניו זילנד"
+  },
+  {
+   "slug": "new-york",
+   "name": "ניו יורק",
+   "country": "ארצות הברית"
+  },
+  {
+   "slug": "grand-canyon",
+   "name": "הגרנד קניון ופארקי הדרום-מערב",
+   "country": "ארצות הברית"
+  },
+  {
+   "slug": "high-tatras",
+   "name": "הרי הטטרה הגבוהים",
+   "country": "סלובקיה"
+  },
+  {
+   "slug": "bohemian-switzerland",
+   "name": "שווייץ הבוהמית",
+   "country": "צ׳כיה"
+  },
+  {
+   "slug": "balaton",
+   "name": "אגם בלטון",
+   "country": "הונגריה"
+  },
+  {
+   "slug": "reykjavik",
+   "name": "ריקיאוויק והחוף הדרומי",
+   "country": "איסלנד"
+  },
+  {
+   "slug": "bled",
+   "name": "אגם בלד והאלפים היוליאניים",
+   "country": "סלובניה"
+  },
+  {
+   "slug": "plitvice",
+   "name": "פליטביצה והחוף הדלמטי",
+   "country": "קרואטיה"
+  },
+  {
+   "slug": "kathmandu",
+   "name": "קטמנדו וההימלאיה",
+   "country": "נפאל"
+  },
+  {
+   "slug": "halong",
+   "name": "האנוי ומפרץ הא לונג",
+   "country": "וייטנאם"
+  },
+  {
+   "slug": "lofoten",
+   "name": "לופוטן והצפון הארקטי",
+   "country": "נורווגיה"
+  },
+  {
+   "slug": "bergen-fjords",
+   "name": "ברגן והפיורדים",
+   "country": "נורווגיה"
+  },
+  {
+   "slug": "cape-town",
+   "name": "קייפטאון וחצי האי",
+   "country": "דרום אפריקה"
+  },
+  {
+   "slug": "kruger",
+   "name": "קרוגר וקניון הבלייד",
+   "country": "דרום אפריקה"
+  },
+  {
+   "slug": "yerevan",
+   "name": "ירוואן והרי ארמניה",
+   "country": "ארמניה"
+  },
+  {
+   "slug": "samarkand",
+   "name": "סמרקנד ובוכרה",
+   "country": "אוזבקיסטן"
+  },
+  {
+   "slug": "garden-route",
+   "name": "כביש הגן",
+   "country": "דרום אפריקה"
+  },
+  {
+   "slug": "kyoto",
+   "name": "קיוטו וקנסאי",
+   "country": "יפן"
+  },
+  {
+   "slug": "banff",
+   "name": "הרי הרוקי הקנדיים",
+   "country": "קנדה"
+  },
+  {
+   "slug": "lisbon",
+   "name": "ליסבון",
+   "country": "פורטוגל"
+  },
+  {
+   "slug": "warsaw",
+   "name": "ורשה",
+   "country": "פולין"
+  },
+  {
+   "slug": "krakow",
+   "name": "קרקוב",
+   "country": "פולין"
+  },
+  {
+   "slug": "paphos",
+   "name": "פאפוס",
+   "country": "קפריסין"
+  },
+  {
+   "slug": "amsterdam",
+   "name": "אמסטרדם",
+   "country": "הולנד"
+  },
+  {
+   "slug": "amman-north",
+   "name": "עמאן וצפון ירדן",
+   "country": "ירדן"
+  },
+  {
+   "slug": "sheki-caucasus",
+   "name": "שקי והרי הקווקז",
+   "country": "אזרבייג׳ן"
+  },
+  {
+   "slug": "uae-mountains",
+   "name": "הרי ומדבר איחוד האמירויות",
+   "country": "איחוד האמירויות"
+  },
+  {
+   "slug": "bucharest",
+   "name": "בוקרשט",
+   "country": "רומניה"
+  },
+  {
+   "slug": "transylvania",
+   "name": "טרנסילבניה",
+   "country": "רומניה"
+  },
+  {
+   "slug": "cappadocia",
+   "name": "קפדוקיה",
+   "country": "טורקיה"
+  },
+  {
+   "slug": "west-ireland",
+   "name": "מערב אירלנד",
+   "country": "אירלנד"
+  },
+  {
+   "slug": "sofia",
+   "name": "סופיה",
+   "country": "בולגריה"
+  },
+  {
+   "slug": "plovdiv",
+   "name": "פלובדיב",
+   "country": "בולגריה"
+  },
+  {
+   "slug": "rila-pirin",
+   "name": "רילה ופירין",
+   "country": "בולגריה"
+  },
+  {
+   "slug": "stockholm",
+   "name": "שטוקהולם",
+   "country": "שוודיה"
+  },
+  {
+   "slug": "north-zealand",
+   "name": "צפון זילנד",
+   "country": "דנמרק"
+  },
+  {
+   "slug": "finnish-lapland",
+   "name": "לפלנד הפינית",
+   "country": "פינלנד"
+  },
+  {
+   "slug": "vilnius",
+   "name": "וילנה",
+   "country": "ליטא"
+  },
+  {
+   "slug": "tallinn",
+   "name": "טאלין",
+   "country": "אסטוניה"
+  },
+  {
+   "slug": "riga",
+   "name": "ריגה",
+   "country": "לטביה"
+  },
+  {
+   "slug": "south-albania",
+   "name": "דרום אלבניה והריביירה",
+   "country": "אלבניה"
+  },
+  {
+   "slug": "mostar-sarajevo",
+   "name": "מוסטר וסרייבו",
+   "country": "בוסניה והרצגובינה"
+  },
+  {
+   "slug": "vojvodina",
+   "name": "וויוודינה",
+   "country": "סרביה"
+  },
+  {
+   "slug": "yucatan",
+   "name": "חצי האי יוקטן",
+   "country": "מקסיקו"
+  },
+  {
+   "slug": "gyeongju-busan",
+   "name": "גיונגג׳ו ובוסן",
+   "country": "דרום קוריאה"
+  },
+  {
+   "slug": "tasmania",
+   "name": "טסמניה",
+   "country": "אוסטרליה"
+  },
+  {
+   "slug": "java",
+   "name": "ג׳אווה",
+   "country": "אינדונזיה"
+  },
+  {
+   "slug": "penang-perak",
+   "name": "פנאנג ופראק",
+   "country": "מלזיה"
+  },
+  {
+   "slug": "douro",
+   "name": "עמק הדוארו",
+   "country": "פורטוגל"
+  },
+  {
+   "slug": "gdansk-pomerania",
+   "name": "גדנסק וחוף פומרניה",
+   "country": "פולין"
+  },
+  {
+   "slug": "colca-titicaca",
+   "name": "קניון קולקה ואגם טיטיקקה",
+   "country": "פרו"
+  },
+  {
+   "slug": "hoi-an-central",
+   "name": "הוי אן ומרכז וייטנאם",
+   "country": "וייטנאם"
+  },
+  {
+   "slug": "lycian-coast",
+   "name": "החוף הליקי",
+   "country": "טורקיה"
+  },
+  {
+   "slug": "nova-scotia",
+   "name": "נובה סקוטיה",
+   "country": "קנדה"
+  },
+  {
+   "slug": "new-england",
+   "name": "ניו אינגלנד",
+   "country": "ארצות הברית"
+  },
+  {
+   "slug": "north-iceland",
+   "name": "צפון איסלנד",
+   "country": "איסלנד"
+  },
+  {
+   "slug": "bucovina-maramures",
+   "name": "בוקובינה ומרמורש",
+   "country": "רומניה"
+  },
+  {
+   "slug": "south-holland",
+   "name": "דרום הולנד: רוטרדם, האג ודלפט",
+   "country": "הולנד"
+  },
+  {
+   "slug": "valais-zermatt",
+   "name": "ואלה וזרמאט",
+   "country": "שווייץ"
+  },
+  {
+   "slug": "swedish-lapland",
+   "name": "לפלנד השוודית",
+   "country": "שוודיה"
+  },
+  {
+   "slug": "istria",
+   "name": "איסטריה",
+   "country": "קרואטיה"
+  },
+  {
+   "slug": "ireland-ancient-east",
+   "name": "מזרח ודרום אירלנד",
+   "country": "אירלנד"
+  },
+  {
+   "slug": "jutland",
+   "name": "יוטלנד",
+   "country": "דנמרק"
+  },
+  {
+   "slug": "north-island-nz",
+   "name": "האי הצפוני של ניו זילנד",
+   "country": "ניו זילנד"
+  },
+  {
+   "slug": "slovenia-karst-east",
+   "name": "סלובניה שמעבר לבלד: קארסט ועמקי המזרח",
+   "country": "סלובניה"
+  },
+  {
+   "slug": "finnish-lakeland",
+   "name": "אזור האגמים של פינלנד",
+   "country": "פינלנד"
+  },
+  {
+   "slug": "west-estonia-islands",
+   "name": "מערב אסטוניה והאיים",
+   "country": "אסטוניה"
+  },
+  {
+   "slug": "kurzeme-zemgale",
+   "name": "קורזמה וזמגאלה",
+   "country": "לטביה"
+  },
+  {
+   "slug": "western-lithuania",
+   "name": "מערב ליטא",
+   "country": "ליטא"
+  },
+  {
+   "slug": "northern-bulgaria",
+   "name": "צפון בולגריה ורכס הבלקן",
+   "country": "בולגריה"
+  },
+  {
+   "slug": "lori-tavush",
+   "name": "לורי וטבוש",
+   "country": "ארמניה"
+  },
+  {
+   "slug": "oaxaca",
+   "name": "אואחקה",
+   "country": "מקסיקו"
+  },
+  {
+   "slug": "fergana-valley",
+   "name": "עמק פרגנה",
+   "country": "אוזבקיסטן"
+  },
+  {
+   "slug": "lumbini-terai",
+   "name": "לומביני ומישור הטראי",
+   "country": "נפאל"
+  },
+  {
+   "slug": "zanzibar-swahili-coast",
+   "name": "זנזיבר וחוף הסוואהילי",
+   "country": "טנזניה"
+  },
+  {
+   "slug": "malaysian-borneo",
+   "name": "בורנאו המלזית",
+   "country": "מלזיה"
+  },
+  {
+   "slug": "bali-lesser-sunda",
+   "name": "באלי ואיי סונדה הקטנים",
+   "country": "אינדונזיה"
+  },
+  {
+   "slug": "western-serbia",
+   "name": "מערב סרביה ועמק ראשקה",
+   "country": "סרביה"
+  },
+  {
+   "slug": "bosanska-krajina",
+   "name": "בוסנסקה קראיינה ומרכז בוסניה",
+   "country": "בוסניה והרצגובינה"
+  },
+  {
+   "slug": "northern-albania",
+   "name": "שקודרה, האלפים האלבניים וקרויה",
+   "country": "אלבניה"
+  },
+  {
+   "slug": "seoul-dmz",
+   "name": "סיאול והאזור המפורז",
+   "country": "דרום קוריאה"
+  },
+  {
+   "slug": "red-centre",
+   "name": "המרכז האדום",
+   "country": "אוסטרליה"
+  },
+  {
+   "slug": "turkestan-south-kazakhstan",
+   "name": "טורקסטן ודרום קזחסטן",
+   "country": "קזחסטן"
+  },
+  {
+   "slug": "sicily",
+   "name": "סיציליה",
+   "country": "איטליה"
+  },
+  {
+   "slug": "andalusia",
+   "name": "אנדלוסיה",
+   "country": "ספרד"
+  },
+  {
+   "slug": "meteora-epirus",
+   "name": "מטאורה ואפירוס",
+   "country": "יוון"
+  },
+  {
+   "slug": "rhine-moselle",
+   "name": "עמק הריין והמוזל",
+   "country": "גרמניה"
+  },
+  {
+   "slug": "japanese-alps",
+   "name": "האלפים היפניים",
+   "country": "יפן"
+  },
+  {
+   "slug": "northern-thailand",
+   "name": "צפון תאילנד",
+   "country": "תאילנד"
+  },
+  {
+   "slug": "saxon-switzerland",
+   "name": "הרי שווייץ הסקסונית",
+   "country": "גרמניה"
+  },
+  {
+   "slug": "salzkammergut",
+   "name": "זלצקאמרגוט - אזור האגמים",
+   "country": "אוסטריה"
+  },
+  {
+   "slug": "dalmatia-split",
+   "name": "דלמטיה - ספליט והאיים",
+   "country": "קרואטיה"
+  },
+  {
+   "slug": "cultural-triangle",
+   "name": "המשולש התרבותי",
+   "country": "סרי לנקה"
+  },
+  {
+   "slug": "hill-country-south-coast",
+   "name": "ארץ התה והחוף הדרומי",
+   "country": "סרי לנקה"
+  },
+  {
+   "slug": "angkor",
+   "name": "אנגקור וסיאם ריפ",
+   "country": "קמבודיה"
+  },
+  {
+   "slug": "phnom-penh-coast",
+   "name": "פנום פן והחוף",
+   "country": "קמבודיה"
+  },
+  {
+   "slug": "luang-prabang-mekong",
+   "name": "לואנג פראבנג והמקונג",
+   "country": "לאוס"
+  },
+  {
+   "slug": "atlas-sahara",
+   "name": "האטלס והסהרה",
+   "country": "מרוקו"
+  },
+  {
+   "slug": "tian-shan-issyk-kul",
+   "name": "טיאן שאן ואיסיק קול",
+   "country": "קירגיזסטן"
+  },
+  {
+   "slug": "buenos-aires",
+   "name": "בואנוס איירס",
+   "country": "ארגנטינה"
+  },
+  {
+   "slug": "patagonia-south",
+   "name": "פטגוניה הדרומית",
+   "country": "ארגנטינה"
+  },
+  {
+   "slug": "costa-rica-classic",
+   "name": "הרי הגעש ויערות הענן",
+   "country": "קוסטה ריקה"
+  },
+  {
+   "slug": "taiwan-island-loop",
+   "name": "הקפת טאיוואן",
+   "country": "טאיוואן"
+  },
+  {
+   "slug": "atacama",
+   "name": "מדבר אטקמה",
+   "country": "צ׳ילה"
+  },
+  {
+   "slug": "torres-del-paine",
+   "name": "טורס דל פאינה",
+   "country": "צ׳ילה"
+  },
+  {
+   "slug": "marrakesh",
+   "name": "מרקש",
+   "country": "מרוקו"
+  },
+  {
+   "slug": "himachal-himalaya",
+   "name": "הימאצ׳ל והרי ההימלאיה",
+   "country": "הודו"
+  },
+  {
+   "slug": "rio-de-janeiro",
+   "name": "ריו דה ז׳ניירו",
+   "country": "ברזיל"
+  },
+  {
+   "slug": "cartagena",
+   "name": "קרטחנה",
+   "country": "קולומביה"
+  },
+  {
+   "slug": "nice-riviera",
+   "name": "ניס והריביירה",
+   "country": "צרפת"
+  },
+  {
+   "slug": "paris",
+   "name": "פריז",
+   "country": "צרפת"
+  },
+  {
+   "slug": "edinburgh",
+   "name": "אדינבורו",
+   "country": "בריטניה"
+  },
+  {
+   "slug": "london",
+   "name": "לונדון",
+   "country": "בריטניה"
+  },
+  {
+   "slug": "singapore",
+   "name": "סינגפור",
+   "country": "סינגפור"
+  },
+  {
+   "slug": "malta",
+   "name": "מלטה",
+   "country": "מלטה"
+  },
+  {
+   "slug": "brussels-flanders",
+   "name": "בריסל ופלנדריה",
+   "country": "בלגיה"
+  },
+  {
+   "slug": "sinai",
+   "name": "סיני",
+   "country": "מצרים"
+  },
+  {
+   "slug": "muscat-north-oman",
+   "name": "מסקאט וצפון עומאן",
+   "country": "עומאן"
+  },
+  {
+   "slug": "ohrid-skopje",
+   "name": "אוחריד וסקופיה",
+   "country": "צפון מקדוניה"
+  },
+  {
+   "slug": "mongolia-steppe-gobi",
+   "name": "הערבה והגובי",
+   "country": "מונגוליה"
+  },
+  {
+   "slug": "paro-thimphu-punakha",
+   "name": "פארו, טהימפו ופונאכה",
+   "country": "בהוטן"
+  },
+  {
+   "slug": "chisinau-moldova",
+   "name": "קישינב ומולדובה",
+   "country": "מולדובה"
+  },
+  {
+   "slug": "salar-de-uyuni",
+   "name": "סלאר דה אויוני",
+   "country": "בוליביה"
+  },
+  {
+   "slug": "antigua-atitlan-tikal",
+   "name": "אנטיגואה, אטיטלן וטיקאל",
+   "country": "גואטמלה"
+  },
+  {
+   "slug": "palawan-el-nido-coron",
+   "name": "פלאוואן: אל נידו וקורון",
+   "country": "הפיליפינים"
+  },
+  {
+   "slug": "panama-canal-bocas-boquete",
+   "name": "פנמה: התעלה, בוקאס ובוקטה",
+   "country": "פנמה"
+  },
+  {
+   "slug": "quito-cotopaxi-andes",
+   "name": "קיטו, קוטופחשי והאנדים",
+   "country": "אקוודור"
+  },
+  {
+   "slug": "mauritius-island",
+   "name": "מאוריציוס",
+   "country": "מאוריציוס"
+  },
+  {
+   "slug": "seychelles-mahe-praslin-ladigue",
+   "name": "סיישל: מאהה, פרלין ולה דיג",
+   "country": "סיישל"
+  },
+  {
+   "slug": "jerusalem",
+   "name": "ירושלים",
+   "country": "ישראל"
+  },
+  {
+   "slug": "tel-aviv",
+   "name": "תל אביב-יפו",
+   "country": "ישראל"
+  },
+  {
+   "slug": "dead-sea",
+   "name": "ים המלח ומצדה",
+   "country": "ישראל"
+  },
+  {
+   "slug": "eilat",
+   "name": "אילת והערבה",
+   "country": "ישראל"
+  },
+  {
+   "slug": "mitzpe-ramon",
+   "name": "מצפה רמון והנגב",
+   "country": "ישראל"
+  },
+  {
+   "slug": "galilee-kinneret",
+   "name": "הגליל והכנרת",
+   "country": "ישראל"
+  },
+  {
+   "slug": "golan",
+   "name": "רמת הגולן",
+   "country": "ישראל"
+  },
+  {
+   "slug": "haifa-carmel",
+   "name": "חיפה והכרמל",
+   "country": "ישראל"
+  },
+  {
+   "slug": "akko-caesarea",
+   "name": "עכו וחוף הצפון",
+   "country": "ישראל"
+  }
+ ]
+}

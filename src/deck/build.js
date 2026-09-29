@@ -9,7 +9,7 @@ import * as unsplash from '../images/unsplash.js';
 import * as pexels from '../images/pexels.js';
 import { pickCinematic, cinematicQueries } from '../images/curate.js';
 import { SIZES } from '../render/deckTemplates.js';
-import { destinationPlaces, pick } from '../sources/tiyulplus.js';
+import { destinationPlaces, pick, slugFromUrl } from '../sources/tiyulplus.js';
 import { coverForDeck } from './ideas.js';
 import { publishedCount } from '../store.js';
 import { fieldsFor, hasFields } from './fields.js';
@@ -835,7 +835,7 @@ export async function findPage(place, searchTerms = []) {
  * place.
  */
 export async function buildDeckFromSite(idea, { wantImages = true } = {}) {
-  const { places, url, covered } = await destinationPlaces(idea.where);
+  const { places, url, slug, covered } = await destinationPlaces(idea.where);
   if (!covered) return null;
 
   // The page text every quote is checked against is the page that was fetched.
@@ -1022,6 +1022,24 @@ export async function buildDeckFromSite(idea, { wantImages = true } = {}) {
     area: { displayName: idea.where, query: idea.where },
     slides,
     coverImage: coverSlot.image || null,
+    // WHICH PAGE THIS DECK IS ABOUT, which is what makes it close on that page.
+    //
+    // Every closing-slide decision in src/deck/follow.js keys on this one field,
+    // and until now only a PLAN ever set it. So the format that exists to draw
+    // places off our own destination page - the route that knows for certain the
+    // page exists, because it just parsed it - was the one closing on "רוצים עוד?
+    // תעקבו" instead of on the page, and its caption drew a generic ask from the
+    // pool instead of naming the destination. Six slides of curated Prague
+    // places, advertising nothing.
+    //
+    // Read off the stamp rather than from the `slug` variable in scope, because
+    // the stamp is what travelled with the slides. If a future change assembles a
+    // deck from more than one page, or drops the site slides entirely, the answer
+    // stays true to what is actually on it; `slug` would keep claiming the page
+    // this function set out to build from. The variable is the fallback for the
+    // one case the stamp cannot cover, a deck with no slides, which nothing
+    // publishes anyway.
+    siteSlug: slugFromUrl(slides[0]?.sourceUrl) || slug || null,
     dropped,
     degraded,
     short: slides.length < idea.want,

@@ -6,10 +6,12 @@ import { privacyHe } from './publish/tiktok.js';
 import { KINDS } from './sources/places.js';
 import { clipApprovalMessage } from './video/clip.js';
 import { planApprovalMessage } from './plan/candidate.js';
+import { postApprovalMessage } from './posts/message.js';
 import { postConfig } from './postConfig.js';
 import { hashtagLine, captionQuestion, captionCta, captionFollow, followLine } from './hashtags.js';
-import { followSlideFor, publishedSlideCount } from './deck/follow.js';
+import { followSlideFor, hasFollowSlide, hasSiteSlide, publishedSlideCount } from './deck/follow.js';
 import { URL_LIKE } from './urlLike.js';
+import { assertNoDm } from './dmPromise.js';
 
 // Two different texts, for two different readers.
 //
@@ -169,7 +171,7 @@ function publishedDescription(cand, limit, opts = {}) {
   // exemption has nothing left to protect and a `www.` reaching a caption from
   // anywhere, a model, an edited headline, a future signature, should fail
   // where every other kind already fails.
-  return assertNoUrl(parts.join('\n\n').trim().slice(0, limit), 'the card description');
+  return assertNoDm(assertNoUrl(parts.join('\n\n').trim().slice(0, limit), 'the card description'), 'the card description');
 }
 
 export const instagramCaption = (cand, opts) => publishedDescription(cand, 2200, opts); // IG caption limit
@@ -259,7 +261,10 @@ export function deckTiktokCaption(deck, opts = {}) {
   // The tags stay last. Everything added here goes ABOVE them, because a tag
   // block is where a reader stops reading and anything under it is unread.
   const parts = [hook, ...captionClose(opts), tags];
-  return assertNoUrl(parts.join('\n\n').trim(), 'the TikTok description');
+  // Both guards, on every published string. The DM one is not about this
+  // function - a deck's description has no DM line to draw - it is about the day
+  // somebody adds one to `caption.ctas` and every kind starts carrying it.
+  return assertNoDm(assertNoUrl(parts.join('\n\n').trim(), 'the TikTok description'), 'the TikTok description');
 }
 
 export function deckCaption(deck, opts = {}) {
@@ -284,7 +289,7 @@ export function deckCaption(deck, opts = {}) {
   // last things here are the question and the tags.
   const tail = `\n\n${[hook, ...captionClose(opts), hashtagLine(deck, opts)].join('\n\n')}`;
   const body = String(deck.titleHe || '').trim().slice(0, CAPTION_LIMIT - tail.length);
-  return assertNoUrl(`${body}${tail}`.trim(), 'the Instagram caption');
+  return assertNoDm(assertNoUrl(`${body}${tail}`.trim(), 'the Instagram caption'), 'the Instagram caption');
 }
 
 /**
@@ -342,9 +347,24 @@ export function deckApprovalMessage(cand) {
   // in the album's thumbnail row and it is the one carrying an ask. A count that
   // said "6 שקופיות" under an album of seven made the extra one look like a
   // rendering bug.
-  const closing = followSlideFor(deck);
+  // WHICH close, not merely whether there is one.
+  //
+  // This called followSlideFor, which answers "is there a follow ask to draw" and
+  // says yes for a deck that closes on the screenshot of its destination page
+  // instead. So a site deck's card described the wrong last slide - it printed
+  // "רוצים עוד? תעקבו" as slide 8 of a post whose slide 8 is the page - while
+  // publishedSlideCount, which does know the difference, printed the right total
+  // above it. The card contradicted itself and the album settled it.
+  // `siteSlug` is cleared by toDeckCandidate when the capture failed, so a deck
+  // that claims one here really did close on the page. That is the same field edit
+  // withSiteShot makes for the same reason: one flag, cleared once, and nothing
+  // downstream has to hold two versions of what the last slide is.
+  const onSite = hasSiteSlide(deck);
+  const closing = hasFollowSlide(deck) ? followSlideFor(deck) : null;
   lines.push(
-    `📑 ${publishedSlideCount(deck)} שקופיות (שער + ${deck.slides.length} מקומות${closing ? ' + סיום' : ''}):`
+    `📑 ${publishedSlideCount(deck)} שקופיות (שער + ${deck.slides.length} מקומות${
+      onSite ? ' + עמוד היעד' : closing ? ' + סיום' : ''
+    }):`
   );
   for (const [i, s] of deck.slides.entries()) {
     // A slide is a name and, where the category has them, a few fields. The
@@ -356,6 +376,13 @@ export function deckApprovalMessage(cand) {
   }
   if (closing) {
     lines.push(`   ${deck.slides.length + 2}. ${closing.nameHe} - ${closing.bullets[0].text}`);
+  }
+  if (onSite) {
+    // Named as what it is, a screenshot of a real page, and the slug with it: the
+    // slug is the one thing on this slide that can be silently wrong, and a deck
+    // pointing at the wrong destination page is not visible in the album at
+    // thumbnail size.
+    lines.push(`   ${deck.slides.length + 2}. עמוד היעד באתר - /destinations/${deck.siteSlug}`);
   }
   lines.push('');
 
@@ -458,6 +485,11 @@ export function approvalMessage(cand) {
   // none of them visible on the cover image, so the card prints the itinerary
   // itself. See the note above planApprovalMessage.
   if (cand.kind === 'plan') return planApprovalMessage(cand);
+  // And a post has a fifth: a type, a look and an aspect ratio chosen by a rotation and
+  // invisible in the album, plus the one number that decides how much to trust the
+  // pictures - how many came off our own page rather than a stock library. See
+  // postApprovalMessage.
+  if (cand.kind === 'post') return postApprovalMessage(cand);
 
   const lines = [];
 

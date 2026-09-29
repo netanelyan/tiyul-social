@@ -1,5 +1,6 @@
 import { captionFollow } from '../hashtags.js';
 import { postConfig } from '../postConfig.js';
+import { assertNoDm } from '../dmPromise.js';
 
 // The closing slide of every slideshow: why to follow.
 //
@@ -102,7 +103,12 @@ export function siteSlideFor(deck, { size = 'tiktok', destHe = null, replies = n
   return {
     titleHe: fill(cfg.titleHe),
     noteHe: fill(cfg.noteHe),
-    ctaHe: fill(canDm ? cfg.ctaDmHe : cfg.ctaBioHe),
+    // Checked as well as chosen. The conditional above is the decision; this is
+    // the assertion that the decision held, and it is the one that survives
+    // somebody rewriting `ctaBioHe` in the config into a sentence about a DM.
+    // See src/dmPromise.js for why this particular promise gets a guard when no
+    // other closing line does.
+    ctaHe: assertNoDm(fill(canDm ? cfg.ctaDmHe : cfg.ctaBioHe), 'the site slide CTA', { replies }),
     slug: deck.siteSlug,
     site: true,
   };
@@ -118,6 +124,31 @@ export function siteSlideFor(deck, { size = 'tiktok', destHe = null, replies = n
 export const hasFollowSlide = (deck) => !hasSiteSlide(deck) && Boolean(followSlideFor(deck));
 
 /**
+ * The closing slides of a deck, in order. Never more than one.
+ *
+ * THE ONE ANSWER, so the renderer and the arithmetic cannot disagree — which is
+ * the whole reason this function exists rather than each caller composing its own
+ * tail out of the three predicates above.
+ *
+ * They did disagree, and it shipped. render/deck.js appended `followSlideFor(deck)`
+ * and the site slide as two independent decisions, so a deck with a page got BOTH:
+ * "רוצים עוד? תעקבו" and then the screenshot. Meanwhile publishedSlideCount was
+ * right, which made it worse rather than better — the plan's guard against
+ * Instagram's ten-image limit was checking a number one lower than what the
+ * renderer was about to write, so an eleven-slide carousel passed a check for ten
+ * and was rejected by Instagram hours after approval.
+ *
+ * `size` and `replies` only reach the site slide, whose closing line differs by
+ * platform. The follow slide is the same on both.
+ */
+export function closingSlidesFor(deck, { size = 'tiktok', destHe = null, replies = null } = {}) {
+  const site = siteSlideFor(deck, { size, destHe, replies });
+  if (site) return [site];
+  const follow = hasFollowSlide(deck) ? followSlideFor(deck) : null;
+  return follow ? [follow] : [];
+}
+
+/**
  * How many images a deck publishes: the cover, its places, and the close.
  *
  * One function because three places were adding this up by hand and one of them
@@ -125,6 +156,10 @@ export const hasFollowSlide = (deck) => !hasSiteSlide(deck) && Boolean(followSli
  * total against Instagram's limit of ten, and a carousel over it is rejected by
  * Instagram hours after the post was approved, by an error that names none of
  * this.
+ *
+ * Counted THROUGH closingSlidesFor rather than from the predicates, so this number
+ * is the length of the list the renderer will actually draw. It was arithmetic
+ * over the same predicates before, which is how it came to be the only correct
+ * count in a build that published a different number of slides.
  */
-export const publishedSlideCount = (deck) =>
-  1 + (deck?.slides || []).length + (hasFollowSlide(deck) ? 1 : 0) + (hasSiteSlide(deck) ? 1 : 0);
+export const publishedSlideCount = (deck) => 1 + (deck?.slides || []).length + closingSlidesFor(deck).length;

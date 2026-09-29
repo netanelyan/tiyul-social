@@ -79,6 +79,16 @@ const ALLOWED_BY_KIND = {
   // design at two aspect ratios — there is no photograph to re-treat, so the
   // only thing that changes is how much vertical room the layout has.
   plan: ['instagram', 'tiktok'],
+  // The five post types, which are the account's main output now.
+  //
+  // BOTH PLACES AT THIS LEVEL, AND THEN NARROWED PER TYPE. Whether a POST kind may
+  // reach Instagram at all is the editorial decision this table holds; whether a
+  // twenty-one-slide list can BE an Instagram carousel is a property of that one
+  // format, and it lives beside the format in post-config.json (posts.types[].platforms,
+  // read by platformsFor in src/posts/types.js). Folding the second into this table
+  // would put a fact about Instagram's ten-image limit in the file that decides
+  // editorial routing, where nobody would look for it.
+  post: ['instagram', 'tiktok'],
 };
 
 /**

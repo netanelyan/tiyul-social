@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { loadEnv } from './src/env.js';
 loadEnv();
 
@@ -16,6 +17,8 @@ import { stagedView, queuedView, heldView } from './src/admin/views.js';
 import { publishTelegram, publishTelegramDeck, sendForApproval } from './src/publish/telegram.js';
 import { proposeIdeas, titleForRequest, reviseIdea, freeformIdea, freeformFromIdea } from './src/deck/ideas.js';
 import { pickAngle } from './src/angles.js';
+import { postConfig } from './src/postConfig.js';
+import { notePublished as noteMetricsPublished, collect as collectMetrics, describeCollection, weeklyReport } from './src/metrics/index.js';
 import { clipPublicUrl } from './src/publish/imageHosts.js';
 import { buildDeck } from './src/deck/build.js';
 import { toDeckCandidate, deckTopic } from './src/deck/candidate.js';
@@ -238,7 +241,7 @@ bot.use(async (ctx, next) => {
 
 /** One glyph per kind, used everywhere a list of pending items is printed. */
 const kindIcon = (kind) =>
-  kind === 'deck' ? '🎞️' : kind === 'clip' ? '🎬' : kind === 'plan' ? '🗺️' : '📰';
+  kind === 'deck' ? '🎞️' : kind === 'clip' ? '🎬' : kind === 'plan' ? '🗺️' : kind === 'post' ? '🧭' : '📰';
 
 function stagingButtons(key, cand) {
   const rows = [
@@ -257,7 +260,10 @@ function stagingButtons(key, cand) {
   // facts, so an evidence button would open on an empty list and imply the
   // opposite. What replaces it is that the approval card prints the whole
   // itinerary — see planApprovalMessage.
-  if (cand?.kind !== 'clip' && cand?.kind !== 'plan') {
+  // A POST carries no evidence button either, and for the opposite reason to a plan's:
+  // everything quotable on it IS quoted, on the approval card, under "מה שמצוטט מהדף" -
+  // so a button would open on a list the card already printed in full.
+  if (cand?.kind !== 'clip' && cand?.kind !== 'plan' && cand?.kind !== 'post') {
     rows.push(
       cand?.kind === 'deck'
         ? [Markup.button.callback('📎 ציטוטים', `ev:${key}`)]
@@ -707,7 +713,7 @@ async function handleEditReply(ctx, key) {
 async function retitleStaged(key, headline) {
   const cand = store.getStaging(key);
   if (!cand) return { ok: false, said: 'הפריט הזה כבר לא ממתין לעריכה' };
-  if (cand.kind === 'deck' || cand.kind === 'clip' || cand.kind === 'plan') {
+  if (cand.kind === 'deck' || cand.kind === 'clip' || cand.kind === 'plan' || cand.kind === 'post') {
     return { ok: false, said: `אין כותרת לעריכה ב${cand.kind} - זה רינדור מחדש` };
   }
 
@@ -1020,7 +1026,7 @@ async function publishNext(item = null) {
     // neither a deck nor a plan routes there today — so this is the branch that
     // keeps a future channel from receiving an itinerary as one cover image.
     telegram: () =>
-      cand.kind === 'deck' || cand.kind === 'plan'
+      cand.kind === 'deck' || cand.kind === 'plan' || cand.kind === 'post'
         ? publishTelegramDeck(bot.telegram, CHANNEL_ID, cand)
         : publishTelegram(bot.telegram, CHANNEL_ID, cand),
     instagram: async () => {
@@ -1073,6 +1079,38 @@ async function publishNext(item = null) {
     try {
       done[target] = await publishers[target]();
       store.noteTargetOk(target);
+      // WHAT THIS POST WAS, RECORDED WITH THE ID THE PLATFORM JUST HANDED BACK.
+      //
+      // This is the only moment both halves exist. The platform has a media id and the
+      // candidate still knows it was a `list` post in the `label` look at 3:4 - and a
+      // week later, when the nightly job asks what that media did, neither is derivable
+      // from the other. The whole of section 7's report groups by those fields, so a
+      // post that publishes without this line is a post whose numbers can never be
+      // attributed to a format.
+      //
+      // Wrapped, because a metrics failure must never look like a failed publish. The
+      // post IS live at this point; throwing here would send it down the retry path and
+      // publish it twice.
+      try {
+        const mediaId = done[target]?.mediaId || done[target]?.publishId || done[target]?.id || null;
+        if (mediaId && (cand.kind === 'post' || cand.kind === 'deck' || cand.kind === 'plan')) {
+          noteMetricsPublished(cand.id, {
+            platform: target,
+            mediaId,
+            shape: {
+              kind: cand.kind,
+              type: cand.deck?.type || cand.kind,
+              look: cand.deck?.look || cand.deck?.style || null,
+              hook: cand.deck?.hook || null,
+              frame: cand.deck?.frame || null,
+              caption: cand.captionShape || null,
+              where: cand.deck?.where || null,
+            },
+          });
+        }
+      } catch (e) {
+        console.error(`metrics: could not record ${cand.id} on ${target} - ${e.message}`);
+      }
     } catch (e) {
       const detail = (errorText[target] || ((x) => x.message))(e);
       console.error(`publish: ${target} failed:`, detail);
@@ -2259,6 +2297,132 @@ async function suggestPlanJob(asked, days, chatId = staging, budgetIls = null) {
   return cand;
 }
 
+/**
+ * One post of the five types, built and staged.
+ *
+ * THE DESTINATION IS RESOLVED THE SAME WAY /trip RESOLVES ONE, so "/post רומא" and
+ * "/post rome" and "/post" all work and the weighted, recency-aware picker decides when
+ * nobody said. What differs is everything after: the type, the look, the frame and the
+ * caption shape come from the rotation in src/posts/types.js rather than from a fixed
+ * format, and every one of the four is recorded so the weekly report can rank by it.
+ *
+ * `alternatives` is the one thing the rotation cannot decide. An `instead` post needs
+ * three destinations in the same region as the one it argues against, and "the same
+ * region" is a judgement no field on the page answers - so when the rotation lands on
+ * that type unasked, the alternatives are drawn from the catalogue's own country, and
+ * when it cannot find three the type is swapped for the next one down.
+ */
+const suggestPost = billed('post', suggestPostJob);
+async function suggestPostJob(asked, { type = null, look = null, frame = null, days = null } = {}, chatId = staging) {
+  const { buildPost } = await import('./src/posts/index.js');
+  const { resolveDestination, pickDestination } = await import('./src/plan/write.js');
+
+  const recent = store.recentPublished().slice(0, 12).map((p) => p.place);
+  const found = asked ? await resolveDestination(asked, { recent }) : null;
+  if (asked && !found) {
+    await notify.send(bot.telegram, chatId, `❌ לא הצלחתי להבין איזה יעד זה: ${asked}`).catch(() => {});
+    return null;
+  }
+  const dest = found?.dest || pickDestination(recent);
+
+  // A destination with no page on the site cannot carry any of these types - every one
+  // of them is built from the page. Said rather than silently swapped: the owner asked
+  // for this destination, and choosing a different one without saying so is how a
+  // command comes to look like it worked and produce the wrong post.
+  if (!dest?.siteSlug && !dest?.id) {
+    await notify.send(bot.telegram, chatId, '❌ אין יעד לבנות ממנו').catch(() => {});
+    return null;
+  }
+
+  // The alternatives for an `instead` post: the catalogue's own rows in the same
+  // country that the site actually has a page for.
+  const rows = JSON.parse(readFileSync(new URL('./destinations.json', import.meta.url), 'utf8')).destinations;
+  const alternatives = rows
+    .filter((r) => r.country === dest.country && r.id !== dest.id && r.siteSlug)
+    .slice(0, 4);
+
+  const cand = await buildPost({
+    dest,
+    type,
+    look,
+    frame,
+    days,
+    alternatives,
+    defaultHe: dest.he,
+    regionHe: dest.country,
+    targets: targetsForKind('post'),
+    onProgress: (text) => console.log(`post: ${text}`),
+  }).then((r) => r.cand);
+
+  await stage(cand);
+  return cand;
+}
+
+/**
+ * `/make`, `/make רומא`, `/make list פראג`, `/make plan notes רומא`.
+ *
+ * NOT `/post`, WHICH IS TAKEN. `/post 2` publishes item 2 from the queue and has meant
+ * that since before any of this existed; a second registration of the same name would
+ * shadow it, and the command that publishes is not one to break for a naming
+ * preference. `/make` also reads correctly beside the others: /deck, /clip and /trip
+ * all BUILD something that then waits for a tap, and so does this.
+ *
+ * Everything before the destination is a modifier and everything after it is the
+ * destination, which is what makes all four forms read naturally. A word that is not a
+ * known type, look or frame is treated as part of the destination rather than refused -
+ * "/make new york" must not fail because "new" is not a look.
+ */
+bot.command('make', async (ctx) => {
+  const arg = (ctx.message.text || '').replace(/^\/make(@\S+)?\s*/, '').trim();
+  const words = arg.split(/\s+/).filter(Boolean);
+
+  const cfg = postConfig().posts;
+  const types = new Set(cfg.types.map((t) => t.id));
+  const looks = new Set(cfg.looks.map((l) => l.id));
+  const frames = new Set(cfg.frames.map((f) => f.id));
+
+  let type = null;
+  let look = null;
+  let frame = null;
+  let days = null;
+  while (words.length) {
+    const w = words[0].toLowerCase();
+    if (!type && types.has(w)) type = words.shift().toLowerCase();
+    else if (!look && looks.has(w)) look = words.shift().toLowerCase();
+    else if (!frame && frames.has(w)) frame = words.shift().toLowerCase();
+    else if (!days && /^[1-9]$/.test(w)) days = Number(words.shift());
+    else break;
+  }
+  const asked = words.join(' ').trim();
+
+  await ctx.reply(
+    `⏳ ${[type || 'פוסט', look, frame, asked].filter(Boolean).join(' · ')}...`
+  );
+  detach('פוסט', () => runOverridden('/make', () => suggestPost(asked, { type, look, frame, days }, ctx.chat.id)), ctx.chat.id);
+});
+
+/**
+ * The weekly report, now.
+ *
+ * `/report` for the last seven days, `/report 30` for a month. It reads what the
+ * collector has already stored rather than fetching, so it is instant and can be asked
+ * for as often as you like - and `/report fetch` does a collection pass first, for when
+ * something has just published and the numbers are wanted before the next timer.
+ */
+bot.command('report', async (ctx) => {
+  const arg = (ctx.message.text || '').replace(/^\/report(@\S+)?\s*/, '').trim();
+  const days = Math.max(1, Math.min(90, Number(arg.match(/\d+/)?.[0]) || 7));
+
+  if (/fetch|רענן/i.test(arg)) {
+    await ctx.reply('⏳ מושך מספרים...');
+    const got = await collectMetrics().catch((e) => ({ error: e.message }));
+    if (got.error) await ctx.reply(`⚠️ ${got.error}`);
+    else await ctx.reply(`📥 ${describeCollection(got)}`);
+  }
+
+  await ctx.reply(weeklyReport({ days }));
+});
+
 bot.command('trip', async (ctx) => {
   const arg = (ctx.message.text || '').replace(/^\/trip(@\S+)?\s*/, '').trim();
   const { asked, days, budgetIls, error } = parseTripArgs(arg);
@@ -2612,7 +2776,27 @@ let lastDeckSuggestAt = 0;
  * Two is also what makes the budgets add up to the drip. One card, one deck and
  * two clips is four, which is what a six-hour interval publishes in a day.
  */
-const CLIPS_PER_DAY = Math.max(0, Number(process.env.CLIPS_PER_DAY ?? '2'));
+const CLIPS_PER_DAY = Math.max(0, Number(process.env.CLIPS_PER_DAY ?? '0'));
+
+/**
+ * How many of the five post types arrive unasked, a day.
+ *
+ * THE HIGHEST OF THE FOUR, because this is what the account is now. A deck is the older
+ * format these replace, a clip is what runs on the days nobody films (and is paused -
+ * see CLIPS_PER_DAY), and a shoot is a shot list rather than a post.
+ *
+ * Built rather than proposed, so the backlog counts what is STAGED and waiting for a
+ * tap. Two posts standing unapproved is a queue somebody has stopped reading, and
+ * building a third spends a browser and twenty photographs on something that will join
+ * them.
+ */
+const POSTS_PER_DAY = Math.max(0, Number(process.env.POSTS_PER_DAY ?? '2'));
+const POST_BACKLOG_MAX = Math.max(1, Number(process.env.POST_BACKLOG_MAX ?? '2'));
+const postsWaiting = () =>
+  store.stagingItems().filter(({ cand }) => cand?.kind === 'post').length;
+let postsToday = 0;
+let postDay = null;
+let lastPostSuggestAt = 0;
 const CLIP_BACKLOG_MAX = Math.max(1, Number(process.env.CLIP_BACKLOG_MAX ?? '3'));
 let clipDay = null;
 let clipsToday = 0;
@@ -3201,6 +3385,33 @@ function tick() {
     suggestDeck().catch((e) => console.error('deck suggestion failed:', e.message));
   }
 
+  // THE FIVE POST TYPES, on the same rhythm as everything else.
+  //
+  // This is the account's main output now, so it is the one with the highest daily
+  // count and the one the other three are paced around. Built rather than proposed,
+  // like a clip: a proposal card for "a plan post about Prague" asks you to decide on
+  // something you cannot see, and the whole difficulty with these formats is visual.
+  //
+  // The rotation picks the type, the look, the frame and the caption shape, and refuses
+  // whatever the last few posts used - see src/posts/types.js. Nothing here chooses any
+  // of that, which is deliberate: a timer that also made editorial decisions would be
+  // two things to reason about at once.
+  if (postDay !== day) {
+    postDay = day;
+    postsToday = 0;
+  }
+  if (
+    inHours &&
+    POSTS_PER_DAY > 0 &&
+    postsToday < POSTS_PER_DAY &&
+    postsWaiting() < POST_BACKLOG_MAX &&
+    Date.now() - lastPostSuggestAt >= gatherIntervalMs
+  ) {
+    lastPostSuggestAt = Date.now();
+    postsToday += 1;
+    suggestPost(null, {}).catch((e) => console.error('post suggestion failed:', e.message));
+  }
+
   // Clips, same hours and same spacing. Built rather than proposed — see the
   // note at CLIPS_PER_DAY — so the guard counts what is already staged and
   // waiting rather than unanswered proposals.
@@ -3702,6 +3913,37 @@ async function main() {
     () => sendRejectDigest()?.catch?.((e) => console.error('reject digest error:', e.message)),
     Math.max(1, Number(REJECT_DIGEST_HOURS)) * 3_600_000
   );
+
+  // THE NUMBERS, RE-READ RATHER THAN READ ONCE.
+  //
+  // A post's figures are still moving a week after it went out: most of a carousel's
+  // views arrive after the first day and saves keep arriving for longer. A single
+  // reading taken the morning after would rank every format by how fast it starts
+  // rather than by how well it does, which is a different question and the wrong one.
+  //
+  // Hourly rather than nightly, and the interval is the whole reason this is cheap: the
+  // collector only asks about posts published in the last thirty days and only writes
+  // what it actually got, so a pass on a quiet week is a handful of requests. "Nightly"
+  // would also mean a single moment that can be missed by a restart.
+  setInterval(() => {
+    collectMetrics()
+      .then((got) => console.log(`metrics: ${describeCollection(got)}`))
+      .catch((e) => console.error('metrics error:', e.message));
+  }, Math.max(1, Number(process.env.METRICS_EVERY_HOURS || 6)) * 3_600_000);
+
+  // THE WEEKLY REPORT, on a timer rather than a weekday, because a bot that has been
+  // up for three days should send one rather than wait for Sunday. It ranks on saves
+  // and shares per view and it never changes a weight - see src/metrics/report.js for
+  // why that is a rule and not an omission.
+  if (Number(process.env.METRICS_REPORT_DAYS || 7) > 0) {
+    setInterval(() => {
+      try {
+        notify.send(bot.telegram, staging, weeklyReport({ days: 7 })).catch(() => {});
+      } catch (e) {
+        console.error('metrics report error:', e.message);
+      }
+    }, Math.max(1, Number(process.env.METRICS_REPORT_DAYS || 7)) * 86_400_000);
+  }
 
   await notify.send(
     bot.telegram,

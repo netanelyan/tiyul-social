@@ -204,6 +204,10 @@ export function postConfig() {
     // `postConfig().angles` says.
     shoot: shoot(raw.shoot || {}, angles),
     plans: plans(raw.plans || {}),
+    // The five post types, their looks, their frames and their hook shapes. The
+    // block that decides what this account actually posts, which is why the
+    // evidence for every weight in it is written beside it in the file.
+    posts: posts(raw.posts || {}),
     igReplies: igReplies(raw.igReplies || {}),
     schedule: schedule(raw.schedule || {}),
     // English country name from the vision judge -> Hebrew, for the place
@@ -807,6 +811,180 @@ function igReplies(raw) {
     publicReplyHe: String(raw.publicReplyHe || '').trim(),
     utmSource: String(raw.utmSource || 'instagram').trim(),
     utmMedium: String(raw.utmMedium || 'dm').trim(),
+  };
+}
+
+/**
+ * The post menu: which types exist, how often each one comes up, how it looks.
+ *
+ * WHY THIS IS A MENU AND NOT A SETTING. The evidence this block was written from
+ * is that three accounts posting the same template got two to four likes each,
+ * while a single account's one good post became 93% of its lifetime likes. So the
+ * thing that has to be configurable is not how a post looks, it is how much
+ * variety the account produces - which means the weights, the look rotation and the
+ * hook shapes all live here together, because turning one without the others is how
+ * a rotation quietly becomes a template again.
+ *
+ * EVERYTHING HERE IS VALIDATED RATHER THAN DEFAULTED AWAY. An empty type list, a
+ * type with no hooks, a frame with no dimensions: each one would produce posts that
+ * look deliberately plain, which is indistinguishable from a config that was never
+ * written. Same argument as caption.lines, at the top of this file.
+ */
+function posts(raw) {
+  const types = (raw.types || [])
+    .map((t) => ({
+      id: String(t?.id || '').trim(),
+      he: String(t?.he || '').trim(),
+      weight: Math.max(0, num(t?.weight, 1)),
+      // How many slides this type wants. A list post is 15 to 20 by definition -
+      // the numbering IS the completion loop - and a verdict post is six.
+      slidesMin: count(t?.slidesMin, 5),
+      slidesMax: count(t?.slidesMax, 20),
+      // What the type cannot be built without. Checked by the builder before it
+      // spends anything, so a destination whose page has no drawbacks clause fails
+      // fast rather than producing a verdict post with one side of the argument.
+      needs: list(t?.needs),
+      // WHERE THIS TYPE CAN ACTUALLY GO.
+      //
+      // Instagram publishes at most ten images in a carousel and refuses the eleventh
+      // at publish time, hours after approval. A list post is twenty-one slides
+      // because its own hook says "20 דברים", and there is no honest nine-slide
+      // version of that - so it is a TikTok type, declared rather than discovered by
+      // a rejected publish. Empty means both, which is the ordinary case.
+      platforms: list(t?.platforms),
+      desc: String(t?.desc || '').trim(),
+    }))
+    .filter((t) => t.id);
+  if (!types.length) {
+    throw new Error('post-config.json: posts.types is empty - there would be nothing for the rotation to choose from');
+  }
+  if (!types.some((t) => t.weight > 0)) {
+    throw new Error('post-config.json: every posts.types weight is 0 - nothing could ever be built');
+  }
+
+  const looks = (raw.looks || [])
+    .map((l) => ({
+      id: String(l?.id || '').trim(),
+      he: String(l?.he || '').trim(),
+      weight: Math.max(0, num(l?.weight, 1)),
+      // Which types may be drawn in this look. A notes checklist is a day, so it
+      // belongs to the plan and to nothing else.
+      types: list(l?.types),
+      desc: String(l?.desc || '').trim(),
+    }))
+    .filter((l) => l.id);
+  if (!looks.length) throw new Error('post-config.json: posts.looks is empty');
+
+  // The aspect-ratio test. `tall` is 9:16, which is what TikTok's player is;
+  // `phone` is 3:4, which is what a phone camera shoots and what every one of the
+  // reference posts used. Which one performs better is an open question and the
+  // whole point of carrying both.
+  const frames = (raw.frames || [])
+    .map((f) => ({
+      id: String(f?.id || '').trim(),
+      w: count(f?.w, 1080),
+      h: count(f?.h, 1920),
+      weight: Math.max(0, num(f?.weight, 1)),
+    }))
+    .filter((f) => f.id && f.w > 0 && f.h > 0);
+  if (!frames.length) throw new Error('post-config.json: posts.frames is empty - a slide needs a size');
+
+  // Questions per type, falling back to the shared pool.
+  //
+  // A QUESTION HAS TO FIT THE POST, and the shared pool cannot know which post it is
+  // on. `caption.questions` was written for cards and clips and it contains "מי מכיר
+  // טיסה ישירה לשם?" - which landed under a Rome verdict post whose own slide quotes
+  // the page saying there is a direct flight of about three and a half hours. The post
+  // answered its own question two slides earlier, which reads as nobody having looked.
+  //
+  // These are also the line the reference posts get their comments from: the winners
+  // end on a real question and collect hundreds of replies. A generic one collects
+  // none, so they are written per type - a plan asks what you would add, a verdict asks
+  // whether you would still go.
+  const questionsFor = {};
+  for (const [type, entries] of Object.entries(raw.questions || {})) {
+    if (type.startsWith('_')) continue;
+    questionsFor[type] = list(entries);
+  }
+
+  // Hook shapes per type. Filled formats rather than free writing, the decision
+  // src/video/hooks.js made for a clip: a filled format is a known sentence with
+  // our own numbers in it.
+  const hooks = {};
+  for (const [type, entries] of Object.entries(raw.hooks || {})) {
+    if (type.startsWith('_')) continue;
+    hooks[type] = (entries || [])
+      .map((h) => ({
+        id: String(h?.id || '').trim(),
+        he: String(h?.he || '').trim(),
+        weight: Math.max(0, num(h?.weight, 1)),
+        desc: String(h?.desc || '').trim(),
+      }))
+      .filter((h) => h.id && h.he);
+  }
+  for (const t of types) {
+    if (!hooks[t.id]?.length) {
+      throw new Error(`post-config.json: posts.hooks.${t.id} is empty - a post type with no hook shape has no cover`);
+    }
+  }
+  // A hook is published text. Checked here, once, at startup, rather than once per
+  // post from inside a build - the same bargain the caption asks get.
+  for (const [type, entries] of Object.entries(hooks)) {
+    for (const h of entries) {
+      if (URL_LIKE.test(h.he)) throw new Error(`post-config.json: posts.hooks.${type}.${h.id} contains a URL`);
+      if (/[—–]/.test(h.he)) throw new Error(`post-config.json: posts.hooks.${type}.${h.id} contains an em or en dash`);
+    }
+  }
+
+  // The caption skeletons. A shape is an ordered list of part names, and what makes
+  // it a rotation rather than a template is that no two consecutive posts may use
+  // the same one - see src/posts/caption.js.
+  const captions = (raw.captions || [])
+    .map((c) => ({ id: String(c?.id || '').trim(), parts: list(c?.parts), weight: Math.max(0, num(c?.weight, 1)) }))
+    .filter((c) => c.id && c.parts.length);
+  if (!captions.length) throw new Error('post-config.json: posts.captions is empty - a post needs a description');
+
+  // Tags that appear on EVERY post of these types, ahead of the pools.
+  //
+  // `#פוריו` is the Hebrew spelling of "for you" and it is the tag Israeli TikTok
+  // actually uses for the feed. It is here rather than in `hashtags.broad` because
+  // that pool is shared with cards and clips, and a draw would put it on roughly one
+  // post in three - a feed tag is either on every post or it is doing nothing.
+  //
+  // They REPLACE pool draws rather than adding to them, so the total tag count is
+  // the same on every post. Otherwise the one variable section 7 is measuring
+  // changes for a reason that has nothing to do with the measurement.
+  const always = tags(raw.tags?.alwaysHe || [], 'posts.tags.alwaysHe');
+
+  const closing = raw.closing || {};
+  return {
+    types,
+    looks,
+    frames,
+    hooks,
+    captions,
+    questions: questionsFor,
+    alwaysTags: always,
+    // How many of the recent posts the rotation looks back over when refusing a
+    // repeat. Two is the minimum that means anything ("not the same as last time");
+    // more makes the account visibly cycle.
+    lookMemory: Math.max(1, count(raw.lookMemory, 3)),
+    typeMemory: Math.max(1, count(raw.typeMemory, 2)),
+    // The default ask. "שמרו את זה לטיול" is the one the evidence points at: saves
+    // run at 47 to 95% of likes on every post that worked, and a save is somebody
+    // planning a trip rather than admiring a photograph.
+    saveAskHe: String(closing.saveAskHe || 'שמרו את זה לטיול').trim(),
+    // The warm sign-off that replaces "רוצים עוד? תעקבו". The winners close by
+    // giving something; an ask that offers nothing is what our own posts closed on.
+    signoffsHe: list(closing.signoffsHe),
+    // How many days a plan post covers, and how many stops of each day it shows.
+    days: Math.max(1, count(raw.days, 4)),
+    stopsMin: Math.max(1, count(raw.stopsMin, 3)),
+    stopsMax: Math.max(1, count(raw.stopsMax, 5)),
+    // Above this, a gap between two stops is a ride rather than a walk. Three
+    // kilometres is about forty minutes on foot, which is the point at which
+    // printing a distance stops being useful and printing "נסיעה" starts.
+    walkMaxKm: Math.max(0.2, num(raw.walkMaxKm, 3)),
   };
 }
 

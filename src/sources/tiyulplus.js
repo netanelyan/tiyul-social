@@ -45,6 +45,26 @@ export const slugFor = (where) =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '');
 
+/**
+ * The slug back out of a page URL, or null.
+ *
+ * The inverse of the line above it, and it exists because a deck built from this
+ * route records the page on every slide as `sourceUrl` and nowhere else. That
+ * stamp is the one piece of "which page is this deck about" that survives the
+ * whole build - the shortlist, the filter, the image step, the cover - so it is
+ * what src/deck/build.js reads to decide the deck closes on the real page rather
+ * than on a follow ask.
+ *
+ * Deliberately strict about the shape. Anything that is not a /destinations/<slug>
+ * path returns null, which means "this deck is not about one of our pages" - the
+ * answer for the map route, for a freeform deck, and for a slide whose source is
+ * the bridge's own website.
+ */
+export const slugFromUrl = (url) => {
+  const m = /\/destinations\/([a-z0-9][a-z0-9-]*)(?:[/?#]|$)/i.exec(String(url || ''));
+  return m ? m[1].toLowerCase() : null;
+};
+
 const strip = (s) =>
   String(s || '')
     .replace(/<!--.*?-->/g, '')

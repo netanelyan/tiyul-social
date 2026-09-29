@@ -32,7 +32,8 @@
     "plan-lab": "node scripts/plan-lab.js",
     "admin-lab": "node scripts/admin-lab.js",
     "redraw": "node scripts/redraw.js",
-    "ig-subscribe": "node scripts/ig-subscribe.js"
+    "ig-subscribe": "node scripts/ig-subscribe.js",
+    "post-lab": "node scripts/post-lab.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",
