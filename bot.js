@@ -3820,7 +3820,9 @@ async function main() {
   // endpoint that sends direct messages must not come up unauthenticated.
   startIgWebhook();
   console.log(`   daily run at ${RUN_HOUR}:00 · target ${dailyTarget()} · drip every ${POST_INTERVAL_MINUTES} min`);
-  console.log(`   suggestions per day: ${dailyTarget()} cards · ${DECKS_PER_DAY} decks · ${CLIPS_PER_DAY} clips · ${SHOOTS_PER_DAY} shoots`);
+  console.log(
+    `   suggestions per day: ${dailyTarget()} cards · ${POSTS_PER_DAY} posts · ${DECKS_PER_DAY} decks · ${CLIPS_PER_DAY} clips · ${SHOOTS_PER_DAY} shoots`
+  );
 
   // Do the budgets fit down the drip?
   //
@@ -3837,7 +3839,12 @@ async function main() {
   // posts behind looks exactly like a drip that is working. A shoot is not
   // counted: it never publishes.
   {
-    const perDay = dailyTarget() + DECKS_PER_DAY + CLIPS_PER_DAY;
+    // POSTS ARE COUNTED HERE TOO, and leaving them out was the kind of omission this
+    // check exists to catch. They are the largest standing budget of the four - two a
+    // day against one card and one deck - so a drip that was comfortably ahead of
+    // production became exactly level with it the moment they were switched on, and
+    // the one line that would have said so was not counting them.
+    const perDay = dailyTarget() + POSTS_PER_DAY + DECKS_PER_DAY + CLIPS_PER_DAY;
     const drainPerDay = Math.floor(1440 / Math.max(1, Number(POST_INTERVAL_MINUTES)));
     if (perDay > drainPerDay) {
       console.log(
@@ -3846,6 +3853,7 @@ async function main() {
       );
     }
   }
+  console.log(`   posts to: ${targetsForKind('post').join(' + ') || 'NOWHERE (nothing connected)'}`);
   console.log(`   clips to: ${targetsForKind('clip').join(' + ') || 'NOWHERE (TikTok not connected)'}`);
   // Said out loud at boot, because "shoots go nowhere" is the single most
   // surprising thing about this queue and the one most likely to be read as a
