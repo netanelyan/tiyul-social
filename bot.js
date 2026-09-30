@@ -2409,6 +2409,90 @@ bot.command('make', async (ctx) => {
  * for as often as you like - and `/report fetch` does a collection pass first, for when
  * something has just published and the numbers are wanted before the next timer.
  */
+/**
+ * Type in what a post actually did, for the platform no API will say.
+ *
+ * `/views` lists the recent published posts, numbered. `/views 1 1919 9 1 0` records
+ * 1,919 views, 9 likes, 1 save and 0 shares against the first of them.
+ *
+ * WHY A HUMAN TYPES THIS. Every TikTok post here is a photo carousel, and the Display
+ * API's video list needs a scope this app never requested and is documented as
+ * returning videos. So the numbers that decide which format works are unreachable by
+ * any amount of code, while the owner can read them off the screen in two seconds. A
+ * pipeline that ranks its formats on Instagram alone - carefully, hourly - while every
+ * post is aimed at TikTok, is measuring the wrong platform well.
+ *
+ * The reading is marked `by: 'hand'` and the weekly report says so. A typed number and
+ * a fetched one are different kinds of evidence and the ranking should not hide which
+ * it used.
+ */
+// A newline, as a constant. Written out because these strings are assembled inside a
+// template that a literal one would terminate.
+const NL = String.fromCharCode(10);
+
+bot.command('views', async (ctx) => {
+  const arg = (ctx.message.text || '').replace(/^\/views(@\S+)?\s*/, '').trim();
+  const recent = store.recentPublished().slice(0, 12);
+
+  if (!recent.length) return ctx.reply('עוד לא פורסם כלום.');
+
+  // No arguments: the menu. Numbered, because typing an id is how a command like this
+  // stops being used.
+  if (!arg) {
+    const { allRows } = await import('./src/metrics/index.js');
+    const known = new Map(allRows().map((r) => [r.id, r]));
+    const lines = ['📊 מה פורסם לאחרונה. להזין: /views <מספר> <צפיות> [לייקים] [שמירות] [שיתופים]', ''];
+    for (const [i, p] of recent.entries()) {
+      const row = known.get(p.id);
+      const tt = row?.stats?.tiktok;
+      const seen = tt?.views != null ? `${Number(tt.views).toLocaleString('en-US')} צפיות` : 'אין מספרים';
+      const where = [p.tiktok ? 'טיקטוק' : null, p.instagram ? 'אינסטגרם' : null].filter(Boolean).join('+') || '-';
+      lines.push(`${i + 1}. ${p.place || p.topic || p.id} · ${where} · ${seen}`);
+    }
+    return ctx.reply(lines.join(NL));
+  }
+
+  const nums = arg.split(/\s+/).map((x) => Number(String(x).replace(/,/g, '')));
+  const [n, views, likes, saved, shares] = nums;
+  if (!Number.isInteger(n) || n < 1 || n > recent.length || !Number.isFinite(views)) {
+    return ctx.reply(`שימוש: /views <מספר 1-${recent.length}> <צפיות> [לייקים] [שמירות] [שיתופים]`);
+  }
+
+  const post = recent[n - 1];
+  const { metricsStore } = await import('./src/metrics/index.js');
+  metricsStore.noteByHand(
+    post.id,
+    'tiktok',
+    {
+      views,
+      ...(Number.isFinite(likes) ? { likes } : {}),
+      ...(Number.isFinite(saved) ? { saved } : {}),
+      ...(Number.isFinite(shares) ? { shares } : {}),
+    },
+    {
+      // The shape, recovered from the published ledger for a post recorded before the
+      // metrics hook existed. Without it the row has numbers and nothing to group them
+      // by, which is a row the report cannot use.
+      shape: { where: post.place || null, type: post.topic || null },
+      at: post.ts ? new Date(post.ts).toISOString() : null,
+    }
+  );
+
+  const rate = (x) => (Number.isFinite(x) && views > 0 ? `${((x / views) * 100).toFixed(1)}%` : '—');
+  return ctx.reply(
+    [
+      `✅ נרשם: ${post.place || post.id}`,
+      `   ${views.toLocaleString('en-US')} צפיות`,
+      Number.isFinite(saved) ? `   שמירות: ${saved} (${rate(saved)} מהצפיות)` : null,
+      Number.isFinite(shares) ? `   שיתופים: ${shares} (${rate(shares)} מהצפיות)` : null,
+      '',
+      'הדירוג ב-/report מעדיף עכשיו את המספרים מטיקטוק.',
+    ]
+      .filter(Boolean)
+      .join(NL)
+  );
+});
+
 bot.command('report', async (ctx) => {
   const arg = (ctx.message.text || '').replace(/^\/report(@\S+)?\s*/, '').trim();
   const days = Math.max(1, Math.min(90, Number(arg.match(/\d+/)?.[0]) || 7));

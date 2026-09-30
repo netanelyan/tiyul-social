@@ -60,6 +60,12 @@ export function buildListPost(city, { hook, dest, want = null } = {}) {
     // כניסה חופשית" is the most useful thing that can be said about a list of twenty
     // places before you have read any of them.
     noteHe: line(coverNote(pool), { where: 'cover.note' }),
+    // THE COUNT AS THE BADGE. On this type the number IS the format - a viewer who
+    // reads "20" knows exactly what they are getting and how long it takes - so it is
+    // set as the one thing the eye lands on rather than buried inside the sentence
+    // that also contains it.
+    badgeHe: String(n),
+    badgeLabelHe: 'מקומות',
     band: 'mid',
   };
 

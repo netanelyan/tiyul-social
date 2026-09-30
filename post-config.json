@@ -1796,9 +1796,9 @@
     ],
     "hooks": {
       "plan": [
-        { "id": "howid", "he": "{days} ימים ב{dest}, ככה הייתי עושה את זה", "weight": 3, "desc": "Names a decision. The planner's voice, which is the honest version of personal." },
+        { "id": "howid", "he": "{days} ימים ב{dest}, ככה היינו עושים את זה", "weight": 3, "desc": "Names a decision. PLURAL, because every caption on the post says \"היינו\" - the singular read as one person's trip, which is the one thing this voice may not claim." },
         { "id": "doubt", "he": "מה עושים {days} ימים ב{dest}? לא משעמם שם?", "weight": 3, "desc": "@liri.turgeman's cover, 21.5K likes off 956 followers. Voices the doubt the viewer already has." },
-        { "id": "friend", "he": "המסלול ש{days} ימים ב{dest} צריך להיראות", "weight": 1, "desc": "Quieter, for the rotation's sake." },
+        { "id": "friend", "he": "ככה נראה מסלול של {days} ימים ב{dest}", "weight": 1, "desc": "Quieter, for the rotation's sake. Rewritten once the cover type got large enough to actually read: the old shape was \"המסלול ש{days} ימים ב{dest} צריך להיראות\", which is a relative clause standing in for a sentence and reads as a translation." },
         { "id": "nights", "he": "{days} ימים ב{dest}: כמה לילות איפה", "weight": 2, "desc": "@travel.with.dorina's structure, the highest saves per like of any reference post at 0.95." }
       ],
       "list": [

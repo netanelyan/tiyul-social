@@ -260,7 +260,12 @@ export function buildPlanPost(city, { look = 'route', hook, dest, days = null, q
     // The number of days as the sub-line, and the count of stops with it. Both are
     // facts about what is in the post, which is what a cover is for: the viewer
     // decides whether to swipe on what they are being promised.
-    noteHe: line(`${built.length} ימים · ${built.reduce((n, d) => n + d.stops.length, 0)} עצירות`, { where: 'cover.note' }),
+    noteHe: line(`${built.reduce((n, d) => n + d.stops.length, 0)} עצירות · הכל מסומן על מפה`, { where: 'cover.note' }),
+    // The day count as the badge. It is the single fact somebody is deciding on -
+    // "where, and for how many nights" is the question this format exists to settle -
+    // and inside the hook sentence it is one word among eight.
+    badgeHe: String(built.length),
+    badgeLabelHe: 'ימים',
     emojis: dayEmojis({ stops: built.flatMap((d) => d.stops) }, { max: 3 }),
     band: 'mid',
   };

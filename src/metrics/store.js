@@ -72,6 +72,48 @@ export function notePublished(candidateId, { platform, mediaId, shape = {}, at =
   return row;
 }
 
+/**
+ * Record numbers somebody read off the app, for a post the API cannot describe.
+ *
+ * THE ONLY WAY THIS ACCOUNT LEARNS ANYTHING ABOUT TIKTOK, and it is worth being blunt
+ * about why a typed-in number earns a place in a system built on fetched ones.
+ *
+ * Every post this pipeline makes for TikTok is a photo carousel. The Display API's
+ * video list needs a scope this app never requested, and it is documented as returning
+ * videos - so the numbers that matter most are unreachable by any amount of code. See
+ * src/metrics/tiktok.js.
+ *
+ * Meanwhile the owner can read the view count off the screen in two seconds. A pipeline
+ * that ranks its formats on Instagram alone, while every post is aimed at TikTok and
+ * TikTok is where the evidence came from, is measuring the wrong platform carefully.
+ *
+ * CREATES THE ROW IF THERE IS NONE, which is what makes it useful on the posts that
+ * matter today: anything published before the metrics hook existed has a published-
+ * ledger entry and no metrics row, and those are exactly the posts somebody wants to
+ * record a number against.
+ *
+ * `by: 'hand'` is kept on the reading. The report prints it, because a number somebody
+ * typed and a number Meta returned are not the same kind of evidence and the difference
+ * should not be invisible in a ranking.
+ */
+export function noteByHand(candidateId, platform, stats, { shape = null, at = null } = {}) {
+  const id = String(candidateId || '').trim();
+  if (!id || !platform) return null;
+  const s = load();
+  const row = s.posts[id] || { id, shape: {}, media: {}, stats: {}, at: at || new Date().toISOString() };
+  if (shape) row.shape = { ...row.shape, ...shape };
+  if (at && !s.posts[id]) row.at = at;
+  row.stats[platform] = {
+    ...(row.stats[platform] || {}),
+    ...stats,
+    by: 'hand',
+    readAt: new Date().toISOString(),
+  };
+  s.posts[id] = row;
+  save();
+  return row;
+}
+
 /** Record what a platform reported. Overwrites: the newest reading is the one that counts. */
 export function noteStats(candidateId, platform, stats) {
   const s = load();

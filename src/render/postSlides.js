@@ -207,17 +207,34 @@ export function renderLabelSlideHtml(slide, { size = 'tiktok', frame = 'tall' } 
   const cover = Boolean(slide.cover);
   const band = slide.band || (cover ? 'mid' : 'lower');
 
-  const titleBase = cover ? 0.082 : 0.068;
-  const scale = step(slide.titleHe, cover ? { mid: 26, long: 40 } : { mid: 20, long: 32 });
+  // A COVER IS SET MUCH LARGER THAN A LIST LABEL, and the first version was not.
+  //
+  // Both were within a whisker of each other at 8.2% and 6.8% of the frame width, and
+  // the published Santorini cover is what that looks like on a phone: a sentence that
+  // reads as a caption on a photograph rather than as the thing the post is about. A
+  // hook has about half a second to be read at thumbnail size and it competes with
+  // everything else in the feed; a list label has already won that fight and only has
+  // to name a place.
+  //
+  // 11% against 6.8%. That is roughly what the reference posts set their covers at, and
+  // it is large enough that the two-line ceiling below starts doing real work.
+  const titleBase = cover ? 0.11 : 0.068;
+  const scale = step(slide.titleHe, cover ? { mid: 22, long: 34 } : { mid: 20, long: 32 });
   const titlePx = px(geo, titleBase * scale);
-  const notePx = px(geo, 0.042);
+  const notePx = px(geo, cover ? 0.046 : 0.042);
   const numPx = px(geo, 0.105);
   const stroke = Math.max(3, Math.round(titlePx * 0.055));
 
-  // The block's own vertical anchor. `mid` is optically centred rather than
-  // mathematically: type centred on the exact middle of a tall frame reads low,
-  // because the caption and handle at the foot of the player take the bottom sixth.
-  const top = band === 'mid' ? Math.round(geo.h * 0.36) : null;
+  // The badge: one real number, large, in the accent, above the hook.
+  //
+  // THE THING NO OTHER ACCOUNT HAS, which on the published cover was the smallest text
+  // on the slide. "הדירוג שלנו: 4.5" is our own editorial rating - a number we publish
+  // and stand behind - and it was set at 4.2% in plain white underneath the hook, where
+  // it read as a subtitle. Set as a badge it is what the eye lands on first, and it is
+  // the one element that says a person judged this rather than a scraper collected it.
+  const badgePx = px(geo, 0.075);
+  const badgeLabelPx = px(geo, 0.03);
+  const top = band === 'mid' ? Math.round(geo.h * 0.3) : null;
   const bottom = band === 'mid' ? null : Math.round(geo.h * 0.2);
 
   return `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><style>${base(geo)}
@@ -227,10 +244,26 @@ export function renderLabelSlideHtml(slide, { size = 'tiktok', frame = 'tall' } 
 /* A gradient rather than a flat scrim, and only on the half the type is on. A flat
    panel is the designed-poster look that got the reference flop nine likes; a
    gradient is what the platform's own player already lays over a photograph. */
-.veil { position: absolute; inset-inline: 0; height: ${Math.round(geo.h * 0.46)}px;
-        ${band === 'mid' ? `top:${Math.round(geo.h * 0.22)}px;
-        background: radial-gradient(ellipse at center, rgba(0,0,0,.42), rgba(0,0,0,0) 72%);`
+.veil { position: absolute; inset-inline: 0; height: ${Math.round(geo.h * (cover ? 0.58 : 0.46))}px;
+        ${band === 'mid' ? `top:${Math.round(geo.h * 0.16)}px;
+        background: radial-gradient(ellipse at center, rgba(0,0,0,.58), rgba(0,0,0,.2) 55%, rgba(0,0,0,0) 78%);`
           : `bottom:0; background: linear-gradient(to top, rgba(0,0,0,.52), rgba(0,0,0,0));`} }
+/* THE COVER GETS A SECOND, WIDER WASH. The published Santorini cover put white type
+   over a hillside of white buildings, and an outline alone is the wrong tool for that:
+   a stroke is the same width everywhere, so where the photograph is the same value as
+   the letter the eye loses the edge whatever the stroke does. This darkens the whole
+   upper half a little, which is what the platform's own player already does over a
+   caption, and costs the photograph almost nothing. */
+${cover ? `.wash { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(8,10,14,.30) 0%, rgba(8,10,14,.16) 55%, rgba(8,10,14,0) 80%); }` : ''}
+/* The badge. A pill rather than a line of text, because it carries a NUMBER and the
+   number is the claim. Accent fill, dark ink, so it is the first thing read. */
+.badge { display: inline-flex; align-items: baseline; gap: .28em; direction: rtl;
+         background: #FFD84D; color: #14161c; border-radius: 999px;
+         padding: ${Math.round(badgePx * 0.16)}px ${Math.round(badgePx * 0.42)}px;
+         box-shadow: 0 ${Math.round(badgePx * 0.08)}px ${Math.round(badgePx * 0.3)}px rgba(0,0,0,.45);
+         margin-bottom: ${Math.round(badgePx * 0.22)}px; }
+.badge b { direction: ltr; unicode-bidi: isolate; font-weight: 800; font-size: ${badgePx}px; line-height: 1; }
+.badge span { font-weight: 700; font-size: ${badgeLabelPx}px; }
 /* LTR, ISOLATED. The page is RTL and "3." is a number followed by a full stop, so
    the bidi algorithm put the stop on the left and the slide counted ".3". The number
    is the one element here that is not Hebrew and it has to be told so. */
@@ -238,16 +271,25 @@ export function renderLabelSlideHtml(slide, { size = 'tiktok', frame = 'tall' } 
        font-weight: 800; font-size: ${numPx}px; line-height: 1; color: #FFD84D;
        -webkit-text-stroke: ${Math.round(numPx * 0.05)}px rgba(0,0,0,.85); paint-order: stroke fill;
        text-shadow: 0 3px 16px rgba(0,0,0,.6); }
-.title { font-weight: 800; font-size: ${titlePx}px; line-height: 1.14; ${outlined(stroke)} }
+.title { font-weight: 800; font-size: ${titlePx}px; line-height: 1.12; ${outlined(stroke)}
+         text-wrap: balance; }
 .note { font-weight: 600; font-size: ${notePx}px; line-height: 1.3;
         ${outlined(Math.max(2, Math.round(notePx * 0.05)))} opacity: .97; }
 .emoji { font-size: ${px(geo, 0.055)}px; line-height: 1; display: flex; gap: .12em; }
 </style></head><body>
 ${PROBE}
 ${photo(slide.image)}
+${cover ? '<div class="wash"></div>' : ''}
 <div class="veil"></div>
 <div class="wrap">
   ${emojiRow(slide.emojis)}
+  ${
+    slide.badgeHe
+      ? `<div class="badge"><b>${escapeHtml(String(slide.badgeHe))}</b>${
+          slide.badgeLabelHe ? `<span>${escapeHtml(slide.badgeLabelHe)}</span>` : ''
+        }</div>`
+      : ''
+  }
   ${slide.number ? `<div class="num">${escapeHtml(String(slide.number))}</div>` : ''}
   <div class="title">${withEmoji(slide.titleHe || '')}</div>
   ${slide.noteHe ? `<div class="note">${withEmoji(slide.noteHe)}</div>` : ''}

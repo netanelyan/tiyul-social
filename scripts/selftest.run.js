@@ -6710,6 +6710,35 @@ group('measuring - saves and shares, never likes');
   ok('and says where the edit is made', text.includes('post-config.json'));
   ok('an empty window says so plainly', weeklyReport({ days: 1, rows: [], now }).includes('לא פורסם כלום'));
 
+  // NUMBERS TYPED IN BY HAND, for the platform no API will describe.
+  //
+  // Every TikTok post here is a photo carousel and the Display API will not list one.
+  // The owner can read the view count off the screen in two seconds, so the ranking
+  // takes it - and says that it did, because a typed number and a fetched one are not
+  // the same kind of evidence.
+  {
+    const handRows = [
+      { id: 'a', at: at(1), shape: { type: 'verdict', look: 'sheet', frame: 'tall' }, stats: { tiktok: { views: 1919, saved: 40, shares: 12, by: 'hand' } } },
+      { id: 'b', at: at(2), shape: { type: 'plan', look: 'route', frame: 'tall' }, stats: { instagram: { views: 800, saved: 8, shares: 2 } } },
+    ];
+    const w = reportWindow(7, { rows: handRows, now });
+    // TIKTOK WINS WHERE IT EXISTS. These posts are made for TikTok - the formats were
+    // read off TikTok and the drafts land in its inbox - so ranking them on Instagram
+    // because Instagram is the platform with an API would be measuring the wrong thing
+    // carefully.
+    eq('a post with TikTok numbers is ranked on them', w[0].on, 'tiktok');
+    eq('and one without falls back to Instagram', w[1].on, 'instagram');
+    ok('the hand-entered one is marked', w[0].byHand === true);
+    ok('the fetched one is not', w[1].byHand === false);
+    ok('the rate comes from the TikTok views', Math.abs(w[0].best.saveRate - 40 / 1919) < 1e-9);
+
+    const text = weeklyReport({ days: 7, rows: handRows, now });
+    ok('the report says which platform each number is from', text.includes('מטיקטוק'));
+    ok('and admits which were typed', text.includes('הוזנו ביד'), text.split(String.fromCharCode(10))[2]);
+    // With TikTok numbers present it must stop telling you TikTok has none.
+    ok('it stops printing the blocker once numbers arrive', !text.includes('אין מספרים -'));
+  }
+
   // TIKTOK, SAID IN WORDS. The scope was never requested and cannot be gained by
   // refreshing, and the endpoint is documented as returning videos while every post
   // here is a photo carousel. The report has to name the blocker rather than print an

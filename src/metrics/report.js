@@ -23,12 +23,37 @@ import { postConfig } from '../postConfig.js';
 //   its own is a decision nobody made and nobody can find the argument for, which is
 //   the opposite of what post-config.json's comments exist for.
 
-/** Rows published in the window, with their rates resolved. */
+/**
+ * Rows published in the window, with their rates resolved and ONE of them chosen to
+ * rank on.
+ *
+ * TIKTOK WINS WHERE IT EXISTS, and that is the whole point of letting numbers be typed
+ * in. These posts are made for TikTok - the formats were read off TikTok, the drafts
+ * land in TikTok's inbox - and ranking them on Instagram because Instagram is the
+ * platform with an API would be measuring the wrong thing carefully. Instagram is the
+ * fallback, not the default.
+ *
+ * `on` says which was used and `byHand` whether somebody typed it, because a ranking
+ * built partly on read-off-the-screen numbers should say so rather than looking like it
+ * came from an API.
+ */
 export function window(days = 7, { rows = null, now = Date.now() } = {}) {
   const cutoff = now - days * 86_400_000;
   return (rows || allRows())
     .filter((r) => Date.parse(r.at || '') >= cutoff)
-    .map((r) => ({ ...r, ig: rates(r.stats?.instagram), tt: rates(r.stats?.tiktok) }));
+    .map((r) => {
+      const ig = rates(r.stats?.instagram);
+      const tt = rates(r.stats?.tiktok);
+      const useTt = tt.views != null;
+      return {
+        ...r,
+        ig,
+        tt,
+        best: useTt ? tt : ig,
+        on: useTt ? 'tiktok' : ig.views != null ? 'instagram' : null,
+        byHand: (useTt ? r.stats?.tiktok?.by : r.stats?.instagram?.by) === 'hand',
+      };
+    });
 }
 
 /**
@@ -54,8 +79,8 @@ export function rankBy(entries, field, { min = 2 } = {}) {
 
   const out = [];
   for (const [key, rows] of groups) {
-    const saves = rows.map((r) => r.ig.saveRate).filter((n) => n != null);
-    const shares = rows.map((r) => r.ig.shareRate).filter((n) => n != null);
+    const saves = rows.map((r) => r.best.saveRate).filter((n) => n != null);
+    const shares = rows.map((r) => r.best.shareRate).filter((n) => n != null);
     const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
     out.push({
       key,
@@ -63,7 +88,7 @@ export function rankBy(entries, field, { min = 2 } = {}) {
       measured: saves.length,
       saveRate: mean(saves),
       shareRate: mean(shares),
-      views: mean(rows.map((r) => r.ig.views).filter((n) => n != null)),
+      views: mean(rows.map((r) => r.best.views).filter((n) => n != null)),
       // Whether there is enough here to say anything. Printed rather than used as a
       // filter, because "not enough data yet" is the most useful thing a young report
       // can say.
@@ -96,13 +121,16 @@ export function weeklyReport({ days = 7, rows = null, now = Date.now() } = {}) {
     return lines.join('\n');
   }
 
-  const measured = entries.filter((e) => e.ig.saveRate != null).length;
-  lines.push(`   ${measured} מהם עם מספרים מאינסטגרם`);
+  const measured = entries.filter((e) => e.best.saveRate != null).length;
+  const onTt = entries.filter((e) => e.on === 'tiktok').length;
+  const typed = entries.filter((e) => e.byHand).length;
+  lines.push(`   ${measured} מהם עם מספרים · ${onTt} מטיקטוק, ${measured - onTt} מאינסטגרם`);
+  if (typed) lines.push(`   ${typed} הוזנו ביד (/views)`);
 
   // TIKTOK, SAID IN WORDS RATHER THAN AS AN EMPTY TABLE. A section of dashes reads as a
   // bad week; naming the blocker is something somebody can act on.
   const tt = tiktokAvailable();
-  lines.push(`   טיקטוק: ${tt.ok ? 'מחובר' : `אין מספרים - ${tt.why}`}`);
+  if (!tt.ok && !onTt) lines.push(`   טיקטוק: אין מספרים - ${tt.why}. אפשר להזין ביד: /views`);
 
   for (const [field, titleHe] of [
     ['type', '🗂️ לפי סוג פוסט'],
@@ -125,14 +153,14 @@ export function weeklyReport({ days = 7, rows = null, now = Date.now() } = {}) {
   // of and a list of posts says what actually happened. The covers are named so they
   // can be opened and looked at, which is the only way to tell a bad format from a bad
   // photograph.
-  const scored = entries.filter((e) => e.ig.saveRate != null).sort((a, b) => b.ig.saveRate - a.ig.saveRate);
+  const scored = entries.filter((e) => e.best.saveRate != null).sort((a, b) => b.best.saveRate - a.best.saveRate);
   if (scored.length >= 2) {
     lines.push('');
     lines.push('🏅 הכי נשמרים');
-    for (const r of scored.slice(0, 3)) lines.push(`   ${pct(r.ig.saveRate)} · ${describe(r)}`);
+    for (const r of scored.slice(0, 3)) lines.push(`   ${pct(r.best.saveRate)} · ${describe(r)}`);
     lines.push('');
     lines.push('🥀 הכי פחות');
-    for (const r of scored.slice(-3).reverse()) lines.push(`   ${pct(r.ig.saveRate)} · ${describe(r)}`);
+    for (const r of scored.slice(-3).reverse()) lines.push(`   ${pct(r.best.saveRate)} · ${describe(r)}`);
   }
 
   // The suggestion, as a sentence, never as an edit.
@@ -159,5 +187,8 @@ export function weeklyReport({ days = 7, rows = null, now = Date.now() } = {}) {
 function describe(row) {
   const s = row.shape || {};
   const bits = [s.where, s.type, s.look, s.frame].filter(Boolean);
-  return `${bits.join(' · ')} · ${num(row.ig.views)} צפיות`;
+  // Where the number came from, and whether somebody typed it. A ranking built partly
+  // on read-off-the-screen figures must not look like it came from an API.
+  const from = row.on === 'tiktok' ? 'טיקטוק' : 'אינסטגרם';
+  return `${bits.join(' · ')} · ${num(row.best.views)} צפיות ב${from}${row.byHand ? ' (הוזן ביד)' : ''}`;
 }

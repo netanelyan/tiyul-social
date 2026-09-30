@@ -54,6 +54,24 @@ export function buildVerdictPost(city, { hook, dest, questionHe = null } = {}) {
 
   const quote = (text, where) => line(text, { where, quote: verdict.source });
 
+  // THE COVER MUST NOT ANSWER ITS OWN QUESTION, which is what the published one did.
+  //
+  // "סנטוריני: שווה או לא?" over "הדירוג שלנו: 4.5" is a hook and its answer on the
+  // same slide. The viewer has the verdict before the first swipe, so there is nothing
+  // to swipe for - and the two lines actively fight: the hook implies caution and the
+  // score implies "obviously yes". The live post had the same fault under a different
+  // hook, "לפני שאתם מזמינים לסנטוריני, שתי דקות" over 4.5: a warning defused by a
+  // score.
+  //
+  // So the second line is now the PROMISE OF CONTENTS - how many drawbacks are coming -
+  // and the score moves into the badge, where it is a credential rather than a verdict.
+  // A number in a badge says "somebody graded this"; the same number in a sentence
+  // under a question says "and here is the grade".
+  //
+  // The one exception is the `score` hook shape, which is BUILT on the number: "נתנו
+  // לסנטוריני 4.5. וזה למה" uses it as the setup, and the thing withheld is the why.
+  // There the badge would print it twice.
+  const usesScore = hook.id === 'score';
   const cover = {
     look: 'label',
     cover: true,
@@ -63,7 +81,9 @@ export function buildVerdictPost(city, { hook, dest, questionHe = null } = {}) {
     titleHe: line(fill(hook.he, { dest: destHe, score: verdict.score ?? '' }).replace(/\s+/g, ' ').trim(), {
       where: 'cover',
     }),
-    noteHe: verdict.score ? line(`הדירוג שלנו: ${verdict.score}`, { where: 'cover.note' }) : null,
+    noteHe: line(coverPromise(cons.length, practical), { where: 'cover.note' }),
+    badgeHe: usesScore || !verdict.score ? null : String(verdict.score),
+    badgeLabelHe: usesScore || !verdict.score ? null : 'הדירוג שלנו',
     band: 'mid',
     image: best[0]?.image || null,
   };
@@ -147,3 +167,23 @@ export function buildVerdictPost(city, { hook, dest, questionHe = null } = {}) {
   };
 }
 
+
+/**
+ * What the cover promises, in place of the answer it used to give away.
+ *
+ * COUNTED, because a count is a promise a viewer can hold you to and "מה טוב ומה פחות"
+ * is not. "4 דברים שכדאי לדעת לפני" tells somebody exactly how long this will take and
+ * exactly what they get, which is the completion loop the 21-slide reference post runs
+ * on, applied to a post a quarter the length.
+ *
+ * The flight is named when it is a negative, because on a verdict post that IS the
+ * headline drawback and it is the one people are deciding on - Santorini's page opens
+ * its practical note with "אין טיסות ישירות מנתב״ג", and a cover that says so is a
+ * cover somebody stops for.
+ */
+export function coverPromise(consCount, practical) {
+  const flight = firstClause(practical?.flightsHe, { max: 60 });
+  if (flight && /^\s*(?:אין|לא\s)/.test(flight)) return `מתחילים מזה: ${flight}`;
+  const n = Math.max(1, consCount);
+  return n === 1 ? 'דבר אחד שכדאי לדעת לפני' : `${n} דברים שכדאי לדעת לפני`;
+}

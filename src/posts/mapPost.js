@@ -84,9 +84,11 @@ export function buildMapPost(city, { hook, dest } = {}) {
     // folded into one number. A cover promising 32 places over a map showing 26 is a
     // broken promise even though every place is real.
     noteHe: line(
-      outliers ? `${core.length} מקומות במרכז · ועוד ${outliers} מסביב` : `${points.length} מקומות · ${days.length} ימים`,
+      outliers ? `${core.length} במרכז, ${outliers} מסביב · הכל בהליכה` : `${days.length} ימים · הכל בהליכה`,
       { where: 'cover.note' }
     ),
+    badgeHe: String(points.length),
+    badgeLabelHe: 'מקומות',
     band: 'mid',
     image: (city.places || []).find((p) => p.image?.src)?.image || null,
   };

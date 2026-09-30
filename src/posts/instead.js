@@ -59,7 +59,9 @@ export function buildInsteadPost(cities, { hook, defaultHe, regionHe = null, que
       }),
       { where: 'cover' }
     ),
-    noteHe: line(`${alts.length} יעדים · כולם עם מסלול באתר`, { where: 'cover.note' }),
+    noteHe: line(`כולם עם מסלול מלא, כולם בטיסה דומה`, { where: 'cover.note' }),
+    badgeHe: String(alts.length),
+    badgeLabelHe: 'במקום',
     band: 'mid',
     // The cover takes the FIRST alternative's photograph rather than a picture of the
     // default. A post arguing against flying only to Rhodes must not open on Rhodes:
