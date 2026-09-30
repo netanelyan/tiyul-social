@@ -6652,6 +6652,38 @@ group('the map says what it can honestly say');
 }
 
 /* -------------------------------------------------------------------------- */
+group('every command is in /help');
+
+{
+  // A SHAPE YOU CANNOT FIND IN /help IS A SHAPE NOBODY CAN ASK FOR.
+  //
+  // That is a commit title in this repository, and it happened again: /make, /views and
+  // /report were registered, deployed and working, and none of them was in the help
+  // text. This bot sets no Telegram command menu, so /help is the ONLY place a command
+  // is discoverable - a command missing from it exists for whoever wrote it and for
+  // nobody else.
+  //
+  // Read off the source rather than off a list somebody maintains, because a list
+  // somebody maintains is the thing that just failed.
+  const src = readFileSync(new URL('../bot.js', import.meta.url), 'utf8');
+  const registered = [...src.matchAll(/bot\.command\('([a-z_]+)'/g)].map((m) => m[1]);
+  ok('the bot registers commands', registered.length > 15, `${registered.length} found`);
+
+  const helpAt = src.indexOf("bot.command('help'");
+  const help = src.slice(helpAt, helpAt + 6000);
+
+  // `help` itself never documents itself, which is conventional and fine.
+  const missing = registered.filter((c) => c !== 'help' && !help.includes(`/${c}`));
+  ok('every registered command appears in /help', missing.length === 0, `missing: ${missing.join(', ')}`);
+
+  // And the reverse, so a command that is renamed or deleted does not leave a line in
+  // the help promising something that no longer answers.
+  const documented = [...help.matchAll(/'\/([a-z_]+)/g)].map((m) => m[1]);
+  const phantom = [...new Set(documented)].filter((c) => !registered.includes(c));
+  ok('and /help promises nothing that is not registered', phantom.length === 0, `phantom: ${phantom.join(', ')}`);
+}
+
+/* -------------------------------------------------------------------------- */
 group('measuring - saves and shares, never likes');
 
 {
