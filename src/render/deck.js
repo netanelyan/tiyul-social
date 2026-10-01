@@ -147,7 +147,24 @@ export async function renderDeckSize(deck, { size = 'tiktok', outDir = cardOutpu
   // in that file was the only part of the build that knew. Now the list comes
   // from closingSlidesFor, which is also what publishedSlideCount counts, so the
   // renderer and the count cannot say different things again.
-  const closing = closingSlidesFor(deck, { size, destHe: deck.where, replies: postConfig().igReplies });
+  // A SITE SLIDE WITH NO SCREENSHOT FALLS BACK HERE, rather than throwing at the caller.
+  //
+  // renderSiteSlideHtml refuses to draw an empty phone, which is right - an
+  // advertisement for a page that appears to be broken is worse than no slide. But it
+  // enforced that by throwing, which made every caller responsible for having run the
+  // capture first, and that responsibility was invisible until somebody did not: a deck
+  // now carries `siteSlug`, and `npm run deck-once` calls this function directly rather
+  // than through renderDeck, so a perfectly good five-slide Lisbon deck died at the
+  // render with an error about a screenshot nobody had asked it to take.
+  //
+  // So the fallback lives where the decision is made. No screenshot means this deck does
+  // not have a site slide, which is exactly what withSiteShot would have concluded, and
+  // closingSlidesFor then returns the follow ask on its own.
+  const closable = { ...deck, siteSlug: siteShot ? deck.siteSlug : null };
+  if (deck.siteSlug && !siteShot) {
+    console.log('deck: no screenshot was supplied, closing on the follow ask instead');
+  }
+  const closing = closingSlidesFor(closable, { size, destHe: deck.where, replies: postConfig().igReplies });
   const items = [cover, ...deck.slides, ...closing];
 
   // The follow slide is drawn MINIMAL whatever the deck is, because the info
