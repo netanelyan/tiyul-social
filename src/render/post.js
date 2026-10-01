@@ -4,6 +4,7 @@ import { renderSiteSlideHtml } from './siteSlide.js';
 import { closingSlidesFor } from '../deck/follow.js';
 import { postConfig } from '../postConfig.js';
 import { withSiteShot } from '../plan/sitePage.js';
+import { measureVeils } from './photo.js';
 
 // A post of the five new types, to files on disk.
 //
@@ -123,6 +124,23 @@ export async function renderPostSize(
   );
   const items = [...fitTo(post.slides, size, post.type), ...drawn];
 
+  // THE WASH OVER EACH PHOTOGRAPH, MEASURED IN ONE PASS BEFORE ANY SLIDE IS DRAWN.
+  //
+  // Measured first and drawn second, which is the order render/deck.js uses and for the
+  // same reason: how dark the gradient behind the type has to be is a property of the
+  // photograph, and the template cannot know it from the HTML. A constant has to be
+  // sized for the worst picture, so it is either too dark on a good one or too light on
+  // a sunlit white wall - which was the complaint.
+  //
+  // Only the two looks that put type straight onto a photograph need it. A checklist
+  // has its own ground, a route card blurs its own, and a pin map has no photograph.
+  // One decode per slide is the cost, and it is the only image work these posts do -
+  // the deck pays this plus a placement search plus a vision call per slide.
+  const measurable = items.map((s, i) => (wanted(i) && ['label', 'collage'].includes(s.look) ? s.image?.src || null : null));
+  const veils = measurable.some(Boolean)
+    ? await measureVeils(measurable, { band: [0.24, 0.86] }).catch(() => [])
+    : [];
+
   const out = [];
   for (const [i, slide] of items.entries()) {
     if (!wanted(i)) continue;
@@ -138,7 +156,7 @@ export async function renderPostSize(
           // the platform, which the platform will letterbox either way.
           { size }
         )
-      : renderPostSlideHtml(slide, { size, frame });
+      : await renderPostSlideHtml({ ...slide, veil: veils[i] ?? null }, { size, frame });
 
     const rendered = await renderToJpeg(html, {
       stem: postSlideStem(post.id, size, index),

@@ -1,4 +1,4 @@
-import { listPlaces, placeLine, durationHe, kosherLine } from './source.js';
+import { listPlaces, placeLine, durationHe, kosherLine, ratingBadge } from './source.js';
 import { line, fill } from './voice.js';
 import { postConfig } from '../postConfig.js';
 
@@ -60,14 +60,33 @@ export function buildListPost(city, { hook, dest, want = null } = {}) {
     // כניסה חופשית" is the most useful thing that can be said about a list of twenty
     // places before you have read any of them.
     noteHe: line(coverNote(pool), { where: 'cover.note' }),
-    // THE COUNT AS THE BADGE. On this type the number IS the format - a viewer who
-    // reads "20" knows exactly what they are getting and how long it takes - so it is
-    // set as the one thing the eye lands on rather than buried inside the sentence
-    // that also contains it.
-    badgeHe: String(n),
-    badgeLabelHe: 'מקומות',
+    // The rating rather than the count: the hook already counts ("20 דברים ב..."), so a
+    // badge repeating it spends the loudest element on the second-loudest word.
+    ...(ratingBadge(city) || {}),
     band: 'mid',
   };
+
+  // GROUPED, BECAUSE TWENTY UNDIFFERENTIATED PLACES IS A LIST NOBODY FINISHES.
+  //
+  // The first version ranked by mustSee and rating and numbered straight through, so a
+  // viewer got a castle, a restaurant, a viewpoint, a museum and a market in no order
+  // they could predict - which gives them nothing to orient by and no reason to expect
+  // the next slide to be relevant to them. Somebody reading for where to EAT has to sit
+  // through fourteen churches.
+  //
+  // So the list runs in blocks, and a divider slide names each one. That costs three or
+  // four slides out of twenty-one and buys two things: a viewer can tell where they are,
+  // and a viewer who only wants one block knows it is coming rather than leaving.
+  //
+  // THE ORDER OF THE BLOCKS IS THE EDITORIAL DECISION. Sights first because that is what
+  // the hook promised, food second because it is what this audience most often comes
+  // back for, and the rest after - and within a block the page's own ranking survives.
+  const BLOCKS = [
+    { id: 'sights', he: 'האתרים', emoji: '🏰', cats: ['historic', 'attraction', 'museum', 'viewpoint'] },
+    { id: 'food', he: 'אוכל', emoji: '🍽️', cats: ['food', 'cafe', 'kosher-food', 'kosher-market', 'market'] },
+    { id: 'outdoors', he: 'טבע ובחוץ', emoji: '🌿', cats: ['nature'] },
+    { id: 'shops', he: 'שופינג', emoji: '🛍️', cats: ['shopping'] },
+  ];
 
   // COUNTING DOWN, NOT UP, and this is the one decision here worth arguing about.
   //
@@ -77,15 +96,49 @@ export function buildListPost(city, { hook, dest, want = null } = {}) {
   // viewer who stops at slide four has seen the four things we rated WORST, and this
   // account's problem is not retention on long posts, it is that nobody watches the
   // first two slides. Best first.
-  const items = pool.map((p, i) => ({
-    look: 'label',
-    number: `${i + 1}.`,
-    titleHe: line(p.name, { where: `item${i + 1}` }),
-    noteHe: itemLine(p),
-    image: p.image,
-    band: 'lower',
-    placeId: p.id,
-  }));
+  // Ordered by block, numbering continuous across them so the count the cover promises
+  // is the count the post delivers.
+  const grouped = [];
+  const used = new Set();
+  for (const block of BLOCKS) {
+    const mine = pool.filter((p) => !used.has(p.id) && block.cats.includes(String(p.category || '')));
+    if (!mine.length) continue;
+    for (const p of mine) used.add(p.id);
+    grouped.push({ block, places: mine });
+  }
+  // Anything the blocks do not name keeps its place rather than being dropped - the
+  // site's categories are not a closed set and a post that silently loses a place is
+  // worse than one with a slightly loose last block.
+  const rest = pool.filter((p) => !used.has(p.id));
+  if (rest.length) grouped.push({ block: { id: 'more', he: 'ועוד', emoji: '📍', cats: [] }, places: rest });
+
+  const items = [];
+  let k = 0;
+  for (const { block, places } of grouped) {
+    // The divider. No photograph of its own: it takes the first place of its block, so
+    // the slide is a picture of what is coming rather than a title card.
+    items.push({
+      look: 'label',
+      titleHe: line(block.he, { where: `block.${block.id}` }),
+      noteHe: line(places.length === 1 ? 'מקום אחד' : `${places.length} מקומות`, { where: `block.${block.id}.n` }),
+      emojis: [block.emoji],
+      image: places[0].image,
+      band: 'mid',
+      divider: true,
+    });
+    for (const p of places) {
+      k++;
+      items.push({
+        look: 'label',
+        number: `${k}.`,
+        titleHe: line(p.name, { where: `item${k}` }),
+        noteHe: itemLine(p),
+        image: p.image,
+        band: 'lower',
+        placeId: p.id,
+      });
+    }
+  }
 
   return {
     slides: [cover, ...items],

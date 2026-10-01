@@ -32,11 +32,9 @@ export function postConfig() {
   const hashtags = raw.hashtags || {};
   const overlay = raw.overlay || {};
 
-  // The Israeli angle pool, read before anything that needs it. `shoot.angles`
-  // is where this list used to live and is still folded in, so an untouched
-  // post-config.json keeps working; the shoot block is then handed this same
-  // list back, so the two can never disagree.
-  const angles = [...new Set([...list(raw.angles), ...list(raw.shoot?.angles)])];
+  // The Israeli angle pool. It used to live under `shoot.angles` and be folded in
+  // from there; the shoot format is gone and so is that fallback.
+  const angles = list(raw.angles);
   const destinations = raw.destinations || {};
 
   const lines = (caption.lines || []).map((s) => String(s).trim()).filter(Boolean);
@@ -185,24 +183,11 @@ export function postConfig() {
       defaultWeight: num(destinations.defaultWeight, 1),
       weights: { ...(destinations.weights || {}) },
     },
-    // THE ISRAELI ANGLE, top level now, because more than one kind draws on it.
-    //
-    // It lived in `shoot.angles` and reached exactly one kind of post: the
-    // shoot, which is the one thing here the bot cannot make. Every format that
-    // actually runs unattended chose its subject with no angle at all. See
-    // src/angles.js for what an angle may and may not do once a pipeline has
-    // one, which is the part that matters.
-    //
-    // `shoot.angles` is still read and folded in, so an untouched
-    // post-config.json keeps working and a deployment migrates by moving the
-    // list up rather than by editing two places.
+    // THE ISRAELI ANGLE, top level, because more than one kind draws on it. See
+    // src/angles.js for what an angle may and may not do once a pipeline has one,
+    // which is the part that matters.
     angles,
     clips: clips(raw.clips || {}),
-    // The shoot is handed the SHARED pool rather than its own. Its `angles`
-    // key is the same list the deck now draws from, so anything still reading
-    // `postConfig().shoot.angles` keeps working and cannot drift from what
-    // `postConfig().angles` says.
-    shoot: shoot(raw.shoot || {}, angles),
     plans: plans(raw.plans || {}),
     // The five post types, their looks, their frames and their hook shapes. The
     // block that decides what this account actually posts, which is why the
@@ -555,71 +540,6 @@ function clips(raw) {
   };
 }
 
-/**
- * The filming queue's settings.
- *
- * Validated less strictly than clips, and deliberately: nothing here is ever
- * published. A malformed clip config ships a broken video; a malformed shoot
- * config ships a worse shot list to one person who can read it and tell.
- *
- * The one fatal case is an empty format list, because a rotation with nothing
- * to rotate through produces a shot list with no shape — which is a message
- * saying "film something", and the whole point of this queue is that it does
- * not say that.
- */
-function shoot(raw, sharedAngles = []) {
-  const formats = (Array.isArray(raw.formats) ? raw.formats : [])
-    .map((f) => ({
-      id: String(f.id || '').trim(),
-      shape: String(f.shape || '').trim().toUpperCase() || null,
-      he: String(f.he || '').trim(),
-      desc: String(f.desc || '').trim(),
-      weight: Math.max(1, Math.round(num(f.weight, 1))),
-      // The format that IS the product demo. Counted by the rotation so the
-      // brief's "at least half" is a check rather than a hope — see
-      // productShare below and src/shoot/rotation.js.
-      needsProduct: f.needsProduct === true,
-      allowsPrice: f.allowsPrice === true,
-      hookExamples: list(f.hookExamples),
-      // What to actually film, in order. The field that makes this a task
-      // rather than a brief: "a face to camera saying the hook" is something
-      // you can do in the next ten minutes, and "make a mistakes video" is not.
-      shots: list(f.shots),
-    }))
-    .filter((f) => f.id && f.desc);
-
-  if (!formats.length) {
-    throw new Error('post-config.json: shoot.formats is empty - a shot list with no shape is a message saying "film something"');
-  }
-
-  const series = raw.series || {};
-  return {
-    perDay: Math.max(0, Math.round(num(raw.perDay, 1))),
-    backlogMax: Math.max(1, Math.round(num(raw.backlogMax, 3))),
-    lengthSeconds: pair(raw.lengthSeconds, [15, 35]),
-    cta: String(raw.cta || '').trim(),
-    // The brief's rule 3 is "at least half", which is a floor. A weight is a
-    // tendency and a run of five non-product shoots sits well inside normal for
-    // any weighting, so this is enforced over a window instead.
-    productShare: Math.max(0, Math.min(1, num(raw.productShare, 0.5))),
-    productWindow: Math.max(1, Math.round(num(raw.productWindow, 6))),
-    // The shared pool, not a private one. This key used to BE the pool; it is
-    // now a view onto postConfig().angles so a reader here and a reader there
-    // cannot drift apart. See the note at the top-level `angles`.
-    angles: sharedAngles,
-    series: {
-      every: Math.max(0, Math.round(num(series.every, 0))),
-      length: Math.max(2, Math.round(num(series.length, 3))),
-      labelHe: String(series.labelHe || 'חלק {n} מתוך {of}'),
-      // תעקבו, not עקבו, here and in every other fallback in this file. The
-      // bare imperative is what a sign says; the future form is what you say to
-      // somebody you are talking to, and a default that reverts to the colder
-      // one is a voice that changes the day post-config.json loses a key.
-      nextHe: String(series.nextHe || 'תעקבו לחלק {n} מחר'),
-    },
-    formats,
-  };
-}
 
 /**
  * The AI-itinerary slideshow's settings.

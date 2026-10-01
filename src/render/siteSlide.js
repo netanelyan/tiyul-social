@@ -82,17 +82,23 @@ body { position: relative; background: #11131a; font-family: 'Heebo', sans-serif
       filter: blur(38px) saturate(1.05) brightness(0.42); transform: scale(1.18); }
 .tint { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(10,12,18,.55), rgba(10,12,18,.78)); }
 
+/* CENTRED AS A BLOCK, not pinned to a top offset with the CTA pushed to the floor.
+   The first version set a top padding and then an auto top margin on the button, so the
+   three elements were spread to the full height of the frame: title near the top, phone
+   in the middle, button at the very bottom, with two different gaps between them. On a
+   9:16 slide that reads as three separate things rather than as one closing card. */
 .wrap { position: absolute; inset: 0; display: flex; flex-direction: column;
-        align-items: center; padding: ${Math.round(geo.h * f.top)}px 70px 0; }
+        align-items: center; justify-content: center; gap: ${Math.round(geo.h * 0.028)}px;
+        padding: ${Math.round(geo.h * 0.1)}px 70px ${Math.round(geo.h * 0.1)}px; }
 
 .title { color: #fff; font-weight: 700; font-size: ${f.titlePx}px; line-height: 1.2;
          text-align: center; text-shadow: 0 2px 18px rgba(0,0,0,.45); }
 .note { color: rgba(255,255,255,.82); font-family: 'Assistant', sans-serif; font-weight: 500;
-        font-size: ${f.notePx}px; margin-top: 14px; text-align: center; }
+        font-size: ${f.notePx}px; text-align: center; }
 
 /* The phone. A border, a radius and one shadow - enough to read as a device,
    not so much that it becomes an illustration of a device. */
-.phone { margin-top: ${Math.round(geo.h * 0.035)}px; height: ${Math.round(geo.h * f.phoneH)}px;
+.phone { height: ${Math.round(geo.h * f.phoneH)}px;
          aspect-ratio: 390 / 844; border-radius: 42px; padding: 10px; background: #0b0d12;
          box-shadow: 0 30px 70px rgba(0,0,0,.55), 0 0 0 2px rgba(255,255,255,.10);
          flex: 0 0 auto; }
@@ -109,7 +115,7 @@ body { position: relative; background: #11131a; font-family: 'Heebo', sans-serif
    of the line, where Hebrew has its margin. */
 .screen img { width: ${Math.round(f.zoom * 100)}%; margin-inline-start: 0; display: block; }
 
-.cta { margin-top: auto; margin-bottom: ${Math.round(geo.h * 0.055)}px; color: #fff;
+.cta { color: #fff;
        font-weight: 600; font-size: ${f.ctaPx}px; text-align: center;
        background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.22);
        border-radius: 999px; padding: 18px 38px; backdrop-filter: blur(6px); }

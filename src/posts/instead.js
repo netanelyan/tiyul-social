@@ -1,4 +1,4 @@
-import { verdictOf, practicalOf, firstClause, seasonLine, listPlaces } from './source.js';
+import { verdictOf, practicalOf, firstClause, seasonLine, listPlaces, ratingBadge } from './source.js';
 import { line, fill } from './voice.js';
 
 // TYPE C: STOP ONLY GOING TO X. "תפסיקו לטוס רק לרודוס כשיש את האיים האלה"
@@ -52,16 +52,20 @@ export function buildInsteadPost(cities, { hook, defaultHe, regionHe = null, que
       fill(hook.he, {
         default: defaultHe,
         // `{alt}` is what the alternatives ARE rather than a list of them: five names
-        // on a cover is unreadable at thumbnail size, and the region is the thing
-        // being offered. Falls back to a count, which is a weaker cover and a true one.
+        // on a cover is unreadable at thumbnail size, and the region is the thing being
+        // offered. With "כולה" after it the hook reads "...when you have the whole of
+        // Spain", which is the bigger claim and the one worth arguing with.
         alt: regionHe || `${alts.length} היעדים האלה`,
         n: alts.length,
       }),
       { where: 'cover' }
     ),
-    noteHe: line(`כולם עם מסלול מלא, כולם בטיסה דומה`, { where: 'cover.note' }),
-    badgeHe: String(alts.length),
-    badgeLabelHe: 'במקום',
+    noteHe: line(`${alts.length} יעדים, כולם עם מסלול מלא באתר`, { where: 'cover.note' }),
+    // THE RATING OF THE FIRST ALTERNATIVE, not a count. The badge used to read "4
+    // במקום", which is a phrase nobody parses - it looks like a price or a position.
+    // The rating of the destination this post is actually recommending is a number that
+    // means something on its own.
+    ...(ratingBadge(alts[0]) || {}),
     band: 'mid',
     // The cover takes the FIRST alternative's photograph rather than a picture of the
     // default. A post arguing against flying only to Rhodes must not open on Rhodes:

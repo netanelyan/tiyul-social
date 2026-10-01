@@ -1,4 +1,4 @@
-import { verdictOf, practicalOf, listPlaces, placeLine, firstClause, seasonLine } from './source.js';
+import { verdictOf, practicalOf, listPlaces, placeLine, firstClause, seasonLine, ratingBadge } from './source.js';
 import { line, fill } from './voice.js';
 
 // TYPE D: THE HONEST VERDICT. "{dest}: שווה או לא?"
@@ -82,8 +82,9 @@ export function buildVerdictPost(city, { hook, dest, questionHe = null } = {}) {
       where: 'cover',
     }),
     noteHe: line(coverPromise(cons.length, practical), { where: 'cover.note' }),
-    badgeHe: usesScore || !verdict.score ? null : String(verdict.score),
-    badgeLabelHe: usesScore || !verdict.score ? null : 'הדירוג שלנו',
+    // "4.3/5" with a star rather than a bare number beside a label. The bare version
+    // read as a statistic; a star and a denominator read as a verdict somebody gave.
+    ...(usesScore ? {} : ratingBadge(city) || {}),
     band: 'mid',
     image: best[0]?.image || null,
   };
@@ -118,13 +119,28 @@ export function buildVerdictPost(city, { hook, dest, questionHe = null } = {}) {
   // the judgement left to the reader: the flight length, whether there is a real
   // kosher infrastructure, when the season is. "For families" would be the judgement
   // and it is not made, because nothing on the page supports it.
+  // MORE THAN THE KOSHER LINE. The first version of this slide was, on most
+  // destinations, one sentence about kosher food and one about flights - which reads as
+  // though the only reason to consider the place is the kashrut, and that is both
+  // untrue and a much smaller post than the page supports. Batumi is worth going to for
+  // the Black Sea, the old town and the prices; the kosher note is one of five facts,
+  // not the headline.
+  //
+  // So every practical paragraph the page publishes gets a line, in the order they
+  // decide a trip: how you get there, how you move once there, when to go, what it
+  // costs, and the kashrut. All verbatim.
   const forWhom = [];
-  const flight = firstClause(practical.flightsHe);
-  if (flight) forWhom.push({ text: line(flight, { where: 'who.flight', quote: practical.flightsHe }) });
-  const kosher = firstClause(practical.kosherHe);
-  if (kosher) forWhom.push({ text: line(kosher, { where: 'who.kosher', quote: practical.kosherHe }) });
-  const season = seasonLine(practical);
-  if (season) forWhom.push({ text: line(season, { where: 'who.season' }) });
+  const add = (text, where, source) => {
+    if (text && forWhom.length < 5) forWhom.push({ text: line(text, { where, quote: source }) });
+  };
+  add(firstClause(practical.flightsHe), 'who.flight', practical.flightsHe);
+  add(firstClause(practical.aroundHe), 'who.around', practical.aroundHe);
+  add(seasonLine(practical), 'who.season', null);
+  // The daily cost, where the page publishes one. A real number in the destination's own
+  // currency, which is the question under every "is it worth it".
+  const cost = costLine(city);
+  add(cost, 'who.cost', null);
+  add(firstClause(practical.kosherHe), 'who.kosher', practical.kosherHe);
   if (forWhom.length) {
     slides.push({
       look: 'sheet',
@@ -186,4 +202,20 @@ export function coverPromise(consCount, practical) {
   if (flight && /^\s*(?:אין|לא\s)/.test(flight)) return `מתחילים מזה: ${flight}`;
   const n = Math.max(1, consCount);
   return n === 1 ? 'דבר אחד שכדאי לדעת לפני' : `${n} דברים שכדאי לדעת לפני`;
+}
+
+/**
+ * What a day there costs, from the page's own daily figure.
+ *
+ * IN THE LOCAL CURRENCY, AND SAYING SO. The site publishes `dailyCost` with a currency
+ * and a source; converting it to shekels would need an exchange rate nobody published,
+ * which is the invented number src/plan/site.js exists to refuse. So it prints what the
+ * page prints and names the currency, and the reader does the sum they were going to do
+ * anyway.
+ */
+export function costLine(city) {
+  const c = city?.dailyCost || city?.dailyBudget;
+  const mid = Number(c?.mid ?? c?.midRange ?? c?.budget);
+  if (!c?.currency || !Number.isFinite(mid) || mid <= 0) return null;
+  return `יום טיפוסי: כ-${Math.round(mid).toLocaleString('en-US')} ${c.currency} לאדם`;
 }

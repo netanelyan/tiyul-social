@@ -449,19 +449,10 @@ export function deckApprovalMessage(cand) {
     for (const n of cand.notes) lines.push(`   • ${n}`);
   }
 
-  lines.push('');
-  lines.push('🔗 מקורות:');
-  for (const s of deck.slides) {
-    // A slide with no page prints where its facts DID come from, rather than
-    // the word "null". Mountains and waterfalls mostly have no official site —
-    // that is why those kinds are allowed to build from Wikidata at all — so
-    // this is the common case for them, not an error. Printing the raw value
-    // made a normal deck look broken and told you nothing about provenance.
-    // A free-form slide has no source because it carries no claim — saying
-    // "Wikidata" there would name a source it never consulted.
-    const from = s.sourceUrl || (deck.freeform ? 'ללא מקור (מצגת חופשית)' : `ויקינתונים${s.qid ? ` (${s.qid})` : ''}`);
-    lines.push(`   ${s.nameHe}: ${from}`);
-  }
+  // THE SOURCE LIST IS GONE FROM THE CARD. It printed one URL per slide, so a
+  // six-slide deck spent six lines on addresses nobody reads before tapping - and
+  // nothing is lost: the 📎 button opens the full evidence report, every quote
+  // against the page it came from. A card is for deciding, the report for checking.
 
   return lines.join('\n');
 }

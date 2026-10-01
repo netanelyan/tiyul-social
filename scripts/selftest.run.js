@@ -2368,14 +2368,18 @@ const deckFixture = {
 const deckMsg = approvalMessage(deckFixture);
 ok('a deck gets the deck approval message', deckMsg.includes('מצגת'));
 ok('which lists every slide', deckMsg.includes('המוזיאון הלאומי') && deckMsg.includes('הגלריה הלאומית'));
-ok('and the domain each fact was quoted from', deckMsg.includes('nm.cz') && deckMsg.includes('ngprague.cz'));
+// THE CARD NO LONGER LISTS SOURCES, and that is the change rather than a regression.
+// One URL per slide meant a six-slide deck spent six lines of the approval card on
+// addresses nobody reads before tapping. Nothing is lost: the evidence report below
+// carries every one, which is where somebody checking actually goes.
+ok('the card does NOT list a URL per slide', !deckMsg.includes('nm.cz'), 'the source list came back');
 // A deck that came up short and a deck that meant to be short look identical
 // afterwards, so the shortfall is stated at the moment it can still be rejected.
 ok('says when it came up short of what was asked', deckMsg.includes('ביקשנו 5'));
 ok('reports how thin the region was', deckMsg.includes('75') && deckMsg.includes('52'));
 ok('names what was dropped and why', deckMsg.includes('Kafka Museum') && deckMsg.includes('403'));
 ok('carries the TikTok privacy level, same as a card', deckMsg.includes(privacyHe('SELF_ONLY')));
-ok('every source URL is in the message', deckMsg.includes('https://www.nm.cz/en/visit'));
+ok('and the evidence report carries them instead', evidenceReport(deckFixture).includes('https://www.nm.cz/en/visit'));
 
 const deckEv = evidenceReport(deckFixture);
 ok('evidence is grouped per slide, not flattened', deckEv.includes('המוזיאון הלאומי') && deckEv.includes('Admission 250 CZK'));
@@ -2582,10 +2586,10 @@ ok('and every step is smaller than the one above it',
     coverPx('minimal', 'mid') > coverPx('minimal', 'long') &&
     coverPx('minimal', 'long') > coverPx('minimal', 'xlong'));
 // A URL burned into a photograph is the clearest sign a post was made by a
-// company. The sourcing did not weaken: every slide's URL is in the approval
-// message, which is where the decision is actually made.
+// company. The sourcing did not weaken: every slide's URL is in the evidence report,
+// which is where somebody checking a claim actually goes.
 ok('no URL is burned into a fact slide', !slideHtml.includes('nm.cz'));
-ok('but the approval message still carries every one', deckMsg.includes('https://www.nm.cz/en/visit'));
+ok('but the evidence report still carries every one', evidenceReport(deckFixture).includes('https://www.nm.cz/en/visit'));
 // TikTok draws its own slide counter and genuine posts carry no second one, so
 // ours was the tell that this had been made elsewhere and uploaded.
 ok('no counter of our own', !slideHtml.includes('class="counter"'));
@@ -3370,7 +3374,6 @@ for (const [mod, expected] of [
   ['../src/video/tracks.js', ['tracks', 'pickTrack', 'trackOffset', 'audioConfigured', 'audioDir', 'forgetTracks']],
   ['../src/notify.js', ['send', 'published', 'descriptionToPaste', 'publishHeld', 'publishRetrying']],
   ['../src/publish/targets.js', ['targetsForKind', 'allowedForKind', 'manualForKind', 'liveTargets', 'publishTargets', 'targetsHe']],
-  ['../src/shoot/rotation.js', ['chooseFormat', 'nextSeries', 'seriesLabels', 'pickAngle']],
   ['../src/deck/attempt.js', ['buildWithFallback', 'describeAttempt']],
   ['../src/deck/request.js', ['resolveRequest', 'parseLocally']],
   ['../src/deck/hebrew.js', ['hebrewNames', 'isHebrew']],
@@ -4222,7 +4225,7 @@ group('clip candidate - the fields the publish path reads');
 }
 
 /* -------------------------------------------------------------------------- */
-group('the Israeli angle - moved out of shoot, and what it may not become');
+group('the Israeli angle, and what it may not become');
 
 {
   const { angles, pickAngle, anglePrompt } = await import('../src/angles.js');
@@ -4232,8 +4235,6 @@ group('the Israeli angle - moved out of shoot, and what it may not become');
   // the bot cannot make. Both keys now read the same list, so a reader here and
   // a reader there cannot drift apart.
   ok('there is a pool', angles().length >= 6);
-  eq('the top-level key and shoot.angles are the same list', cfg.angles, cfg.shoot.angles);
-  ok('and the shoot did not lose its own', cfg.shoot.angles.length > 0);
 
   // Recently used angles are excluded outright rather than weighted down: the
   // pool is a dozen long and the window is five, so exclusion always leaves
@@ -5378,9 +5379,7 @@ group('the em dash, banned everywhere a reader can see one');
   // The clip writer and the shot list run the same repair on the way out, so
   // the rule does not depend on which of the three wrote the line.
   const hooks = readFileSync(new URL('../src/video/hooks.js', import.meta.url), 'utf8');
-  const shoot = readFileSync(new URL('../src/shoot/plan.js', import.meta.url), 'utf8');
   ok('the clip writer strips them', /stripDashes\(l\.text\)/.test(hooks));
-  ok('the shot list strips them', /stripDashes\(s\)/.test(shoot));
 }
 
 /* -------------------------------------------------------------------------- */
@@ -5553,11 +5552,13 @@ group('the itinerary slideshow - what it says, and what it promises');
   const full = deckForSize(decks, 'tiktok');
   const short = deckForSize(decks, 'instagram');
 
-  // One stop per slide on TikTok, one DAY per slide on Instagram. Instagram
-  // takes ten images and a four-day plan is nineteen slides, so the two sets
-  // are two lengths of the same plan rather than two crops of one set.
-  eq('tiktok gets a slide per stop', full.slides.length, allStops(plan).length + (give ? 2 : 1));
-  eq('instagram gets a slide per day', short.slides.length, plan.days.length + (give ? 2 : 1));
+  // A SLIDE PER DAY ON BOTH NOW. TikTok used to get one per STOP - nineteen slides for
+  // a four-day trip, each a photograph with a name and a line on it, each skippable in
+  // half a second. That is the shape the five post types were built to replace, and
+  // there was never a reason for it: TikTok takes 35 images, so the limit was not the
+  // constraint; the stop list simply fell into it.
+  eq('tiktok gets a slide per day', full.slides.length, plan.days.length + (give ? 2 : 1));
+  eq('and so does instagram', short.slides.length, plan.days.length + (give ? 2 : 1));
   ok('and the Instagram set fits a carousel', short.slides.length + 1 <= 10);
   ok('both sets are the minimal deck style', full.style === 'minimal' && short.style === 'minimal');
 
@@ -5566,22 +5567,23 @@ group('the itinerary slideshow - what it says, and what it promises');
   // looks like the accent was never configured.
   ok('the cover emphasis is inside the hook', full.titleHe.includes(full.idea.emphasisHe));
 
-  // Every fact of a stop reaches its slide. The name line carries the time, the
-  // note line carries the price — see the note on stopSlide — and losing either
-  // is an itinerary that stopped being one.
+  // A day slide names its stops in order and totals them, which is what makes it a
+  // summary of the same plan rather than a shorter, different plan.
   const first = full.slides[0];
-  ok('the time is on the name line', first.nameHe.includes('09:00'));
-  ok('and the place', first.nameHe.includes('קולוסיאום'));
-  ok('the price leads the note', first.bullets[0].text.startsWith('80 ₪'));
-  ok('and the note follows it', first.bullets[0].text.includes('מזמינים מראש'));
-  // Free is a word, not a blank. An empty price on a slide reads as an
-  // omission; "חינם" reads as an answer.
-  ok('free says so', full.slides[1].bullets[0].text.startsWith('חינם'));
+  ok('a day slide names the day', first.nameHe.includes('יום'));
+  ok('and its stops in order', first.bullets[0].text.includes('קולוסיאום'));
+  ok('all of them', first.bullets[0].text.includes('הפורום'));
+  ok('with the day total', first.bullets[0].text.includes('₪'));
+  // The two sets are now the same slides, which is the point: one itinerary, drawn once.
+  eq('both platforms get the same day slides', full.slides[0].nameHe, short.slides[0].nameHe);
 
-  // The Instagram day slide names the day's stops in order — that is what makes
-  // it a summary of the same plan rather than a different, shorter plan.
-  ok('a day slide names its stops', short.slides[0].bullets[0].text.includes('קולוסיאום'));
-  ok('all of them', short.slides[0].bullets[0].text.includes('הפורום'));
+  // stopSlide still carries a stop's every fact, for anything that draws one.
+  const { stopSlide } = await import('../src/plan/slides.js');
+  const oneStop = stopSlide(allStops(plan)[0], { flag: '🇮🇹' });
+  ok('the time is on the name line', oneStop.nameHe.includes('09:00'));
+  ok('and the place', oneStop.nameHe.includes('קולוסיאום'));
+  ok('the price leads the note', oneStop.bullets[0].text.startsWith('80 ₪'));
+  ok('and the note follows it', oneStop.bullets[0].text.includes('מזמינים מראש'));
 
   // The flag comes off the Hebrew country name, because that is what
   // destinations.json stores — there is no ISO code anywhere on a plan.
@@ -5592,7 +5594,7 @@ group('the itinerary slideshow - what it says, and what it promises');
   // promising strangers a month of premium, and a slide that survived the
   // switch would keep making the promise after it was withdrawn.
   const noAsk = deckForSize(tripDecks(plan, { text, giveaway: null }), 'tiktok');
-  eq('with the giveaway off there is no ask slide', noAsk.slides.length, allStops(plan).length + 1);
+  eq('with the giveaway off there is no ask slide', noAsk.slides.length, plan.days.length + 1);
 
   // The templates are filled with the plan's own facts — an ask naming a
   // different city than the slides is the contradiction this kind is most
@@ -5936,8 +5938,11 @@ group('the itinerary the site publishes');
   // no number. Not an empty one and not a zero.
   ok('there is no total slide', !full.slides.some((s) => /₪/.test(s.nameHe || '')), full.slides.map((s) => s.nameHe).join(' | '));
   ok('and no day subtotal either', !short.slides.some((s) => /₪/.test(s.bullets?.[0]?.text || '')));
-  ok('a stop slide carries the note alone', full.slides[0].bullets[0].text === built.days[0].stops[0].noteHe);
-  ok('with no חינם in front of it', !full.slides[0].bullets[0].text.startsWith('חינם'));
+  // A day slide on an unpriced plan names its stops and nothing else: no subtotal,
+  // because there are no prices to total, and no "חינם" in front of anything - the site
+  // publishes a price BAND and חינם is a claim that somebody checked.
+  ok('a day slide names its stops', full.slides[0].bullets[0].text.includes(built.days[0].stops[0].nameHe));
+  ok('with no price anywhere on it', !/₪|חינם/.test(full.slides[0].bullets[0].text));
 
   // THE SLIDE COUNT INCLUDES THE SITE SLIDE, and it replaces the follow ask
   // rather than joining it. Two closing slides is two asks on one post.
@@ -6344,9 +6349,15 @@ group('what a place is allowed to say about itself');
   const mid = { lat: 50.0905, lng: 14.4204 };
   const far = { lat: 49.948, lng: 15.268 };
   ok('a short walk is approximate', src.distanceHe(a, near).startsWith('~'), src.distanceHe(a, near));
-  ok('and coarsely rounded', /^~\d{3} מ׳$/.test(src.distanceHe(a, near)), src.distanceHe(a, near));
+  ok('and coarsely rounded', /^~[\d,]+ מ׳$/.test(src.distanceHe(a, near)), src.distanceHe(a, near));
   ok('a longer walk too', src.distanceHe(a, mid).startsWith('~'), src.distanceHe(a, mid));
-  eq('and past the walking threshold it stops giving a number', src.distanceHe(a, far), 'נסיעה');
+  // ONE UNIT DOWN THE WHOLE CARD. The first version switched to kilometres at 1,000m,
+  // so one route card read "~300 מ׳", then "~1.4 ק״מ", then "~800 מ׳" - three numbers
+  // a reader has to convert to compare, on a slide whose job is to say whether the day
+  // is walkable.
+  ok('every walking distance is in metres', [near, mid].every((p) => /מ׳$/.test(src.distanceHe(a, p))));
+  ok('and none is in kilometres', ![near, mid].some((p) => /ק״מ/.test(src.distanceHe(a, p))));
+  eq('and past the walking threshold it stops giving a number', src.distanceHe(a, far), 'נסיעה קצרה');
   ok('no distance is ever exact', !/\d+\.\d\d/.test(src.distanceHe(a, mid) || ''));
   eq('two places with no coordinates get no line', src.distanceHe({}, {}), null);
 
@@ -6434,12 +6445,13 @@ group('the rotation - a pipeline is a template machine unless it is stopped');
     ok('and the builder honours the flag', /if \(remember\)/.test(build), 'notePostShape is called unconditionally');
   }
 
-  // THE FRAME IS NOT EXCLUDED, and that is the one dimension where a repeat is correct:
-  // nobody notices two 3:4 posts in a row, and excluding one would turn a test that
-  // wants an even split into a strict alternation.
+  // THE FRAME IS NO LONGER A VARIABLE. There was an A/B test here between 9:16 and 3:4,
+  // and it was withdrawn: TikTok's player is 9:16, so a 3:4 slide is letterboxed by
+  // TikTok itself and anchored to the TOP, which puts the hook under the search bar and
+  // a black band under the photograph. Every draw returns the one frame.
   const frames = new Set();
   for (let i = 0; i < 20; i++) frames.add(nextShape({ history: hist, rand: () => i / 20 }).frame);
-  ok('both frames are reachable', frames.size === 2, [...frames].join(','));
+  eq('every post is drawn at the one frame', [...frames].join(','), 'tall');
 
   // WHERE A TYPE MAY GO. A list post is twenty-one slides because its hook promises
   // twenty things; there is no honest nine-slide version for an Instagram carousel.
@@ -6649,6 +6661,58 @@ group('the map says what it can honestly say');
   const tiny = fitPoints([{ lat: 50.0865, lng: 14.4114 }, { lat: 50.0866, lng: 14.4115 }], { width: 1080, height: 1920 });
   ok('a degenerate box is floored rather than divided by zero', Number.isFinite(tiny.metresPerPixel) && tiny.metresPerPixel > 0);
   eq('one point is not a map', fitPoints([{ lat: 1, lng: 1 }], { width: 1080, height: 1920 }), null);
+}
+
+/* -------------------------------------------------------------------------- */
+group('every TikTok frame is 9:16 and every Instagram frame is 4:5');
+
+{
+  const { geometryFor, FRAMES } = await import('../src/render/postSlides.js');
+  const { SIZES } = await import('../src/render/deckTemplates.js');
+  const { postConfig } = await import('../src/postConfig.js');
+
+  // ONE RATIO PER PLATFORM, ASSERTED ACROSS EVERY FORMAT RATHER THAN PER FILE.
+  //
+  // This has been got wrong repeatedly and each time it looked like a different bug, so
+  // the check is on the ratio itself: TikTok's player is 9:16, and a 3:4 or 4:5 slide
+  // in it is letterboxed by TikTok and anchored to the TOP - which puts the hook under
+  // the search bar and a black band under the photograph. Instagram's feed crops to
+  // 4:5. Neither is a variable.
+  const ratio = (g) => +(g.w / g.h).toFixed(4);
+  const NINE_SIXTEEN = +(9 / 16).toFixed(4);
+  const FOUR_FIVE = +(4 / 5).toFixed(4);
+
+  eq('the deck renderer draws TikTok at 9:16', ratio(SIZES.tiktok), NINE_SIXTEEN);
+  eq('and Instagram at 4:5', ratio(SIZES.instagram), FOUR_FIVE);
+  eq('the post renderer agrees on TikTok', ratio(geometryFor('tiktok', 'tall')), NINE_SIXTEEN);
+  eq('and on Instagram', ratio(geometryFor('instagram')), FOUR_FIVE);
+
+  // ONE frame, and an unknown one resolves UP to 9:16 rather than to something
+  // smaller. The A/B test that used to live here shipped 3:4 slides to a 9:16 feed.
+  eq('there is exactly one TikTok frame', Object.keys(FRAMES).length, 1);
+  eq('and the config offers exactly one', postConfig().posts.frames.length, 1);
+  eq('an unknown frame still renders 9:16', ratio(geometryFor('tiktok', 'phone')), NINE_SIXTEEN);
+  for (const f of postConfig().posts.frames) {
+    eq(`the configured frame ${f.id} is 9:16`, +(f.w / f.h).toFixed(4), NINE_SIXTEEN);
+  }
+
+  // A card is Instagram-only and 4:5, which is why it is not in the TikTok list below.
+  const { CARD_W, CARD_H } = await import('../src/render/theme.js');
+  eq('a card is 4:5', +(CARD_W / CARD_H).toFixed(4), FOUR_FIVE);
+
+  // A clip is encoded rather than rendered, so its ratio is in the video config.
+  const clip = postConfig().clips.video;
+  eq('a clip is 9:16', +(clip.width / clip.height).toFixed(4), NINE_SIXTEEN);
+
+  // AND THE PUBLISHER REFUSES THE WRONG SHAPE rather than padding it. Every slideshow
+  // kind must be named, or it falls through to cand.card - the 4:5 cover - and reaches
+  // a 9:16 feed top-anchored.
+  const src = readFileSync(new URL('../src/publish/tiktok.js', import.meta.url), 'utf8');
+  const guard = src.match(/\[([^\]]*)\]\.includes\(cand\.kind\) && !deckImages\.length/);
+  ok('the TikTok preflight names the slideshow kinds', Boolean(guard), 'the shape guard moved or went');
+  for (const kind of ['deck', 'plan', 'post']) {
+    ok(`${kind} may not fall back to the 4:5 cover`, guard[1].includes(`'${kind}'`), guard?.[1]);
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -7040,316 +7104,6 @@ group('posting windows - Israel time, and not on Shabbat');
 }
 
 /* -------------------------------------------------------------------------- */
-group('shoot rotation - the brief’s counting rules are checks, not hopes');
-
-{
-  const { chooseFormat, nextSeries, seriesLabels, pickAngle } = await import('../src/shoot/rotation.js');
-  const cfg = postConfig().shoot;
-
-  // A deterministic PRNG, because the claims below are about what happens over
-  // a run and a flaky counting test is worse than none.
-  const prng = (seed) => () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
-
-  const simulate = (n, seed) => {
-    const rand = prng(seed);
-    const history = [];
-    for (let i = 0; i < n; i++) {
-      const { format } = chooseFormat(history, { rand });
-      const series = nextSeries(history);
-      const angle = pickAngle(history, { rand });
-      history.unshift({
-        formatId: format.id,
-        shape: format.shape,
-        needsProduct: format.needsProduct,
-        series,
-        angle,
-      });
-    }
-    return history.reverse();
-  };
-
-  for (const seed of [7, 41, 1009]) {
-    const run = simulate(20, seed);
-
-    // Rule 5: never the same template twice in a row. Checked on SHAPE, not on
-    // id — mistakes → warning is two different ids and one template as far as
-    // anybody scrolling is concerned.
-    const repeats = run.filter((r, i) => i > 0 && r.shape && r.shape === run[i - 1].shape);
-    eq(`seed ${seed}: no back-to-back shapes`, repeats.length, 0);
-
-    // Rule 3: the product in at least half. A floor, so it is a check — and
-    // the check is on EVERY ROLLING WINDOW, not on the average, because an
-    // average can be met by a burst of demos after a fortnight without one.
-    //
-    // This is the assertion that caught the real bug. The first version of the
-    // rule counted the window that had just slid past and forced the demo when
-    // it was short, which converges to 44% rather than 50%: by the time a
-    // window is measurably short, the window it was protecting has gone out.
-    const need = Math.ceil(cfg.productShare * cfg.productWindow);
-    let worst = Infinity;
-    for (let i = 0; i + cfg.productWindow <= run.length; i++) {
-      worst = Math.min(worst, run.slice(i, i + cfg.productWindow).filter((r) => r.needsProduct).length);
-    }
-    ok(
-      `seed ${seed}: every ${cfg.productWindow}-shoot window has ${need}+ product (worst ${worst})`,
-      worst >= need,
-      `worst window ${worst}/${cfg.productWindow}, need ${need}`
-    );
-
-    const product = run.filter((r) => r.needsProduct).length;
-    ok(
-      `seed ${seed}: product in at least half overall (${product}/${run.length})`,
-      product >= run.length * cfg.productShare,
-      `${product}/${run.length} below ${cfg.productShare}`
-    );
-
-    // Rule 7: a series that starts must reach its last part. A series
-    // abandoned at part 1 is a promise broken to everyone who followed for it.
-    const starts = run.filter((r) => r.series?.index === 1).length;
-    const finishes = run.filter((r) => r.series && r.series.index === r.series.of).length;
-    ok(`seed ${seed}: ${starts} series started, ${finishes} finished`, finishes >= starts - 1);
-
-    // And every series runs 1, 2, 3 in order with nothing skipped.
-    const parts = run.filter((r) => r.series).map((r) => r.series.index);
-    ok(
-      `seed ${seed}: series parts are consecutive`,
-      parts.every((p, i) => i === 0 || p === 1 || p === parts[i - 1] + 1),
-      parts.join(',')
-    );
-  }
-
-  // A SERIES IS ABOUT ONE THING. Part 1 records its destination as the topic
-  // and every later part is pinned to it — without which the mechanism breaks
-  // in the one way that matters: part 1 ends on "עקבו לחלק 2 מחר", part 2
-  // arrives about a different city, and the only people who acted on the
-  // promise are the ones let down.
-  {
-    const started = nextSeries([]);
-    eq('a new series opens at part 1', started.index, 1);
-    eq('with no topic yet - part 1 chooses it', started.topic, null);
-
-    const afterOne = [{ formatId: 'demo', shape: 'C', needsProduct: true, series: { index: 1, of: 3, topic: 'קורפו' } }];
-    const second = nextSeries(afterOne);
-    eq('part 2 follows part 1', second.index, 2);
-    eq('and inherits the topic', second.topic, 'קורפו');
-
-    const afterTwo = [{ formatId: 'myth', shape: 'E', needsProduct: false, series: { index: 2, of: 3, topic: 'קורפו' } }, ...afterOne];
-    eq('part 3 still inherits it', nextSeries(afterTwo).topic, 'קורפו');
-
-    // And a finished series does not silently continue into a fourth part.
-    const afterThree = [{ formatId: 'list', shape: 'D', needsProduct: false, series: { index: 3, of: 3, topic: 'קורפו' } }, ...afterTwo];
-    const next = nextSeries(afterThree);
-    ok('a finished series does not run to part 4', !next || next.index === 1, JSON.stringify(next));
-  }
-
-  // "עקבו לחלק 4 מחר" under part 3 of 3 is the exact promise-breaking the
-  // series mechanism exists to avoid.
-  eq('the last part asks for no next one', seriesLabels({ index: 3, of: 3 }).next, null);
-  ok('an earlier part does', Boolean(seriesLabels({ index: 1, of: 3 }).next));
-  ok('and is labelled', /1/.test(seriesLabels({ index: 1, of: 3 }).label));
-
-  // An empty history must not crash the first ever shoot.
-  ok('a cold start chooses something', Boolean(chooseFormat([]).format));
-  ok('and picks an angle', Boolean(pickAngle([])));
-}
-
-/* -------------------------------------------------------------------------- */
-group('the caption - a question, sometimes a CTA, and never a URL');
-
-{
-  const { captionQuestion, captionCta, clipCaption } = await import('../src/hashtags.js');
-  const { assertNoUrl } = await import('../src/format.js');
-  const { shootMessage, shootCaption } = await import('../src/shoot/message.js');
-  const cfg = postConfig().caption;
-
-  ok('there are questions to draw from', cfg.questions.length > 0);
-  ok('every one of them asks something', cfg.questions.every((q) => q.includes('?')));
-  ok('a question comes back', Boolean(captionQuestion({ rand: () => 0.1 })));
-
-  // THE CTA CAME BACK AND THE URL DID NOT, AND THEN IT BECAME A POOL. One
-  // closing line across every post is a signature however soft the wording is,
-  // which is the argument that made `lines` a pool in the first place.
-  ok('there are several asks to draw from', cfg.ctas.length > 1);
-  ok('none of them carries a domain',
-    cfg.ctas.every((c) => { try { assertNoUrl(c); return true; } catch { return false; } }));
-
-  // What the asks ask for. A send is the highest-weighted signal either platform
-  // has for reaching somebody who does not follow you, and a follow is what
-  // turns this post's reach into the next post's baseline, so the pool has to
-  // contain both, not four rewordings of one.
-  ok('at least one asks for a send', cfg.ctas.some((c) => /שלחו|תייגו/.test(c)));
-  // AND NONE OF THEM ASKS FOR A FOLLOW ANY MORE. Two used to, and that was right
-  // while a follow ask reached one post in eight. Every description now closes on
-  // a reason to follow (cfg.follows below), so an ask up here wanting the same
-  // thing is the same request twice in one description, three lines apart.
-  ok('none of them asks for a follow, which is the closing line\'s job now',
-    cfg.ctas.every((c) => !/עקבו|עוקבים/.test(c)),
-    cfg.ctas.filter((c) => /עקבו|עוקבים/.test(c)).join(' | '));
-  // The bio pointer survives as ONE entry: it is the only tappable route to the
-  // product either platform offers, and a pipeline that never mentions it never
-  // sends anybody anywhere.
-  ok('and exactly one still points at the bio', cfg.ctas.filter((c) => /ביו/.test(c)).length === 1);
-
-  // At least one asks for a COMMENT outright, which is what the owner asked for
-  // when ctaShare went to 1. Imperative rather than interrogative: the caption
-  // already carries a question, and two question marks is a post asking twice.
-  ok('at least one asks for a comment', cfg.ctas.some((c) => /תגיבו/.test(c)));
-  ok('and the comment asks are imperative, not a second question',
-    cfg.ctas.filter((c) => /תגיבו/.test(c)).every((c) => !c.includes('?')),
-    cfg.ctas.filter((c) => /תגיבו/.test(c) && c.includes('?')).join(' | '));
-  // And none of them promises something nothing here can deliver. "comment and
-  // I'll send you the list" is the standard version of this ask and there is no
-  // DM automation behind it, which makes it the one shape banned outright.
-  ok('and none promises a reply nobody will send',
-    cfg.ctas.every((c) => !/אשלח|שולח לכם|בפרטי|בדיאם/.test(c)));
-
-  // EVERY POST CARRIES ONE. This used to assert the opposite at ctaShare 0.7 —
-  // "soft means not on every post" — and the owner's instruction replaced it.
-  // Both ends of the range are still checked, because that is what proves the
-  // draw is wired up rather than the share being read once.
-  ok('at the bottom of the range, an ask', Boolean(captionCta({ rand: () => 0 })));
-  ok('at the top of it, still an ask', Boolean(captionCta({ rand: () => 0.999 })));
-  ok('because the share is one', cfg.ctaShare >= 1, `ctaShare=${cfg.ctaShare}`);
-  // The dial itself still works and is one character from being turned back
-  // down, so the gate is exercised rather than trusted.
-  ok('and the gate would still withhold below it', captionCta({ rand: () => 0.5, share: 0.2 }) === null);
-  // Two independent draws: one for whether, one for which. Tied together the
-  // rarest asks would get rarer as the share fell.
-  const asks = new Set();
-  for (let i = 0; i < cfg.ctas.length; i++) {
-    const at = i / cfg.ctas.length;
-    asks.add(captionCta({ rand: () => at }));
-  }
-  ok('the whole pool is reachable', asks.size > 1, `${asks.size} distinct`);
-
-  // THE REASON TO FOLLOW. On every post, which is why there is no share to draw
-  // against and no way to get null out of it.
-  {
-    const { captionFollow, followLine } = await import('../src/hashtags.js');
-    ok('there are reasons to follow to draw from', cfg.follows.length > 1);
-    ok('each one has an ask and a reason', cfg.follows.every((f) => f.askHe && f.whyHe && f.lineHe));
-    // The ask is SHORT because on a closing slide it is the big line and the
-    // reason is the note under it. Four words is already a slide that wraps.
-    ok('the asks are short enough to be a slide headline',
-      cfg.follows.every((f) => f.askHe.split(/\s+/).length <= 4),
-      cfg.follows.find((f) => f.askHe.split(/\s+/).length > 4)?.askHe);
-    ok('every ask actually asks for a follow', cfg.follows.every((f) => /עקבו|לעקוב|עוקב/.test(f.askHe)));
-
-    // AND EVERY ONE ASKS IN THE SAME VOICE. `עקבו` is the bare imperative and
-    // the owner's reading of it is that it feels distant - it is what a sign
-    // says, where `תעקבו` is what you say to somebody you are talking to. One
-    // letter, and the difference between addressing a feed and addressing a
-    // person.
-    //
-    // Asserted across EVERY published follow ask rather than on this pool
-    // alone, because a voice that holds in one file and not in the two others
-    // that ask for the same thing is not a voice. The series pointer closes
-    // part 1 of a shoot; the giveaway line is the ask on an itinerary. All
-    // three are the account speaking, and they had drifted into two registers
-    // without anybody choosing the second one.
-    //
-    // Matched with a lookbehind so `תעקבו` passes and `עקבו` does not, which is
-    // the whole rule stated exactly once.
-    const distant = (s) => /(?<!ת)עקבו/.test(String(s || ''));
-    const everyAsk = [
-      ...cfg.follows.flatMap((f) => [f.askHe, f.whyHe, f.lineHe]),
-      ...cfg.ctas,
-      postConfig().shoot.series.nextHe,
-      postConfig().plans.giveaway.actionHe,
-      postConfig().plans.giveaway.captionHe,
-    ];
-    ok('and asks in the near voice, never the bare imperative',
-      everyAsk.every((s) => !distant(s)),
-      everyAsk.filter(distant).join(' | '));
-    // A reason that promises something this pipeline cannot deliver buys a follow
-    // and loses it a week later. Nothing here sends anybody anything.
-    ok('and no reason promises a thing nobody will send',
-      cfg.follows.every((f) => !/אשלח|שולח לכם|בפרטי|בדיאם|מדריך במתנה/.test(f.whyHe)));
-    ok('none of them carries a domain',
-      cfg.follows.every((f) => { try { assertNoUrl(f.lineHe); return true; } catch { return false; } }));
-
-    // Both ends of the draw, because there is no gate and a missing one would be
-    // invisible: the description would simply be one line shorter.
-    ok('the bottom of the range returns one', Boolean(captionFollow({ rand: () => 0 })));
-    ok('and the top of it too', Boolean(captionFollow({ rand: () => 0.999 })));
-    const reasons = new Set();
-    for (let i = 0; i < cfg.follows.length; i++) reasons.add(captionFollow({ rand: () => i / cfg.follows.length }).lineHe);
-    ok('the whole pool is reachable', reasons.size > 1, `${reasons.size} distinct`);
-
-    // What a caller hands over survives, and null is NOT "no follow" — it is read
-    // as nothing handed over, because every post has one.
-    eq('a handed-over entry is used as it is', followLine(cfg.follows[2]), cfg.follows[2].lineHe);
-    eq('a string is taken as the line', followLine('עקבו כי כן'), 'עקבו כי כן');
-    ok('and null still draws one', Boolean(followLine(null, { rand: () => 0.4 })));
-  }
-
-  const cand = { clip: { vision: { place: 'Italy', site: 'Cinque Torri', siteHe: 'צ׳ינקווה טורי' } } };
-  const caption = clipCaption(cand, { rand: () => 0.1 });
-  ok('the clip caption still opens with the pin', caption.startsWith('📍'));
-  ok('carries a question', /\?/.test(caption));
-  ok('and a reason to follow above the tags', cfg.follows.some((f) => caption.includes(f.lineHe)));
-  ok('and still ends with the tags', /#\S+$/.test(caption.trim()));
-  ok('and has no URL in it', (() => { try { assertNoUrl(caption); return true; } catch { return false; } })());
-
-  // The hashtag pools went Hebrew. #fyp and #foryou were two English words on a
-  // Hebrew post, doing the least of the five.
-  const tags = postConfig().hashtags;
-  ok('no English tags remain', [...tags.broad, ...tags.niche].every((t) => !/[A-Za-z]/.test(t)), [...tags.broad, ...tags.niche].find((t) => /[A-Za-z]/.test(t)));
-  ok('between three and five tags go out', tags.broadCount + tags.nicheCount >= 3 && tags.broadCount + tags.nicheCount <= 5);
-
-  // AND THEN #פוריו AND #ויראלי WENT TOO.
-  //
-  // Removing #fyp was right and stopped one step short. A broad tag is supposed
-  // to buy the first impressions from a pool this post could plausibly win in;
-  // #פוריו is #fyp with Hebrew letters, which is the same non-pool, and #ויראלי
-  // names a hoped-for outcome rather than a subject, so there is no audience on
-  // the other side of it at all. Broad now means broad WITHIN TRAVEL.
-  ok('no for-you tag survives', tags.broad.every((t) => !/פוריו|פוריואו|foryou|fyp/i.test(t)), tags.broad.find((t) => /פוריו/.test(t)));
-  ok('and no outcome tag', [...tags.broad, ...tags.niche].every((t) => !/ויראלי/.test(t)));
-  // A tag in both pools is a slot that silently becomes a different tag: draw()
-  // shares one `taken` set across the two, so the niche draw skips it.
-  eq('the two pools do not overlap', tags.broad.filter((t) => tags.niche.includes(t)).join(','), '');
-
-  // A shot list is the one message in this bot that ends at a person rather
-  // than at a button, and it has to say so.
-  const shoot = {
-    formatHe: 'הדגמת המוצר', shape: 'C', destination: 'ליסבון',
-    seriesLabel: 'חלק 2 מתוך 3', seriesNext: 'עקבו לחלק 3 מחר',
-    angle: 'טיול עם ילדים', lengthSeconds: [15, 35],
-    hook: 'ביקשתי מ-AI לתכנן לי 4 ימים בליסבון',
-    beats: ['הקלדתי את הבקשה', 'חזר מסלול יום-יום', 'היום השלישי בסינטרה'],
-    caption: 'ככה נראה מסלול שנבנה בשתי דקות',
-    prompt: '4 ימים בליסבון עם שני ילדים',
-    note: 'תחזיקו על היום השלישי',
-    shots: ['הקלטת מסך', 'התוכנית חוזרת'],
-  };
-  const msg = shootMessage(shoot, { rand: () => 0.1 });
-  ok('the shot list leads with the hook', msg.indexOf(shoot.hook) < msg.indexOf(shoot.beats[0]));
-  ok('numbers the beats', /1\. הקלדתי/.test(msg));
-  ok('prints the exact thing to type', msg.includes(shoot.prompt));
-  ok('says nobody else will publish it', /אף אחד לא מפרסם/.test(msg));
-  ok('and the copyable caption carries no URL', (() => { try { assertNoUrl(shootCaption(shoot, { rand: () => 0.1 })); return true; } catch { return false; } })());
-
-  // The brief says how to END the video, not only how to start it. A hand-filmed
-  // post is the one format with no closing slide and no closing frame, so the
-  // instruction is the only thing that puts a reason to follow on the end of it.
-  {
-    const closed = shootMessage(shoot, { follow: cfg.follows[1] });
-    ok('the brief says what to put on the last second', closed.includes('הסיום'));
-    ok('and names the ask and the reason', closed.includes(cfg.follows[1].askHe) && closed.includes(cfg.follows[1].whyHe));
-    // ONE DRAW for the brief: the line to film and the line in the caption are
-    // the same sentence. Two draws would hand the shooter a video closing on one
-    // reason and a caption arguing another.
-    ok('and the caption underneath closes on the same one', closed.includes(cfg.follows[1].lineHe));
-    eq(
-      'the reason appears twice and no more',
-      closed.split(cfg.follows[1].whyHe).length - 1,
-      2
-    );
-  }
-}
-
-/* -------------------------------------------------------------------------- */
 group('model tiering - the cheap tier has to be legal, not just cheaper');
 
 {
@@ -7404,7 +7158,7 @@ group('model tiering - the cheap tier has to be legal, not just cheaper');
   // Checked by reading the source rather than by making a call, for the reason
   // the effort check above is: the failure is a number on an invoice, not an
   // exception, so nothing else would ever notice.
-  const cachedSites = [...callSites, '../src/draft.js', '../src/plan/write.js', '../src/shoot/plan.js', '../src/video/hooks.js', '../src/video/cuts.js'];
+  const cachedSites = [...callSites, '../src/draft.js', '../src/plan/write.js', '../src/video/hooks.js', '../src/video/cuts.js'];
   for (const f of cachedSites) {
     const src = rf(new URL(f, import.meta.url), 'utf8');
     ok(

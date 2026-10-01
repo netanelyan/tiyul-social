@@ -176,6 +176,22 @@ export async function renderToJpeg(html, { stem, width = CARD_W, height = CARD_H
   try {
     await page.setContent(html, { waitUntil: 'load' });
 
+    // A PAGE THAT DRAWS ITSELF SAYS WHEN IT HAS FINISHED.
+    //
+    // `load` means the document and its resources are in; it does not mean a script in
+    // the page has finished compositing. The pin map draws seventy basemap tiles onto a
+    // canvas after load - the country map has always done the same, but inside its own
+    // page lifecycle in render/map.js, so this function never had to know.
+    //
+    // Now a post slide can do it too, and screenshotting at `load` catches an empty
+    // canvas: a map slide with no map on it, silently, which is exactly the class of
+    // failure the font check below exists for. Any page that declares __mapReady is
+    // waited on; every other page has none and this costs one evaluate.
+    if (await page.evaluate(() => typeof window.__mapReady !== 'undefined')) {
+      await page.waitForFunction(() => window.__mapReady !== undefined, null, { timeout: 30_000 });
+      await page.evaluate(() => window.__mapReady);
+    }
+
     // The failure this guards against is silent, which is what makes it worth
     // a hard check: if the bundled font hasn't parsed, Chromium falls back, and
     // for Hebrew on a bare Linux box the fallback is very often tofu boxes.

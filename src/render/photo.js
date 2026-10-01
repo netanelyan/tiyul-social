@@ -967,3 +967,46 @@ export async function measureCardScrims(sources) {
 // read, region by region, and compare the box it chose against the box a person
 // would have chosen. Guessing at those numbers is how a scoring bug survives.
 export const __test = { place, colourFor, region, railOverlap, sampleGrids, inkContrast, backgroundMask, maskFromBox, coverage, GW, GH };
+
+/**
+ * How dark the wash over a post slide's text band has to be, measured off the picture.
+ *
+ * THE PROBLEM THIS SOLVES, stated as it was reported: "the background is too bright,
+ * the text looks awkward". White type with an outline survives almost anything, but
+ * surviving and reading well are different things - over a bright sky or a sunlit white
+ * wall the outline becomes the letterform, the counters close up, and the line reads as
+ * a sticker rather than as type. The post templates used a CONSTANT gradient, and a
+ * constant has to be sized for one photograph: dark enough for the worst case makes
+ * every good photograph muddy, light enough for a good one loses the bad case.
+ *
+ * So it is measured, exactly as a card's scrims are (see measureCardScrims above) and
+ * with the same two decisions:
+ *
+ *   THE BRIGHTEST ROW OF THE BAND, not its mean. A band that is dark except for one
+ *   bright strip averages to comfortable and loses the line that lands on the strip.
+ *
+ *   AND A FLOOR. A photograph that is already dark gets no wash at all, which is
+ *   perfectly legible and looks like the type happened to land somewhere convenient
+ *   rather than like a deliberate block. The floor is what makes it look chosen.
+ *
+ * `band` is [top, bottom] as fractions of the frame. Returns one alpha per source, or
+ * null where there was nothing to measure - and the caller then uses its own constant,
+ * which is exactly the worst-photograph number it was already using.
+ */
+export async function measureVeils(sources, { band = [0.3, 0.8], want = 7, floor = 0.18 } = {}) {
+  const grids = await sampleGrids(sources, { gw: CARD_GW, gh: CARD_GH }).catch(() => []);
+  return (sources || []).map((src, i) => {
+    const grid = grids[i];
+    if (!src || !grid?.length) return null;
+    const from = Math.max(0, Math.floor(band[0] * grid.length));
+    const to = Math.min(grid.length, Math.ceil(band[1] * grid.length));
+    let brightest = 0;
+    for (let r = from; r < to; r++) {
+      const row = grid[r];
+      if (!row?.length) continue;
+      const mean = row.reduce((a, b) => a + b, 0) / row.length;
+      if (mean > brightest) brightest = mean;
+    }
+    return scrimAlpha(brightest, { want, floor, ceiling: 0.72 });
+  });
+}

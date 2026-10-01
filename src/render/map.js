@@ -236,7 +236,11 @@ export async function boundaryOf(place, { timeoutMs = 15_000 } = {}) {
     };
     cache.set(key, out);
     return out;
-  } catch {
+  } catch (err) {
+    // Named rather than swallowed. A basemap that silently does not appear looks
+    // identical to a destination with no mapped roads, and the two want different
+    // things done about them.
+    console.error(`map: no basemap vectors - ${err.message}`);
     return null;
   }
 }
@@ -455,7 +459,7 @@ export function scaleBar(metresPerPixel, width) {
  * it either. The numbers key to the list post's own numbering, which is what makes a
  * map post worth posting alongside one.
  */
-export function pinMapHtml({ points, width, height, titleHe = null, subHe = null, bar = null, dayColours = [] }) {
+export function pinMapHtml({ points, width, height, titleHe = null, subHe = null, bar = null, dayColours = [], base = null }) {
   const pin = Math.round(width * 0.052);
   const font = Math.round(pin * 0.52);
 
@@ -487,9 +491,14 @@ export function pinMapHtml({ points, width, height, titleHe = null, subHe = null
 * { margin:0; padding:0; box-sizing:border-box; }
 html, body { width:${width}px; height:${height}px; overflow:hidden;
              background:#0b0f16; font-family:'Assistant','Heebo',sans-serif; }
-/* A faint grid, at the scale bar's own spacing. It is what turns a scatter of dots
-   into something with distance in it, and it is drawn from the same number the bar
-   prints so the two cannot disagree. */
+/* THE BASEMAP, UNDER THE PINS. Water first, because a river is the strongest landmark
+   on any city map and the thing a reader orients by before anything else. */
+.basemap { z-index:0; }
+.water { fill:rgba(58,96,150,.5); stroke:rgba(78,126,190,.55); stroke-width:${Math.max(1, Math.round(width * 0.0016))}; }
+.road  { fill:none; stroke:rgba(255,255,255,.15); stroke-width:${Math.max(1, Math.round(width * 0.0022))};
+         stroke-linecap:round; stroke-linejoin:round; }
+/* The grid stands in when there is no basemap - an Overpass outage, or a destination
+   with no mapped roads. Over a real map it is noise. */
 #grid { position:absolute; inset:0; opacity:.5;
         background-image:
           linear-gradient(rgba(255,255,255,.055) 1px, transparent 1px),
@@ -512,6 +521,10 @@ svg { position:absolute; inset:0; }
    what makes the geometry mean something rather than being decoration. */
 .bar { position:absolute; inset-inline-start:${Math.round(width * 0.075)}px; bottom:${Math.round(height * 0.075)}px;
        color:rgba(255,255,255,.86); font-weight:700; font-size:${Math.round(width * 0.029)}px; }
+/* REQUIRED BY ODbL, not decoration, and in the corner where every map anyone has ever
+   seen puts it. */
+.osm { position:absolute; inset-inline-end:${Math.round(width * 0.03)}px; bottom:${Math.round(height * 0.022)}px;
+       color:rgba(255,255,255,.45); font-size:${Math.round(width * 0.018)}px; font-weight:600; direction:ltr; }
 .bar i { display:block; height:${Math.max(3, Math.round(width * 0.004))}px; background:rgba(255,255,255,.86);
          border-radius:2px; margin-bottom:6px; }
 /* One invisible character set in Heebo, for the reason given above the base stylesheet
@@ -521,7 +534,13 @@ svg { position:absolute; inset:0; }
               font-weight:700; font-size:40px; color:transparent; }
 </style></head><body>
 <div class="font-probe">א</div>
-<div id="grid"></div>
+${
+  base
+    ? `<svg class="basemap" viewBox="0 0 ${width} ${height}">${base.roads
+        .map((d) => `<path class="road" d="${d}"/>`)
+        .join('')}${base.water.map((d) => `<path class="water" d="${d}"/>`).join('')}</svg>`
+    : '<div id="grid"></div>'
+}
 <div id="glow"></div>
 <svg viewBox="0 0 ${width} ${height}">
   ${paths}
@@ -532,6 +551,7 @@ svg { position:absolute; inset:0; }
   ${subHe ? `<div class="s">${escapeHtml(subHe)}</div>` : ''}
 </div>
 ${bar ? `<div class="bar"><i style="width:${bar.px}px"></i>${escapeHtml(bar.labelHe)}</div>` : ''}
+${base ? `<div class="osm">© OpenStreetMap contributors</div>` : ''}
 </body></html>`;
 }
 
@@ -606,4 +626,106 @@ export async function renderMapSlide(place, { width, height, file, label = null,
   } finally {
     await context.close().catch(() => {});
   }
+}
+
+/* -------------------------------------------------------------------------- */
+/* the city basemap, drawn from data                                          */
+/* -------------------------------------------------------------------------- */
+
+// WHY THIS IS VECTOR AND NOT A PICTURE, because the obvious answer was tried first.
+//
+// GIBS caps at zoom 8, where one tile pixel is about 600 metres - every stop on a
+// Prague day lands in the same pixel - so the country basemap above cannot draw a city,
+// and the pin map shipped as dots on a dark field with nothing under them.
+//
+// OpenStreetMap's own raster tiles serve city zoom and need no key. One tile fetches
+// fine; seventy in a row come back 403, "App is not following the tile usage policy of
+// OpenStreetMap's volunteer-run servers" - which is their policy working exactly as
+// written, and it rendered a slide covered in error tiles. Carto's Positron answers
+// with 2KB placeholders without an account, and every other grey basemap wants a key.
+//
+// What IS available is the data underneath. Overpass is already a dependency here - the
+// deck's map route runs on it - and the water plus the major roads for one bounding box
+// is a single query. Drawn as paths that is a real map: the Seine and the main avenues
+// under the pins, which is all a reader needs to orient themselves.
+//
+// It is also the better map for this slide. A raster carries four hundred streets, a
+// shopping district and a transit network, none of which the viewer is using and all of
+// which compete with the pins. This carries the two things they ARE using.
+//
+// ODbL attribution is owed for the data and is printed on the slide.
+// THE SAME MIRROR LIST THE DECK'S MAP ROUTE USES, and for the same reason: Overpass is
+// volunteer-run, every instance rations query slots, and a busy one answers 429 or 504
+// rather than queueing. One instance is one busy afternoon away from a map post with
+// nothing under its pins.
+const OVERPASS_MAP = (process.env.OVERPASS_URL || '')
+  .split(',')
+  .map((u) => u.trim())
+  .filter(Boolean)
+  .concat([
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter',
+    'https://overpass.osm.ch/api/interpreter',
+  ]);
+
+/**
+ * Water and the roads worth drawing, for one bounding box.
+ *
+ * ONLY THREE ROAD CLASSES, AND A GENEROUS TIMEOUT.
+ *
+ * A city's full road graph is tens of thousands of ways and drawing it produces grey
+ * mud; motorway, trunk and primary is the skeleton somebody navigates by. Including
+ * secondary as well pulled eight thousand ways for central Paris, which Overpass takes
+ * over a minute to compute and send - and the first version's 45-second timeout meant
+ * the basemap silently never appeared.
+ *
+ * Ninety seconds is deliberately generous. This runs on the rarest post type in the
+ * rotation, once, and a map post that takes an extra half-minute to build is a far
+ * better outcome than one with nothing under the pins.
+ *
+ * Null on anything going wrong, and the caller then draws the geometry-only map it drew
+ * before - a worse slide, and a true one.
+ */
+export async function cityVectors(bbox, { timeoutMs = 90_000 } = {}) {
+  const [s, w, n, e] = bbox;
+  const box = `${s.toFixed(4)},${w.toFixed(4)},${n.toFixed(4)},${e.toFixed(4)}`;
+  const q = `[out:json][timeout:30];
+(
+  way["natural"="water"](${box});
+  way["waterway"="river"](${box});
+  way["highway"~"^(motorway|trunk|primary)$"](${box});
+);
+out geom;`;
+
+  // EVERY FAILURE IS NAMED, which is what the first version got wrong and what cost an
+  // hour of looking at an empty map: a rate-limited instance answers 429, the code
+  // returned null without a word, and a slide with no basemap looks exactly like a
+  // destination with no mapped roads. Those want completely different things done.
+  for (const host of OVERPASS_MAP) {
+    try {
+      const res = await fetch(host, {
+        method: 'POST',
+        body: `data=${encodeURIComponent(q)}`,
+        headers: { 'content-type': 'application/x-www-form-urlencoded', 'user-agent': UA },
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (!res.ok) {
+        console.error(`map: ${new URL(host).hostname} answered HTTP ${res.status}, trying the next mirror`);
+        continue;
+      }
+      const json = await res.json();
+      const ways = (json?.elements || []).filter((el) => Array.isArray(el.geometry) && el.geometry.length > 1);
+      if (!ways.length) {
+        console.error(`map: ${new URL(host).hostname} returned no ways for this box`);
+        continue;
+      }
+      return {
+        water: ways.filter((el) => el.tags?.natural === 'water' || el.tags?.waterway).map((el) => el.geometry),
+        roads: ways.filter((el) => el.tags?.highway).map((el) => el.geometry),
+      };
+    } catch (err) {
+      console.error(`map: ${new URL(host).hostname} - ${err.message}`);
+    }
+  }
+  return null;
 }

@@ -185,7 +185,9 @@ async function main() {
     const r = await renderCard(draft, {
       id: `sample-${layout}`,
       data: layout === 'whenToGo' ? climateData : null,
-      image: isPhotoLayout(layout) ? await imageFor(draft) : null,
+      // Every layout gets one now: the photo family uses it as the picture, the text
+      // family as a ground blurred past recognition. See groundCss in templates.js.
+      image: await imageFor(draft),
       outDir: OUT,
     });
     console.log(`${layout.padEnd(11)} -> ${path.basename(r.file)} (${(r.bytes / 1024).toFixed(0)} KB)`);

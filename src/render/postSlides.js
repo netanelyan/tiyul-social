@@ -1,7 +1,7 @@
 import { heeboDataUri, assistantDataUri, escapeHtml } from './theme.js';
 import { emojiHtml } from './emojiArt.js';
 import { SIZES } from './deckTemplates.js';
-import { fitPoints, scaleBar, pinMapHtml } from './map.js';
+import { fitPoints, cityVectors, scaleBar, pinMapHtml } from './map.js';
 
 // The four looks the new post types are drawn in.
 //
@@ -43,26 +43,26 @@ import { fitPoints, scaleBar, pinMapHtml } from './map.js';
  * variable - it is what the grid crops to - so the frame is ignored there rather
  * than producing a 3:4 card that the feed then crops again.
  *
- * The safe areas SCALE rather than carry over. TikTok's furniture is a fraction of
- * the player, not a number of pixels: 300px off a 1920 frame is 15.6% of it, and
- * reusing 300 on a 1440 frame would reserve 21% for a bar that has not grown.
+ * ONE SIZE PER PLATFORM, AND NEITHER IS NEGOTIABLE. TikTok is 9:16 because the player
+ * is 9:16, and Instagram is 4:5 because that is what the feed crops to.
+ *
+ * There was an A/B test here between 9:16 and 3:4, on the reasoning that the reference
+ * posts were shot on phone cameras. It was wrong in the direction that costs reach: a
+ * 3:4 slide in a 9:16 player is letterboxed by TikTok itself and anchored to the TOP,
+ * which puts the hook under the search bar and a black band under the photograph. The
+ * test is withdrawn.
+ *
+ * `frame` is still a parameter so the stored field on every post stays meaningful, and
+ * an unknown value resolves to 9:16 rather than to something smaller.
  */
 export const FRAMES = {
   tall: { w: 1080, h: 1920 },
-  phone: { w: 1080, h: 1440 },
 };
 
 export function geometryFor(size = 'tiktok', frame = 'tall') {
   if (size !== 'tiktok') return SIZES[size] || SIZES.instagram;
   const f = FRAMES[frame] || FRAMES.tall;
-  const base = SIZES.tiktok;
-  return {
-    w: f.w,
-    h: f.h,
-    topSafe: Math.round((base.topSafe / base.h) * f.h),
-    bottomSafe: Math.round((base.bottomSafe / base.h) * f.h),
-    frame: FRAMES[frame] ? frame : 'tall',
-  };
+  return { w: f.w, h: f.h, topSafe: SIZES.tiktok.topSafe, bottomSafe: SIZES.tiktok.bottomSafe, frame: 'tall' };
 }
 
 /** Every look this file can draw. `label` and `sheet` need a photograph; the others do not. */
@@ -232,6 +232,10 @@ export function renderLabelSlideHtml(slide, { size = 'tiktok', frame = 'tall' } 
   // and stand behind - and it was set at 4.2% in plain white underneath the hook, where
   // it read as a subtitle. Set as a badge it is what the eye lands on first, and it is
   // the one element that says a person judged this rather than a scraper collected it.
+  // Measured where there is a measurement, and the old constant where there is not -
+  // which is the worst-photograph number it always was.
+  const veil = Number.isFinite(slide.veil) ? Math.min(0.72, Math.max(0.12, slide.veil)).toFixed(2) : cover ? '0.58' : '0.52';
+
   const badgePx = px(geo, 0.075);
   const badgeLabelPx = px(geo, 0.03);
   const top = band === 'mid' ? Math.round(geo.h * 0.3) : null;
@@ -244,10 +248,16 @@ export function renderLabelSlideHtml(slide, { size = 'tiktok', frame = 'tall' } 
 /* A gradient rather than a flat scrim, and only on the half the type is on. A flat
    panel is the designed-poster look that got the reference flop nine likes; a
    gradient is what the platform's own player already lays over a photograph. */
+/* THE WASH IS MEASURED OFF THE PHOTOGRAPH, not a constant.
+   The veil alpha is what render/photo.js computed from the brightest row of the band
+   this text sits in, for a contrast target white type can actually read at. A constant
+   has to be sized for one picture: dark enough for a sunlit white wall makes every good
+   photograph muddy, light enough for a good one loses the bad case - which is what
+   "the background is too bright, the text looks awkward" was. */
 .veil { position: absolute; inset-inline: 0; height: ${Math.round(geo.h * (cover ? 0.58 : 0.46))}px;
         ${band === 'mid' ? `top:${Math.round(geo.h * 0.16)}px;
-        background: radial-gradient(ellipse at center, rgba(0,0,0,.58), rgba(0,0,0,.2) 55%, rgba(0,0,0,0) 78%);`
-          : `bottom:0; background: linear-gradient(to top, rgba(0,0,0,.52), rgba(0,0,0,0));`} }
+        background: radial-gradient(ellipse at center, rgba(0,0,0,${veil}), rgba(0,0,0,${(veil * 0.34).toFixed(2)}) 55%, rgba(0,0,0,0) 78%);`
+          : `bottom:0; background: linear-gradient(to top, rgba(0,0,0,${veil}) 12%, rgba(0,0,0,${(veil * 0.55).toFixed(2)}) 46%, rgba(0,0,0,0));`} }
 /* THE COVER GETS A SECOND, WIDER WASH. The published Santorini cover put white type
    over a hillside of white buildings, and an outline alone is the wrong tool for that:
    a stroke is the same width everywhere, so where the photograph is the same value as
@@ -257,12 +267,13 @@ export function renderLabelSlideHtml(slide, { size = 'tiktok', frame = 'tall' } 
 ${cover ? `.wash { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(8,10,14,.30) 0%, rgba(8,10,14,.16) 55%, rgba(8,10,14,0) 80%); }` : ''}
 /* The badge. A pill rather than a line of text, because it carries a NUMBER and the
    number is the claim. Accent fill, dark ink, so it is the first thing read. */
-.badge { display: inline-flex; align-items: baseline; gap: .28em; direction: rtl;
+.badge { display: inline-flex; align-items: center; gap: .24em; direction: ltr;
          background: #FFD84D; color: #14161c; border-radius: 999px;
          padding: ${Math.round(badgePx * 0.16)}px ${Math.round(badgePx * 0.42)}px;
          box-shadow: 0 ${Math.round(badgePx * 0.08)}px ${Math.round(badgePx * 0.3)}px rgba(0,0,0,.45);
          margin-bottom: ${Math.round(badgePx * 0.22)}px; }
-.badge b { direction: ltr; unicode-bidi: isolate; font-weight: 800; font-size: ${badgePx}px; line-height: 1; }
+.badge b { direction: ltr; unicode-bidi: isolate; font-weight: 800; font-size: ${badgePx}px; line-height: 1.05; }
+.badge img.emoji { height: ${Math.round(badgePx * 0.82)}px; width: auto; }
 .badge span { font-weight: 700; font-size: ${badgeLabelPx}px; }
 /* LTR, ISOLATED. The page is RTL and "3." is a number followed by a full stop, so
    the bidi algorithm put the stop on the left and the slide counted ".3". The number
@@ -273,8 +284,13 @@ ${cover ? `.wash { position: absolute; inset: 0; background: linear-gradient(180
        text-shadow: 0 3px 16px rgba(0,0,0,.6); }
 .title { font-weight: 800; font-size: ${titlePx}px; line-height: 1.12; ${outlined(stroke)}
          text-wrap: balance; }
-.note { font-weight: 600; font-size: ${notePx}px; line-height: 1.3;
+/* ONE LINE, AND THE STAR STAYS ON IT. "⭐ חצי יום" is four characters and it wrapped,
+   because the emoji is an <img> and the browser will break between an image and the
+   text beside it like any other inline pair. nowrap on a line this short cannot
+   overflow - the type steps down by length before it gets near the frame. */
+.note { font-weight: 600; font-size: ${notePx}px; line-height: 1.3; white-space: nowrap;
         ${outlined(Math.max(2, Math.round(notePx * 0.05)))} opacity: .97; }
+.note img.emoji { vertical-align: -0.12em; }
 .emoji { font-size: ${px(geo, 0.055)}px; line-height: 1; display: flex; gap: .12em; }
 </style></head><body>
 ${PROBE}
@@ -285,9 +301,9 @@ ${cover ? '<div class="wash"></div>' : ''}
   ${emojiRow(slide.emojis)}
   ${
     slide.badgeHe
-      ? `<div class="badge"><b>${escapeHtml(String(slide.badgeHe))}</b>${
-          slide.badgeLabelHe ? `<span>${escapeHtml(slide.badgeLabelHe)}</span>` : ''
-        }</div>`
+      ? `<div class="badge">${slide.badgeEmoji ? emojiHtml(slide.badgeEmoji, { size: '0.82em' }) : ''}<b>${escapeHtml(
+          String(slide.badgeHe)
+        )}</b>${slide.badgeLabelHe ? `<span>${escapeHtml(slide.badgeLabelHe)}</span>` : ''}</div>`
       : ''
   }
   ${slide.number ? `<div class="num">${escapeHtml(String(slide.number))}</div>` : ''}
@@ -318,7 +334,11 @@ export function renderSheetSlideHtml(slide, { size = 'tiktok', frame = 'tall' } 
   const geo = geometryFor(size, frame);
   const lines = (slide.lines || []).filter(Boolean).slice(0, 5);
   const headPx = px(geo, 0.062);
-  const linePx = px(geo, lines.length > 3 ? 0.036 : 0.042);
+  // HEAVIER AND LARGER THAN THE FIRST VERSION. At 700 and 3.6% these rows read as thin
+  // on a phone - the boxes are white and the ink is dark, so there is no outline doing
+  // any of the work and the weight is all there is. 800 at 4.2% is what the reference
+  // posts set boxed text at.
+  const linePx = px(geo, lines.length > 3 ? 0.042 : 0.048);
   const pad = Math.round(linePx * 0.55);
 
   return `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><style>${base(geo)}
@@ -333,7 +353,7 @@ export function renderSheetSlideHtml(slide, { size = 'tiktok', frame = 'tall' } 
    edge and the stack came out as three identical rectangles - which is the designed
    panel this look exists to avoid. Wrapping a little earlier is what produces the
    uneven right edge that reads as somebody typing. */
-.row { background: #fff; color: #14161c; font-weight: 700; font-size: ${linePx}px; line-height: 1.34;
+.row { background: #fff; color: #14161c; font-weight: 800; font-size: ${linePx}px; line-height: 1.32;
        border-radius: ${Math.round(linePx * 0.42)}px; padding: ${pad}px ${Math.round(pad * 1.5)}px;
        width: fit-content; max-width: 88%; text-align: start;
        box-shadow: 0 ${Math.round(pad * 0.4)}px ${Math.round(pad * 1.6)}px rgba(0,0,0,.34); }
@@ -400,12 +420,11 @@ export function renderRouteCardHtml(slide, { size = 'tiktok', frame = 'tall' } =
     ${
       stop.image?.src
         ? `<img class="thumb" src="${stop.image.src}" alt="">`
-        : // NO EMPTY FRAME. A stop with no photograph used to draw a grey rounded
-          // rectangle where the picture would be, which looks like an image that
-          // failed to load rather than a place we have no photograph of - and on a
-          // Prague day it was always the kosher restaurant, which is the one row the
-          // audience most wants to trust. A spacer keeps the row aligned to the rail
-          // and shows nothing.
+        : // Unreachable: buildPlanPost drops a stop with no photograph before it gets
+          // here, because a gap in the thumbnail column reads as a broken image rather
+          // than as a place we have no picture of. Kept as a spacer so a future caller
+          // that skips that filter still produces an aligned row rather than a shifted
+          // one.
           '<div class="thumb hollow"></div>'
     }
     <div class="text">
@@ -458,6 +477,8 @@ export function renderRouteCardHtml(slide, { size = 'tiktok', frame = 'tall' } =
             margin-inline-start: ${Math.round(thumb / 2 - metaPx * 0.9)}px; }
 .tip { color: rgba(255,255,255,.82); font-weight: 600; font-size: ${metaPx}px; line-height: 1.34;
        margin-top: ${Math.round(gap * 1.5)}px; text-align: center; }
+.more { color: rgba(255,255,255,.55); font-weight: 600; font-size: ${Math.round(metaPx * 0.92)}px;
+        margin-top: ${Math.round(gap * 0.8)}px; text-align: center; }
 </style></head><body>
 ${PROBE}
 <div class="bg" style="background-image:url('${slide.bgImage?.src || slide.stops?.[0]?.image?.src || ''}')"></div>
@@ -467,6 +488,7 @@ ${PROBE}
     slide.subHe ? `<span class="sub">${withEmoji(slide.subHe)}</span>` : ''
   }</div>
   <div class="list">${stops.map(row).join('')}</div>
+  ${slide.moreHe ? `<div class="more">${withEmoji(slide.moreHe)}</div>` : ''}
   ${slide.tipHe ? `<div class="tip">${withEmoji(slide.tipHe)}</div>` : ''}
 </div>
 </body></html>`;
@@ -503,6 +525,16 @@ export function renderNotesCardHtml(slide, { size = 'tiktok', frame = 'tall' } =
 
   return `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><style>${base(geo)}
 body { background: #000; }
+/* A PHOTOGRAPH BEHIND THE CHECKLIST, HEAVILY BLURRED AND HEAVILY DARKENED.
+   The look is modelled on a Notes screenshot and the first version took that literally:
+   pure black, nothing else. On a phone, mid-post, that reads as the slideshow having
+   ended - the feed goes from photographs to a black rectangle - and a viewer who thinks
+   the post is over stops swiping. The blur is strong enough that it is texture rather
+   than a picture, so the checklist is still the only thing being read, and the slide is
+   still visibly part of the same post. */
+.bg { position: absolute; inset: 0; background-size: cover; background-position: center;
+      filter: blur(46px) saturate(1.05) brightness(.42); transform: scale(1.25); }
+.tint { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,.62), rgba(0,0,0,.76)); }
 .wrap { position: absolute; inset: 0; padding: ${Math.round(geo.h * 0.13)}px ${Math.round(geo.w * 0.085)}px;
         display: flex; flex-direction: column; justify-content: center; }
 .head { color: #fff; font-weight: 800; font-size: ${headPx}px; line-height: 1.14;
@@ -522,6 +554,8 @@ body { background: #000; }
        font-weight: 600; font-size: ${Math.round(rowPx * 0.86)}px; line-height: 1.44; }
 </style></head><body>
 ${PROBE}
+<div class="bg" style="background-image:url('${slide.bgImage?.src || ''}')"></div>
+<div class="tint"></div>
 <div class="wrap">
   <div class="head">${withEmoji(slide.titleHe || '')}${
     (slide.emojis || []).length ? `<span class="e">${(slide.emojis || []).map((e) => emojiHtml(e, { size: '0.9em' })).join('')}</span>` : ''
@@ -559,42 +593,46 @@ export function renderCollageHtml(slide, { size = 'tiktok', frame = 'tall' } = {
   const geo = geometryFor(size, frame);
   const shots = (slide.images || []).filter((i) => i?.src).slice(0, 4);
   const n = shots.length;
-  const labelPx = px(geo, 0.048);
+  const labelPx = px(geo, n >= 3 ? 0.036 : 0.042);
   const gapPx = Math.max(4, Math.round(geo.w * 0.008));
 
   // Four is a 2x2; three is one wide over two; two is stacked, which at 9:16 gives
   // each photograph a near-square crop rather than two letterbox strips.
-  const areas =
-    n >= 4
-      ? '"a b" "c d"'
-      : n === 3
-        ? '"a a" "b c"'
-        : n === 2
-          ? '"a a" "b b"'
-          : '"a a" "a a"';
+  const areas = n >= 4 ? '"a b" "c d"' : n === 3 ? '"a a" "b c"' : n === 2 ? '"a a" "b b"' : '"a a" "a a"';
 
   return `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><style>${base(geo)}
 .grid { position: absolute; inset: 0; display: grid; gap: ${gapPx}px;
         grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr;
         grid-template-areas: ${areas}; background: #000; }
-.cell { overflow: hidden; }
+.cell { overflow: hidden; position: relative; }
 .cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .c0 { grid-area: a; } .c1 { grid-area: b; } .c2 { grid-area: c; } .c3 { grid-area: d; }
-/* One label, bottom centre, in the same outlined type the label look uses so the
-   two read as the same post. No corner text: section 5's rule, and the reason is
-   that tiny type in a corner is what a watermark looks like. */
-/* Padded, because a day title is a sentence and an unpadded centred line starts at
-   the very edge of the frame when it is long enough - which is what it did: "העיר
-   העתיקה, הרובע היהודי והשווקים" ran off the right of a 1080 frame. */
-.tag { position: absolute; inset-inline: ${Math.round(geo.w * 0.07)}px; bottom: ${Math.round(geo.h * 0.07)}px;
-       text-align: center; line-height: 1.2;
-       font-weight: 800; font-size: ${labelPx}px; ${outlined(Math.max(3, Math.round(labelPx * 0.055)))} }
+/* ONE SMALL TITLE PER WINDOW, CENTRED IN IT, instead of one line across the bottom.
+   The bottom line was in the worst possible place: a collage sits mid-post, the eye is
+   moving, and the foot of the frame is where the platform's own caption and handle
+   already are - so nobody read it, and it named only one of the four pictures anyway.
+   A label centred in its own cell is read with the photograph it belongs to, which is
+   the only reason to label a collage at all. */
+.tag { position: absolute; inset-inline: 6%; top: 50%; transform: translateY(-50%);
+       text-align: center; line-height: 1.18; font-weight: 800; font-size: ${labelPx}px;
+       ${outlined(Math.max(3, Math.round(labelPx * 0.06)))} }
+/* A soft vignette behind each label, so the type survives a bright photograph without
+   a panel over it. Radial and local to the cell, which is what the platform's own
+   caption does. */
+.cell::after { content: ''; position: absolute; inset: 0; pointer-events: none;
+               background: radial-gradient(ellipse at center, rgba(0,0,0,.42), rgba(0,0,0,0) 70%); }
 </style></head><body>
 ${PROBE}
 <div class="grid">
-  ${shots.map((s, i) => `<div class="cell c${i}"><img src="${s.src}" alt=""></div>`).join('\n  ')}
+  ${shots
+    .map(
+      (sh, i) =>
+        `<div class="cell c${i}"><img src="${sh.src}" alt="">${
+          sh.labelHe ? `<div class="tag">${withEmoji(sh.labelHe)}</div>` : ''
+        }</div>`
+    )
+    .join('')}
 </div>
-${slide.titleHe ? `<div class="tag">${withEmoji(slide.titleHe)}</div>` : ''}
 </body></html>`;
 }
 
@@ -619,20 +657,68 @@ const DAY_COLOURS = ['#FFD84D', '#4FC3F7', '#FF8A65', '#A5D6A7', '#CE93D8'];
  * aspect-ratio test varies. A 3:4 frame fits a different bounding box than a 9:16 one
  * does, so the same itinerary is legitimately two different maps.
  */
-export function renderPinMapHtml(slide, { size = 'tiktok', frame = 'tall' } = {}) {
+export async function renderPinMapHtml(slide, { size = 'tiktok', frame = 'tall' } = {}) {
   const geo = geometryFor(size, frame);
-  const fit = fitPoints(slide.points || [], { width: geo.w, height: geo.h, padding: 0.16 });
-  if (!fit) throw new Error('renderPinMapHtml: fewer than two points with coordinates');
+  const pts = slide.points || [];
 
-  const placed = slide.points.map((p) => ({ ...p, ...fit.project(p) }));
+  const fit = fitPoints(pts, { width: geo.w, height: geo.h, padding: 0.16 });
+  if (!fit) throw new Error('renderPinMapHtml: fewer than two points with coordinates');
+  const placed = pts.map((p) => ({ ...p, ...fit.project(p) }));
+  const bar = scaleBar(fit.metresPerPixel, geo.w);
+
+  // THE BASEMAP, FROM DATA. See cityVectors: raster tiles are not available to this
+  // project at city zoom, and the water and main roads are one Overpass query.
+  //
+  // The bounding box is the FRAME rather than the points: a map whose roads stop at the
+  // outermost pin has a blank margin all round it, which reads as the data having run
+  // out. Inverting the projection at the frame corners gives the box actually on screen.
+  const lats = pts.map((p) => Number(p.lat));
+  const lngs = pts.map((p) => Number(p.lng));
+  const padLat = (Math.max(...lats) - Math.min(...lats)) * 0.35 + 0.004;
+  const padLng = (Math.max(...lngs) - Math.min(...lngs)) * 0.35 + 0.006;
+  const vectors = await cityVectors([
+    Math.min(...lats) - padLat,
+    Math.min(...lngs) - padLng,
+    Math.max(...lats) + padLat,
+    Math.max(...lngs) + padLng,
+  ]).catch(() => null);
+
+  // Every way projected through the SAME projection the pins use, so the map and the
+  // pins cannot disagree about where anything is.
+  const toPath = (geometry) => {
+    const d = geometry
+      .map((pt, i) => {
+        const { x, y } = fit.project({ lat: pt.lat, lng: pt.lon ?? pt.lng });
+        return `${i ? 'L' : 'M'} ${x.toFixed(1)} ${y.toFixed(1)}`;
+      })
+      .join(' ');
+    return d;
+  };
+  // Dropped when it would draw nothing on screen, which is most of a city's roads on
+  // any one frame: projecting and emitting them all is a megabyte of path data for
+  // lines outside the viewport.
+  const onFrame = (geometry) =>
+    geometry.some((pt) => {
+      const { x, y } = fit.project({ lat: pt.lat, lng: pt.lon ?? pt.lng });
+      return x > -geo.w && x < geo.w * 2 && y > -geo.h && y < geo.h * 2;
+    });
+
+  const base = vectors
+    ? {
+        roads: vectors.roads.filter(onFrame).map(toPath),
+        water: vectors.water.filter(onFrame).map(toPath),
+      }
+    : null;
+
   return pinMapHtml({
     points: placed,
     width: geo.w,
     height: geo.h,
     titleHe: slide.titleHe || null,
     subHe: slide.subHe || null,
-    bar: scaleBar(fit.metresPerPixel, geo.w),
+    bar,
     dayColours: DAY_COLOURS,
+    base: base && (base.roads.length || base.water.length) ? base : null,
   });
 }
 
@@ -648,7 +734,15 @@ export const RENDERERS = {
   pinmap: renderPinMapHtml,
 };
 
-export function renderPostSlideHtml(slide, opts = {}) {
+/**
+ * ASYNC, because one of the six fetches something.
+ *
+ * Five of these looks are pure string building. The pin map has to pull its basemap
+ * tiles before it can lay anything out, so the entry point returns a promise and the
+ * caller awaits - which costs the other five nothing, since renderPostSize was already
+ * awaiting the screenshot that follows.
+ */
+export async function renderPostSlideHtml(slide, opts = {}) {
   const draw = RENDERERS[slide?.look];
   if (!draw) throw new Error(`renderPostSlideHtml: unknown look ${JSON.stringify(slide?.look)}`);
   return draw(slide, opts);

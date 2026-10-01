@@ -240,7 +240,20 @@ export function tripDecks(plan, { text, giveaway = null }) {
 
   const tail = [...(breakdown ? [breakdown] : []), ...(total ? [total] : []), ...(ask ? [ask] : [])];
 
-  const full = stops.map((stop) => ({ ...stopSlide(stop, { flag }), image: stop.image || null }));
+  // THE TIKTOK SET IS A SLIDE PER DAY TOO, NOT A SLIDE PER STOP.
+  //
+  // It was nineteen slides for a four-day trip - one place, one photograph, one line,
+  // nineteen times - and that is the format the five post types were built to replace:
+  // each slide can be skipped in half a second because there is nothing on it to read,
+  // and nineteen of them is a post nobody finishes. TikTok takes 35 images, so the limit
+  // was never the reason; it was simply the shape the stop list fell into.
+  //
+  // A day slide names its stops on one line and carries the day's photograph. Fewer
+  // slides, more on each, and the same itinerary - which is the bargain the Instagram
+  // set has been making all along, now made for both.
+  const full = plan.days.map((day, i) =>
+    daySlide(day, { flag, dayLabelHe: text.dayLabelFor(i + 1), priced: text.priced })
+  );
   const short = plan.days.map((day, i) =>
     daySlide(day, { flag, dayLabelHe: text.dayLabelFor(i + 1), priced: text.priced })
   );

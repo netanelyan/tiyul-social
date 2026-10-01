@@ -165,13 +165,17 @@ export function kmBetween(a, b) {
 export function distanceHe(a, b, { walkMaxKm = 3 } = {}) {
   const km = kmBetween(a, b);
   if (km == null) return null;
-  if (km > walkMaxKm) return 'נסיעה';
-  if (km < 0.12) return 'ליד';
-  if (km < 1) return `~${Math.round(km * 10) * 100} מ׳`;
-  // One decimal up to two kilometres, then whole ones. "~1.4 ק״מ" is a walk
-  // somebody can picture; "~2.7 ק״מ" is precision the straight line has not
-  // earned.
-  return km < 2 ? `~${km.toFixed(1)} ק״מ` : `~${Math.round(km)} ק״מ`;
+  if (km > walkMaxKm) return 'נסיעה קצרה';
+  // ONE UNIT DOWN A WHOLE DAY, and the unit is metres.
+  //
+  // The first version switched at a kilometre, so a single route card read "~300 מ׳",
+  // then "~1.4 ק״מ", then "~800 מ׳" - three numbers a reader has to convert in their
+  // head to compare, on a slide whose entire job is to say whether the day is walkable.
+  // Everything under the walking threshold is metres now, rounded to the nearest
+  // hundred, so the column reads 300, 600, 1,400, 800 and the comparison is free.
+  if (km < 0.12) return 'ממש ליד';
+  const metres = Math.round((km * 1000) / 100) * 100;
+  return `~${metres.toLocaleString('en-US')} מ׳`;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -444,3 +448,52 @@ export const practicalOf = (city) => ({
   kosherHe: String(city?.practical?.kosherOverview || '').trim() || null,
   seasonHe: String(city?.bestSeason || '').trim() || null,
 });
+
+/**
+ * The page's own rating, as a badge.
+ *
+ * ONE BADGE SHAPE ON EVERY TYPE, and it is always the rating. It used to be whatever
+ * number the type happened to have - days on a plan, places on a list, alternatives on
+ * an instead post - and two of those were actively bad. The day count repeats what the
+ * hook already says ("4 ימים בדובאי" over a badge reading 4), and "4 במקום" on an
+ * instead cover is a phrase nobody parses.
+ *
+ * The rating is the right number for all of them because it is the only one that is not
+ * already on the slide and the only one that is a JUDGEMENT: it says a person graded
+ * this, which is the thing an aggregator cannot say. `4.6/5` with a star rather than a
+ * bare number, because a bare 4.6 could be anything.
+ */
+export function ratingBadge(city) {
+  const score = Number(city?.editorialRating?.score);
+  if (!Number.isFinite(score) || score <= 0) return null;
+  return { badgeHe: `${score}/5`, badgeLabelHe: null, badgeEmoji: '⭐' };
+}
+
+/**
+ * A tip from the page, softened out of the imperative.
+ *
+ * THE PAGE WRITES INSTRUCTIONS AND A POST SHOULD WRITE ADVICE. The day notes are in the
+ * imperative - "להתחיל מוקדם בכיכר העיר העתיקה" - which is the right voice for a guide
+ * somebody opened on purpose and the wrong one on a slide somebody was shown. An
+ * instruction from a stranger reads as presumptuous; the same sentence behind "עדיף" or
+ * "מומלץ" reads as somebody who has thought about it, which is what the planner's voice
+ * is.
+ *
+ * ONLY THE OPENING IS TOUCHED, and only when it is actually an infinitive. The rest of
+ * the sentence is the page's own words - this does not rewrite, it prefixes - so the
+ * quote check still passes on everything after the first word.
+ */
+const SOFTENERS = ['עדיף', 'מומלץ', 'שווה', 'כדאי'];
+
+export function adviseHe(text, { nth = 0 } = {}) {
+  const t = String(text || '').trim();
+  if (!t) return null;
+  // Already hedged by the author: "כדאי להזמין מראש" needs nothing.
+  if (new RegExp(`^(?:${SOFTENERS.join('|')})`).test(t)) return t;
+  // An opening infinitive is the imperative shape this is for: "להתחיל מוקדם...",
+  // "לתאם מול הקהילה...". Anything else is already a sentence and is left alone.
+  if (!/^ל[א-ת]/.test(t)) return t;
+  // Varied by position so a four-day plan does not open every tip with the same word.
+  const soft = SOFTENERS[nth % SOFTENERS.length];
+  return `${soft} ${t.charAt(0).toLowerCase() === t.charAt(0) ? t : t}`;
+}

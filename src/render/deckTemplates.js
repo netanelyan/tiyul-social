@@ -575,7 +575,20 @@ function ink(spot, style, { cover = false } = {}) {
     : `0 1px 2px rgba(255,255,255,${(0.4 + force * 0.3).toFixed(2)}), ` +
       `0 2px ${12 + Math.round(force * 10)}px rgba(255,255,255,${(0.36 + force * 0.34).toFixed(2)})`;
 
-  return [`color: ${colour}`, '-webkit-text-stroke: 0', `text-shadow: ${shadow}`].join(';');
+  // THE OUTLINE, IN PROPORTION TO THE MEASURED SHORTFALL. Zero on a frame the shadow
+  // already carries, which is most of them - this style's whole premise is small light
+  // type that looks typed rather than set, and an outline on every slide would undo it.
+  //
+  // It is the one thing that works when the picture is the same VALUE as the letter.
+  // A shadow separates type from a background darker or lighter than itself; against an
+  // equal value it adds a blur and no edge, and the line reads as eaten. `paint-order`
+  // puts the stroke behind the fill so the letterform keeps its weight.
+  return [
+    `color: ${colour}`,
+    '-webkit-text-stroke: var(--edge) var(--edgeink)',
+    'paint-order: stroke fill',
+    `text-shadow: ${shadow}`,
+  ].join(';');
 }
 
 /**
@@ -713,15 +726,32 @@ export function renderSlideHtml(slide, { size = 'tiktok', cover = false, style =
   // light unbranded thing it is supposed to be. On a frame that cannot carry
   // them the letters thicken and go fully opaque — which costs nothing on the
   // slides that never needed it, because they never see it.
+  // HOW HARD THE TYPE HAS TO FIGHT THE PICTURE, from the measurement.
+  //
+  // `place.shadow` is the measured shortfall: 0 on a frame the configured weight and
+  // opacity already survive, 1 on one they do not. It drives the weight and the opacity
+  // below, and it now drives a STROKE as well.
+  //
+  // Weight and opacity alone are not enough, which is what "text gets eaten by the
+  // background" was. Making a letter heavier and more opaque helps against a busy
+  // background of similar value; it does nothing against a background of the SAME
+  // value, where the letter and the picture are the same brightness and the eye has no
+  // edge to find. Only a contrasting outline gives it one, and it is applied in
+  // proportion to the shortfall so a clean frame still gets the light unbranded type
+  // this format is built on.
   const force = Math.max(0, Math.min(1, place.shadow ?? 0));
   const adapt = ov.adapt;
   const weight = Math.round(ov.weight + force * adapt.weightBoost);
   const opacity = (ov.opacity + (adapt.opacityCeiling - ov.opacity) * force).toFixed(3);
+  // The measured outline, in pixels, zero on a frame that does not need one.
+  const edge = (force * t.stroke * 0.9).toFixed(2);
   const vars = [
     `--accent:${accent}`,
     `--stroke:${t.stroke}px`,
     `--w:${weight}`,
     `--op:${opacity}`,
+    `--edge:${edge}px`,
+    `--edgeink:${place.onDark === false ? 'rgba(255,255,255,.9)' : 'rgba(0,0,0,.78)'}`,
   ].join(';');
 
   let body;
@@ -780,13 +810,18 @@ export function renderSlideHtml(slide, { size = 'tiktok', cover = false, style =
       // emoji stay because they are a fixed set tied to fixed labels: a boot
       // for difficulty, a ruler for distance. Those earn their place; a free
       // choice does not.
-      // `plainNote` drops the brackets, and exactly one slide asks for it: the
-      // closing one, where the note is not an aside about a place but the whole
-      // argument for following. "(כל יום יעד אחד)" in brackets reads as a
-      // footnote to the word above it, which is the opposite of what it is for.
-      (note
-        ? `<div class="note"><span>${slide.plainNote ? escapeHtml(note.text) : `(${escapeHtml(note.text)})`}</span></div>`
-        : '');
+      // NO BRACKETS. They were there to mark the line as an aside, because on most
+      // slides of a deck it is absent entirely and a bare word under one name out of
+      // six read as a caption that had lost its label.
+      //
+      // What they actually did was make it read as machine output. A parenthesis is
+      // what a database prints when it has a second field; a guide writing about a
+      // place either says the thing or does not. "(מאתגר)" under a summit is a
+      // footnote, and nobody writing a recommendation footnotes themselves.
+      //
+      // The separation the brackets were doing is now done by weight and colour, which
+      // is what it should have been doing all along.
+      (note ? `<div class="note"><span>${escapeHtml(note.text)}</span></div>` : '');
   }
 
   // Nothing at the bottom. Not one reference post carries a domain, and a URL

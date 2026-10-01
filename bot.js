@@ -120,7 +120,7 @@ const {
   // for something you consult when the queue looks thin rather than something
   // that interrupts you when it does not.
   REJECT_NOTIFY = 'off',
-  QUIET_ALERT_HOURS = '30',
+  QUIET_ALERT_HOURS = '0',
 } = process.env;
 
 if (!TG_BOT_TOKEN) {
@@ -1432,7 +1432,18 @@ async function doRunJob({ announce = true, target } = {}) {
     });
     lastRunAt = Date.now();
     activity.push({ ts: lastRunAt, type: 'run', gathered: summary.gathered });
-    if (announce) await notify.send(bot.telegram, staging, notify.runReport(summary));
+    // ONLY WHEN SOMETHING HAPPENED OR SOMETHING NEEDS YOU.
+    //
+    // This fired on every gather, four times a day, and most of them say "40 found, 12
+    // ranked, 0 for approval" - which is a correct run with nothing in it. The items it
+    // DOES find arrive as their own approval cards, so a report that staged nothing is
+    // a notification whose entire content is that there is nothing to do.
+    //
+    // A run that errored, exhausted its budget or actually staged something still
+    // reports, because each of those changes what you would do next.
+    const worthSaying =
+      summary.staged > 0 || summary.budgetExhausted || (summary.sourceErrors || []).length > 0;
+    if (announce && worthSaying) await notify.send(bot.telegram, staging, notify.runReport(summary));
     return summary;
   } finally {
     running = false;
@@ -1976,7 +1987,7 @@ bot.command('status', async (ctx) => {
   // cards" has an answer here that no other line in the status can give, and
   // every one of those answers is a correct timer rather than a broken one.
   //
-  // The shoot window may be Shabbat, or it may be 16:00. A deck or a clip may be
+  // A deck or a clip may be
   // held by its BACKLOG cap, which is the one that stays shut for days: it is
   // released by tapping approve or reject, not by waiting. Four undecided clips
   // against a ceiling of three is a timer that stopped offering clips a week ago
@@ -1985,19 +1996,6 @@ bot.command('status', async (ctx) => {
   // One message for the three of them, not three. The whole point of a status is
   // that it is the place you come to ask.
   const other = [];
-  if (SHOOTS_PER_DAY > 0) {
-    const when = sendableNow();
-    other.push(
-      `🎬 תדריכי צילום: ${store.shootsToday()}/${SHOOTS_PER_DAY} היום`,
-      `   שעות: ${windowsHe()} (שעון ישראל), לא בשבת`,
-      when.ok ? '   ✅ אפשר לשלוח עכשיו' : `   ⏸️ ${when.why}`,
-      '   /shoot שולח אחד בלי קשר לשעה'
-    );
-  }
-  const backlogLine = (n, max, how) =>
-    n >= max
-      ? `   ⏸️ ${n}/${max} ממתינים להחלטה - לא יוצעו חדשים עד שתאשרו או תדחו`
-      : `   ✅ ${n}/${max} ממתינים · ${how}`;
   if (DECKS_PER_DAY > 0) {
     other.push(
       `🃏 דקים: ${decksToday}/${DECKS_PER_DAY} היום`,
@@ -2527,35 +2525,6 @@ bot.command('trip', async (ctx) => {
   detach('מסלול', () => suggestPlan(asked, days, ctx.chat.id, budgetIls), ctx.chat.id);
 });
 
-/**
- * A shot list, now.
- *
- * `/shoot` for one, `/shoot 3` for three, the same convention /clip and /deck
- * already use. Unlike either of them, nothing is built and nothing is staged:
- * a shoot has no publish step because the video does not exist until somebody
- * films it, so this ends at a message rather than at a button.
- *
- * It ignores the posting window on purpose. The window governs the TIMER — when
- * it is worth sending something unasked, because a shot list is acted on within
- * the hour and one that arrives at 03:00 is read at 11:00 with its window shut.
- * Asking for one is not the same as being offered one, which is the same rule
- * /run and /deck already follow for the daily quotas.
- */
-bot.command('shoot', async (ctx) => {
-  const arg = (ctx.message.text || '').replace(/^\/shoot(@\S+)?\s*/, '').trim();
-  const count = Math.min(5, Math.max(1, Number(arg) || 1));
-
-  await ctx.reply(`⏳ מכין ${count} תדריך${count === 1 ? '' : 'ים'}...`);
-  detach(
-    'תדריכים',
-    async () => {
-      const sent = await sendShoots(count, ctx.chat.id);
-      if (!sent) await notify.send(bot.telegram, ctx.chat.id, '❌ לא הוכן תדריך').catch(() => {});
-    },
-    ctx.chat.id
-  );
-});
-
 bot.command('deck', async (ctx) => {
   const arg = (ctx.message.text || '').replace(/^\/deck(@\S+)?\s*/, '').trim();
 
@@ -2867,7 +2836,7 @@ const CLIPS_PER_DAY = Math.max(0, Number(process.env.CLIPS_PER_DAY ?? '0'));
  *
  * THE HIGHEST OF THE FOUR, because this is what the account is now. A deck is the older
  * format these replace, a clip is what runs on the days nobody films (and is paused -
- * see CLIPS_PER_DAY), and a shoot is a shot list rather than a post.
+ * see CLIPS_PER_DAY).
  *
  * Built rather than proposed, so the backlog counts what is STAGED and waiting for a
  * tap. Two posts standing unapproved is a queue somebody has stopped reading, and
@@ -2901,8 +2870,6 @@ let lastClipSuggestAt = 0;
  * because unlike clips there is nothing staged to count and a restart would
  * otherwise reset the budget to zero.
  */
-const SHOOTS_PER_DAY = Math.max(0, Number(process.env.SHOOTS_PER_DAY ?? '1'));
-let lastShootAt = 0;
 
 /** How many clips are already staged and waiting for a decision. */
 const clipsWaiting = () => store.stagingItems().filter(({ cand }) => cand?.kind === 'clip').length;
@@ -2943,45 +2910,6 @@ async function suggestClipJob() {
       .send(bot.telegram, staging, '⚠️ שורת הקליפ נלקחה מהמאגר ולא נכתבה - בדוק את ANTHROPIC_API_KEY')
       .catch(() => {});
   }
-}
-
-/**
- * Shot lists, sent one message each.
- *
- * SEQUENTIAL, and each one is recorded before the next is planned. That is the
- * whole reason this is a loop rather than a Promise.all: every rule the
- * rotation enforces is a question about what went out before — never the same
- * shape twice in a row, the product in at least half, which part of the series
- * is next — and three shoots planned concurrently all read the same history and
- * all answer it the same way. `/shoot 3` would return three demos of Greece.
- *
- * Recorded when SENT rather than when acted on, because nothing here can tell
- * whether it was acted on. A shot list you ignored still used up its slot in
- * the rotation, and that is the right direction: the alternative is the same
- * brief arriving every day until you film it.
- */
-const sendShoots = billed('shoot', sendShootsJob);
-async function sendShootsJob(n, chatId) {
-  const { planShoot } = await import('./src/shoot/plan.js');
-  const { shootMessage } = await import('./src/shoot/message.js');
-
-  let sent = 0;
-  for (let i = 0; i < n; i++) {
-    let shoot;
-    try {
-      shoot = await planShoot({ history: store.shootHistory() });
-    } catch (e) {
-      await notify.send(bot.telegram, chatId, `❌ תדריך נכשל: ${e.message}`).catch(() => {});
-      // One failed plan should not cost the rest of the batch, for the same
-      // reason one failed clip does not: a model refusal on the third of three
-      // is not a reason to withhold the two that worked.
-      continue;
-    }
-    await bot.telegram.sendMessage(chatId, shootMessage(shoot));
-    store.addShoot(shoot);
-    sent += 1;
-  }
-  return sent;
 }
 
 /**
@@ -3319,8 +3247,7 @@ bot.command('help', (ctx) =>
       '   instead לוקח את האלטרנטיבות מאותה מדינה לבד',
       '',
       '/tiktok - חיבור טיקטוק, טוקנים ורמות פרטיות',
-      '/shoot - תדריך צילום אחד: הוק, ביטים, מה לצלם וכיתוב מוכן',
-      '/shoot 3 - שלושה תדריכים',
+
       '/trip - מסלול שנכתב ב-AI, כמצגת: יעד שלא היה לאחרונה',
       '/trip רומא - מסלול ליעד מסוים',
       '/trip רומא 5 - ולמספר ימים מסוים',
@@ -3335,8 +3262,6 @@ bot.command('help', (ctx) =>
       '   (גם בעברית: /clip חתוך · /clip רצף · /clip בודד)',
       '/clear_pending',
       '',
-      'תדריך צילום לא מתפרסם על ידי הבוט - אתה מצלם ומעלה. /shoot מתעלם משעות',
-      'הפעילות; הטיימר לא.',
       '',
       'מסלול AI הוא הצעה, לא עובדות מאומתות: אין ציטוטים מאחוריו והמחירים הם',
       'הערכה. הכרטיס מדפיס את כל המסלול כדי שאפשר יהיה לקרוא לפני שמאשרים.',
@@ -3402,7 +3327,12 @@ function remainingToday(day) {
  * published in days. The question is per destination.
  */
 function quietCheck() {
-  const hours = Math.max(1, Number(QUIET_ALERT_HOURS));
+  // OFF BY DEFAULT. It told you the bot had been quiet, which is a thing you can see by
+  // looking at the chat, and it arrived exactly when there was nothing to act on. Set
+  // QUIET_ALERT_HOURS to a number to turn it back on; the logic below is unchanged and
+  // still correct for the case where somebody wants it.
+  const hours = Number(QUIET_ALERT_HOURS);
+  if (!Number.isFinite(hours) || hours <= 0) return;
   const limitMs = hours * 3_600_000;
 
   const stagedAt = store.lastStagedAt();
@@ -3534,26 +3464,6 @@ function tick() {
     suggestClip().catch((e) => console.error('clip suggestion failed:', e.message));
   }
 
-  // Shot lists, and the ONE thing on this timer that is not gated by RUN_HOUR.
-  //
-  // Everything above runs inside the gather hours, which exist so nothing
-  // arrives overnight. A shoot has a stricter requirement and a different one:
-  // it is a thing you act on within the hour, so it has to arrive when the
-  // audience it is being filmed for is actually on the application — 12:00-14:00
-  // and 19:00-22:00 Israel time — and never between Friday evening and Saturday
-  // evening, where a post spends its whole first-hour ranking test on nobody.
-  //
-  // sendableNow() answers both in one call and in Israel's time zone rather
-  // than this machine's, which matters on a VPS that is not in Israel. See
-  // src/schedule.js.
-  if (SHOOTS_PER_DAY > 0 && store.shootsToday() < SHOOTS_PER_DAY && Date.now() - lastShootAt >= gatherIntervalMs) {
-    const when = sendableNow();
-    if (when.ok) {
-      lastShootAt = Date.now();
-      sendShoots(1, staging).catch((e) => console.error('shoot failed:', e.message));
-    }
-  }
-
   if (inHours && remaining > 0 && due) {
     lastGatherAt = Date.now();
     if (day !== lastRunDay) {
@@ -3668,7 +3578,6 @@ const adminOps = {
         cards: { today: store.stagedToday(day) - store.rejectedToday(day), perDay: dailyTarget() },
         decks: { today: decksToday, perDay: DECKS_PER_DAY, waiting: store.proposalSize(), max: DECK_BACKLOG_MAX },
         clips: { today: clipsToday, perDay: CLIPS_PER_DAY, waiting: clipsWaiting(), max: CLIP_BACKLOG_MAX },
-        shoots: { today: store.shootsToday(), perDay: SHOOTS_PER_DAY, window: windowsHe(), now: sendableNow() },
         clipShapes: store.clipShapeHistory().slice(0, 6),
       },
     };
@@ -3858,12 +3767,6 @@ const adminOps = {
       return { ok: true, said: `⏳ מתכנן ${asked || 'יעד'}${budgetIls ? ` · ${budgetIls.toLocaleString('en-US')} ₪` : ''}` };
     }
 
-    if (what === 'shoot') {
-      await notify.send(bot.telegram, staging, `🌐 ${by} ביקש תדריך צילום באתר`).catch(() => {});
-      detach('תדריך צילום', () => sendShoots(count, staging));
-      return { ok: true, said: `⏳ שולח ${count} תדריך(ים)` };
-    }
-
     return { ok: false, said: `לא יודע לבנות "${what}"` };
   },
 };
@@ -3924,7 +3827,7 @@ async function main() {
   startIgWebhook();
   console.log(`   daily run at ${RUN_HOUR}:00 · target ${dailyTarget()} · drip every ${POST_INTERVAL_MINUTES} min`);
   console.log(
-    `   suggestions per day: ${dailyTarget()} cards · ${POSTS_PER_DAY} posts · ${DECKS_PER_DAY} decks · ${CLIPS_PER_DAY} clips · ${SHOOTS_PER_DAY} shoots`
+    `   suggestions per day: ${dailyTarget()} cards · ${POSTS_PER_DAY} posts · ${DECKS_PER_DAY} decks · ${CLIPS_PER_DAY} clips`
   );
 
   // Do the budgets fit down the drip?
@@ -3939,8 +3842,7 @@ async function main() {
   // deliberately steps over the budgets, and a backlog you asked for is not a
   // misconfiguration. What was missing is that the standing rates could
   // disagree with each other silently, and a drip that is permanently four
-  // posts behind looks exactly like a drip that is working. A shoot is not
-  // counted: it never publishes.
+  // posts behind looks exactly like a drip that is working.
   {
     // POSTS ARE COUNTED HERE TOO, and leaving them out was the kind of omission this
     // check exists to catch. They are the largest standing budget of the four - two a
@@ -3958,10 +3860,6 @@ async function main() {
   }
   console.log(`   posts to: ${targetsForKind('post').join(' + ') || 'NOWHERE (nothing connected)'}`);
   console.log(`   clips to: ${targetsForKind('clip').join(' + ') || 'NOWHERE (TikTok not connected)'}`);
-  // Said out loud at boot, because "shoots go nowhere" is the single most
-  // surprising thing about this queue and the one most likely to be read as a
-  // misconfiguration. It is the design: see BRIEF.md.
-  console.log(`   shoots to: YOU - a shot list to film by hand, ${windowsHe()} Israel time, not on Shabbat`);
 
   // Checked at boot rather than discovered at the first clip of the day.
   // Without an encoder the clip half of this bot cannot work at all, and the

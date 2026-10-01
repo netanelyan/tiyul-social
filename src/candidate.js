@@ -165,20 +165,34 @@ async function build(item, { render = true } = {}) {
   //    image provider reads as an editorial decision for as long as nobody
   //    thinks to check. What was asked for and what came back is recorded and
   //    printed in the approval message.
+  // EVERY CARD ASKS FOR A PHOTOGRAPH NOW, not only the three photo layouts.
+  //
+  // A text card used to be flat brand colour, which is the right answer for a card whose
+  // claim IS the content - and the wrong one in a feed, where a flat rectangle beside
+  // nine photographs reads as an advertisement and is scrolled past before the claim is
+  // read. The seven text layouts now carry the same photograph blurred far past
+  // recognition (see groundCss in render/templates.js), which is colour and light rather
+  // than a depiction and so carries none of a photo layout's burden.
+  //
+  // A MISS IS NOT A FAILURE ON A TEXT CARD. On a photo layout no photograph means the
+  // layout degrades, and `imageMiss` says so on the approval card. Here it means the
+  // card is flat, which is exactly what it was before - so the miss is not recorded and
+  // nothing downgrades.
   let image = null;
   let imageMiss = null;
-  if (isPhotoLayout(d.layout)) {
+  const wantsPhoto = isPhotoLayout(d.layout);
+  if (true) {
     if (!imagesEnabled()) {
-      imageMiss = 'אין ספק תמונות מוגדר';
+      if (wantsPhoto) imageMiss = 'אין ספק תמונות מוגדר';
     } else {
       try {
         image = await findImage(d);
-        if (!image?.src) {
+        if (!image?.src && wantsPhoto) {
           const asked = imageQueries(d);
           imageMiss = asked.length ? `לא נמצאה תמונה ל-"${asked[0]}"` : 'הטיוטה לא ביקשה תמונה';
         }
       } catch (e) {
-        imageMiss = e.message;
+        if (wantsPhoto) imageMiss = e.message;
       }
     }
   }

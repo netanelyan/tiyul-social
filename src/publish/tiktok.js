@@ -832,7 +832,11 @@ export function preflight(cand) {
   // named. Leaving 'plan' out of this check is how a 4:5 itinerary would reach
   // a 9:16 feed, top-anchored, with its own total under the search bar.
   const deckImages = cand.deck?.urls?.tiktok || [];
-  if (['deck', 'plan'].includes(cand.kind) && !deckImages.length) {
+  // `post` is in this list for the same reason `plan` is: it is a slideshow that fills
+  // deck.urls exactly as a deck does, so without naming it here a post built for
+  // Instagram would fall through to cand.card - the 4:5 cover - and reach a 9:16 feed
+  // top-anchored, with its hook under the search bar.
+  if (['deck', 'plan', 'post'].includes(cand.kind) && !deckImages.length) {
     throw new TikTokError(
       `this ${cand.kind} has no 1080x1920 renders - it was built for another destination. ` +
         'Rebuild it with TikTok among its targets rather than posting the 4:5 crop.',

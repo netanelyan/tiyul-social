@@ -1,4 +1,4 @@
-import { daysOf, placeLine } from './source.js';
+import { daysOf, placeLine, ratingBadge } from './source.js';
 import { line, fill } from './voice.js';
 import { postConfig } from '../postConfig.js';
 
@@ -87,8 +87,7 @@ export function buildMapPost(city, { hook, dest } = {}) {
       outliers ? `${core.length} במרכז, ${outliers} מסביב · הכל בהליכה` : `${days.length} ימים · הכל בהליכה`,
       { where: 'cover.note' }
     ),
-    badgeHe: String(points.length),
-    badgeLabelHe: 'מקומות',
+    ...(ratingBadge(city) || {}),
     band: 'mid',
     image: (city.places || []).find((p) => p.image?.src)?.image || null,
   };

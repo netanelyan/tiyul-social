@@ -1,4 +1,4 @@
-import { daysOf, placeLine, distanceHe, practicalOf, verdictOf, firstClause } from './source.js';
+import { daysOf, placeLine, distanceHe, practicalOf, verdictOf, firstClause, ratingBadge, seasonLine, adviseHe } from './source.js';
 import { line, fill } from './voice.js';
 import { postConfig } from '../postConfig.js';
 
@@ -53,19 +53,36 @@ function daySlides(days, look, { walkMaxKm }) {
         // The day's own tip, verbatim off the page, as the last line. The single most
         // useful sentence on the whole post - "להתחיל מוקדם בכיכר העיר העתיקה, לפני
         // קבוצות המטיילים" - and the one thing here no English guide would tell you.
-        tipHe: day.noteHe ? line(day.noteHe, { where: `day${day.n}.note` }) : null,
+        tipHe: day.noteHe ? line(adviseHe(day.noteHe, { nth: day.n }), { where: `day${day.n}.note` }) : null,
+        // The day's own first photograph, blurred behind the checklist. See the note on
+        // `.bg` in the notes template: a pure black slide mid-post reads as the end of
+        // the slideshow.
+        bgImage: day.stops.find((p) => p.image?.src)?.image || null,
         dayN: day.n,
       };
     }
 
+    // EVERY STOP ON A ROUTE CARD HAS A PHOTOGRAPH, or it is not on the card.
+    //
+    // The thumbnail column is the spine of this look - it is what makes a list of names
+    // read as a route somebody drew - and a transparent gap in it reads as an image
+    // that failed to load rather than as a place with no picture. The stop is dropped
+    // instead, and the day's own tip and the remaining stops still carry it.
+    //
+    // Dropped rather than substituted: there is no generic photograph of a restaurant
+    // that would be honest here, and the rule that a photograph must show the place it
+    // is labelled with is the one rule the whole image ladder exists to keep.
+    const shown = day.stops.filter((p) => p.image?.src);
+    const lost = day.stops.length - shown.length;
+
     // The route card. Each stop after the first carries the gap from the one before.
-    const stops = day.stops.map((p, i) => ({
+    const stops = shown.map((p, i) => ({
       nameHe: line(p.name, { where: `day${day.n}.stop` }),
       noteHe: placeLine(p),
       image: p.image || null,
       // Computed from the site's own coordinates and hedged in source.js. This
       // builder must never do the arithmetic itself - see the note on distanceHe.
-      gapHe: i > 0 ? distanceHe(day.stops[i - 1], p, { walkMaxKm }) : null,
+      gapHe: i > 0 ? distanceHe(shown[i - 1], p, { walkMaxKm }) : null,
     }));
     return {
       look: 'route',
@@ -75,8 +92,11 @@ function daySlides(days, look, { walkMaxKm }) {
       // could be derived from the stop names.
       subHe: day.titleHe ? line(day.titleHe, { where: `day${day.n}.subtitle` }) : null,
       stops,
-      tipHe: day.noteHe ? line(day.noteHe, { where: `day${day.n}.note` }) : null,
-      bgImage: day.stops.find((p) => p.image?.src)?.image || null,
+      tipHe: day.noteHe ? line(adviseHe(day.noteHe, { nth: day.n }), { where: `day${day.n}.note` }) : null,
+      bgImage: shown[0]?.image || null,
+      // Said on the slide rather than silently dropped, so a day that had six stops and
+      // shows four does not look like the whole day.
+      moreHe: lost + (day.more || 0) > 0 ? `ועוד ${lost + (day.more || 0)} בדף` : null,
       dayN: day.n,
     };
   });
@@ -142,16 +162,24 @@ export function dayEmojis(day, { max = 3 } = {}) {
  * one photograph in a grid is a photograph with a grid drawn round it.
  */
 function collageFor(day) {
-  const images = (day.stops || []).map((p) => p.image).filter((i) => i?.src);
-  if (images.length < 2) return null;
+  // EACH PICTURE CARRIES ITS OWN NAME, centred in its own window.
+  //
+  // The collage used to put one line across the bottom of the frame naming the DAY,
+  // which was wrong twice over: the foot of a 9:16 frame is where the platform's own
+  // caption and handle sit, so nobody read it - and it named one thing while showing
+  // four, so three of the photographs were unlabelled scenery.
+  //
+  // A place name on its own photograph is the only label a collage can honestly carry,
+  // and it turns the slide from a pause into four more facts.
+  const shown = (day.stops || []).filter((p) => p.image?.src).slice(0, 4);
+  if (shown.length < 2) return null;
   return {
     look: 'collage',
     // OPTIONAL, which is what lets an Instagram carousel fit. A collage is the breath
     // between two days rather than a day's content: dropping it costs the post its
     // pacing and nothing it promised. See fitTo in src/render/post.js.
     optional: true,
-    images: images.slice(0, 4),
-    titleHe: day.titleHe ? line(day.titleHe, { where: `day${day.n}.collage` }) : null,
+    images: shown.map((p) => ({ ...p.image, labelHe: line(p.name, { where: `day${day.n}.collage` }) })),
     dayN: day.n,
   };
 }
@@ -260,12 +288,14 @@ export function buildPlanPost(city, { look = 'route', hook, dest, days = null, q
     // The number of days as the sub-line, and the count of stops with it. Both are
     // facts about what is in the post, which is what a cover is for: the viewer
     // decides whether to swipe on what they are being promised.
-    noteHe: line(`${built.reduce((n, d) => n + d.stops.length, 0)} עצירות · הכל מסומן על מפה`, { where: 'cover.note' }),
-    // The day count as the badge. It is the single fact somebody is deciding on -
-    // "where, and for how many nights" is the question this format exists to settle -
-    // and inside the hook sentence it is one word among eight.
-    badgeHe: String(built.length),
-    badgeLabelHe: 'ימים',
+    // The sub-line says what is IN the post that the hook does not. "הכל מסומן על מפה"
+    // was neither: it is a thing nobody doubted and it reads as written by a machine
+    // reaching for a second sentence.
+    noteHe: line(coverPromise(built, practical), { where: 'cover.note' }),
+    // THE RATING, NOT THE DAY COUNT. The hook already says "4 ימים בדובאי" and a badge
+    // reading 4 beside it is the same word twice. The rating is the one number on the
+    // slide that is not already on the slide, and the only one that is a judgement.
+    ...(ratingBadge(city) || {}),
     emojis: dayEmojis({ stops: built.flatMap((d) => d.stops) }, { max: 3 }),
     band: 'mid',
   };
@@ -294,4 +324,25 @@ export function buildPlanPost(city, { look = 'route', hook, dest, days = null, q
       collages: middle.filter((s) => s.look === 'collage').length,
     },
   };
+}
+
+/**
+ * The plan cover's second line: what is in the post that the hook does not say.
+ *
+ * The hook already carries the destination and the day count. This carries the thing a
+ * viewer is actually weighing - how much walking, and the one practical fact that
+ * decides whether the trip happens - and it is counted, because a count is a promise
+ * somebody can hold you to.
+ *
+ * It replaced "הכל מסומן על מפה", which was neither: nobody doubted it, and it reads as
+ * a machine reaching for a second sentence.
+ */
+export function coverPromise(days, practical) {
+  const stops = days.reduce((n, d) => n + d.stops.length, 0);
+  const walkable = days.filter((d) => d.stops.length >= 3).length;
+  const flight = firstClause(practical?.flightsHe, { max: 52 });
+  if (flight) return `${stops} עצירות · ${flight}`;
+  const season = seasonLine(practical, { max: 40 });
+  if (season) return `${stops} עצירות · ${season}`;
+  return walkable >= 2 ? `${stops} עצירות, רובן בהליכה` : `${stops} עצירות`;
 }

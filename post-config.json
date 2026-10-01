@@ -248,12 +248,11 @@
       "for the two together, and an ask of one to three words."
     ],
     "follows": [
-      { "askHe": "עוד כאלה? תעקבו", "whyHe": "מחר יש כאן עוד אחד" },
-      { "askHe": "רוצים עוד? תעקבו", "whyHe": "יש כאן מקום חדש כל יום" },
-      { "askHe": "שווה לכם? תעקבו", "whyHe": "כל יום מקום אחד כאן" },
-      { "askHe": "בא לכם עוד? תעקבו", "whyHe": "כל שבוע מסלול חדש" },
-      { "askHe": "תעקבו", "whyHe": "מחר יש כאן עוד מקום כזה" },
-      { "askHe": "תעקבו", "whyHe": "כל יום יעד אחד ומקום מדויק" }
+      { "askHe": "תעקבו לעוד מסלולים", "whyHe": "כאן מעלים מסלול מלא ליעד אחר כל שבוע" },
+      { "askHe": "תעקבו לעוד סרטונים על טיולים", "whyHe": "מסלולים, מחירים ומה באמת שווה" },
+      { "askHe": "עוד תוכן כזה? תעקבו", "whyHe": "מסלול, מפה והמלצות לכל יעד" },
+      { "askHe": "תעקבו אם זה עזר", "whyHe": "כל שבוע יעד חדש עם מסלול מלא" },
+      { "askHe": "תעקבו לתכנון הטיול הבא", "whyHe": "כאן יש מסלולים מוכנים לעשרות יעדים" }
     ],
     "_questions_comment": [
       "A QUESTION WHOSE ANSWER IS INFORMATION THE READER HAS.",
@@ -1281,157 +1280,6 @@
       "Machu Picchu": "מאצ׳ו פיצ׳ו"
     }
   },
-  "shoot": {
-    "_comment": [
-      "A SHOOT IS A SHOT LIST, NOT A POST. Nothing here is ever published by the",
-      "bot, because the video does not exist until somebody films it.",
-      "",
-      "This is the honest half of BRIEF.md. Rules 3 and 4, show the product, use",
-      "real footage, need a camera, a voice and a screen, and no pipeline has",
-      "any of those. What a pipeline can do is everything around them: choose the",
-      "destination and the angle, rotate the shape so two of a kind never land",
-      "back to back, write the hook and the beats and the caption and the tags,",
-      "remember which part of which series is next, and refuse to ask during",
-      "Shabbat. So it does that, and sends the result to Telegram as a list of",
-      "things to film.",
-      "",
-      "The comparison that settled this: @brickdealil, the sister account, holds",
-      "500-970 views a video on hand-held product footage with none of this",
-      "project's measured typography behind it, while @tiyulplus decayed 672 → 33",
-      "on stock. The variable is not production value. It is whether something",
-      "real is happening in the frame, and that cannot be automated, only",
-      "scheduled, briefed, and made easy enough to actually do."
-    ],
-    "perDay": 1,
-    "backlogMax": 3,
-    "lengthSeconds": [15, 35],
-    "cta": "תכננו טיול כזה בחינם, הלינק בביו",
-    "_productShare_comment": [
-      "Rule 3 says the product appears in at least half the videos. A weighted",
-      "rotation alone does not guarantee that, weights are a tendency and a run",
-      "of five non-product shoots is well within normal for any weighting.",
-      "",
-      "So this is enforced rather than weighted: src/shoot/rotation.js counts the",
-      "last `productWindow` shoots and, if fewer than `productShare` of them",
-      "showed the product, the next one is format C regardless of what the",
-      "rotation wanted. The brief's word is 'at least', which is a floor, and a",
-      "floor is a check, not a preference."
-    ],
-    "productShare": 0.5,
-    "productWindow": 6,
-    "_series_comment": [
-      "Rule 7: a reason to follow.",
-      "",
-      "A series is the cheapest one there is, 'חלק 1 מתוך 3' tells a viewer that",
-      "something specific is coming and that the way to get it is to follow. The",
-      "bot holds the state, because the whole point is that part 2 arrives and a",
-      "series that stops at part 1 is worse than no series at all.",
-      "",
-      "`every` is how often a shoot opens a new series. Not every post: a feed",
-      "where everything is part of something is a feed with no standalone entry",
-      "point, and a viewer arriving on part 2 of 3 has been handed a middle."
-    ],
-    "series": {
-      "every": 3,
-      "length": 3,
-      "labelHe": "חלק {n} מתוך {of}",
-      "nextHe": "תעקבו לחלק {n} מחר"
-    },
-    "_formats_comment": [
-      "The brief's five shapes, rule 5. `needsProduct` marks the one that IS the",
-      "product demo; `shots` is what the shot list asks you to film, and it is",
-      "the field that makes the difference between a brief and a task."
-    ],
-    "formats": [
-      {
-        "id": "mistakes",
-        "shape": "A",
-        "he": "טעויות ואזהרות",
-        "weight": 3,
-        "needsProduct": false,
-        "desc": "טעות שישראלים עושים ביעד, או אזהרה לפני שסוגרים. ההוק מבטיח מספר, הביטים מוסרים אותו.",
-        "hookExamples": [
-          "3 טעויות שישראלים עושים בגאורגיה",
-          "אל תטוסו לתאילנד לפני שאתם יודעים את זה"
-        ],
-        "shots": [
-          "פנים למצלמה, 2 שניות, אומרים את ההוק בקול",
-          "ביט לכל טעות: קטע וידאו אמיתי או צילום מסך של מה שמתכוונים אליו",
-          "סיום: השאלה, ואז הקריאה לפעולה"
-        ]
-      },
-      {
-        "id": "budget",
-        "shape": "B",
-        "he": "פירוק תקציב",
-        "weight": 2,
-        "needsProduct": false,
-        "allowsPrice": true,
-        "desc": "טיול אחד, מפורק לסעיפים בשקלים. הסכום בהוק חייב להיות הסכום שהביטים מסתכמים אליו.",
-        "hookExamples": [
-          "טיול 5 ימים ברומא ב-2,000 ₪, ככה",
-          "4 ימים בגאורגיה ב-1,500 ₪, ככה"
-        ],
-        "shots": [
-          "פנים למצלמה עם הסכום הכולל, 2 שניות",
-          "ביט לכל סעיף: צילום מסך של ההזמנה או של המחיר האמיתי",
-          "סיום על הסכום הכולל שוב, ואז השאלה"
-        ]
-      },
-      {
-        "id": "demo",
-        "shape": "C",
-        "he": "הדגמת המוצר",
-        "weight": 3,
-        "needsProduct": true,
-        "desc": "הקלטת מסך של Tiyul+ בונה מסלול בעברית. מקלידים בקשה, מקבלים תוכנית, מראים את התוצאה. הפריים הוא המוצר.",
-        "hookExamples": [
-          "ביקשתי מ-AI לתכנן לי 4 ימים בליסבון",
-          "ביקשתי מ-AI טיול עם ילדים ביוון, זה מה שחזר"
-        ],
-        "shots": [
-          "הקלטת מסך: הקלדת הבקשה בעברית, מהתו הראשון",
-          "התוכנית חוזרת: מחזיקים על היום הראשון מספיק זמן כדי לקרוא",
-          "גוללים ליום שמישהו לא היה חושב עליו לבד, ומצביעים עליו",
-          "סיום: השאלה, ואז הקריאה לפעולה"
-        ]
-      },
-      {
-        "id": "list",
-        "shape": "D",
-        "he": "רשימת יעדים",
-        "weight": 2,
-        "needsProduct": false,
-        "desc": "רשימה מצומצמת בתנאי אחד ברור: בלי ויזה, עד 4 שעות טיסה, מתחת לסכום. התנאי הוא מה שהופך רשימה לפוסט.",
-        "hookExamples": [
-          "5 יעדים לאוקטובר בלי ויזה",
-          "4 יעדים עד 4 שעות טיסה מתל אביב"
-        ],
-        "shots": [
-          "פנים למצלמה עם ההוק, 2 שניות",
-          "ביט ליעד: צילום אמיתי משם אם יש, אחרת B-roll מתחת לטקסט",
-          "סיום: השאלה"
-        ]
-      },
-      {
-        "id": "myth",
-        "shape": "E",
-        "he": "אמונה מול אמת",
-        "weight": 2,
-        "needsProduct": false,
-        "desc": "אמונה רווחת אחת, ומה באמת קורה. או מקום שלא מגיעים אליו וכדאי.",
-        "hookExamples": [
-          "כולם חושבים ששווייץ יקרה מדי, האמת אחרת",
-          "המקום בפורטוגל שאף ישראלי לא מגיע אליו"
-        ],
-        "shots": [
-          "פנים למצלמה עם האמונה, 2 שניות",
-          "ביט לכל עובדה שסותרת: מספר על המסך, לא רק בקול",
-          "סיום: השאלה"
-        ]
-      }
-    ]
-  },
   "plans": {
     "_comment": [
       "THE FOURTH PUBLISHED KIND: an itinerary an AI wrote, shown as a slideshow.",
@@ -1766,22 +1614,22 @@
       }
     ],
     "_frames_comment": [
-      "THE ASPECT-RATIO TEST, AND IT IS A REAL OPEN QUESTION.",
+      "ONE FRAME. TIKTOK IS 9:16 AND INSTAGRAM IS 4:5, AND NEITHER IS A VARIABLE.",
       "",
-      "`tall` is 9:16, which is what TikTok's player is and what this pipeline has",
-      "always drawn. `phone` is 3:4, which is what a phone camera shoots and what",
-      "every one of the six reference posts used - none of them reframed their",
-      "photographs to fill the player.",
+      "This block used to hold an A/B test between 9:16 and 3:4, on the reasoning that",
+      "the reference posts were shot on phone cameras. That was wrong, and wrong in a",
+      "way that cost reach rather than just looking odd: TikTok's player IS 9:16, so a",
+      "3:4 slide is letterboxed by TikTok itself, anchored to the top, which puts the",
+      "hook under the search bar and a black band under the picture. The owner has said",
+      "so repeatedly and the test is withdrawn.",
       "",
-      "Which performs better is not knowable from here, so both are drawn and which",
-      "one a post used is recorded on the candidate and in the published row. The",
-      "weekly report ranks by it. Set one weight to 0 once the numbers say so.",
-      "",
-      "Instagram is not in this list: a carousel is 4:5 and that is not a variable."
+      "Kept as a one-entry list rather than deleted so the shape of the config and the",
+      "`frame` field on every stored post stay valid, and so a future question about",
+      "size has somewhere to be asked. Adding a second entry here reopens the test; do",
+      "not, without reading the paragraph above."
     ],
     "frames": [
-      { "id": "tall", "w": 1080, "h": 1920, "weight": 1 },
-      { "id": "phone", "w": 1080, "h": 1440, "weight": 1 }
+      { "id": "tall", "w": 1080, "h": 1920, "weight": 1 }
     ],
     "_hooks_comment": [
       "THE COVER LINE, FILLED RATHER THAN WRITTEN.",
@@ -1807,7 +1655,7 @@
         { "id": "countdays", "he": "{n} עצירות ב{dest}, בסדר שעובד", "weight": 1, "desc": "Promises an order rather than a pile." }
       ],
       "instead": [
-        { "id": "stop", "he": "תפסיקו לטוס רק ל{default} כשיש את {alt}", "weight": 3, "desc": "@shiraztravel's cover. 0.31 shares per like on 2,950 followers." },
+        { "id": "stop", "he": "תפסיקו לטוס רק ל{default} כשיש את {alt} כולה", "weight": 3, "desc": "@shiraztravel's cover. 0.31 shares per like on 2,950 followers. \"כולה\" is doing real work: it turns a list of named places into the whole country, which is the bigger and more arguable claim." },
         { "id": "everyone", "he": "כולם טסים ל{default}. ואלה {n} האלטרנטיבות", "weight": 2, "desc": "Same argument, counted, which adds the completion loop." }
       ],
       "verdict": [

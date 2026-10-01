@@ -82,9 +82,10 @@ const brandMark = () =>
 // than about the place. The place name does the same job of orienting the
 // reader and is actually information, so it goes here and comes out of the
 // footer. Cards with no place simply show the brand mark alone.
-function shell({ accent, kicker, body, extraCss = '' }) {
-  return `<style>${baseCss()}${extraCss}</style>
+function shell({ accent, kicker, body, extraCss = '', image = null }) {
+  return `<style>${baseCss()}${groundCss(image)}${extraCss}</style>
 <div class="card" style="--accent:${accent}">
+  ${ground(image)}
   <div class="head">
     ${brandMark()}
     <div class="kicker">${e(kicker || '')}</div>
@@ -245,7 +246,7 @@ function photoFrameCard(d, accent, image) {
 /* Text-led layouts                                                           */
 /* -------------------------------------------------------------------------- */
 
-function factCard(d, accent) {
+function factCard(d, accent, image) {
   return shell({
     accent,
     kicker: placeLine(d),
@@ -253,11 +254,12 @@ function factCard(d, accent) {
       <div class="rule"></div>
       <div class="headline ${headlineSize(d.headline)}">${e(d.headline)}</div>
       `,
+    image,
   });
 }
 
 /** numbers — one figure carries the whole card. */
-function numbersCard(d, accent) {
+function numbersCard(d, accent, image) {
   const s = d.stat || {};
   return shell({
     accent,
@@ -286,11 +288,12 @@ function numbersCard(d, accent) {
         ${s.unit ? `<div class="stat-unit">${e(s.unit)}</div>` : ''}
       </div>
       <div class="headline ${headlineSize(d.headline, { max: 'md' })}">${e(d.headline)}</div>`,
+    image,
   });
 }
 
 /** compare — two panels, for myth-vs-reality and before-vs-after. */
-function compareCard(d, accent) {
+function compareCard(d, accent, image) {
   const c = d.compare || {};
   const panel = (title, text, colour, mark) => `
     <div class="cmp" style="--c:${colour}">
@@ -314,10 +317,11 @@ function compareCard(d, accent) {
         ${panel(c.aTitle, c.aText, palette.clay, '✕')}
         ${panel(c.bTitle, c.bText, palette.sage, '✓')}
       </div>`,
+    image,
   });
 }
 
-function tipsCard(d, accent) {
+function tipsCard(d, accent, image) {
   const items = d.bullets
     .map(
       (b, i) => `
@@ -352,10 +356,11 @@ function tipsCard(d, accent) {
     body: `
       <div class="headline ${headlineSize(d.headline, { max: 'lg' })}">${e(d.headline)}</div>
       <ul class="tips">${items}</ul>`,
+    image,
   });
 }
 
-function whenToGoCard(d, accent, data) {
+function whenToGoCard(d, accent, data, image) {
   const months = data?.months || [];
   const colour = { good: palette.sage, shoulder: palette.amber, avoid: palette.clay };
 
@@ -397,10 +402,11 @@ function whenToGoCard(d, accent, data) {
       
       <div class="strip">${cells}</div>
       <div class="legend">${legend}</div>`,
+    image,
   });
 }
 
-function alertCard(d, accent) {
+function alertCard(d, accent, image) {
   return shell({
     accent,
     kicker: placeLine(d),
@@ -415,11 +421,12 @@ function alertCard(d, accent) {
       <div class="badge">שינוי בכללי הכניסה</div>
       <div class="headline ${headlineSize(d.headline, { max: 'lg' })}">${e(d.headline)}</div>
       `,
+    image,
   });
 }
 
 /** route — a new or returning line out of TLV. A fare only if the page states one. */
-function routeCard(d, accent) {
+function routeCard(d, accent, image) {
   const r = d.route || {};
   const meta = [
     r.operator ? ['מפעילה', r.operator] : null,
@@ -459,6 +466,7 @@ function routeCard(d, accent) {
       <div class="headline ${headlineSize(d.headline, { max: 'md' })}">${e(d.headline)}</div>
       ${meta.length ? `<div class="meta">${meta.map(([k, v]) => `<div class="row"><div class="k">${k}</div><div class="v">${e(v)}</div></div>`).join('')}</div>` : ''}
       `,
+    image,
   });
 }
 
@@ -470,6 +478,36 @@ function routeCard(d, accent) {
  * `draft` is a normalised draft (src/draft.js).
  * `data` carries any structured payload a layout draws directly (climate months).
  */
+/**
+ * The photograph behind a TEXT card, blurred far past recognition.
+ *
+ * WHY A TEXT CARD GETS A PICTURE AT ALL. The seven text layouts were flat brand colour,
+ * which is the right answer for a card whose claim is the whole content - and the wrong
+ * one in a feed, where a flat rectangle beside nine photographs reads as an
+ * advertisement and gets scrolled past before the claim is read.
+ *
+ * BLURRED PAST RECOGNITION, and that is what keeps it honest. At this radius the
+ * photograph is colour and light, not a depiction: it cannot be read as evidence for
+ * the claim, cannot be mistaken for a picture OF the place, and so carries none of the
+ * burden a photo layout carries. It is a ground, and the card's own rule - a photograph
+ * must show what it is labelled with - does not apply to something that shows nothing.
+ *
+ * Absent when there is no photograph, which is the flat card exactly as before.
+ */
+function groundCss(image) {
+  if (!image?.src) return '';
+  return `
+.ground { position:absolute; inset:0; z-index:0; background-image:url('${e(image.src)}'); background-size:cover;
+          background-position:center; filter:blur(54px) saturate(1.2) brightness(.62); transform:scale(1.3); }
+.ground-tint { position:absolute; inset:0; z-index:0;
+               background:linear-gradient(165deg, rgba(12,20,18,.72), rgba(12,20,18,.86)); }
+/* The content above the ground. Without this the two absolutely-positioned layers
+   paint over everything the card had to say, which is what the first render did. */
+.card > .head, .card > .body { position:relative; z-index:1; }`;
+}
+
+const ground = (image) => (image?.src ? '<div class="ground"></div><div class="ground-tint"></div>' : '');
+
 export function renderHtml(draft, { data = null, image = null } = {}) {
   const accent = pillarAccent[draft.pillar] || palette.amber;
   const d = draft;
@@ -491,26 +529,26 @@ export function renderHtml(draft, { data = null, image = null } = {}) {
       inner = photoFrameCard(d, accent, image);
       break;
     case 'numbers':
-      inner = numbersCard(d, accent);
+      inner = numbersCard(d, accent, image);
       break;
     case 'compare':
-      inner = compareCard(d, accent);
+      inner = compareCard(d, accent, image);
       break;
     case 'tips':
-      inner = tipsCard(d, accent);
+      inner = tipsCard(d, accent, image);
       break;
     case 'whenToGo':
-      inner = whenToGoCard(d, accent, data);
+      inner = whenToGoCard(d, accent, data, image);
       break;
     case 'alert':
-      inner = alertCard(d, accent);
+      inner = alertCard(d, accent, image);
       break;
     case 'route':
-      inner = routeCard(d, accent);
+      inner = routeCard(d, accent, image);
       break;
     case 'fact':
     default:
-      inner = factCard(d, accent);
+      inner = factCard(d, accent, image);
   }
 
   return `<!doctype html>
