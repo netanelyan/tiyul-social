@@ -67,9 +67,19 @@ const edge = (body) => new RegExp(`(?<![${W}])(?:ו|ש|כש|וש)?(?:${body})(?!
 // experience being detected by what follows it. That direction is deliberate: a list of
 // planning verbs is short and knowable, and a list of the ways a sentence can name a
 // place is neither. Anything not on this list is refused, which is the safe default.
+// WHAT "היינו" IS ALLOWED TO BE FOLLOWED BY.
+//
+// "היינו" alone claims a trip. "היינו בונים את זה ככה" is the planner's conditional -
+// how WE would build an itinerary - and is the voice this account is written in, so the
+// verb that follows decides which one it is.
+//
+// `צריכים` and `אמורים` were added after a configured question killed a build at
+// random: "יש עוד אחד שהיינו צריכים להכניס?" is about what belongs in THIS POST, not
+// about a journey, and it is exactly the kind of line the account should be asking.
 const PLANNER_VERBS =
   'בונים|בונה|עושים|עושה|ממליצים|ממליץ|מוסיפים|מוסיף|מורידים|מוריד|מתחילים|מתחיל|מסיימים|' +
-  'בוחרים|בוחר|שמים|משאירים|מדלגים|לוקחים|הולכים|נשארים|מתכננים|משלבים|מחלקים|קובעים|מוותרים';
+  'בוחרים|בוחר|שמים|משאירים|מדלגים|לוקחים|הולכים|נשארים|מתכננים|משלבים|מחלקים|קובעים|מוותרים|' +
+  'צריכים|צריך|אמורים|אמור|חייבים|יכולים|כותבים|מראים|מספרים';
 
 const FIRST_PERSON_PAST = [
   // A temporal frame is always a claim about a trip, whatever follows it: "כשהיינו

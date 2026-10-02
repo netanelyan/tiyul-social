@@ -31,7 +31,8 @@
       "en": "Athens",
       "country": "יוון",
       "lat": 37.98,
-      "lon": 23.73
+      "lon": 23.73,
+      "siteSlug": "athens"
     },
     {
       "id": "larnaca",
@@ -39,7 +40,8 @@
       "en": "Larnaca",
       "country": "קפריסין",
       "lat": 34.92,
-      "lon": 33.62
+      "lon": 33.62,
+      "siteSlug": "larnaca"
     },
     {
       "id": "rome",
@@ -47,7 +49,8 @@
       "en": "Rome",
       "country": "איטליה",
       "lat": 41.9,
-      "lon": 12.5
+      "lon": 12.5,
+      "siteSlug": "rome"
     },
     {
       "id": "milan",
@@ -63,7 +66,8 @@
       "en": "Barcelona",
       "country": "ספרד",
       "lat": 41.39,
-      "lon": 2.17
+      "lon": 2.17,
+      "siteSlug": "barcelona"
     },
     {
       "id": "madrid",
@@ -71,7 +75,8 @@
       "en": "Madrid",
       "country": "ספרד",
       "lat": 40.42,
-      "lon": -3.7
+      "lon": -3.7,
+      "siteSlug": "madrid"
     },
     {
       "id": "lisbon",
@@ -79,7 +84,8 @@
       "en": "Lisbon",
       "country": "פורטוגל",
       "lat": 38.72,
-      "lon": -9.14
+      "lon": -9.14,
+      "siteSlug": "lisbon"
     },
     {
       "id": "paris",
@@ -87,7 +93,8 @@
       "en": "Paris",
       "country": "צרפת",
       "lat": 48.86,
-      "lon": 2.35
+      "lon": 2.35,
+      "siteSlug": "paris"
     },
     {
       "id": "amsterdam",
@@ -95,7 +102,8 @@
       "en": "Amsterdam",
       "country": "הולנד",
       "lat": 52.37,
-      "lon": 4.9
+      "lon": 4.9,
+      "siteSlug": "amsterdam"
     },
     {
       "id": "berlin",
@@ -103,7 +111,8 @@
       "en": "Berlin",
       "country": "גרמניה",
       "lat": 52.52,
-      "lon": 13.4
+      "lon": 13.4,
+      "siteSlug": "berlin"
     },
     {
       "id": "prague",
@@ -111,7 +120,8 @@
       "en": "Prague",
       "country": "צ׳כיה",
       "lat": 50.08,
-      "lon": 14.44
+      "lon": 14.44,
+      "siteSlug": "prague"
     },
     {
       "id": "budapest",
@@ -119,7 +129,8 @@
       "en": "Budapest",
       "country": "הונגריה",
       "lat": 47.5,
-      "lon": 19.04
+      "lon": 19.04,
+      "siteSlug": "budapest"
     },
     {
       "id": "vienna",
@@ -127,15 +138,17 @@
       "en": "Vienna",
       "country": "אוסטריה",
       "lat": 48.21,
-      "lon": 16.37
+      "lon": 16.37,
+      "siteSlug": "vienna"
     },
     {
       "id": "london",
       "he": "לונדון",
       "en": "London",
-      "country": "אנגליה",
+      "country": "בריטניה",
       "lat": 51.51,
-      "lon": -0.13
+      "lon": -0.13,
+      "siteSlug": "london"
     },
     {
       "id": "batumi",
@@ -143,7 +156,8 @@
       "en": "Batumi",
       "country": "גאורגיה",
       "lat": 41.64,
-      "lon": 41.64
+      "lon": 41.64,
+      "siteSlug": "batumi"
     },
     {
       "id": "tbilisi",
@@ -151,7 +165,8 @@
       "en": "Tbilisi",
       "country": "גאורגיה",
       "lat": 41.72,
-      "lon": 44.79
+      "lon": 44.79,
+      "siteSlug": "tbilisi"
     },
     {
       "id": "baku",
@@ -159,7 +174,8 @@
       "en": "Baku",
       "country": "אזרבייג׳ן",
       "lat": 40.41,
-      "lon": 49.87
+      "lon": 49.87,
+      "siteSlug": "baku"
     },
     {
       "id": "dubai",
@@ -167,7 +183,8 @@
       "en": "Dubai",
       "country": "איחוד האמירויות",
       "lat": 25.2,
-      "lon": 55.27
+      "lon": 55.27,
+      "siteSlug": "dubai"
     },
     {
       "id": "bangkok",
@@ -175,7 +192,8 @@
       "en": "Bangkok",
       "country": "תאילנד",
       "lat": 13.76,
-      "lon": 100.5
+      "lon": 100.5,
+      "siteSlug": "bangkok"
     },
     {
       "id": "phuket",
@@ -183,7 +201,8 @@
       "en": "Phuket",
       "country": "תאילנד",
       "lat": 7.88,
-      "lon": 98.39
+      "lon": 98.39,
+      "siteSlug": "phuket"
     },
     {
       "id": "kathmandu",
@@ -191,7 +210,8 @@
       "en": "Kathmandu",
       "country": "נפאל",
       "lat": 27.72,
-      "lon": 85.32
+      "lon": 85.32,
+      "siteSlug": "kathmandu"
     },
     {
       "id": "tokyo",
@@ -199,7 +219,8 @@
       "en": "Tokyo",
       "country": "יפן",
       "lat": 35.68,
-      "lon": 139.69
+      "lon": 139.69,
+      "siteSlug": "tokyo"
     },
     {
       "id": "reykjavik",
@@ -207,7 +228,8 @@
       "en": "Reykjavik",
       "country": "איסלנד",
       "lat": 64.15,
-      "lon": -21.94
+      "lon": -21.94,
+      "siteSlug": "reykjavik"
     },
     {
       "id": "nyc",
@@ -258,7 +280,8 @@
       "en": "Heraklion",
       "country": "יוון",
       "lat": 35.34,
-      "lon": 25.13
+      "lon": 25.13,
+      "siteSlug": "crete"
     },
     {
       "id": "santorini",
@@ -283,7 +306,8 @@
       "en": "Paphos",
       "country": "קפריסין",
       "lat": 34.78,
-      "lon": 32.42
+      "lon": 32.42,
+      "siteSlug": "paphos"
     },
     {
       "id": "naples",
@@ -299,7 +323,8 @@
       "en": "Venice",
       "country": "איטליה",
       "lat": 45.44,
-      "lon": 12.32
+      "lon": 12.32,
+      "siteSlug": "venice"
     },
     {
       "id": "florence",
@@ -307,7 +332,8 @@
       "en": "Florence",
       "country": "איטליה",
       "lat": 43.77,
-      "lon": 11.26
+      "lon": 11.26,
+      "siteSlug": "florence"
     },
     {
       "id": "bologna",
@@ -415,7 +441,8 @@
       "en": "Munich",
       "country": "גרמניה",
       "lat": 48.14,
-      "lon": 11.58
+      "lon": 11.58,
+      "siteSlug": "munich"
     },
     {
       "id": "frankfurt",
@@ -456,7 +483,8 @@
       "en": "Stockholm",
       "country": "שוודיה",
       "lat": 59.33,
-      "lon": 18.07
+      "lon": 18.07,
+      "siteSlug": "stockholm"
     },
     {
       "id": "oslo",
@@ -487,9 +515,10 @@
       "id": "edinburgh",
       "he": "אדינבורו",
       "en": "Edinburgh",
-      "country": "סקוטלנד",
+      "country": "בריטניה",
       "lat": 55.95,
-      "lon": -3.19
+      "lon": -3.19,
+      "siteSlug": "edinburgh"
     },
     {
       "id": "warsaw",
@@ -497,7 +526,8 @@
       "en": "Warsaw",
       "country": "פולין",
       "lat": 52.23,
-      "lon": 21.01
+      "lon": 21.01,
+      "siteSlug": "warsaw"
     },
     {
       "id": "krakow",
@@ -505,7 +535,8 @@
       "en": "Krakow",
       "country": "פולין",
       "lat": 50.06,
-      "lon": 19.94
+      "lon": 19.94,
+      "siteSlug": "krakow"
     },
     {
       "id": "bucharest",
@@ -513,7 +544,8 @@
       "en": "Bucharest",
       "country": "רומניה",
       "lat": 44.43,
-      "lon": 26.1
+      "lon": 26.1,
+      "siteSlug": "bucharest"
     },
     {
       "id": "sofia",
@@ -521,7 +553,8 @@
       "en": "Sofia",
       "country": "בולגריה",
       "lat": 42.7,
-      "lon": 23.32
+      "lon": 23.32,
+      "siteSlug": "sofia"
     },
     {
       "id": "varna",
@@ -595,7 +628,8 @@
       "en": "Yerevan",
       "country": "ארמניה",
       "lat": 40.18,
-      "lon": 44.51
+      "lon": 44.51,
+      "siteSlug": "yerevan"
     },
     {
       "id": "almaty",
@@ -603,7 +637,8 @@
       "en": "Almaty",
       "country": "קזחסטן",
       "lat": 43.24,
-      "lon": 76.89
+      "lon": 76.89,
+      "siteSlug": "almaty"
     },
     {
       "id": "abudhabi",
@@ -737,7 +772,8 @@
       "en": "Singapore",
       "country": "סינגפור",
       "lat": 1.35,
-      "lon": 103.82
+      "lon": 103.82,
+      "siteSlug": "singapore"
     },
     {
       "id": "kualalumpur",
@@ -855,7 +891,8 @@
       "en": "Cusco",
       "country": "פרו",
       "lat": -13.53,
-      "lon": -71.97
+      "lon": -71.97,
+      "siteSlug": "cusco"
     },
     {
       "id": "sydney",

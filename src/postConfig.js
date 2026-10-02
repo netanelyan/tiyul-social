@@ -863,6 +863,30 @@ function posts(raw) {
     }
   }
 
+  // AND THE QUESTIONS, AGAINST THE HONESTY GUARD, AT STARTUP.
+  //
+  // Every configured question is published text and goes through assertNoExperience at
+  // build time like any other line. A question that trips it does not fail predictably:
+  // the pool is drawn from at random, so a bad line kills roughly one post in four and
+  // looks like an intermittent bug in whichever type happened to draw it. That is what
+  // "close.question claims a trip nobody took" was, from a question that had been in the
+  // config for weeks.
+  //
+  // Checked by pattern rather than by importing the guard, because posts/voice.js
+  // imports THIS module and the cycle would be worse than the duplication. The patterns
+  // here are the unambiguous ones; voice.js remains the authority at build time.
+  const TRIP_CLAIM = /(?<![\p{L}\p{N}])(?:ו|ש|כש|וש)?(?:כשהיינו|כשהייתי|טסנו|נסענו|ביקרנו|היינו שם|הייתי שם)(?![\p{L}\p{N}])/u;
+  for (const [type, pool] of Object.entries(raw.questions || {})) {
+    if (type.startsWith('_')) continue;
+    for (const q of pool || []) {
+      if (TRIP_CLAIM.test(String(q))) {
+        throw new Error(
+          `post-config.json: posts.questions.${type} contains a line that claims a trip nobody took: ${JSON.stringify(String(q))}`
+        );
+      }
+    }
+  }
+
   // The caption skeletons. A shape is an ordered list of part names, and what makes
   // it a rotation rather than a template is that no two consecutive posts may use
   // the same one - see src/posts/caption.js.

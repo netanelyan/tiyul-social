@@ -98,7 +98,17 @@ export function buildMapPost(city, { hook, dest } = {}) {
       look: 'pinmap',
       points: core?.length >= 5 ? core : points,
       titleHe: line(destHe, { where: 'map.title' }),
-      subHe: line(`${(core?.length >= 5 ? core : points).length} מקומות · ממוספר לפי ימים`, { where: 'map.sub' }),
+      // "26 מקומות" beside a pin reading 31 is a slide arguing with itself. The
+      // numbers are deliberately NOT reassigned - see the note above the wide map, a
+      // place has to be number 7 on both - so the count says which set it is counting
+      // instead. A viewer who sees "26 of 31" has been told exactly what is missing and
+      // why the numbering skips; one who sees "26" has been told something false.
+      subHe: line(
+        core?.length >= 5 && points.length > core.length
+          ? `${core.length} מתוך ${points.length} · ממוספר לפי ימים`
+          : `${(core?.length >= 5 ? core : points).length} מקומות · ממוספר לפי ימים`,
+        { where: 'map.sub' }
+      ),
       days: days.length,
     },
   ];

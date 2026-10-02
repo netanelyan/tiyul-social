@@ -158,7 +158,7 @@ export function buildInsteadPost(cities, { hook, defaultHe, regionHe = null, que
       lines: [
         ...(reason ? [{ text: line(reason, { where: `alt${i}.reason`, quote: verdict.source }) }] : []),
         ...(second ? [second] : []),
-        ...(anchor ? [{ text: line(`📍 ${anchor}`, { where: `alt${i}.anchor` }) }] : []),
+        ...(anchor ? [{ text: line(anchor, { where: `alt${i}.anchor` }) }] : []),
       ],
       image: bestPhoto(city),
       slug: city.slug,
