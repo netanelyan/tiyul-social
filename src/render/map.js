@@ -1,3 +1,4 @@
+import { readFileSync, writeFileSync, mkdirSync, statSync } from 'node:fs';
 import { getBrowser } from './index.js';
 import { heeboDataUri, assistantDataUri, escapeHtml } from './theme.js';
 
@@ -665,8 +666,82 @@ const OVERPASS_MAP = (process.env.OVERPASS_URL || '')
   .concat([
     'https://overpass-api.de/api/interpreter',
     'https://overpass.kumi.systems/api/interpreter',
-    'https://overpass.osm.ch/api/interpreter',
+    // overpass.osm.ch IS DELIBERATELY NOT HERE. It is the Swiss instance and it carries
+    // a REGIONAL extract, so a query for central Paris returns HTTP 200 with zero
+    // elements - which is indistinguishable, to this code, from "there is nothing here".
+    // A mirror that confidently answers "no data" for most of the world is worse than
+    // no mirror: it ends the fallback chain with a success and the slide draws pins
+    // over nothing. That is what it did, and it is why the Paris map had no basemap.
   ]);
+
+// Where the cached basemaps live. Under the repo rather than in the OS temp directory,
+// because the point is that they survive a restart - a VPS that reboots and then has to
+// re-fetch every city it ever rendered is the problem this solves, arrived at slowly.
+const VECTOR_CACHE = new URL('../../data/basemaps/', import.meta.url);
+
+// Thirty days. OSM changes constantly and a motorway does not: at this zoom, drawn as
+// 2px lines under numbered pins, a month-old extract is indistinguishable from a fresh
+// one, and the cost of being wrong is a road slightly out of date on a map that is
+// decoration for the pins.
+const VECTOR_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+const vectorCachePath = (box) => new URL(`${box.replace(/[^0-9.,-]/g, '')}.json`, VECTOR_CACHE);
+
+function readVectorCache(box) {
+  try {
+    const file = vectorCachePath(box);
+    const stat = statSync(file);
+    if (Date.now() - stat.mtimeMs > VECTOR_TTL_MS) return null;
+    const json = JSON.parse(readFileSync(file, 'utf8'));
+    if (!json?.roads && !json?.water) return null;
+    return json;
+  } catch {
+    // A cache miss is the normal case and says nothing worth printing. Every OTHER
+    // failure in this module is logged loudly; this one genuinely is not news.
+    return null;
+  }
+}
+
+/**
+ * The same shape at the precision a 1080px frame can actually show.
+ *
+ * Overpass returns coordinates at seven decimal places - about a centimetre - and a
+ * motorway as several hundred of them. Central Paris came back as 564KB of JSON for a
+ * map drawn as 2px lines under numbered pins, where a whole city block is nine pixels.
+ *
+ * Two reductions, both lossless at this scale: round to five decimals (about a metre),
+ * and drop any point less than roughly ten metres from the one before it. The endpoints
+ * of every way are always kept, so nothing changes shape - only its description gets
+ * shorter.
+ */
+function simplify(ways) {
+  const R = (n) => Math.round(n * 1e5) / 1e5;
+  const MIN = 0.0001; // ~10m in latitude, and less in longitude at these latitudes.
+  return (ways || [])
+    .map((geometry) => {
+      const out = [];
+      for (const [i, pt] of geometry.entries()) {
+        const lat = R(Number(pt.lat));
+        const lon = R(Number(pt.lon ?? pt.lng));
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+        const last = out[out.length - 1];
+        const far = !last || Math.abs(lat - last.lat) > MIN || Math.abs(lon - last.lon) > MIN;
+        // The last point always survives, so a way does not lose its far end to rounding.
+        if (far || i === geometry.length - 1) out.push({ lat, lon });
+      }
+      return out;
+    })
+    .filter((g) => g.length > 1);
+}
+
+function writeVectorCache(box, vectors) {
+  try {
+    mkdirSync(VECTOR_CACHE, { recursive: true });
+    writeFileSync(vectorCachePath(box), JSON.stringify(vectors));
+  } catch (err) {
+    console.error(`map: could not cache the basemap for ${box} - ${err.message}`);
+  }
+}
 
 /**
  * Water and the roads worth drawing, for one bounding box.
@@ -686,14 +761,46 @@ const OVERPASS_MAP = (process.env.OVERPASS_URL || '')
  * Null on anything going wrong, and the caller then draws the geometry-only map it drew
  * before - a worse slide, and a true one.
  */
-export async function cityVectors(bbox, { timeoutMs = 90_000 } = {}) {
-  const [s, w, n, e] = bbox;
-  const box = `${s.toFixed(4)},${w.toFixed(4)},${n.toFixed(4)},${e.toFixed(4)}`;
+// 180 SECONDS, NOT 90, AND THE NUMBER IS MEASURED.
+//
+// A successful fetch of central Paris from overpass.kumi.systems took 94.6 seconds. The
+// timeout was 90, so every real request for a dense European city centre was aborted
+// roughly five seconds before its answer arrived, and the failure printed as a timeout -
+// which reads as "the mirror is down" rather than as "we hung up first". Overpass
+// queries of this size legitimately take one to two minutes on a free instance; the
+// cache above is what makes that acceptable, because a city pays it once.
+export async function cityVectors(bbox, { timeoutMs = 180_000 } = {}) {
+  // [SOUTH, WEST, NORTH, EAST] - Overpass's own order, and what renderPinMapHtml passes.
+  // NOT Nominatim's [south, north, west, east], which is what `fitZoom` above reads; the
+  // two orders look alike and swapping them produces a box whose north edge is below its
+  // south edge. That box is empty by definition, and Overpass answers "no ways" for it
+  // exactly as it would for an ocean - which is why the guard below is loud.
+  const [south, west, north, east] = bbox.map(Number);
+  if (![south, west, north, east].every(Number.isFinite) || !(north > south && east > west)) {
+    console.error(
+      `map: refusing an inverted bounding box [S${south} W${west} N${north} E${east}] - expected [south, west, north, east]`
+    );
+    return null;
+  }
+  const box = `${south.toFixed(4)},${west.toFixed(4)},${north.toFixed(4)},${east.toFixed(4)}`;
+
+  // CACHED ON DISK, BECAUSE THE PUBLIC INSTANCES RATION SLOTS AND WE ARE A GUEST.
+  //
+  // Overpass is volunteer-run and every instance throttles by IP. Rendering the same
+  // city's map twice in an afternoon - which happens constantly in testing, and happens
+  // in production whenever a post is rebuilt - spends a slot on an answer we already
+  // had, and the second one comes back 504. That is not the instance being unreliable,
+  // it is us being a bad citizen and then calling the result an outage.
+  //
+  // Keyed on the box rounded to three decimals, which is about 100m: two renders of the
+  // same city produce the same key, and a genuinely different city does not collide.
+  const cached = readVectorCache(box);
+  if (cached) return cached;
   const q = `[out:json][timeout:30];
 (
   way["natural"="water"](${box});
   way["waterway"="river"](${box});
-  way["highway"~"^(motorway|trunk|primary)$"](${box});
+  way["highway"~"^(motorway|trunk|primary|secondary)$"](${box});
 );
 out geom;`;
 
@@ -719,10 +826,12 @@ out geom;`;
         console.error(`map: ${new URL(host).hostname} returned no ways for this box`);
         continue;
       }
-      return {
-        water: ways.filter((el) => el.tags?.natural === 'water' || el.tags?.waterway).map((el) => el.geometry),
-        roads: ways.filter((el) => el.tags?.highway).map((el) => el.geometry),
+      const out = {
+        water: simplify(ways.filter((el) => el.tags?.natural === 'water' || el.tags?.waterway).map((el) => el.geometry)),
+        roads: simplify(ways.filter((el) => el.tags?.highway).map((el) => el.geometry)),
       };
+      writeVectorCache(box, out);
+      return out;
     } catch (err) {
       console.error(`map: ${new URL(host).hostname} - ${err.message}`);
     }

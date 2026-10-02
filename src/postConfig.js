@@ -839,9 +839,16 @@ function posts(raw) {
         he: String(h?.he || '').trim(),
         weight: Math.max(0, num(h?.weight, 1)),
         desc: String(h?.desc || '').trim(),
+        // Which types a SHARED hook is offered to. Absent on a per-type hook, where it
+        // would mean nothing; on `hooks.shared` it is the whole point, because the
+        // templates are not interchangeable - "{n} מקומות" needs a type that counts
+        // places and a plan post counts days. Dropping this field, which an earlier
+        // version of this mapper did, silently offers every shared hook to every type.
+        ...(Array.isArray(h?.for) ? { for: list(h.for) } : {}),
       }))
       .filter((h) => h.id && h.he);
   }
+  // The shared pool is not a type and has no type to be empty for.
   for (const t of types) {
     if (!hooks[t.id]?.length) {
       throw new Error(`post-config.json: posts.hooks.${t.id} is empty - a post type with no hook shape has no cover`);

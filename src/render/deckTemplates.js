@@ -9,6 +9,7 @@ import {
 } from './theme.js';
 import { emojiHtml } from './emojiArt.js';
 import { postConfig } from '../postConfig.js';
+import { treatmentFor, TARGET } from './legibility.js';
 
 // Slideshow slides, set the way the two accounts this channel is modelled on
 // set them.
@@ -306,6 +307,13 @@ body {
    wash fades in under the words — soft-edged and centred on the text, so it
    reads as the light in the photograph rather than as a box. It is what stops
    a slide shipping with type nobody can read. */
+/* The borrowed photograph behind a slide that has none of its own. Blurred far past
+   recognition and scaled up so the blur has no soft edge at the frame, which is the
+   difference between a ground and a photograph that is simply out of focus. */
+.photo.ground { background-size: cover; background-position: center;
+                filter: blur(52px) saturate(1.15) brightness(.58); transform: scale(1.3); }
+.photo.ground-tint { background: linear-gradient(165deg, rgba(12,20,18,.52), rgba(12,20,18,.72)); }
+.assist.plate { border-radius: inherit; }
 .assist {
   position: absolute;
   border-radius: 50%;
@@ -631,10 +639,34 @@ export function coverTitle(title, emphasis) {
   );
 }
 
-const photoTag = (image) =>
-  image?.src
-    ? `<img class="photo" src="${escapeHtml(image.src)}" alt="">`
-    : `<div class="photo" style="background:linear-gradient(160deg, ${palette.inkSoft}, ${palette.ink})"></div>`;
+/**
+ * The photograph behind a slide, or the destination's own photograph blurred behind one
+ * that has none.
+ *
+ * NEVER A GRADIENT WHERE A PHOTOGRAPH EXISTS. The owner's report: "decks without an
+ * image background are nicer, but the background should not be a gradient, i asked for
+ * a blurred image of the place the post talks about".
+ *
+ * The old fallback painted `linear-gradient(160deg, inkSoft, ink)` - a flat grey-green
+ * ramp - which is the one thing on a travel account that looks like a slide deck rather
+ * than like travel. A slide with no photograph of its own is not a slide with no
+ * photograph available: the post is ABOUT somewhere, and that somewhere has pictures on
+ * every other slide. So it borrows one and blurs it past recognition, which reads as the
+ * same post continuing rather than as the design running out.
+ *
+ * The gradient survives exactly one case - a post with no photograph anywhere - and at
+ * that point it is not a fallback, it is the only thing there is.
+ */
+const photoTag = (image, ground = null) => {
+  if (image?.src) return `<img class="photo" src="${escapeHtml(image.src)}" alt="">`;
+  if (ground?.src) {
+    return (
+      `<div class="photo ground" style="background-image:url('${escapeHtml(ground.src)}')"></div>` +
+      `<div class="photo ground-tint"></div>`
+    );
+  }
+  return `<div class="photo" style="background:linear-gradient(160deg, ${palette.inkSoft}, ${palette.ink})"></div>`;
+};
 
 /**
  * The local wash behind the text, sized to the block and only drawn when the
@@ -646,26 +678,80 @@ function assistTag(spot, { w, h }, blockH) {
   // only thing on the frame that puts anything behind the words, so the switch
   // for "nothing behind the words, ever" belongs here.
   if (!postConfig().overlay.assist) return '';
-  const strength = spot?.assist || 0;
-  if (strength < 0.06) return '';
 
-  const cw = Math.round(spot.width * w * 1.5);
+  const cw = Math.round(spot?.width * w * 1.5);
   const ch = Math.round(blockH * h * 2.4);
-  const cx = Math.round(spot.x * w - cw / 2);
-  const cy = Math.round(spot.y * h - ch / 2);
+  const cx = Math.round(spot?.x * w - cw / 2);
+  const cy = Math.round(spot?.y * h - ch / 2);
+  const tint = spot?.onDark === false ? `255,255,255` : `0,0,0`;
 
-  // Dark wash under light type, light wash under dark type. Capped well below
-  // opaque: this is meant to bend the photograph a little, not to put a panel
-  // on it.
-  const alpha = Math.min(0.5, 0.2 + strength * 0.34).toFixed(3);
-  const tint = spot.onDark === false ? `255,255,255` : `0,0,0`;
+  // HOW HARD THE WASH HAS TO WORK IS MEASURED, NOT RAMPED.
+  //
+  // `spot.contrast` is the ink against the worst band of the block this type sits on,
+  // already measured upstream in render/photo.js. The old code threw that number away
+  // and used a linear ramp of it capped at 0.5, which is the deck's version of exactly
+  // the bug src/render/legibility.js was written for: a photograph needing more than the
+  // cap got the cap and shipped under target. That is "text gets eaten by the
+  // background".
+  //
+  // So the contrast is inverted back to the band's luminance and handed to the same gate
+  // the five post types use, and the answer is honoured rather than capped.
+  const treatment = assistTreatment(spot);
+  if (!treatment) return '';
 
+  if (treatment.treatment === 'plate') {
+    // A gradient cannot carry this one. A plate behind the block can, and on a deck it
+    // is the same rounded panel the reference account's own boxed text uses, so it
+    // reads as a design choice rather than as a patch.
+    const px = Math.round(w * 0.028);
+    return (
+      `<div class="assist plate" style="left:${cx + Math.round(cw * 0.12)}px;top:${cy + Math.round(ch * 0.2)}px;` +
+      `width:${Math.round(cw * 0.76)}px;height:${Math.round(ch * 0.6)}px;` +
+      `background:rgba(${tint},${treatment.alpha});border-radius:${px}px;` +
+      `backdrop-filter:blur(${Math.round(w * 0.008)}px)"></div>`
+    );
+  }
+
+  const alpha = treatment.alpha.toFixed(3);
   return (
     `<div class="assist" style="left:${cx}px;top:${cy}px;width:${cw}px;height:${ch}px;` +
     `background:radial-gradient(closest-side, rgba(${tint},${alpha}) 0%, rgba(${tint},${(alpha * 0.55).toFixed(
       3
     )}) 52%, rgba(${tint},0) 100%)"></div>`
   );
+}
+
+/**
+ * The wash a measured spot needs, through the same gate the post types use.
+ *
+ * A radial fade is softer than a flat scrim - it is zero at its rim - so it delivers
+ * less than its nominal alpha across the block. VEIL_MAX is therefore lower here than
+ * for a post's linear gradient: past about half, a radial reads as a dark blob with a
+ * slide around it, and a plate is both more legible and more honest.
+ */
+function assistTreatment(spot) {
+  if (!spot) return null;
+  const contrast = Number(spot.contrast);
+  if (!Number.isFinite(contrast) || contrast <= 0) {
+    // Nothing measured. Keep the old ramp, which is what this slide always got.
+    const strength = spot.assist || 0;
+    if (strength < 0.06) return null;
+    return { treatment: 'veil', alpha: Math.min(0.5, 0.2 + strength * 0.34) };
+  }
+
+  // Already comfortable. A well-placed block sits at 7:1 or better and gets nothing,
+  // which is the whole point of searching for the quiet region first.
+  if (contrast >= TARGET) return null;
+
+  // CONTRAST_WHITE is 1.05 / (lum + 0.05); inverted, that is the luminance of the band
+  // the type crosses. For dark ink on a light background the polarity flips and the
+  // relationship is the same shape, so the same inversion sizes the light wash.
+  const lum = spot.onDark === false ? Math.max(0, 0.05 * contrast - 0.05) : Math.max(0, 1.05 / contrast - 0.05);
+  const plan = treatmentFor(lum, { floor: 0.18 });
+  // A radial is softer than the flat scrim the gate models, so it has to be stronger to
+  // deliver the same thing, and it runs out sooner.
+  if (plan.treatment === 'veil' && plan.alpha <= 0.52) return { treatment: 'veil', alpha: Math.min(0.62, plan.alpha * 1.2) };
+  return { treatment: 'plate', alpha: Math.max(0.7, Math.min(0.94, plan.alpha)) };
 }
 
 /**
@@ -833,7 +919,7 @@ export function renderSlideHtml(slide, { size = 'tiktok', cover = false, style =
     font,
     SIZES[size] ? size : 'tiktok'
   )}</style></head><body>
-${photoTag(slide.image)}
+${photoTag(slide.image, slide.groundImage)}
 <div class="scrim"></div>
 ${assistTag(place, s, blockH)}
 <div class="block" style="${vars};left:${left}px;top:${top}px;width:${width}px;${ink(place, style, {

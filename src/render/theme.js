@@ -142,6 +142,27 @@ export function assistantDataUri() {
 //
 // One variable file, for the reason given above TikTok Sans: the two static
 // weights that used to be here were corrupt and had never once loaded.
+// Frank Ruhl Libre, the Hebrew serif, for the camera-roll cover.
+//
+// WHY A SERIF AT ALL when every other slide here is set in a grotesque. The reference
+// the owner supplied for that format sets its headline in a Latin display serif in a
+// soft tint - "My camera roll after 10 days in the Dolomites" - and the serif is not
+// decoration, it is the whole difference between that post and ours. A heavy sans over
+// a photograph reads as an INFORMATION slide, which is correct for a list and wrong for
+// a format whose claim is "look at this". A serif reads as a title.
+//
+// Frank Ruhl is the Hebrew analogue and not an approximation of one: it is the face
+// Hebrew books have been set in since 1908, it is what a Hebrew reader's eye recognises
+// as "a title" rather than "an app", and Libre is its OFL revival. One variable file,
+// 174KB, same bargain as Rubik above.
+let frankCache = null;
+export function frankRuhlDataUri() {
+  if (frankCache) return frankCache;
+  const buf = readFileSync(new URL('../../assets/fonts/FrankRuhlLibre.ttf', import.meta.url));
+  frankCache = `data:font/ttf;base64,${buf.toString('base64')}`;
+  return frankCache;
+}
+
 let rubikCache = null;
 let arimoCache = null;
 export function rubikDataUri() {

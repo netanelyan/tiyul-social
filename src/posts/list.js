@@ -112,20 +112,34 @@ export function buildListPost(city, { hook, dest, want = null } = {}) {
   const rest = pool.filter((p) => !used.has(p.id));
   if (rest.length) grouped.push({ block: { id: 'more', he: 'ועוד', emoji: '📍', cats: [] }, places: rest });
 
+  // DIVIDERS ONLY WHEN THE LIST IS LONG ENOUGH TO NEED THEM.
+  //
+  // "the format should be easier" - and on a list of ten places, four divider slides are
+  // nearly a third of the post spent on signposting a post short enough not to need
+  // signposting. Dividers earn their slide on a long list, where a viewer genuinely
+  // cannot see the end from the start; on a short one they are furniture.
+  //
+  // Two conditions, both necessary: enough places that the viewer loses their place
+  // without help, and enough blocks that the dividers are telling them something. Three
+  // blocks over twelve places is a structure; two blocks over nine is a label on a label.
+  const useDividers = pool.length >= 13 && grouped.length >= 3;
+
   const items = [];
   let k = 0;
   for (const { block, places } of grouped) {
     // The divider. No photograph of its own: it takes the first place of its block, so
     // the slide is a picture of what is coming rather than a title card.
-    items.push({
-      look: 'label',
-      titleHe: line(block.he, { where: `block.${block.id}` }),
-      noteHe: line(places.length === 1 ? 'מקום אחד' : `${places.length} מקומות`, { where: `block.${block.id}.n` }),
-      emojis: [block.emoji],
-      image: places[0].image,
-      band: 'mid',
-      divider: true,
-    });
+    if (useDividers) {
+      items.push({
+        look: 'label',
+        titleHe: line(block.he, { where: `block.${block.id}` }),
+        noteHe: line(places.length === 1 ? 'מקום אחד' : `${places.length} מקומות`, { where: `block.${block.id}.n` }),
+        emojis: [block.emoji],
+        image: places[0].image,
+        band: 'mid',
+        divider: true,
+      });
+    }
     for (const p of places) {
       k++;
       items.push({

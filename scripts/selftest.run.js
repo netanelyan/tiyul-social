@@ -42,6 +42,7 @@ import { parseLocally } from '../src/deck/request.js';
 import { rotationFor, oneClause, emphasisFrom, COVER_SHAPES, COVER_VOICES, COVER_ROTATION } from '../src/deck/ideas.js';
 import { deckPlace, namesPlace, REGIONS } from '../src/deck/region.js';
 import { __test as photoTest, scrimAlpha, underScrim } from '../src/render/photo.js';
+import { treatmentFor, worstPatch, assertLegible, TEXT_BOXES, TARGET as LEGIBLE_TARGET } from '../src/render/legibility.js';
 import { deckId } from '../src/deck/candidate.js';
 import { sameSite } from '../src/search.js';
 import { authorityDomains, KINDS, subjectEn, isSourcedKind } from '../src/sources/places.js';
@@ -7835,6 +7836,113 @@ group('the admin site - the same decisions, in a browser');
   if (saved.secret === undefined) delete process.env.ADMIN_SECRET; else process.env.ADMIN_SECRET = saved.secret;
   if (saved.insecure === undefined) delete process.env.ADMIN_INSECURE_COOKIES; else process.env.ADMIN_INSECURE_COOKIES = saved.insecure;
 }
+
+/* -------------------------------------------------------------------------- */
+group('the contrast gate - no slide ships under target');
+
+// WHAT THIS REPLACES, and why it is a gate rather than a default.
+//
+// The previous version measured a wash off the photograph and returned null for every
+// image ever passed to it: it read `grid.length` on an object photo.js returns as
+// `{lum, sat, hue}`. Every template silently used its own constant, sized for an
+// average picture, and a sunlit white wall got the same treatment as a night shot.
+// The owner's report was "the text cant be read because of the background ... one bad
+// slide makes a whole deck useless".
+//
+// So these tests check the two properties that failure violated: that the measurement
+// PRODUCES A NUMBER, and that a photograph a gradient cannot carry changes the slide
+// rather than shipping dim.
+{
+  const white = treatmentFor(0.92);
+  const mid = treatmentFor(0.21);
+  const night = treatmentFor(0.012);
+
+  ok('a blown-out sky cannot be carried by a gradient and gets a plate', white.treatment === 'plate', JSON.stringify(white));
+  ok('an ordinary photograph keeps its gradient', mid.treatment === 'veil', JSON.stringify(mid));
+  ok('and a dark one keeps it too', night.treatment === 'veil', JSON.stringify(night));
+
+  // THE PROPERTY THAT MATTERS. Every treatment reaches target, whichever it is.
+  for (const [name, t] of [['white sky', white], ['mid', mid], ['night', night]]) {
+    ok(`${name} clears the ${LEGIBLE_TARGET}:1 target at ${t.ratio}:1`, t.ratio >= LEGIBLE_TARGET - 0.05, JSON.stringify(t));
+  }
+
+  // Monotonic: a brighter picture never asks for less help than a darker one.
+  ok('brighter photographs never ask for less treatment',
+    treatmentFor(0.05).alpha <= treatmentFor(0.3).alpha && treatmentFor(0.3).alpha <= treatmentFor(0.8).alpha);
+
+  // The floor is composition, not legibility - without it a dark photograph gets no
+  // treatment at all, which reads as type that landed somewhere convenient.
+  eq('a dark photograph still gets the composition floor', treatmentFor(0.01, { floor: 0.2 }).alpha, 0.2);
+
+  // An unmeasurable image gets the treatment that always works, not the worst guess at
+  // a gradient. A picture nobody could measure is exactly the white-sky case.
+  eq('an unmeasurable image falls back to a plate', treatmentFor(null).treatment, 'plate');
+  eq('and says so rather than claiming a measurement', treatmentFor(undefined).measured, false);
+}
+
+// THE WORST PATCH, NOT THE BRIGHTEST ROW. This is the case a row mean loses: a band
+// that is dark across three quarters of its width with a sunlit wall in the last
+// quarter. The mean reads comfortable; the words that land on the wall do not.
+{
+  const gw = 64, gh = 96;
+  const lum = new Array(gw * gh).fill(0.02);
+  for (let y = Math.floor(0.6 * gh); y < Math.floor(0.9 * gh); y++)
+    for (let x = Math.floor(0.75 * gw); x < gw; x++) lum[y * gw + x] = 0.95;
+
+  const worst = worstPatch({ lum }, { gw, gh, box: [0.07, 0.56, 0.93, 0.95], lines: 3 });
+  const rowMean = (() => {
+    let best = 0;
+    for (let y = Math.floor(0.56 * gh); y < Math.floor(0.95 * gh); y++) {
+      let s = 0;
+      for (let x = 0; x < gw; x++) s += lum[y * gw + x];
+      best = Math.max(best, s / gw);
+    }
+    return best;
+  })();
+
+  ok('the worst patch finds the bright corner a row mean averages away', worst > rowMean * 1.5,
+    `patch ${worst.toFixed(3)} vs row mean ${rowMean.toFixed(3)}`);
+  // And it buys real treatment with it. Not necessarily a plate - the window is half
+  // the box wide and the bright block is a quarter of it, so the window correctly
+  // averages the two, which is what a line of type does too. What matters is that the
+  // slide is darkened for the corner rather than for the comfortable mean.
+  ok('and pays for that corner in treatment',
+    treatmentFor(worst).alpha >= treatmentFor(rowMean).alpha + 0.1,
+    `worst ${treatmentFor(worst).alpha} vs row mean ${treatmentFor(rowMean).alpha}`);
+  ok('both still land on target', treatmentFor(worst).ratio >= LEGIBLE_TARGET - 0.05);
+}
+
+// THE GATE ITSELF. It cannot fire on a measured slide, because the plate always
+// reaches target - what it catches is the measurement path silently breaking, which is
+// precisely how the last version failed.
+{
+  assertLegible([null, { treatment: 'veil', alpha: 0.4, ratio: 7.1, measured: true }], { where: 'ok' });
+  ok('a post of passing slides passes', true);
+
+  let stopped = null;
+  try {
+    assertLegible([{ treatment: 'veil', alpha: 0.72, ratio: 3.1, measured: true }], { where: 'post X' });
+  } catch (e) {
+    stopped = e.message;
+  }
+  ok('a slide under target stops the build', stopped !== null, 'did not throw');
+  // And says which slide and how bad, because a gate that fails anonymously sends
+  // somebody back through twenty-six renders by eye.
+  ok('and names the slide and the ratio', /post X/.test(stopped || '') && /slide 1 at 3\.1/.test(stopped || ''), stopped);
+
+  assertLegible([{ treatment: 'plate', alpha: 0.82, ratio: null, measured: false }]);
+  ok('an unmeasured slide is not a failure', true);
+}
+
+// Every look that puts type on a photograph has a box. A look added without one would
+// be measured against the bottom third whatever it actually does, which is the quiet
+// kind of wrong this module exists to stop.
+for (const look of ['label.cover', 'label.mid', 'label.lower', 'collage', 'route', 'notes', 'roll', 'deck', 'site']) {
+  const box = TEXT_BOXES[look];
+  ok(`${look} declares where its type sits`, Array.isArray(box) && box.length === 4 && box[2] > box[0] && box[3] > box[1],
+    JSON.stringify(box));
+}
+
 
 /* -------------------------------------------------------------------------- */
 console.log(`\n${'─'.repeat(56)}`);

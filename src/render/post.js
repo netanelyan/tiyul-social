@@ -4,7 +4,7 @@ import { renderSiteSlideHtml } from './siteSlide.js';
 import { closingSlidesFor } from '../deck/follow.js';
 import { postConfig } from '../postConfig.js';
 import { withSiteShot } from '../plan/sitePage.js';
-import { measureVeils } from './photo.js';
+import { planLegibility, assertLegible, TEXT_BOXES } from './legibility.js';
 
 // A post of the five new types, to files on disk.
 //
@@ -124,22 +124,40 @@ export async function renderPostSize(
   );
   const items = [...fitTo(post.slides, size, post.type), ...drawn];
 
-  // THE WASH OVER EACH PHOTOGRAPH, MEASURED IN ONE PASS BEFORE ANY SLIDE IS DRAWN.
+  // THE CONTRAST GATE, RUN IN ONE PASS BEFORE ANY SLIDE IS DRAWN.
   //
   // Measured first and drawn second, which is the order render/deck.js uses and for the
-  // same reason: how dark the gradient behind the type has to be is a property of the
-  // photograph, and the template cannot know it from the HTML. A constant has to be
-  // sized for the worst picture, so it is either too dark on a good one or too light on
-  // a sunlit white wall - which was the complaint.
+  // same reason: how dark the treatment behind the type has to be is a property of the
+  // photograph, and the template cannot know it from the HTML.
   //
-  // Only the two looks that put type straight onto a photograph need it. A checklist
-  // has its own ground, a route card blurs its own, and a pin map has no photograph.
-  // One decode per slide is the cost, and it is the only image work these posts do -
-  // the deck pays this plus a placement search plus a vision call per slide.
-  const measurable = items.map((s, i) => (wanted(i) && ['label', 'collage'].includes(s.look) ? s.image?.src || null : null));
-  const veils = measurable.some(Boolean)
-    ? await measureVeils(measurable, { band: [0.24, 0.86] }).catch(() => [])
-    : [];
+  // EVERY LOOK THAT PUTS TYPE ON A PHOTOGRAPH IS MEASURED, not just the two that were
+  // measured before. A route card and a checklist blur their own ground, and "blurred"
+  // is not "dark" - a blurred white-sky beach is still a white sky, and the type on it
+  // still disappears. The treatment the gate returns is per look, which is why the box
+  // comes from TEXT_BOXES rather than from one band constant shared by all of them.
+  //
+  // The gate may answer `plate` instead of `veil`, which CHANGES THE SLIDE rather than
+  // dimming it: see src/render/legibility.js for why a cap on a gradient is the wrong
+  // answer to a photograph a gradient cannot carry.
+  const boxFor = (s) => {
+    if (s.look === 'label') return TEXT_BOXES[`label.${s.cover ? 'cover' : s.band === 'mid' ? 'mid' : 'lower'}`];
+    return TEXT_BOXES[s.look] || TEXT_BOXES['label.lower'];
+  };
+  // The CSS brightness each look already applies to its own ground, so the gate decides
+  // against the picture as rendered rather than as filed. 1 means "shown as it is".
+  const GAIN = { label: 1, collage: 1, route: 0.62, notes: 0.42, roll: 1 };
+  const LIT = new Set(Object.keys(GAIN));
+  const plans = await planLegibility(
+    items.map((s, i) => {
+      const src = s.look === 'route' || s.look === 'notes' ? s.bgImage?.src || s.stops?.[0]?.image?.src || s.image?.src : s.image?.src;
+      if (!wanted(i) || !LIT.has(s.look) || !src) return null;
+      return { src, box: boxFor(s), lines: s.look === 'label' ? 3 : 6, gain: GAIN[s.look] };
+    })
+  );
+  // Throws rather than shipping a slide under target. It cannot fire on a measured
+  // slide - the plate always reaches target - so what it catches is the measurement
+  // path silently breaking, which is exactly how the last version failed.
+  assertLegible(plans, { where: `post ${post.id} (${size})` });
 
   const out = [];
   for (const [i, slide] of items.entries()) {
@@ -156,7 +174,7 @@ export async function renderPostSize(
           // the platform, which the platform will letterbox either way.
           { size }
         )
-      : await renderPostSlideHtml({ ...slide, veil: veils[i] ?? null }, { size, frame });
+      : await renderPostSlideHtml({ ...slide, legible: plans[i] ?? null }, { size, frame });
 
     const rendered = await renderToJpeg(html, {
       stem: postSlideStem(post.id, size, index),

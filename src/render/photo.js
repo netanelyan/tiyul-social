@@ -32,7 +32,7 @@ const GW = 45;
 const GH = 80;
 
 /** sRGB -> relative luminance, the same curve WCAG contrast is defined on. */
-const CONTRAST_WHITE = (l) => 1.05 / (l + 0.05);
+export const CONTRAST_WHITE = (l) => 1.05 / (l + 0.05);
 const CONTRAST_BLACK = (l) => (l + 0.05) / 0.05;
 
 // TikTok's own furniture, in frame fractions. The button rail down the right
@@ -48,7 +48,7 @@ const RAIL = { x0: 0.76, x1: 1.0, y0: 0.42, y1: 0.86 };
  * One page for the whole deck rather than one per slide: the work per image is
  * a decode and a 3,600-pixel read, and the page setup costs more than both.
  */
-async function sampleGrids(sources, { gw = GW, gh = GH } = {}) {
+export async function sampleGrids(sources, { gw = GW, gh = GH } = {}) {
   const browser = await getBrowser();
   const context = await browser.newContext({ viewport: { width: 64, height: 64 } });
   const page = await context.newPage();
@@ -872,8 +872,8 @@ const SCRIM_LUM = 0.0124;
 const CARD_GW = 48;
 const CARD_GH = 60;
 
-const toSrgb = (l) => (l <= 0.0031308 ? l * 12.92 : 1.055 * Math.pow(l, 1 / 2.4) - 0.055);
-const toLinear = (u) => (u <= 0.04045 ? u / 12.92 : Math.pow((u + 0.055) / 1.055, 2.4));
+export const toSrgb = (l) => (l <= 0.0031308 ? l * 12.92 : 1.055 * Math.pow(l, 1 / 2.4) - 0.055);
+export const toLinear = (u) => (u <= 0.04045 ? u / 12.92 : Math.pow((u + 0.055) / 1.055, 2.4));
 
 /**
  * What a band of this luminance measures once the scrim is over it.
@@ -968,45 +968,11 @@ export async function measureCardScrims(sources) {
 // would have chosen. Guessing at those numbers is how a scoring bug survives.
 export const __test = { place, colourFor, region, railOverlap, sampleGrids, inkContrast, backgroundMask, maskFromBox, coverage, GW, GH };
 
-/**
- * How dark the wash over a post slide's text band has to be, measured off the picture.
- *
- * THE PROBLEM THIS SOLVES, stated as it was reported: "the background is too bright,
- * the text looks awkward". White type with an outline survives almost anything, but
- * surviving and reading well are different things - over a bright sky or a sunlit white
- * wall the outline becomes the letterform, the counters close up, and the line reads as
- * a sticker rather than as type. The post templates used a CONSTANT gradient, and a
- * constant has to be sized for one photograph: dark enough for the worst case makes
- * every good photograph muddy, light enough for a good one loses the bad case.
- *
- * So it is measured, exactly as a card's scrims are (see measureCardScrims above) and
- * with the same two decisions:
- *
- *   THE BRIGHTEST ROW OF THE BAND, not its mean. A band that is dark except for one
- *   bright strip averages to comfortable and loses the line that lands on the strip.
- *
- *   AND A FLOOR. A photograph that is already dark gets no wash at all, which is
- *   perfectly legible and looks like the type happened to land somewhere convenient
- *   rather than like a deliberate block. The floor is what makes it look chosen.
- *
- * `band` is [top, bottom] as fractions of the frame. Returns one alpha per source, or
- * null where there was nothing to measure - and the caller then uses its own constant,
- * which is exactly the worst-photograph number it was already using.
- */
-export async function measureVeils(sources, { band = [0.3, 0.8], want = 7, floor = 0.18 } = {}) {
-  const grids = await sampleGrids(sources, { gw: CARD_GW, gh: CARD_GH }).catch(() => []);
-  return (sources || []).map((src, i) => {
-    const grid = grids[i];
-    if (!src || !grid?.length) return null;
-    const from = Math.max(0, Math.floor(band[0] * grid.length));
-    const to = Math.min(grid.length, Math.ceil(band[1] * grid.length));
-    let brightest = 0;
-    for (let r = from; r < to; r++) {
-      const row = grid[r];
-      if (!row?.length) continue;
-      const mean = row.reduce((a, b) => a + b, 0) / row.length;
-      if (mean > brightest) brightest = mean;
-    }
-    return scrimAlpha(brightest, { want, floor, ceiling: 0.72 });
-  });
-}
+// measureVeils USED TO LIVE HERE and it is gone rather than fixed.
+//
+// It read `grid.length` on an object this file returns as `{lum, sat, hue}`, so the
+// guard above the loop fired for every image, every caller got null, and every template
+// fell back to the constant it was written with. The measurement was never wrong - it
+// never ran. A bug that silent is not a bug to repair in place; the replacement in
+// src/render/legibility.js reports a contrast ratio per slide and the build asserts on
+// it, so the same failure now stops the render instead of dimming the type.

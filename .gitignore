@@ -38,3 +38,4 @@ brickdeal-automation-main/
 # declared track it cannot find.
 assets/audio/*
 !assets/audio/tracks.json
+data/basemaps

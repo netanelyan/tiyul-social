@@ -15,6 +15,7 @@ import { buildPlanPost } from './plan.js';
 import { buildListPost } from './list.js';
 import { buildVerdictPost } from './verdict.js';
 import { buildInsteadPost } from './instead.js';
+import { buildRollPost } from './roll.js';
 import { buildMapPost } from './mapPost.js';
 
 // One post, from a destination, through whichever of the five types the rotation
@@ -84,8 +85,11 @@ function placesToPhotograph(type, city) {
     );
     return places.filter((p) => ids.has(p.id));
   }
-  if (type === 'list') {
-    const want = postConfig().posts.types.find((t) => t.id === 'list').slidesMax + 4;
+  // The two types that ARE a run of photographs, and so want the same generous list.
+  // A roll post is nothing but pictures, so a picture it cannot find is a slide it does
+  // not have - it asks for the most of anything here.
+  if (type === 'list' || type === 'roll') {
+    const want = (postConfig().posts.types.find((t) => t.id === type)?.slidesMax || 12) + (type === 'roll' ? 6 : 4);
     return [...places].sort((a, b) => (b.mustSee ? 1 : 0) - (a.mustSee ? 1 : 0) || (b.rating || 0) - (a.rating || 0)).slice(0, want);
   }
   if (type === 'verdict') return places.filter((p) => p.mustSee || p.photo).slice(0, 6);
@@ -216,6 +220,11 @@ export async function buildPost({
     alts,
     defaultHe,
     regionHe,
+    // Where the camera-roll post puts its one ask. Keyed on the destination and hook
+    // rather than drawn at random: the same post rebuilt produces the same placement,
+    // which is what makes the metrics comparable, and it is still roughly even across
+    // the account. See the note at the top of ./roll.js for why both placements exist.
+    ctaAt: [...`${slug}${hook.id}`].reduce((a, c) => a + c.charCodeAt(0), 0) % 2 === 0 ? 'mid' : 'end',
   });
 
   // The cover's photograph, if the builder did not claim one. A cover that shows the
@@ -312,7 +321,7 @@ export async function buildPost({
 }
 
 /** Which builder, and the arguments each one wants. One place, so a type is one line. */
-function buildFor(type, city, { look, hook, dest, days, questionHe, alts, defaultHe, regionHe }) {
+function buildFor(type, city, { look, hook, dest, days, questionHe, alts, defaultHe, regionHe, ctaAt }) {
   switch (type) {
     case 'plan':
       return buildPlanPost(city, { look, hook, dest, days, questionHe });
@@ -324,6 +333,11 @@ function buildFor(type, city, { look, hook, dest, days, questionHe, alts, defaul
       return buildInsteadPost(alts, { hook, defaultHe, regionHe, questionHe });
     case 'map':
       return buildMapPost(city, { hook, dest });
+    case 'roll':
+      // `ctaAt` rotates between the middle and the end rather than being chosen here.
+      // Both placements are defensible and the metrics module can settle it; see the
+      // note at the top of ./roll.js.
+      return buildRollPost(city, { hook, dest, days, ctaAt });
     default:
       throw new Error(`no builder for post type "${type}"`);
   }

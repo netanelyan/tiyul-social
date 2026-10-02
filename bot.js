@@ -2120,6 +2120,43 @@ const spendClipFootage = (clips) => {
  * the interesting failures (nothing scored above the destination gate, a source
  * that would not decode) are ones to read while sitting here.
  */
+/**
+ * A postcard reel, now.
+ *
+ * `/postcard` draws the next destination from the rotation; `/postcard פראג` names one.
+ *
+ * ITS OWN COMMAND RATHER THAN A SHAPE OF /clip, for the reason given at the top of
+ * src/video/postcard.js: the three clip shapes are functions of a Pexels pool and this
+ * one is a function of a destination page. `/clip postcard` would have to accept a
+ * destination argument that means nothing to the other three.
+ */
+bot.command('postcard', async (ctx) => {
+  const asked = (ctx.message.text || '').replace(/^\/postcard(@\S+)?\s*/, '').trim();
+  const { buildPostcardCandidate, postcardApprovalMessage } = await import('./src/video/postcard.js');
+  const { resolveDestination, pickDestination } = await import('./src/plan/write.js');
+
+  const recent = store.recentPublished().slice(0, 12).map((p) => p.place);
+  const found = asked ? await resolveDestination(asked, { recent }) : null;
+  if (asked && !found) {
+    await ctx.reply(`❌ לא הצלחתי להבין איזה יעד זה: ${asked}`);
+    return;
+  }
+  const dest = found?.dest || pickDestination(recent);
+  if (!dest?.siteSlug) {
+    await ctx.reply(`❌ ל${dest?.he || 'יעד הזה'} אין עמוד באתר, וגלויות נבנות מהעמוד`);
+    return;
+  }
+
+  await ctx.reply(`⏳ בונה גלויות · ${dest.he}...`);
+  detach('גלויות', () =>
+    forKind('clip', async () => {
+      const cand = await buildPostcardCandidate(dest);
+      await stage(cand);
+      await notify.send(bot.telegram, ctx.chat.id, postcardApprovalMessage(cand)).catch(() => {});
+    })
+  );
+});
+
 bot.command('clip', async (ctx) => {
   const arg = (ctx.message.text || '').replace(/^\/clip(@\S+)?\s*/, '').trim();
   const { clipShapeArg, buildClips } = await import('./src/video/clip.js');
@@ -2832,6 +2869,32 @@ let lastDeckSuggestAt = 0;
 const CLIPS_PER_DAY = Math.max(0, Number(process.env.CLIPS_PER_DAY ?? '0'));
 
 /**
+ * How many postcard reels a day.
+ *
+ * ONE BY DEFAULT, which is a promotion rather than a default. The three stock clip
+ * shapes sit at zero because the owner paused them; this shape exists because a
+ * reference video of exactly this format performed and the instruction was to promote
+ * it. See src/video/postcard.js for what it is and why it is built from the destination
+ * page rather than from stock footage.
+ */
+const POSTCARDS_PER_DAY = Math.max(0, Number(process.env.POSTCARDS_PER_DAY ?? '1'));
+let postcardsToday = 0;
+let postcardDay = null;
+let lastPostcardAt = 0;
+
+/** One postcard reel for the next destination in the rotation, staged for approval. */
+const suggestPostcard = billed('clip', async function suggestPostcardJob(chatId = staging) {
+  const { buildPostcardCandidate, postcardApprovalMessage } = await import('./src/video/postcard.js');
+  const { pickDestination } = await import('./src/plan/write.js');
+  const dest = pickDestination(store.recentPublished().slice(0, 12).map((p) => p.place));
+  if (!dest?.siteSlug) return null;
+  const cand = await buildPostcardCandidate(dest);
+  await stage(cand);
+  await notify.send(bot.telegram, chatId, postcardApprovalMessage(cand)).catch(() => {});
+  return cand;
+});
+
+/**
  * How many of the five post types arrive unasked, a day.
  *
  * THE HIGHEST OF THE FOUR, because this is what the account is now. A deck is the older
@@ -3254,6 +3317,8 @@ bot.command('help', (ctx) =>
       '/trip פראג 5 1200 - ועם תקציב: הכל כלול, טיסה ולינה ואוכל ותחבורה וכניסות',
       '   השער הוא 600 ₪. מספר קטן ממנו הוא ימים, גדול ממנו הוא תקציב',
       '/clip - קליפ אחד. שלוש צורות מתחלפות בסבב',
+      '/postcard - גלויות: 4 מקומות מהעמוד, שם על כל שוט',
+      '/postcard פראג - גלויות ליעד מסוים',
       '   חתוך: 4-5 מקומות שונים, שם של מקום על כל אחד',
       '   רצף: 12 שוטים של מקום אחד, 1.5ש׳ כל אחד, שורה אחת שלא מתחלפת',
       '   בודד: שוט אחד, 8ש׳, שורה אחת שלא מתחלפת',
@@ -3462,6 +3527,29 @@ function tick() {
     lastClipSuggestAt = Date.now();
     clipsToday += 1;
     suggestClip().catch((e) => console.error('clip suggestion failed:', e.message));
+  }
+
+  // POSTCARDS, ON THEIR OWN BUDGET.
+  //
+  // Counted separately from clips rather than sharing CLIPS_PER_DAY, because the two
+  // are paused and promoted independently and for different reasons. The three stock
+  // shapes are paused at the owner's instruction; this shape is the one the owner asked
+  // to promote after a reference video of it performed. Sharing a counter would mean
+  // un-pausing the stock shapes to run postcards, which is the opposite of both asks.
+  if (postcardDay !== day) {
+    postcardDay = day;
+    postcardsToday = 0;
+  }
+  if (
+    inHours &&
+    POSTCARDS_PER_DAY > 0 &&
+    postcardsToday < POSTCARDS_PER_DAY &&
+    clipsWaiting() < CLIP_BACKLOG_MAX &&
+    Date.now() - lastPostcardAt >= gatherIntervalMs
+  ) {
+    lastPostcardAt = Date.now();
+    postcardsToday += 1;
+    suggestPostcard().catch((e) => console.error('postcard suggestion failed:', e.message));
   }
 
   if (inHours && remaining > 0 && due) {
@@ -3827,7 +3915,7 @@ async function main() {
   startIgWebhook();
   console.log(`   daily run at ${RUN_HOUR}:00 · target ${dailyTarget()} · drip every ${POST_INTERVAL_MINUTES} min`);
   console.log(
-    `   suggestions per day: ${dailyTarget()} cards · ${POSTS_PER_DAY} posts · ${DECKS_PER_DAY} decks · ${CLIPS_PER_DAY} clips`
+    `   suggestions per day: ${dailyTarget()} cards · ${POSTS_PER_DAY} posts · ${DECKS_PER_DAY} decks · ${CLIPS_PER_DAY} clips · ${POSTCARDS_PER_DAY} postcards`
   );
 
   // Do the budgets fit down the drip?

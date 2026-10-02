@@ -1,4 +1,4 @@
-import { heeboDataUri, assistantDataUri, escapeHtml } from './theme.js';
+import { heeboDataUri, assistantDataUri, frankRuhlDataUri, escapeHtml } from './theme.js';
 import { emojiHtml } from './emojiArt.js';
 import { SIZES } from './deckTemplates.js';
 import { fitPoints, cityVectors, scaleBar, pinMapHtml } from './map.js';
@@ -66,7 +66,7 @@ export function geometryFor(size = 'tiktok', frame = 'tall') {
 }
 
 /** Every look this file can draw. `label` and `sheet` need a photograph; the others do not. */
-export const LOOKS = ['label', 'sheet', 'route', 'notes', 'collage', 'pinmap'];
+export const LOOKS = ['label', 'sheet', 'route', 'notes', 'collage', 'pinmap', 'roll'];
 export const isLook = (l) => LOOKS.includes(l);
 
 /* -------------------------------------------------------------------------- */
@@ -110,6 +110,29 @@ body { position: relative; background: #0b0d12; font-family: 'Assistant', sans-s
 
 /** The element that makes the Heebo declaration real. See the note above `base`. */
 const PROBE = '<div class="font-probe">א</div>';
+
+/**
+ * The tint alpha for a look that draws its own blurred ground, measured where possible.
+ *
+ * The grounded looks each had a PAIR of constants - a lighter alpha at the top of the
+ * gradient and a heavier one at the foot - chosen by eye against an average photograph.
+ * The gate measures what this particular ground needs and returns one number, so the
+ * pair is kept as a SHAPE and rescaled to it: the ratio between top and bottom is the
+ * design, the level is the measurement.
+ *
+ * Falls back to the constant it was given when nothing was measured, which is the
+ * average-photograph number those looks already shipped with.
+ */
+function groundTint(slide, fallback) {
+  const want = slide?.legible?.alpha;
+  if (!Number.isFinite(want) || !slide?.legible?.measured) return fallback.toFixed(2);
+  // The pair .52/.68 has a midpoint of .60; scaling both by want/.60 keeps the gradient
+  // and moves the level. Clamped so a very dark ground still shows a deliberate tint and
+  // a very bright one cannot go fully opaque - past .88 the photograph is gone, and at
+  // that point the look should have been a plate, which is the gate's own decision.
+  const scaled = fallback * (want / 0.6);
+  return Math.max(0.3, Math.min(0.88, scaled)).toFixed(2);
+}
 
 /**
  * The outline that makes white type survive any photograph.
@@ -234,7 +257,17 @@ export function renderLabelSlideHtml(slide, { size = 'tiktok', frame = 'tall' } 
   // the one element that says a person judged this rather than a scraper collected it.
   // Measured where there is a measurement, and the old constant where there is not -
   // which is the worst-photograph number it always was.
-  const veil = Number.isFinite(slide.veil) ? Math.min(0.72, Math.max(0.12, slide.veil)).toFixed(2) : cover ? '0.58' : '0.52';
+  // THE TREATMENT COMES FROM THE GATE, and the gate may have decided this photograph
+  // cannot carry a gradient at all. See src/render/legibility.js: past about 0.62 a
+  // wash stops looking like a photograph and starts looking like a grey card, so a
+  // picture that needs more than that gets a PLATE - an opaque panel behind the type -
+  // instead of the same gradient turned up until the picture dies. Capping the gradient
+  // and shipping anyway is what the previous version did, and it is why bright slides
+  // were unreadable.
+  const plan = slide.legible || null;
+  const plated = plan?.treatment === 'plate';
+  const veil = plated ? '0' : Number.isFinite(plan?.alpha) ? plan.alpha.toFixed(2) : cover ? '0.58' : '0.52';
+  const plateAlpha = plated ? Math.max(0.74, Math.min(0.96, plan.alpha)).toFixed(2) : '0';
 
   const badgePx = px(geo, 0.075);
   const badgeLabelPx = px(geo, 0.03);
@@ -258,6 +291,16 @@ export function renderLabelSlideHtml(slide, { size = 'tiktok', frame = 'tall' } 
         ${band === 'mid' ? `top:${Math.round(geo.h * 0.16)}px;
         background: radial-gradient(ellipse at center, rgba(0,0,0,${veil}), rgba(0,0,0,${(veil * 0.34).toFixed(2)}) 55%, rgba(0,0,0,0) 78%);`
           : `bottom:0; background: linear-gradient(to top, rgba(0,0,0,${veil}) 12%, rgba(0,0,0,${(veil * 0.55).toFixed(2)}) 46%, rgba(0,0,0,0));`} }
+/* THE PLATE. What a photograph gets when a gradient cannot carry type over it.
+   Rounded, inset to the type's own box rather than bleeding to the frame edge, and
+   with a soft blur behind it so the picture still shows through at the rim - that is
+   what keeps it reading as a caption laid on a photograph rather than as a slide that
+   gave up and went grey. Sized by the gate, not by eye. */
+${plated ? `.wrap { background: rgba(10,12,16,${plateAlpha}); backdrop-filter: blur(${Math.round(geo.w * 0.012)}px);
+         border-radius: ${Math.round(geo.w * 0.045)}px;
+         padding: ${Math.round(geo.h * 0.032)}px ${Math.round(geo.w * 0.055)}px;
+         inset-inline: ${Math.round(geo.w * 0.05)}px !important;
+         box-shadow: 0 ${Math.round(geo.h * 0.012)}px ${Math.round(geo.h * 0.05)}px rgba(0,0,0,.42); }` : ''}
 /* THE COVER GETS A SECOND, WIDER WASH. The published Santorini cover put white type
    over a hillside of white buildings, and an outline alone is the wrong tool for that:
    a stroke is the same width everywhere, so where the photograph is the same value as
@@ -266,15 +309,23 @@ export function renderLabelSlideHtml(slide, { size = 'tiktok', frame = 'tall' } 
    caption, and costs the photograph almost nothing. */
 ${cover ? `.wash { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(8,10,14,.30) 0%, rgba(8,10,14,.16) 55%, rgba(8,10,14,0) 80%); }` : ''}
 /* The badge. A pill rather than a line of text, because it carries a NUMBER and the
-   number is the claim. Accent fill, dark ink, so it is the first thing read. */
+   number is the claim.
+   DARK FILL, ACCENT NUMBER - not the other way round. The pill used to be filled with
+   the accent (#FFD84D) with dark ink on it, and the star emoji sat inside it. Emoji
+   artwork is full colour and a star's artwork is gold, so a gold star on a yellow pill
+   is an invisible star - which is what was reported. The general rule, not just for the
+   star: EMOJI NEVER SITS ON THE ACCENT FILL, because emoji colour is fixed artwork and
+   the accent is ours to choose. Inverting the pill keeps the accent on the number, where
+   it is loudest anyway, and gives every emoji a dark ground to read against. */
 .badge { display: inline-flex; align-items: center; gap: .24em; direction: ltr;
-         background: #FFD84D; color: #14161c; border-radius: 999px;
+         background: rgba(10,12,16,.92); color: #FFD84D; border-radius: 999px;
          padding: ${Math.round(badgePx * 0.16)}px ${Math.round(badgePx * 0.42)}px;
-         box-shadow: 0 ${Math.round(badgePx * 0.08)}px ${Math.round(badgePx * 0.3)}px rgba(0,0,0,.45);
+         box-shadow: inset 0 0 0 ${Math.max(2, Math.round(badgePx * 0.035))}px rgba(255,216,77,.5),
+                     0 ${Math.round(badgePx * 0.08)}px ${Math.round(badgePx * 0.3)}px rgba(0,0,0,.45);
          margin-bottom: ${Math.round(badgePx * 0.22)}px; }
 .badge b { direction: ltr; unicode-bidi: isolate; font-weight: 800; font-size: ${badgePx}px; line-height: 1.05; }
 .badge img.emoji { height: ${Math.round(badgePx * 0.82)}px; width: auto; }
-.badge span { font-weight: 700; font-size: ${badgeLabelPx}px; }
+.badge span { font-weight: 700; font-size: ${badgeLabelPx}px; color: rgba(255,255,255,.82); }
 /* LTR, ISOLATED. The page is RTL and "3." is a number followed by a full stop, so
    the bidi algorithm put the stop on the left and the slide counted ".3". The number
    is the one element here that is not Hebrew and it has to be told so. */
@@ -442,8 +493,12 @@ export function renderRouteCardHtml(slide, { size = 'tiktok', frame = 'tall' } =
    be dark, only quiet. */
 .bg { position: absolute; inset: 0; background-size: cover; background-position: center;
       filter: blur(30px) saturate(1.1) brightness(.62); transform: scale(1.2); }
+/* MEASURED, not fixed. .52/.68 was sized for an average photograph, and a route card
+   whose first stop is a white-walled courtyard at noon got the same tint as one shot at
+   dusk. The gate measures this ground AFTER the brightness above (see GAIN in
+   render/post.js) and returns the tint that carries the type at target. */
 .tint { position: absolute; inset: 0;
-        background: linear-gradient(180deg, rgba(9,11,16,.52), rgba(9,11,16,.68)); }
+        background: linear-gradient(180deg, rgba(9,11,16,${groundTint(slide, 0.52)}), rgba(9,11,16,${groundTint(slide, 0.68)})); }
 .wrap { position: absolute; inset: 0; padding: ${Math.round(geo.h * 0.1)}px ${Math.round(geo.w * 0.07)}px;
         display: flex; flex-direction: column; justify-content: center; }
 .head { color: #fff; font-weight: 800; font-size: ${headPx}px; line-height: 1.16; text-align: center;
@@ -534,7 +589,8 @@ body { background: #000; }
    still visibly part of the same post. */
 .bg { position: absolute; inset: 0; background-size: cover; background-position: center;
       filter: blur(46px) saturate(1.05) brightness(.42); transform: scale(1.25); }
-.tint { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,.62), rgba(0,0,0,.76)); }
+/* Measured off this ground after its own brightness, exactly as the route card's is. */
+.tint { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,${groundTint(slide, 0.62)}), rgba(0,0,0,${groundTint(slide, 0.76)})); }
 .wrap { position: absolute; inset: 0; padding: ${Math.round(geo.h * 0.13)}px ${Math.round(geo.w * 0.085)}px;
         display: flex; flex-direction: column; justify-content: center; }
 .head { color: #fff; font-weight: 800; font-size: ${headPx}px; line-height: 1.14;
@@ -723,6 +779,109 @@ export async function renderPinMapHtml(slide, { size = 'tiktok', frame = 'tall' 
 }
 
 /* -------------------------------------------------------------------------- */
+/* 7. roll - the camera roll: a serif title, then photographs with nothing on   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A camera-roll slide: a serif cover, a bare photograph, or the one call to action.
+ *
+ * THREE SLIDES IN ONE TEMPLATE because they are the same slide with different amounts
+ * of nothing on them, and splitting them would mean three copies of the photograph and
+ * the treatment logic.
+ *
+ * WHY THE TYPE IS A SERIF AND WHY IT IS SMALL.
+ *
+ * Every other look here is built on the opposite principle: TikTok's own text tool sets
+ * large heavy type with an outline, and five of the six looks copy that deliberately
+ * (see the note at the top of this file). This one must not. The reference the owner
+ * supplied - "My camera roll after 10 days in the Dolomites" over Seceda - works
+ * because the type is QUIET: a display serif, in a soft tint rather than white, at
+ * maybe five percent of the frame, with nothing else on the slide. The photograph is
+ * the post. A heavy outlined sans across the same picture turns it into an infographic.
+ *
+ * So: Frank Ruhl Libre, the Hebrew serif (see frankRuhlDataUri in render/theme.js), in
+ * a warm off-white, with a wide line-height and no stroke. The contrast gate still runs
+ * on it - quiet is not the same as unreadable, and a pale serif over a bright sky is
+ * precisely the case src/render/legibility.js exists for - but it reaches target with a
+ * wash rather than with a stroke, which is what keeps the look.
+ *
+ * AND THE BARE SLIDES CARRY NO TEXT AT ALL. Not a place name, not a number, not a
+ * watermark. That is the format, it is the thing none of our other formats do, and the
+ * temptation to add "just the name" is the temptation to turn it back into a list post.
+ */
+export function renderRollHtml(slide, { size = 'tiktok', frame = 'tall' } = {}) {
+  const geo = geometryFor(size, frame);
+
+  // A bare photograph. Nothing over it, so nothing to measure and nothing to treat.
+  if (slide.bare || (!slide.titleHe && !slide.noteHe)) {
+    return `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><style>${base(geo)}
+</style></head><body>
+${PROBE}
+${photo(slide.image)}
+</body></html>`;
+  }
+
+  const plan = slide.legible || null;
+  const plated = plan?.treatment === 'plate';
+  const veil = plated ? '0' : Number.isFinite(plan?.alpha) ? plan.alpha.toFixed(2) : '0.42';
+  const plateAlpha = plated ? Math.max(0.68, Math.min(0.92, plan.alpha)).toFixed(2) : '0';
+
+  const titlePx = px(geo, slide.cta ? 0.062 : 0.076);
+  const notePx = px(geo, 0.032);
+
+  return `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><style>${base(geo)}
+@font-face { font-family: 'FrankRuhl'; src: url(${frankRuhlDataUri()}) format('truetype'); font-weight: 300 900; font-display: block; }
+/* A WIDE SOFT WASH RATHER THAN A BAND. The type sits in the upper third like the
+   reference, and a hard-edged gradient under it would read as a banner - which is the
+   look this format exists to avoid. This is closer to what a graduated filter does to a
+   sky: strongest at the top, gone by the middle, and never visibly edged. */
+.veil { position: absolute; inset-inline: 0; top: 0; height: ${Math.round(geo.h * 0.62)}px;
+        background: linear-gradient(to bottom, rgba(6,8,12,${veil}) 0%, rgba(6,8,12,${(veil * 0.62).toFixed(2)}) 42%, rgba(6,8,12,0) 100%); }
+.wrap { position: absolute; top: ${Math.round(geo.h * (slide.cta ? 0.3 : 0.2))}px;
+        inset-inline: ${Math.round(geo.w * 0.09)}px; text-align: center;
+        ${plated
+          ? `background: rgba(8,10,14,${plateAlpha}); backdrop-filter: blur(${Math.round(geo.w * 0.01)}px);
+             border-radius: ${Math.round(geo.w * 0.04)}px;
+             padding: ${Math.round(geo.h * 0.03)}px ${Math.round(geo.w * 0.05)}px;`
+          : ''} }
+/* THE SOFT TINT, not white. The reference sets its headline in a pale pink; pure white
+   on a photograph is what a subtitle burner produces. A warm off-white keeps the
+   softness and survives a wider range of pictures than a pink would - a pink headline
+   over a pink sunset is camouflage, which is the same trap the deck's accent note
+   describes. */
+.title { font-family: 'FrankRuhl', serif; font-weight: 500; color: #FBEFE4;
+         font-size: ${titlePx}px; line-height: 1.26; letter-spacing: -0.01em;
+         text-wrap: balance; text-shadow: 0 ${Math.round(titlePx * 0.03)}px ${Math.round(titlePx * 0.26)}px rgba(0,0,0,.45); }
+.note { font-family: 'FrankRuhl', serif; font-weight: 400; color: rgba(251,239,228,.8);
+        font-size: ${notePx}px; line-height: 1.4; margin-top: ${Math.round(notePx * 0.9)}px;
+        text-shadow: 0 2px ${Math.round(notePx * 0.5)}px rgba(0,0,0,.45); }
+/* The badge, where a cover carries one. Smaller than the other looks' and set in the
+   serif, because a loud pill would undo everything above it. */
+.badge { display: inline-flex; align-items: center; gap: .26em; direction: ltr;
+         margin-bottom: ${Math.round(notePx * 0.8)}px;
+         background: rgba(10,12,16,.82); color: #FBEFE4; border-radius: 999px;
+         padding: ${Math.round(notePx * 0.3)}px ${Math.round(notePx * 0.8)}px;
+         font-family: 'FrankRuhl', serif; font-weight: 600; font-size: ${Math.round(notePx * 0.92)}px; }
+.badge img.emoji { height: ${Math.round(notePx * 0.95)}px; width: auto; }
+</style></head><body>
+${PROBE}
+${photo(slide.image)}
+<div class="veil"></div>
+<div class="wrap">
+  ${
+    slide.badgeHe
+      ? `<div class="badge">${slide.badgeEmoji ? emojiHtml(slide.badgeEmoji, { size: '0.95em' }) : ''}<span>${escapeHtml(
+          String(slide.badgeHe)
+        )}</span></div>`
+      : ''
+  }
+  ${slide.titleHe ? `<div class="title">${withEmoji(slide.titleHe)}</div>` : ''}
+  ${slide.noteHe ? `<div class="note">${withEmoji(slide.noteHe)}</div>` : ''}
+</div>
+</body></html>`;
+}
+
+/* -------------------------------------------------------------------------- */
 
 /** One entry point, so the renderer dispatches on a field rather than on a chain of ifs. */
 export const RENDERERS = {
@@ -732,6 +891,7 @@ export const RENDERERS = {
   notes: renderNotesCardHtml,
   collage: renderCollageHtml,
   pinmap: renderPinMapHtml,
+  roll: renderRollHtml,
 };
 
 /**

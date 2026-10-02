@@ -154,6 +154,227 @@ export function assertNoFiller(text, where = 'this line') {
 }
 
 /* -------------------------------------------------------------------------- */
+/* 2b. a clause has to SAY something                                           */
+/* -------------------------------------------------------------------------- */
+
+// Idioms that are grammatically complete and informationally empty.
+//
+// REPORTED AS: a slide whose entire case for Andalusia was "אנדלוסיה מספקת את הסחורה",
+// which the owner correctly called a joke. It passes every guard above it - it is not
+// hype, it invents no experience, it is a verbatim quote from our own page - and it
+// tells a reader nothing at all about Andalusia. "Delivers the goods" is a verdict
+// about a verdict.
+//
+// This is a different failure from FILLER and needs its own test. FILLER catches
+// ADJECTIVES that oversell ("קסום", "עוצר נשימה"); this catches SENTENCES that say
+// nothing, which is the shape a summary clause takes when the page had nothing short
+// to say and the picker took the shortest thing it could find.
+const VACUOUS = /מספק(?:ת|ים)? את הסחורה|שווה את זה|שווה כל רגע|לא מאכזב(?:ת|ים)?|עוש(?:ה|ים) את העבודה|יש בה הכל|יש בו הכל|לא סתם|מדבר(?:ת)? בעד עצמ|חוויה בלתי נשכחת|אין על/;
+
+// What makes a clause carry information: a number, or a concrete travel noun.
+//
+// Deliberately a VOCABULARY rather than a cleverness. The question being asked is
+// "would a reader learn anything from this line", and for a travel slide the honest
+// proxy is whether the line names a thing you could go to, a time, or a price. A
+// clause about atmosphere with no referent is the one being excluded.
+const CONCRETE =
+  /\d|חוף|ים|הר|הרים|עיר עתיקה|רובע|שוק|מוזיאון|גן|פארק|טירה|ארמון|כנסיי|מסגד|בית כנסת|מפל|אגם|נהר|מסעד|בר\b|קפה|מלון|רכבת|אוטובוס|מטרו|טיסה|טיסות|שדה התעופה|מחיר|מחירים|זול|יוקר|עונה|קיץ|חורף|אביב|סתיו|גשם|שלג|מעלות|דקות|שעות|ימים|ק"מ|קילומטר|מטר|יין|אוכל|קפה|שופינג|חנויות|כשר|ספא|מעיינות|סקי|צלילה|שייט|טרק|שביל/;
+
+/**
+ * Whether a clause says anything a reader could act on.
+ *
+ * Returns false for the empty idioms above, for anything too short to be a claim, and
+ * for anything naming no concrete thing. Used to CHOOSE between clauses rather than to
+ * reject a post: a page usually has several things to say and only some of them are
+ * worth a slide, so the picker asks this of each and takes the best one that passes.
+ */
+export function isConcrete(text) {
+  const s = String(text || '').trim();
+  if (s.length < 12) return false;
+  if (VACUOUS.test(s)) return false;
+  return CONCRETE.test(s);
+}
+
+/**
+ * The best clause from a list: the shortest one that actually says something.
+ *
+ * SHORTEST-THAT-IS-CONCRETE, not shortest. The old picker took the shortest pro on the
+ * page because short reads well on a slide, and the shortest clause on a page is very
+ * often the one the writer added as a flourish - which is how "מספקת את הסחורה" beat
+ * three real sentences about Andalusian cities.
+ *
+ * Falls back to the longest available when nothing is concrete, because a long real
+ * sentence is still better than a short empty one, and returns null for an empty list.
+ */
+/**
+ * A clause that was cut out of a longer sentence, made into a sentence again.
+ *
+ * Splitting a paragraph on punctuation leaves fragments that begin mid-thought: Batumi's
+ * pros came out as "ותשתית כשרות אמיתית - חבילה מלאה לקיץ", which starts with the "and"
+ * that joined it to the clause before. On a slide, with nothing before it, a leading
+ * conjunction reads as a line that lost its first half - because it did.
+ *
+ * Only the leading conjunction is touched. Everything else is verbatim, which is the
+ * rule these clauses exist under.
+ */
+export function openClause(text) {
+  return String(text || '')
+    .trim()
+    .replace(/^[ו]?(?:אבל|אולם|אך|וגם|גם)\s+/, '')
+    .replace(/^ו(?=[א-ת])/, '')
+    .replace(/^[,;:\-–—\s]+/, '')
+    .trim();
+}
+
+export function bestClause(clauses, { max = 120 } = {}) {
+  const all = (clauses || []).map((c) => openClause(c)).filter((c) => c.length > 0);
+  if (!all.length) return null;
+  const concrete = all.filter((c) => isConcrete(c) && c.length <= max);
+  if (concrete.length) return concrete.sort((a, b) => a.length - b.length)[0];
+  const fits = all.filter((c) => c.length <= max);
+  return (fits.length ? fits : all).sort((a, b) => b.length - a.length)[0];
+}
+
+/* -------------------------------------------------------------------------- */
+/* 2c. kashrut is a note, never a slide                                        */
+/* -------------------------------------------------------------------------- */
+
+// Lines that are ABOUT kashrut rather than lines that happen to mention it.
+//
+// THE RULE, in the owner's words: "batumi is good for many more people other than just
+// people who look for kosher destinations. you cant make a whole slide about kosher,
+// only a small note (treat it as a rule)."
+//
+// WHY IT IS A RULE AND NOT AN EDITORIAL PREFERENCE. The Batumi verdict's "who is this
+// for" slide came out carrying exactly one line, and that line was about the Chabad
+// house and a meat restaurant. Every word of it was true and sourced. The post it
+// produced still said something false: that the reason to consider Batumi is that you
+// can eat there. Batumi is a Black Sea resort with an old town and low prices, and a
+// slide that leads with kashrut tells a reader who does not keep kosher that this post
+// is not for them - which costs the audience the destination deserves and misrepresents
+// our own page, where the kashrut note is one paragraph of eight.
+//
+// So kashrut may appear, and it may not DOMINATE. It is never a slide's title and never
+// a slide's only line. That is the whole rule, and it is enforced rather than reviewed
+// because it reappears on every destination with a Chabad house whenever the other
+// practical paragraphs happen to be thin.
+const KOSHER = /כשר|כשרו?ת|בהשגח|מהדרין|גלאט|חב["״׳']?ד|בית חב|ארוחות שבת|מניין|בית כנסת/;
+
+/** Whether a line is about kashrut, as opposed to merely naming a kosher place. */
+export const isKosherLine = (text) => KOSHER.test(String(text || ''));
+
+/**
+ * Kashrut is a note on this slide, or this slide does not exist.
+ *
+ * Throws when the TITLE is about kashrut, or when every line on the slide is. Both are
+ * the same failure: a slide the reader experiences as "this destination is for people
+ * who keep kosher".
+ */
+export function assertKosherIsANote(slide, where = 'this slide') {
+  const title = String(slide?.titleHe || '');
+  if (isKosherLine(title)) {
+    throw new VoiceError(`${where}: kashrut is a slide title (${JSON.stringify(title.slice(0, 60))})`, {
+      reason: 'kosher-headline',
+      where,
+      text: title,
+    });
+  }
+  const lines = (slide?.lines || []).map((l) => String(l?.text || '')).filter(Boolean);
+  if (lines.length && lines.every(isKosherLine)) {
+    throw new VoiceError(
+      `${where}: every line on this slide is about kashrut (${lines.length} of ${lines.length}) - it needs at least one other reason to go`,
+      { reason: 'kosher-only', where, text: lines[0] }
+    );
+  }
+  return slide;
+}
+
+/** The same rule over a whole post, so a type cannot slip one past by building elsewhere. */
+export function assertKosherAcrossPost(slides, where = 'post') {
+  for (const [i, s] of (slides || []).entries()) assertKosherIsANote(s, `${where} slide ${i + 1}`);
+  return slides;
+}
+
+/* -------------------------------------------------------------------------- */
+/* 2d. nothing on a post says the same thing twice                             */
+/* -------------------------------------------------------------------------- */
+
+/** For comparison only: case, punctuation and the definite article are not content. */
+const stem = (s) =>
+  String(s || '')
+    .toLowerCase()
+    .replace(/[?!.,:;'"״׳]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+/**
+ * No slide repeats another slide's title, and no line repeats its own slide's title.
+ *
+ * REPORTED ON THE SPAIN POST: a closing slide titled "אז לאן?" whose only line was "אז
+ * לאן אתם טסים?" - "2 times the same thing basically, while many better things can be
+ * written there". The same fault turned up on the verdict post the moment it was looked
+ * for: a cover reading "בטומי: שווה או לא?" and a closing slide reading "בטומי: שווה או
+ * לא?" again.
+ *
+ * It is worth a rule because the LAST SLIDE is the most valuable one on a post that was
+ * watched to the end, and a repeat spends it on nothing. Enforced rather than reviewed,
+ * because each builder writes its own closing slide and they will all drift there
+ * independently.
+ */
+export function assertNoEcho(slides, where = 'post') {
+  const titles = new Map();
+  const lines = new Map();
+
+  for (const [i, s] of (slides || []).entries()) {
+    const t = stem(s?.titleHe);
+
+    if (t) {
+      const prior = titles.get(t);
+      if (prior != null) {
+        throw new VoiceError(
+          `${where}: slide ${i + 1} repeats slide ${prior + 1}'s title (${JSON.stringify(String(s.titleHe).slice(0, 50))})`,
+          { reason: 'echo-title', where, text: s.titleHe }
+        );
+      }
+      titles.set(t, i);
+    }
+
+    for (const l of s?.lines || []) {
+      const lt = stem(l?.text);
+      if (!lt) continue;
+
+      // Containment rather than equality: "אז לאן?" and "אז לאן אתם טסים?" are not the
+      // same string and are the same thing said twice, which is the case reported.
+      if (t && (lt === t || lt.includes(t) || t.includes(lt)) && Math.min(lt.length, t.length) > 5) {
+        throw new VoiceError(
+          `${where}: slide ${i + 1} says its own title again in a line (${JSON.stringify(String(l.text).slice(0, 50))})`,
+          { reason: 'echo-line', where, text: l.text }
+        );
+      }
+
+      // THE SAME CLAUSE ON TWO SLIDES. Found by this rule the moment it was written: a
+      // Batumi verdict put "טיסה ישירה קצרה" on the pros slide, on the "who is this
+      // for" slide and on the closing slide - three of five. Each builder picked the
+      // best clause on the page independently, and the best clause on the page is the
+      // same clause every time. A post with eight slides and four distinct sentences
+      // reads as having run out, which is exactly how it looks.
+      //
+      // The closing slide is exempt in one direction only: a mark line is the question,
+      // and a question that echoes nothing is not what this catches.
+      const seen = lines.get(lt);
+      if (seen != null && lt.length > 12 && !l.mark) {
+        throw new VoiceError(
+          `${where}: slide ${i + 1} repeats a line from slide ${seen + 1} (${JSON.stringify(String(l.text).slice(0, 50))})`,
+          { reason: 'echo-repeat', where, text: l.text }
+        );
+      }
+      if (!l.mark) lines.set(lt, i);
+    }
+  }
+  return slides;
+}
+
+/* -------------------------------------------------------------------------- */
 /* 3. every opinion is a quote                                                 */
 /* -------------------------------------------------------------------------- */
 
@@ -245,6 +466,15 @@ export function assertPostVoice(post, { where = 'the post' } = {}) {
     }
   };
   walk(post, '');
+  // AND THE RULES THAT ARE ABOUT A SLIDE RATHER THAN ABOUT A LINE.
+  //
+  // `walk` above checks every Hebrew string in isolation, which is the right shape for
+  // "no invented experience" and "no filler" - those are properties of a sentence. The
+  // kashrut rule is not: every line of the Batumi "who is this for" slide was
+  // individually fine, and the slide was not. It is a property of the SET, so it is
+  // checked where the set is, over whatever the builder produced, for every type.
+  assertKosherAcrossPost(post?.slides || [], where);
+  assertNoEcho(post?.slides || [], where);
   return post;
 }
 
@@ -267,7 +497,20 @@ export function assertPostVoice(post, { where = 'the post' } = {}) {
  * be named cannot be measured.
  */
 export function hookShape(type, { rand = Math.random, avoid = [] } = {}) {
-  const shapes = (postConfig().posts.hooks[type] || []).filter((h) => h.he);
+  const cfg = postConfig().posts.hooks || {};
+
+  // THE SHARED POOL, PLUS THE TYPE'S OWN.
+  //
+  // The owner supplies hook templates as hooks rather than as hooks-for-one-format -
+  // "10 מקומות לטיול הבא שלכם ב____ (you can use in many formats)" - and copying one
+  // into four type lists is how four copies drift apart. `hooks.shared` is written once
+  // and every type whose `for` list names it can draw it.
+  //
+  // A shared hook declares which types it fits rather than being offered to all of
+  // them, because the templates are not interchangeable: "{n} מקומות" needs a type that
+  // counts places, and a plan post counts days.
+  const shared = (cfg.shared || []).filter((h) => h.he && (!h.for || h.for.includes(type)));
+  const shapes = [...(cfg[type] || []).filter((h) => h.he), ...shared];
   if (!shapes.length) throw new VoiceError(`no hook shapes configured for post type "${type}"`, { reason: 'no_hooks' });
   // Never the same shape as the last post of this type. A hook is the most visible
   // thing about a post and the reference flops were three accounts posting one

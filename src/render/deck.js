@@ -2,6 +2,7 @@ import { renderToJpeg, cardOutputDir, cardPublicUrl } from './index.js';
 import { renderSlideHtml, SIZES, isStyle, INK_LUMINANCE } from './deckTemplates.js';
 import { renderInstagramSlideHtml } from './deckInstagram.js';
 import { analyseSlides, measureCardScrims } from './photo.js';
+import { pickGround } from './legibility.js';
 import { findTextRegion } from '../images/textbox.js';
 import { postConfig } from '../postConfig.js';
 import { closingSlidesFor } from '../deck/follow.js';
@@ -190,6 +191,15 @@ export async function renderDeckSize(deck, { size = 'tiktok', outDir = cardOutpu
   // its type is at fixed positions in its own template. Analysing it would
   // hand analyseSlides a null src and spend a slot of the deck's image budget
   // asking where the words go on a picture that does not exist.
+  // THE GROUND, chosen once for the whole deck.
+  //
+  // The slides with no photograph of their own - the closing slide, a text-led slide -
+  // used to paint a flat gradient. They now borrow the deck's best-looking photograph
+  // and blur it, so a deck reads as one post throughout rather than as photographs
+  // followed by a grey card. Scored rather than taken first: see pickGround.
+  const groundSrc = await pickGround(items.filter((s) => !s.site).map((s) => s.image?.src || null)).catch(() => null);
+  const ground = groundSrc ? { src: groundSrc } : null;
+
   const analysed = items.map((_, i) => i).filter((i) => wanted(i) && !items[i].site);
   const measured = size === 'instagram' ? [] : await analyseSlides(
     analysed.map((i) => ({
@@ -263,8 +273,15 @@ export async function renderDeckSize(deck, { size = 'tiktok', outDir = cardOutpu
     // Measured or not at all — a slide whose photograph could not be sampled
     // keeps its image untouched and falls through to the worst-photograph
     // constants, which is what they are for.
-    const drawn =
+    const drawn0 =
       scrims[i]?.bottom != null ? { ...slide, image: { ...slide.image, scrim: scrims[i] } } : slide;
+    // THE BORROWED PHOTOGRAPH, for a slide that has none of its own.
+    //
+    // Every slide used to fall back to a flat gradient, which is the one thing on a
+    // travel account that looks like a slide deck. A post is ABOUT somewhere and that
+    // somewhere has pictures on its other slides, so the closing and text-led slides
+    // borrow one and blur it past recognition. See photoTag in render/deckTemplates.js.
+    const drawn = drawn0.image?.src ? drawn0 : { ...drawn0, groundImage: ground };
     // Same content, two design languages. The TikTok slide is built to be read
     // over a video player's furniture with no branding on it; the Instagram one
     // is a card, because it lands in a feed beside our own news cards and

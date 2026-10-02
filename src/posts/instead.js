@@ -1,5 +1,5 @@
-import { verdictOf, practicalOf, firstClause, seasonLine, listPlaces, ratingBadge } from './source.js';
-import { line, fill } from './voice.js';
+import { verdictOf, practicalOf, firstClause, seasonLine, listPlaces, ratingBadge, placeLine } from './source.js';
+import { line, fill, bestClause } from './voice.js';
 
 // TYPE C: STOP ONLY GOING TO X. "תפסיקו לטוס רק לרודוס כשיש את האיים האלה"
 //
@@ -37,11 +37,37 @@ import { line, fill } from './voice.js';
  * as a field they had not considered.
  */
 export function buildInsteadPost(cities, { hook, defaultHe, regionHe = null, questionHe = null } = {}) {
-  const usable = (cities || []).filter((c) => c?.name && (c.places || []).some((p) => p.image?.src));
-  if (usable.length < 3) {
-    throw new Error(`only ${usable.length} alternative(s) have a photograph, and this post needs 3`);
-  }
   if (!defaultHe) throw new Error('no default destination to argue with - see posts.instead.defaults in post-config.json');
+
+  // THE THING BEING ARGUED WITH IS NOT ONE OF THE ALTERNATIVES.
+  //
+  // A post headed "everyone flies to Barcelona, here are 3 instead" opened its list of
+  // alternatives with Barcelona. The caller filters its catalogue by `r.id !== dest.id`,
+  // which is correct and insufficient: a destination can appear under more than one row
+  // (a city and its region), and a caller that builds the list some other way has no
+  // filter at all. So it is checked HERE, at the point of use, against every name the
+  // alternative and the default each go by.
+  //
+  // Defence at the point of use rather than at the call site, because this is not a
+  // preference - a post that recommends the thing it is arguing against is not a weaker
+  // post, it is an incoherent one.
+  const normalise = (s) =>
+    String(s || '')
+      .trim()
+      .replace(/^ה/, '')
+      .toLowerCase();
+  const barred = new Set([normalise(defaultHe), normalise(regionHe)].filter(Boolean));
+  const notTheDefault = (c) =>
+    ![c?.name, c?.slug, c?.he, c?.en].some((n) => n && barred.has(normalise(n)));
+
+  const usable = (cities || [])
+    .filter((c) => c?.name && (c.places || []).some((p) => p.image?.src))
+    .filter(notTheDefault);
+  if (usable.length < 3) {
+    throw new Error(
+      `only ${usable.length} alternative(s) are photographed and are not ${defaultHe} itself, and this post needs 3`
+    );
+  }
 
   const alts = usable.slice(0, 5);
 
@@ -79,9 +105,15 @@ export function buildInsteadPost(cities, { hook, defaultHe, regionHe = null, que
     const verdict = verdictOf(city);
     const practical = practicalOf(city);
 
-    // ONE REAL REASON, QUOTED. The shortest pro from that destination's own verdict,
-    // because the shortest is the most concrete - and because the slide has one line.
-    const reason = [...(verdict?.prosHe || [])].sort((a, b) => a.length - b.length)[0] || null;
+    // ONE REAL REASON, QUOTED - AND IT HAS TO SAY SOMETHING.
+    //
+    // This used to be "the shortest pro", on the reasoning that the shortest clause is
+    // the most concrete. It is not: the shortest clause on a page is very often the
+    // writer's flourish, and on the Spain post that produced an Andalusia slide whose
+    // entire case was "אנדלוסיה מספקת את הסחורה". bestClause takes the shortest clause
+    // that NAMES something - a beach, a price, an old town, a flight time - and only
+    // falls back to length when the page offers nothing concrete at all.
+    const reason = bestClause(verdict?.prosHe || [], { max: 95 });
 
     // THE SECOND LINE IS THE FLIGHT, BUT ONLY WHEN THE FLIGHT IS AN ARGUMENT.
     //
@@ -104,6 +136,16 @@ export function buildInsteadPost(cities, { hook, defaultHe, regionHe = null, que
         ? { text: line(seasonLine(practical), { where: `alt${i}.season` }) }
         : null;
 
+    // A THIRD LINE: WHAT IS ACTUALLY THERE.
+    //
+    // "the instead slides are too thin" - two quoted clauses about a whole destination
+    // is a card, not a case. The third line names the best place on that destination's
+    // own page, which is the most concrete thing the post can say about it and the one
+    // that turns "Valencia is nice" into somewhere to go. Verbatim from the page, like
+    // everything else here.
+    const top = listPlaces(city, { want: 3, needPhoto: false }).filter((p) => p?.name)[0];
+    const anchor = top ? `${top.name}${placeLine(top) ? ` - ${placeLine(top)}` : ''}` : null;
+
     slides.push({
       look: 'sheet',
       titleHe: line(city.name, { where: `alt${i}.title` }),
@@ -116,20 +158,33 @@ export function buildInsteadPost(cities, { hook, defaultHe, regionHe = null, que
       lines: [
         ...(reason ? [{ text: line(reason, { where: `alt${i}.reason`, quote: verdict.source }) }] : []),
         ...(second ? [second] : []),
+        ...(anchor ? [{ text: line(`📍 ${anchor}`, { where: `alt${i}.anchor` }) }] : []),
       ],
       image: bestPhoto(city),
       slug: city.slug,
     });
   }
 
-  if (questionHe) {
-    slides.push({
-      look: 'sheet',
-      titleHe: line(`אז לאן?`, { where: 'close.title' }),
-      lines: [{ text: line(questionHe, { where: 'close.question' }), mark: true }],
-      image: bestPhoto(alts[alts.length - 1]),
-    });
-  }
+  // THE CLOSING SLIDE RECAPS, THEN ASKS. It used to do neither.
+  //
+  // It read "אז לאן?" as its title over "אז לאן אתם טסים?" as its only line - the same
+  // question twice, on the slide with the most attention on it, when "many better
+  // things can be written there". The last slide of a post somebody watched to the end
+  // is the one place a list post can be summarised, and a summary is also what makes
+  // the post screenshot-worthy: a viewer who wants to remember four destinations wants
+  // them on ONE slide, not spread over four they have to swipe back through.
+  //
+  // So: the alternatives, numbered, with the rating of each - then the question, once.
+  const recap = alts.map((c, i) => {
+    const badge = ratingBadge(c);
+    return { text: line(`${i + 1}. ${c.name}${badge?.badgeHe ? ` ${badge.badgeHe} ⭐` : ''}`, { where: `close.recap${i}` }) };
+  });
+  slides.push({
+    look: 'sheet',
+    titleHe: line(`${alts.length} במקום ${defaultHe}`, { where: 'close.title' }),
+    lines: [...recap, ...(questionHe ? [{ text: line(questionHe, { where: 'close.question' }), mark: true }] : [])],
+    image: bestPhoto(alts[alts.length - 1]),
+  });
 
   return {
     slides,

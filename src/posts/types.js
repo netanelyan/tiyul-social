@@ -162,8 +162,13 @@ export function canBuild(type, city, { verdict = null } = {}) {
 
   for (const need of t.needs) {
     if (need === 'itinerary' && days.length < 3) return { ok: false, why: `only ${days.length} itinerary day(s)` };
-    if (need === 'places15' && places.filter((p) => p.photo).length < 15) {
-      return { ok: false, why: `only ${places.filter((p) => p.photo).length} places with a photograph, needs 15` };
+    // `placesN` reads its floor from the type's own slidesMin rather than from the name,
+    // so shortening the list format is one number in post-config.json instead of a
+    // capability string here and a length there that can disagree.
+    if (need.startsWith('places')) {
+      const floor = Number(t.slidesMin) || Number(need.slice(6)) || 8;
+      const got = places.filter((p) => p.photo).length;
+      if (got < floor) return { ok: false, why: `only ${got} places with a photograph, needs ${floor}` };
     }
     if (need === 'coords8' && places.filter((p) => p.lat && p.lng).length < 8) {
       return { ok: false, why: `only ${places.filter((p) => p.lat && p.lng).length} places with coordinates` };
