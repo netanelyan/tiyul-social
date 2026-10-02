@@ -2157,6 +2157,83 @@ bot.command('postcard', async (ctx) => {
   );
 });
 
+/**
+ * A postcard reel, now.
+ *
+ * `/postcard` draws the next destination from the rotation; `/postcard פראג` names one.
+ *
+ * ITS OWN COMMAND RATHER THAN A SHAPE OF /clip, for the reason given at the top of
+ * src/video/postcard.js: the three clip shapes are functions of a Pexels pool and this
+ * one is a function of a destination page. `/clip postcard` would have to accept a
+ * destination argument that means nothing to the other three.
+ */
+bot.command('postcard', async (ctx) => {
+  const asked = (ctx.message.text || '').replace(/^\/postcard(@\S+)?\s*/, '').trim();
+  const { buildPostcardCandidate, postcardApprovalMessage } = await import('./src/video/postcard.js');
+  const { resolveDestination, pickDestination } = await import('./src/plan/write.js');
+
+  const recent = store.recentPublished().slice(0, 12).map((p) => p.place);
+  const found = asked ? await resolveDestination(asked, { recent }) : null;
+  if (asked && !found) {
+    await ctx.reply(`❌ לא הצלחתי להבין איזה יעד זה: ${asked}`);
+    return;
+  }
+  const dest = found?.dest || pickDestination(recent);
+  if (!dest?.siteSlug) {
+    await ctx.reply(`❌ ל${dest?.he || 'יעד הזה'} אין עמוד באתר, וגלויות נבנות מהעמוד`);
+    return;
+  }
+
+  await ctx.reply(`⏳ בונה גלויות · ${dest.he}...`);
+  detach('גלויות', () =>
+    forKind('clip', async () => {
+      const cand = await buildPostcardCandidate(dest);
+      await stage(cand);
+      await notify.send(bot.telegram, ctx.chat.id, postcardApprovalMessage(cand)).catch(() => {});
+    })
+  );
+});
+
+/**
+ * A narrated guide video, now.
+ *
+ * `/guide` draws the next destination from the rotation; `/guide פראג` names one.
+ *
+ * SILENT WHEN NO VOICE IS CONFIGURED, and both the reply and the approval card say so.
+ * A muted video that was supposed to have narration looks exactly like a bug, and the
+ * one thing worse than a missing feature is a working feature that appears broken. See
+ * src/video/speech.js for what a voice needs.
+ */
+bot.command('guide', async (ctx) => {
+  const asked = (ctx.message.text || '').replace(/^\/guide(@\S+)?\s*/, '').trim();
+  const { buildNarratedCandidate } = await import('./src/video/narrated.js');
+  const { speechReady } = await import('./src/video/speech.js');
+  const { resolveDestination, pickDestination } = await import('./src/plan/write.js');
+
+  const recent = store.recentPublished().slice(0, 12).map((p) => p.place);
+  const found = asked ? await resolveDestination(asked, { recent }) : null;
+  if (asked && !found) {
+    await ctx.reply(`❌ לא הצלחתי להבין איזה יעד זה: ${asked}`);
+    return;
+  }
+  const dest = found?.dest || pickDestination(recent);
+  if (!dest?.siteSlug) {
+    await ctx.reply(`❌ ל${dest?.he || 'יעד הזה'} אין עמוד באתר, ומדריך נבנה מהעמוד`);
+    return;
+  }
+
+  const voice = speechReady();
+  await ctx.reply(`⏳ בונה מדריך · ${dest.he}${voice.ok ? '' : ' · ללא קול'}...`);
+  detach('מדריכים', () =>
+    forKind('clip', async () => {
+      const cand = await buildNarratedCandidate(dest);
+      await stage(cand);
+      const head = `🎙️ מדריך · ${cand.place} · ${cand.clip.seconds} שניות${cand.clip.narrated ? '' : ' · ללא קול'}`;
+      await notify.send(bot.telegram, ctx.chat.id, `${head}\n\n${cand.clip.script}`).catch(() => {});
+    })
+  );
+});
+
 bot.command('clip', async (ctx) => {
   const arg = (ctx.message.text || '').replace(/^\/clip(@\S+)?\s*/, '').trim();
   const { clipShapeArg, buildClips } = await import('./src/video/clip.js');
@@ -3317,6 +3394,8 @@ bot.command('help', (ctx) =>
       '/trip פראג 5 1200 - ועם תקציב: הכל כלול, טיסה ולינה ואוכל ותחבורה וכניסות',
       '   השער הוא 600 ₪. מספר קטן ממנו הוא ימים, גדול ממנו הוא תקציב',
       '/clip - קליפ אחד. שלוש צורות מתחלפות בסבב',
+      '/postcard - גלויות: 4 מקומות מהעמוד, שם על כל שוט',
+      '/guide - מדריך מדובב: קול על תמונות, עם כתוביות',
       '/postcard - גלויות: 4 מקומות מהעמוד, שם על כל שוט',
       '/postcard פראג - גלויות ליעד מסוים',
       '   חתוך: 4-5 מקומות שונים, שם של מקום על כל אחד',

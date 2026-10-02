@@ -43,6 +43,8 @@ import { rotationFor, oneClause, emphasisFrom, COVER_SHAPES, COVER_VOICES, COVER
 import { deckPlace, namesPlace, REGIONS } from '../src/deck/region.js';
 import { __test as photoTest, scrimAlpha, underScrim } from '../src/render/photo.js';
 import { treatmentFor, worstPatch, assertLegible, TEXT_BOXES, TARGET as LEGIBLE_TARGET } from '../src/render/legibility.js';
+import { wordsFromAlignment, estimateTimings, subtitleLines, speechReady } from '../src/video/speech.js';
+import { buildScript } from '../src/video/narrated.js';
 import { deckId } from '../src/deck/candidate.js';
 import { sameSite } from '../src/search.js';
 import { authorityDomains, KINDS, subjectEn, isSourcedKind } from '../src/sources/places.js';
@@ -7943,6 +7945,119 @@ for (const look of ['label.cover', 'label.mid', 'label.lower', 'collage', 'route
     JSON.stringify(box));
 }
 
+
+/* -------------------------------------------------------------------------- */
+group('narration - the voice, and what the subtitles do with it');
+
+// WORD TIMINGS FROM CHARACTER ALIGNMENT.
+//
+// ElevenLabs reports a start and an end for every CHARACTER it spoke. A word's span is
+// its first character's start to its last character's end, and assembling it that way
+// rather than asking for word timings is not a workaround: characters are what the
+// model aligns, so words built from them are exact rather than approximated.
+{
+  const alignment = {
+    characters: ['ש', 'ל', 'ו', 'ם', ' ', 'ע', 'ו', 'ל', 'ם'],
+    character_start_times_seconds: [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
+    character_end_times_seconds: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
+  };
+  const words = wordsFromAlignment('שלום עולם', alignment);
+  eq('two words out of nine characters', words.length, 2);
+  eq('the first word is the first run', words[0].text, 'שלום');
+  eq('and it starts where its first character does', words[0].start, 0);
+  eq('and ends where its last character does', Number(words[0].end.toFixed(2)), 0.4);
+  eq('the second word starts after the space', Number(words[1].start.toFixed(2)), 0.5);
+  ok('neither is marked as an estimate', !words[0].estimated && !words[1].estimated);
+}
+
+// A provider that reports nothing falls back to an estimate, AND SAYS SO. A caller has
+// to be able to tell, because subtitles built on an estimate drift and a format that
+// cares about sync should show whole sentences rather than pretend.
+{
+  const words = estimateTimings('אחת שתיים שלוש', 3);
+  eq('an estimate still produces a word per word', words.length, 3);
+  ok('and marks every one of them', words.every((w) => w.estimated === true));
+  ok('and fills the duration it was given', Math.abs(words[2].end - 3) < 0.01, words[2].end);
+  ok('longer words get longer spans', words.find((w) => w.text === 'שתיים').end - words.find((w) => w.text === 'שתיים').start >
+    words.find((w) => w.text === 'אחת').end - words.find((w) => w.text === 'אחת').start);
+
+  const nothing = wordsFromAlignment('אחת שתיים', null);
+  ok('and a null alignment degrades to the estimate rather than throwing', nothing.length === 2 && nothing[0].estimated);
+}
+
+// SUBTITLE LINES NEVER STRADDLE A FULL STOP.
+//
+// Grouping on word count alone produced "באירופה. טיסות ישירות מנתב״ג" - the end of one
+// sentence and the start of the next on one line, which reads as a line that begins in
+// the middle of a thought because it does.
+{
+  const words = estimateTimings('פראג יפה. טיסות ישירות מנתבג כארבע שעות.', 8);
+  const lines = subtitleLines(words);
+  for (const l of lines) {
+    const inner = l.text.slice(0, -1);
+    ok(`"${l.text}" does not straddle a sentence end`, !/[.!?:]\s/.test(inner), l.text);
+  }
+  ok('and there is more than one line', lines.length > 1, lines.length);
+}
+
+// A pause ends a line wherever it falls, because that pause is where the speaker ended
+// a thought - which a word counter cannot see.
+{
+  const words = [
+    { text: 'אחת', start: 0, end: 0.4 },
+    { text: 'שתיים', start: 0.4, end: 0.8 },
+    // A full second of silence.
+    { text: 'שלוש', start: 1.8, end: 2.2 },
+  ];
+  const lines = subtitleLines(words);
+  eq('a pause breaks the line', lines.length, 2);
+  eq('and the break falls at the pause', lines[0].text, 'אחת שתיים');
+}
+
+// A one-word tail joins the line before it. "שעות." alone on screen flashes past and
+// reads as a stutter.
+{
+  const words = [
+    { text: 'טיסות', start: 0, end: 0.4 },
+    { text: 'ישירות', start: 0.4, end: 0.8 },
+    { text: 'מנתבג', start: 0.8, end: 1.2 },
+    { text: 'שעות.', start: 1.2, end: 1.5 },
+  ];
+  const lines = subtitleLines(words, { maxWords: 3, maxSeconds: 4 });
+  ok('the orphan is merged rather than left alone', !lines.some((l) => l.text === 'שעות.'), JSON.stringify(lines.map((l) => l.text)));
+}
+
+// No key is not an error. The format degrades to a silent video with the same
+// subtitles, which is a real post - but it must say which one it built.
+{
+  const saved = process.env.ELEVENLABS_API_KEY;
+  delete process.env.ELEVENLABS_API_KEY;
+  const ready = speechReady();
+  ok('with no key, narration is not ready', ready.ok === false);
+  ok('and it names the missing thing', /ELEVENLABS_API_KEY/.test(ready.why || ''), ready.why);
+  if (saved !== undefined) process.env.ELEVENLABS_API_KEY = saved;
+}
+
+// THE SCRIPT IS ASSEMBLED, NOT WRITTEN. Every sentence traces to a page field, and the
+// one that does not is an ask rather than a claim. This is the honesty surface of the
+// whole format: a narrator is the most persuasive thing this pipeline can produce.
+{
+  const city = {
+    name: 'פראג',
+    editorialRating: { verdict: 'אחת הערים היפות באירופה. העיר העתיקה עמוסה מאוד כמעט כל השנה.', score: 4.6 },
+    practical: { flights: 'טיסות ישירות מנתבג כארבע שעות', around: 'מרכז העיר כולו מהלך' },
+    places: [
+      { id: 'a', name: 'גשר קרל', image: { src: 'data:image/jpeg;base64,x' }, rating: 5, mustSee: true },
+      { id: 'b', name: 'הרובע היהודי', image: { src: 'data:image/jpeg;base64,x' }, rating: 5, mustSee: true },
+      { id: 'c', name: 'מצודת פראג', image: { src: 'data:image/jpeg;base64,x' }, rating: 4, mustSee: true },
+    ],
+  };
+  const script = buildScript(city, 'פראג');
+  ok('the script opens by naming the destination', script.text.startsWith('פראג'), script.text.slice(0, 30));
+  ok('and closes on the site rather than on a claim', /באתר/.test(script.text), script.text.slice(-40));
+  ok('and the title promises what it delivers', /כל מה שצריך לדעת/.test(script.titleHe), script.titleHe);
+  ok('it carries the shots it will be cut over', script.shots.length >= 3, script.shots.length);
+}
 
 /* -------------------------------------------------------------------------- */
 console.log(`\n${'─'.repeat(56)}`);
