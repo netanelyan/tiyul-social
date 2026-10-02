@@ -179,6 +179,25 @@ const css = ({ w, h, topSafe, bottomSafe }, style, font = null, size = 'tiktok')
   // Two lines and no more, in the one declaration that can enforce it. Clamping
   // is what stops a long Hebrew name becoming four lines of small type, which
   // is the shape that reads as a caption card rather than as a caption.
+  // THE LINE CLAMP, AND THE BUG IT CAUSED FOR TWO MONTHS.
+  //
+  // `-webkit-box` with `-webkit-box-orient: vertical` lays out EVERY CHILD AS ITS OWN
+  // LINE. That is what makes -webkit-line-clamp work, and it also means an element with
+  // two children - a text node and an <img class="emoji"> - becomes two stacked lines
+  // whatever the text is or how much room is left. Austria's flag sat alone between the
+  // Opera's name and its note, and it looked exactly like a wrapping accident because
+  // structurally it was one: "check for an emoji in a newline".
+  //
+  // The rule below pulls any emoji back onto the line it belongs to. It cannot be fixed
+  // in the markup alone - a single wrapping span would defeat the clamp - so the emoji
+  // is taken OUT of the box's child flow with a negative-margin trick: `float` is
+  // ignored inside a -webkit-box, but an inline-block that is the last child of a
+  // clamped element can be pulled up onto the previous line.
+  //
+  // The reliable fix is simpler and is what is used: the clamped element gets ONE inline
+  // child (see nameHtml below), so there is exactly one box line and the browser wraps
+  // inside it normally. The clamp still counts lines because it counts the lines the
+  // inline content produces.
   const clamp = `display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: ${ov.maxLines}; overflow: hidden;`;
   return `
 @font-face {
@@ -310,10 +329,17 @@ body {
 /* The borrowed photograph behind a slide that has none of its own. Blurred far past
    recognition and scaled up so the blur has no soft edge at the frame, which is the
    difference between a ground and a photograph that is simply out of focus. */
+/* MUCH LIGHTER THAN THE FIRST VERSION, which ran blur(52px) under brightness(.58) and a
+   tint on top of that. Three darkenings stacked: the result was a near-black smear with
+   no photograph left in it, which is the gradient this exists to replace arrived at by
+   a longer route. "background blurring in decks should be less harsh".
+   At 28px the shapes and the colour of the place survive - you can still tell it is a
+   river, or a roofline - and that is the whole point of borrowing a photograph rather
+   than painting a panel. The type's own contrast is handled by the measured band above,
+   so this layer does not have to do any of that work. */
 .photo.ground { background-size: cover; background-position: center;
-                filter: blur(52px) saturate(1.15) brightness(.58); transform: scale(1.3); }
-.photo.ground-tint { background: linear-gradient(165deg, rgba(12,20,18,.52), rgba(12,20,18,.72)); }
-.assist.plate { border-radius: inherit; }
+                filter: blur(28px) saturate(1.08) brightness(.82); transform: scale(1.14); }
+.photo.ground-tint { background: linear-gradient(165deg, rgba(12,20,18,.28), rgba(12,20,18,.44)); }
 .assist {
   position: absolute;
   border-radius: 50%;
@@ -380,6 +406,8 @@ body {
    Inline means it wraps with the text and stays part of the name; a line of its
    own turned one label into two stacked objects with air between them. */
 .name .emoji { margin-inline-start: 0.26em; }
+/* The last word and the flag, bound together. See labelWithFlag. */
+.keep { white-space: nowrap; }
 /* Two steps down, not one. sizeClass emits mid and long for every string it is
    given, and for a while only .long had a rule — so every name between twenty
    and thirty characters carried a class that styled nothing and set at full
@@ -621,21 +649,56 @@ export const sizeClass = (text, { mid = 22, long = 34, xlong = Infinity } = {}) 
  * returns an emphasis which is not in the line has misunderstood, and the right
  * answer then is to set the line plainly, not to invent a layout for it.
  */
+
+/**
+ * A label with its flag attached to the last word so the two can never be separated.
+ *
+ * THE FLAG STRANDED ON A LINE OF ITS OWN, twice, for two different reasons, and this
+ * fixes the second one.
+ *
+ *   The first was structural: `.name` was clamped with `-webkit-box`, which lays out
+ *   every child on its own line, so an <img> sibling of a text node was ALWAYS a
+ *   separate line. That is fixed by giving the clamped element a single inline child.
+ *
+ *   The second is ordinary wrapping, and it is the one that survives. "האופרה
+ *   הממלכתית" measures 421px in a 475px block; the flag and its margin are 53px, so
+ *   the pair is 474px and the browser breaks before the image. A name one character
+ *   shorter fits and a name one character longer steps down a size and also fits -
+ *   which is why this only ever appeared on some slides and looked like a glitch.
+ *
+ * So the flag is bound to the LAST WORD with nowrap. A long name still wraps wherever
+ * it likes; the one break that is never allowed is the one between the last word and
+ * the flag, so the flag goes wherever that word goes.
+ */
+function labelWithFlag(label, flag) {
+  const text = String(label || '');
+  if (!flag) return escapeHtml(text);
+  const at = text.lastIndexOf(' ');
+  const head = at < 0 ? '' : text.slice(0, at + 1);
+  const tail = at < 0 ? text : text.slice(at + 1);
+  return `${escapeHtml(head)}<span class="keep">${escapeHtml(tail)}${emojiHtml(flag, { size: '0.92em' })}</span>`;
+}
+
 export function coverTitle(title, emphasis) {
   const t = String(title || '');
   const e = String(emphasis || '').trim();
   const cls = `cover${sizeClass(t, { mid: 20, long: 30, xlong: 42 })}`;
 
   const at = e ? t.indexOf(e) : -1;
-  if (at < 0) return `<div class="${cls}">${escapeHtml(t)}</div>`;
+  if (at < 0) return `<div class="${cls}"><span>${escapeHtml(t)}</span></div>`;
 
+  // ONE INLINE CHILD, ALWAYS. `.cover` is clamped with -webkit-box, which lays out every
+  // child on a line of its own - so an emphasised title, which is three children (text,
+  // the emphasis span, text), came out as THREE STACKED LINES regardless of its length.
+  // Wrapping the lot in one span gives the box a single child and lets the text wrap the
+  // way text wraps. See the note above `clamp`.
   const emphCls = `emph${e.length <= 14 ? ' tight' : ''}`;
   return (
-    `<div class="${cls}">` +
+    `<div class="${cls}"><span>` +
     escapeHtml(t.slice(0, at)) +
     `<span class="${emphCls}">${escapeHtml(e)}</span>` +
     escapeHtml(t.slice(at + e.length)) +
-    `</div>`
+    `</span></div>`
   );
 }
 
@@ -673,51 +736,50 @@ const photoTag = (image, ground = null) => {
  * measured contrast was not enough on its own.
  */
 function assistTag(spot, { w, h }, blockH) {
-  // Switchable, and off means off. It is a soft-edged radial fade rather than a
-  // panel — there is no box on these slides and this is not one — but it is the
-  // only thing on the frame that puts anything behind the words, so the switch
-  // for "nothing behind the words, ever" belongs here.
+  // Switchable, and off means off. This is the only thing on the frame that puts
+  // anything behind the words, so the switch for "nothing behind the words, ever"
+  // belongs here.
   if (!postConfig().overlay.assist) return '';
 
-  const cw = Math.round(spot?.width * w * 1.5);
-  const ch = Math.round(blockH * h * 2.4);
-  const cx = Math.round(spot?.x * w - cw / 2);
-  const cy = Math.round(spot?.y * h - ch / 2);
-  const tint = spot?.onDark === false ? `255,255,255` : `0,0,0`;
-
-  // HOW HARD THE WASH HAS TO WORK IS MEASURED, NOT RAMPED.
-  //
-  // `spot.contrast` is the ink against the worst band of the block this type sits on,
-  // already measured upstream in render/photo.js. The old code threw that number away
-  // and used a linear ramp of it capped at 0.5, which is the deck's version of exactly
-  // the bug src/render/legibility.js was written for: a photograph needing more than the
-  // cap got the cap and shipped under target. That is "text gets eaten by the
-  // background".
-  //
-  // So the contrast is inverted back to the band's luminance and handed to the same gate
-  // the five post types use, and the answer is honoured rather than capped.
   const treatment = assistTreatment(spot);
   if (!treatment) return '';
 
-  if (treatment.treatment === 'plate') {
-    // A gradient cannot carry this one. A plate behind the block can, and on a deck it
-    // is the same rounded panel the reference account's own boxed text uses, so it
-    // reads as a design choice rather than as a patch.
-    const px = Math.round(w * 0.028);
-    return (
-      `<div class="assist plate" style="left:${cx + Math.round(cw * 0.12)}px;top:${cy + Math.round(ch * 0.2)}px;` +
-      `width:${Math.round(cw * 0.76)}px;height:${Math.round(ch * 0.6)}px;` +
-      `background:rgba(${tint},${treatment.alpha});border-radius:${px}px;` +
-      `backdrop-filter:blur(${Math.round(w * 0.008)}px)"></div>`
-    );
-  }
+  // ONE SHAPE, AND IT IS A GRADIENT TO THE FRAME EDGE.
+  //
+  // There were two before - a soft radial centred on the text block, and (briefly) a
+  // rounded panel behind it. Both are gone and the reasons are different:
+  //
+  //   THE PANEL looked wrong. "i dont like the blur behind the text, does not look
+  //   professional at all" - and that is right. A floating box has edges that belong to
+  //   nothing in the photograph and a backdrop blur drags the picture's colour through
+  //   it, so it never reads as a surface, only as a patch.
+  //
+  //   THE RADIAL under-delivered. It is zero at its rim, so across the width of a line
+  //   of type it supplies perhaps half its nominal alpha. The Vienna Opera slide asked
+  //   for 0.53, got maybe 0.3 where the words actually were, and the type sat on pale
+  //   stone still barely readable. Compensating with a multiplier is guessing at a
+  //   shape that was the wrong shape.
+  //
+  // A linear gradient anchored to the nearest frame edge has neither problem: its alpha
+  // is what it says across the whole text band, and it has no far edge to notice
+  // because it runs off the frame. It is what a graduated filter does on a photograph
+  // and what sits under every streaming service's hero title.
+  const tint = spot?.onDark === false ? '255,255,255' : '0,0,0';
+  // With no spot the block's own position is unknown too. The lower band is where the
+  // placement search puts type on most photographs and where both styles default, so a
+  // bottom-anchored gradient is the one that covers it.
+  const fromTop = Number.isFinite(spot?.y) ? spot.y < 0.5 : false;
 
-  const alpha = treatment.alpha.toFixed(3);
+  // Tall enough to clear the block with room either side, so the gradient is still
+  // fading where the type ends rather than stopping at it.
+  const height = Math.round(h * Math.min(0.62, Math.max(0.4, (blockH || 0.12) * 2.6 + 0.26)));
+  const a = treatment.alpha;
+
   return (
-    `<div class="assist" style="left:${cx}px;top:${cy}px;width:${cw}px;height:${ch}px;` +
-    `background:radial-gradient(closest-side, rgba(${tint},${alpha}) 0%, rgba(${tint},${(alpha * 0.55).toFixed(
-      3
-    )}) 52%, rgba(${tint},0) 100%)"></div>`
+    `<div class="assist" style="left:0;width:${w}px;height:${height}px;` +
+    `${fromTop ? 'top:0' : `top:${h - height}px`};border-radius:0;` +
+    `background:linear-gradient(${fromTop ? '180deg' : '0deg'}, rgba(${tint},${a.toFixed(3)}) 0%, ` +
+    `rgba(${tint},${(a * 0.66).toFixed(3)}) 42%, rgba(${tint},0) 100%)"></div>`
   );
 }
 
@@ -725,33 +787,63 @@ function assistTag(spot, { w, h }, blockH) {
  * The wash a measured spot needs, through the same gate the post types use.
  *
  * A radial fade is softer than a flat scrim - it is zero at its rim - so it delivers
- * less than its nominal alpha across the block. VEIL_MAX is therefore lower here than
- * for a post's linear gradient: past about half, a radial reads as a dark blob with a
- * slide around it, and a plate is both more legible and more honest.
+ * less than its nominal alpha across the block. The threshold is therefore lower here
+ * than for a post's linear gradient: past about half, a radial reads as a dark blob
+ * with a slide around it, and at that point the weight belongs at the frame edge.
  */
 function assistTreatment(spot) {
-  if (!spot) return null;
+  // NO MEASUREMENT IS THE RISKIEST CASE, NOT THE SAFEST ONE.
+  //
+  // This returned null for a slide with no spot, which meant a photograph nobody could
+  // analyse got no help at all - and that is exactly backwards. A spot is null when
+  // sampling the image failed, which on a remote photograph means a decode that did not
+  // finish, and the picture behind the type is then completely unknown. It could be a
+  // white sky.
+  //
+  // It is the same reasoning as UNMEASURED in src/render/legibility.js: when you cannot
+  // measure, take the treatment that works for the worst case. It costs a dark
+  // photograph a little depth and it cannot cost a bright one its words.
+  if (!spot) return { treatment: 'band', alpha: 0.52 };
+
+  // EVERY SLIDE GETS A BAND, AND THE MEASUREMENT DECIDES HOW DARK.
+  //
+  // It used to be conditional: a block measuring better than 7:1 got nothing at all.
+  // That is defensible per slide and wrong across a deck, for two reasons the Vienna
+  // set showed in one sitting.
+  //
+  //   CONSISTENCY. Slide 2 with a gradient and slide 3 without reads as two different
+  //   designs shuffled together - "any inconcsistencies in the design". A viewer does
+  //   not see each slide against a contrast target, they see six in a row, and the one
+  //   that is treated differently looks like the mistake whichever way round it is.
+  //
+  //   THE MEASUREMENT IS OF THE BLOCK, NOT OF THE LINE. The placement search finds a
+  //   quiet region and scores THAT, but a note longer than the block runs past its
+  //   edge. Valletta's town-hall slide measured comfortably on dark foliage and its
+  //   second line continued onto sunlit paving, where it vanished. A floor under the
+  //   whole frame edge covers the overrun that the block's own score cannot see.
+  //
+  // A light bottom gradient on a photograph is not a patch, it is the house style of
+  // every travel account this project is modelled on. Making it unconditional costs a
+  // well-placed slide almost nothing and makes the set look like a set.
+  const FLOOR = 0.3;
+
   const contrast = Number(spot.contrast);
   if (!Number.isFinite(contrast) || contrast <= 0) {
-    // Nothing measured. Keep the old ramp, which is what this slide always got.
     const strength = spot.assist || 0;
-    if (strength < 0.06) return null;
-    return { treatment: 'veil', alpha: Math.min(0.5, 0.2 + strength * 0.34) };
+    return { treatment: 'band', alpha: Math.min(0.62, FLOOR + strength * 0.34) };
   }
 
-  // Already comfortable. A well-placed block sits at 7:1 or better and gets nothing,
-  // which is the whole point of searching for the quiet region first.
-  if (contrast >= TARGET) return null;
+  // Comfortable blocks still get the floor, and nothing more.
+  if (contrast >= TARGET) return { treatment: 'band', alpha: FLOOR };
 
   // CONTRAST_WHITE is 1.05 / (lum + 0.05); inverted, that is the luminance of the band
   // the type crosses. For dark ink on a light background the polarity flips and the
   // relationship is the same shape, so the same inversion sizes the light wash.
   const lum = spot.onDark === false ? Math.max(0, 0.05 * contrast - 0.05) : Math.max(0, 1.05 / contrast - 0.05);
   const plan = treatmentFor(lum, { floor: 0.18 });
-  // A radial is softer than the flat scrim the gate models, so it has to be stronger to
-  // deliver the same thing, and it runs out sooner.
-  if (plan.treatment === 'veil' && plan.alpha <= 0.52) return { treatment: 'veil', alpha: Math.min(0.62, plan.alpha * 1.2) };
-  return { treatment: 'plate', alpha: Math.max(0.7, Math.min(0.94, plan.alpha)) };
+  // One shape now, so the alpha is simply what the gate asked for, floored so a very
+  // slight wash is still visibly a wash and capped so the frame edge never goes black.
+  return { treatment: 'band', alpha: Math.max(FLOOR, Math.min(0.9, plan.alpha)) };
 }
 
 /**
@@ -849,7 +941,9 @@ export function renderSlideHtml(slide, { size = 'tiktok', cover = false, style =
     // than read.
     // The flag inline at the end of the name, so it wraps with the text rather
     // than sitting beside the block.
-    const name = escapeHtml(slide.nameHe) + (slide.flag ? emojiHtml(slide.flag, { size: '0.92em' }) : '');
+    // ONE INLINE CHILD, for the reason given above `clamp`: a -webkit-box lays out every
+    // child on its own line, so a bare <img> sibling becomes a line of its own.
+    const name = `<span>${labelWithFlag(slide.nameHe, slide.flag)}</span>`;
 
     // Emoji first: in an RTL flex row that is the right-hand end, which is
     // where a Hebrew line starts and where the reference puts it.
@@ -881,9 +975,7 @@ export function renderSlideHtml(slide, { size = 'tiktok', cover = false, style =
       (slide.bullets || [])[0] || (field ? { emoji: field.emoji, text: field.value } : null);
 
     body =
-      `<div class="name${sizeClass(label, { mid: 20, long: 30 })}">${escapeHtml(label)}` +
-      (slide.flag ? emojiHtml(slide.flag, { size: '0.92em' }) : '') +
-      `</div>` +
+      `<div class="name${sizeClass(label, { mid: 20, long: 30 })}"><span>${labelWithFlag(label, slide.flag)}</span></div>` +
       // Parenthesised, because on most slides of a deck this line is absent
       // entirely. A bare word under one name out of six reads as a caption that
       // lost its label; "(מאתגר)" reads as an aside, which is what it is.

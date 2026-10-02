@@ -498,9 +498,9 @@ function groundCss(image) {
   if (!image?.src) return '';
   return `
 .ground { position:absolute; inset:0; z-index:0; background-image:url('${e(image.src)}'); background-size:cover;
-          background-position:center; filter:blur(54px) saturate(1.2) brightness(.62); transform:scale(1.3); }
+          background-position:center; filter:blur(30px) saturate(1.1) brightness(.8); transform:scale(1.16); }
 .ground-tint { position:absolute; inset:0; z-index:0;
-               background:linear-gradient(165deg, rgba(12,20,18,.72), rgba(12,20,18,.86)); }
+               background:linear-gradient(165deg, rgba(12,20,18,.42), rgba(12,20,18,.58)); }
 /* The content above the ground. Without this the two absolutely-positioned layers
    paint over everything the card had to say, which is what the first render did. */
 .card > .head, .card > .body { position:relative; z-index:1; }`;

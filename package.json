@@ -33,7 +33,8 @@
     "admin-lab": "node scripts/admin-lab.js",
     "redraw": "node scripts/redraw.js",
     "ig-subscribe": "node scripts/ig-subscribe.js",
-    "post-lab": "node scripts/post-lab.js"
+    "post-lab": "node scripts/post-lab.js",
+    "slide-lint": "node scripts/slide-lint.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",

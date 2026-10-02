@@ -8,6 +8,7 @@ import { findImage } from '../images.js';
 import * as unsplash from '../images/unsplash.js';
 import * as pexels from '../images/pexels.js';
 import { pickCinematic, cinematicQueries } from '../images/curate.js';
+import { nearby } from '../images/commons.js';
 import { SIZES } from '../render/deckTemplates.js';
 import { destinationPlaces, pick, slugFromUrl } from '../sources/tiyulplus.js';
 import { coverForDeck } from './ideas.js';
@@ -470,6 +471,12 @@ export async function draftFieldsFromEntry(place, pageText, kind) {
   return {
     nameHe: place.nameHe,
     nameEn: place.nameEn,
+    // Where the place is, where the source knew. See the note at the Overpass route's
+    // slide: a coordinate the source already had is what lets sourcedImage find a
+    // photograph taken AT the place, and it is the only thing that works for a Hebrew
+    // name, which no geocoder resolves.
+    lat: place.lat ?? place.latitude ?? null,
+    lon: place.lon ?? place.lng ?? place.longitude ?? null,
     fields,
     sourceUrl: place.sourceUrl,
     sourceHost: 'tiyulplus.com',
@@ -534,6 +541,12 @@ export async function draftSlideFromEntry(place, pageText) {
   return {
     nameHe: place.nameHe,
     nameEn: place.nameEn,
+    // Where the place is, where the source knew. See the note at the Overpass route's
+    // slide: a coordinate the source already had is what lets sourcedImage find a
+    // photograph taken AT the place, and it is the only thing that works for a Hebrew
+    // name, which no geocoder resolves.
+    lat: place.lat ?? place.latitude ?? null,
+    lon: place.lon ?? place.lng ?? place.longitude ?? null,
     hook: { text: hook, quote: hookQuote, overlong: hook.length > 42 },
     lines:
       practical && practicalQuote
@@ -571,7 +584,183 @@ export async function draftSlideFromEntry(place, pageText) {
  *
  * `used` is shared across a deck so the same photograph cannot appear twice.
  */
-async function cinematicImage({ nameEn, where, used, label, about = '' }) {
+// Where a named place actually is, cached for the life of the process.
+const pointCache = new Map();
+
+/**
+ * The coordinates of a named place, from Nominatim.
+ *
+ * Deliberately silent on failure, like countryOfDestination in ./where.js and for the
+ * same reason: a slide that falls through to the stock ladder is a slide, and a build
+ * that died because a geocoder timed out is not.
+ */
+async function pointOf(nameEn, where) {
+  if (!nameEn) return null;
+  const key = `${nameEn}|${where || ''}`.toLowerCase();
+  if (pointCache.has(key)) return pointCache.get(key);
+
+  // TWO QUERIES, SPECIFIC FIRST, AND THE SECOND IS NOT OPTIONAL.
+  //
+  // "Kunsthaus Bregenz, וינה" returns NOTHING: the deck's `where` is the destination it
+  // was commissioned for, and a deck about museums in central Europe carries places in
+  // Vorarlberg and Graubunden under a `where` of Vienna. Qualifying by it does not
+  // narrow the search, it contradicts it.
+  //
+  // So the qualified query runs first, because for an ambiguous name ("Old Town") the
+  // context is what makes it findable, and the bare name runs second, because for a
+  // named landmark the name IS the address. All three museums above resolve on the bare
+  // query to within metres.
+  const queries = [where ? `${nameEn}, ${where}` : null, nameEn].filter(Boolean);
+
+  // THE ANSWER HAS TO NAME THE PLACE, which is not the same as being in the right country.
+  //
+  // The bare fallback finds the most FAMOUS match for a name, which is usually what you
+  // want and occasionally very much not: "Jewish Museum Hohenems" resolved to
+  // Libeskind's in BERLIN. A real Jewish museum, the wrong one - the same class of error
+  // as the stock photographs this path replaces, just a nearer miss.
+  //
+  // Checking the COUNTRY was the obvious guard and it is wrong here: this deck is about
+  // museums in central Europe, its `where` is Vienna, and Kirchner Museum Davos is
+  // correctly in Switzerland. A cross-country deck would lose every place outside its
+  // commissioning country.
+  //
+  // So the test is on the NAME instead. Every distinctive word of the place's English
+  // name - the ones that are not "museum" or "the" - has to appear somewhere in what
+  // Nominatim says it found. "Hohenems" is absent from "Jüdisches Museum Berlin" and
+  // present in the Hohenems result; "Davos" is present in the Davos one. It is exact
+  // where a country check is merely correlated.
+  const GENERIC = new Set([
+    'museum','museo','musee','gallery','gallerie','haus','house','palace','castle','church',
+    'cathedral','abbey','bridge','tower','park','garden','square','old','new','the','of','and',
+    'national','city','town','hall','centre','center','art','modern','history','royal','grand',
+  ]);
+  const distinctive = String(nameEn)
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((w) => w.length >= 4 && !GENERIC.has(w.toLowerCase()));
+
+  let point = null;
+  for (const [i, q] of queries.entries()) {
+    if (point) break;
+    const bare = i > 0;
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?${new URLSearchParams({
+        q,
+        format: 'jsonv2',
+        limit: '1',
+        addressdetails: '1',
+      })}`;
+      const res = await fetch(url, {
+        headers: {
+          'user-agent': process.env.PLACES_USER_AGENT || 'tiyul-plus/1.0 (travel content pipeline; www.tiyulplus.com)',
+          accept: 'application/json',
+        },
+        signal: AbortSignal.timeout(Number(process.env.PLACES_TIMEOUT_MS || 20_000)),
+      });
+      if (!res.ok) continue;
+      const rows = await res.json();
+      const lat = Number(rows?.[0]?.lat);
+      const lon = Number(rows?.[0]?.lon);
+      // A result whose type is a whole country or region is not a place a 300m radius
+      // means anything around. "Melk Abbey" resolving to Austria would geosearch the
+      // middle of a field.
+      const broad = ['country', 'state', 'region', 'county'].includes(String(rows?.[0]?.addresstype || ''));
+      const found = String(rows?.[0]?.display_name || '').toLowerCase();
+      const missing = bare && distinctive.length ? distinctive.filter((w) => !found.includes(w.toLowerCase())) : [];
+      if (missing.length) {
+        console.error(`images: "${nameEn}" resolved to something that does not mention ${missing.join(', ')} - not using it`);
+        continue;
+      }
+      if (Number.isFinite(lat) && Number.isFinite(lon) && !broad) point = { lat, lon };
+    } catch {
+      /* silent on purpose - see above */
+    }
+  }
+
+  pointCache.set(key, point);
+  return point;
+}
+
+/**
+ * A photograph that is PROVABLY of this place, or null.
+ *
+ * THE BUG THIS EXISTS TO END. A deck slide names a specific building and shows a
+ * photograph of it, and until now that photograph came from a stock library chosen by a
+ * vision call asked "which of these is the place". That question has no honest answer
+ * when the pool contains nothing of the place - and the model does not say "none", it
+ * picks the closest thing and writes a confident reason for it. Two slides from one
+ * afternoon:
+ *
+ *   "מנזר מלק" (Melk Abbey, Austria) over a night shot of ANKARA.
+ *   "בית העירייה וכיכר הרטהאוס" (Vienna's town hall) over Republic Square in VALLETTA,
+ *   with a Maltese flag flying in the photograph and an Austrian one printed beside the
+ *   name.
+ *
+ * Both were approved with reasons like "historic building, clear facade, golden light".
+ * Nothing downstream could catch them, because as photographs the judgements were true.
+ *
+ * So the place is geocoded and Commons is asked for files tagged within 300 metres of
+ * it. A geotag is not a judgement - it is the uploader saying where the camera was - so
+ * "is this Melk Abbey" stops being a question about appearance. For Melk it returns
+ * eight files of Stift Melk at up to 9248px.
+ *
+ * Null when the place cannot be geocoded, or nobody has photographed it, or every file
+ * is too small. All three fall through to the stock ladder, which is the right order:
+ * sourced first, curated guess second, no slide at all third.
+ */
+async function sourcedImage({ nameEn, where, used, at = null }) {
+  // SWITCHABLE, and the switch exists for one honest reason: this is the only image
+  // path that needs no API key, so unsetting PEXELS_API_KEY and UNSPLASH_ACCESS_KEY no
+  // longer makes the deck offline. A test that wants the "no photograph anywhere" path -
+  // and there is one, for the plan's null-total case - has to be able to say so.
+  if (String(process.env.DECK_SOURCED_IMAGES || '').toLowerCase() === 'off') return null;
+
+  // A coordinate the caller already had beats anything a geocoder can work out from a
+  // name, and it is the only thing that works for a Hebrew name at all.
+  const point = at || (await pointOf(nameEn, where));
+  if (!point) return null;
+
+  let hits = [];
+  try {
+    hits = await nearby(point.lat, point.lon, { radius: 300, limit: 12 });
+  } catch (e) {
+    console.error(`images: commons geosearch for "${nameEn}" failed - ${e.message}`);
+    return null;
+  }
+
+  const fresh = hits.filter((h) => !used.has(`commons:${h.title}`));
+  if (!fresh.length) return null;
+
+  // The largest one. Commons geosearch returns no quality signal and file size is the
+  // only proxy available without another call per file; at this radius every result is
+  // the right subject, so the remaining question is only which is worth looking at.
+  const pick = fresh.sort((a, b) => (b.width || 0) * (b.height || 0) - (a.width || 0) * (a.height || 0))[0];
+  used.add(`commons:${pick.title}`);
+
+  return {
+    src: pick.src,
+    credit: pick.credit,
+    page: pick.page,
+    width: pick.width,
+    height: pick.height,
+    why: `geotagged within 300m of ${nameEn}`,
+    subject: nameEn,
+    viaQuery: 'commons geosearch',
+    sourced: true,
+  };
+}
+
+async function cinematicImage({ nameEn, where, used, label, about = '', at = null }) {
+  // A PHOTOGRAPH THAT IS PROVABLY OF THIS PLACE COMES FIRST. See sourcedImage above:
+  // a Commons file geotagged at the place beats any number of stock photographs that
+  // merely look like it, and it is the only thing here that cannot be wrong about what
+  // it shows.
+  // NOT FOR THE COVER. A cover is a mood shot of a whole destination and has no single
+  // point to search around - geosearching a country's centroid finds a field. The cover
+  // calls this with nameEn === where, which is how it is recognised.
+  const isCover = String(nameEn || '').trim().toLowerCase() === String(where || '').trim().toLowerCase();
+  const sourced = isCover ? null : await sourcedImage({ nameEn, where, used, at }).catch(() => null);
+  if (sourced) return sourced;
+
   const libraries = [unsplash, pexels].filter((lib) => lib.configured());
   if (!libraries.length) return null;
 
@@ -698,6 +887,11 @@ export async function fillImages(
       used,
       label: slide.nameHe,
       about,
+      // A coordinate the source already knew, where there is one. It beats geocoding by
+      // name every time, and on a route whose names are Hebrew it is the only thing that
+      // works at all - Nominatim resolves none of "ארמון הופבורג", "מנזר מלק" or
+      // "פארק הפראטר".
+      at: Number.isFinite(slide.lat) && Number.isFinite(slide.lon) ? { lat: slide.lat, lon: slide.lon } : null,
     });
     slide.image = picked;
     // Said as it happens. This is the slowest stretch of a build — up to three
@@ -785,6 +979,14 @@ export async function draftSlide(place, pageText, { url }) {
   return {
     nameHe: clean(parsed.name_he) || place.labelEn || place.name,
     nameEn: place.labelEn || place.name,
+    // WHERE THE PLACE ACTUALLY IS, carried onto the slide.
+    //
+    // Overpass gives every place a coordinate and this is the only route that has one,
+    // so dropping it here was the difference between knowing where Melk Abbey is and
+    // asking a geocoder to guess from a Hebrew name it cannot read. sourcedImage uses
+    // it to find a photograph taken AT the place rather than one that resembles it.
+    lat: place.lat ?? null,
+    lon: place.lon ?? null,
     hook: { text: hook, quote: hookQuote, overlong: hook.length > 40 },
     lines: lines.map((l) => ({ ...l, overlong: l.text.length > TOO_LONG })),
     sourceUrl: url,
@@ -898,6 +1100,10 @@ export async function buildDeckFromSite(idea, { wantImages = true } = {}) {
         n: slides.length + 1,
         nameHe: place.nameHe,
         nameEn: place.nameEn,
+        // See the note at the other slide returns: the source's own coordinate is what
+        // finds a photograph taken AT the place.
+        lat: place.lat ?? place.latitude ?? null,
+        lon: place.lon ?? place.lng ?? place.longitude ?? null,
         fields: [],
         bullets,
         sourceUrl: place.sourceUrl,

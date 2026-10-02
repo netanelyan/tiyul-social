@@ -136,16 +136,21 @@ export async function renderPostSize(
   // still disappears. The treatment the gate returns is per look, which is why the box
   // comes from TEXT_BOXES rather than from one band constant shared by all of them.
   //
-  // The gate may answer `plate` instead of `veil`, which CHANGES THE SLIDE rather than
-  // dimming it: see src/render/legibility.js for why a cap on a gradient is the wrong
-  // answer to a photograph a gradient cannot carry.
+  // The gate may answer `band` instead of `veil`, which CHANGES THE SLIDE rather than
+  // dimming it: see src/render/legibility.js for why a cap on a wash is the wrong answer
+  // to a photograph a wash cannot carry, and why neither answer is ever a panel.
   const boxFor = (s) => {
     if (s.look === 'label') return TEXT_BOXES[`label.${s.cover ? 'cover' : s.band === 'mid' ? 'mid' : 'lower'}`];
     return TEXT_BOXES[s.look] || TEXT_BOXES['label.lower'];
   };
   // The CSS brightness each look already applies to its own ground, so the gate decides
   // against the picture as rendered rather than as filed. 1 means "shown as it is".
-  const GAIN = { label: 1, collage: 1, route: 0.62, notes: 0.42, roll: 1 };
+  // These MUST match the `brightness()` each look applies to its own ground in
+  // render/postSlides.js. They were lowered together when the grounds were softened:
+  // measuring against 0.42 while the template renders at 0.72 sizes every tint for a
+  // picture darker than the one on screen, which is the same class of error as not
+  // measuring at all.
+  const GAIN = { label: 1, collage: 1, route: 0.78, notes: 0.72, roll: 1 };
   const LIT = new Set(Object.keys(GAIN));
   const plans = await planLegibility(
     items.map((s, i) => {

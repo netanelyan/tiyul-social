@@ -17,7 +17,7 @@ import { assertGenericAiPrompt, ImagePolicyError, imageQueries } from '../src/im
 import { approvalMessage, instagramCaption, tiktokCaption, publishedDescriptions, deckCaption, deckTiktokCaption, evidenceReport, deckApprovalMessage, captionHook, assertNoUrl, URL_LIKE } from '../src/format.js';
 import { postConfig, byWeight, destinationWeight } from '../src/postConfig.js';
 import { hashtagsFor, destinationTag } from '../src/hashtags.js';
-import { renderSlideHtml, SIZES, sizeClass, INK_LUMINANCE, FACES } from '../src/render/deckTemplates.js';
+import { renderSlideHtml, SIZES, sizeClass, INK_LUMINANCE, FACES, coverTitle } from '../src/render/deckTemplates.js';
 import { renderInstagramSlideHtml } from '../src/render/deckInstagram.js';
 import { sizesFor } from '../src/deck/candidate.js';
 import { normaliseIdea, freeformFromIdea } from '../src/deck/ideas.js';
@@ -2486,7 +2486,47 @@ const flagged = renderSlideHtml(
   { nameHe: 'החוף האדום', flag: '🇬🇷', fields: [] },
   { style: 'minimal' }
 );
-ok('the flag sits inside the name', /class="name[^"]*">[^<]*החוף האדום[^<]*<img/.test(flagged));
+// Matched on the TEXT rather than on the markup. The label is split at its last space
+// so the final word and the flag can be bound with nowrap (see labelWithFlag), which
+// means the name is no longer one contiguous string in the HTML - and asserting on the
+// HTML made a correct layout look like a regression.
+const textOf = (html) => html.replace(/<img[^>]*alt="([^"]*)"[^>]*>/g, '$1').replace(/<[^>]+>/g, '');
+ok('the flag sits inside the name', /החוף האדום\s*🇬🇷/.test(textOf(/<div class="name[\s\S]*?<\/div>/.exec(flagged)?.[0] || '')));
+
+// AND THE NAME HAS EXACTLY ONE CHILD ELEMENT.
+//
+// This is the invariant, and the markup assertion above is only a proxy for it. `.name`
+// is clamped with `display: -webkit-box; -webkit-box-orient: vertical`, which lays out
+// EVERY CHILD ON ITS OWN LINE. With the text as a bare node and the flag as a sibling
+// <img>, Austria's flag rendered on a line of its own between the Vienna Opera's name
+// and its note - "check for an emoji in a newline". It was not a wrapping accident; it
+// was structural, and it happened at every length.
+//
+// So anything inside a clamped element is wrapped in one span, and these check that the
+// three clamped elements in this file stay that way.
+for (const [what, html] of [
+  ['a name with a flag', flagged],
+  ['a name without one', renderSlideHtml({ nameHe: 'סקוגאפוס', fields: [] }, { style: 'minimal' })],
+  ['an info-style name', renderSlideHtml({ nameHe: 'סקוגאפוס', flag: '🇮🇸', fields: [{ emoji: '📍', value: 'איסלנד' }] }, { style: 'info' })],
+]) {
+  const block = /<div class="(?:name|title-info)[^"]*">(.*?)<\/div>/s.exec(html);
+  ok(`${what} wraps its content in one inline child`, Boolean(block) && block[1].trim().startsWith('<span>'),
+    block ? block[1].slice(0, 70) : 'no name element');
+}
+
+// The cover title is the same element and the same trap, and it had THREE children when
+// an emphasis was set - text, the emphasis span, text - so an emphasised cover came out
+// as three stacked lines whatever its length.
+{
+  const plain = coverTitle('חמישה ימים בוינה', '');
+  const emph = coverTitle('חמישה ימים בוינה', 'וינה');
+  for (const [what, html] of [['a plain cover', plain], ['an emphasised cover', emph]]) {
+    const inner = /<div class="cover[^"]*">(.*?)<\/div>$/s.exec(html);
+    ok(`${what} wraps its content in one inline child`, Boolean(inner) && inner[1].startsWith('<span>'),
+      inner ? inner[1].slice(0, 70) : html.slice(0, 70));
+  }
+  ok('and the emphasis survives the wrapper', /class="emph/.test(emph));
+}
 ok('and there is no separate flag line', !flagged.includes('class="flag"'));
 
 // Leading, which is the thing that has now been wrong three times and in both
@@ -2502,9 +2542,11 @@ ok('it has room to wrap', /\.name \{[^}]*line-height: 1\.1/s.test(flagged));
 // every slide would repeat the same word.
 ok(
   'a cross-country deck names the country and flies the flag',
-  renderSlideHtml(
-    { n: 1, nameHe: 'דולומיטים', countryHe: 'איטליה', flag: '🇮🇹', fields: [] },
-    { style: 'minimal' }
+  textOf(
+    renderSlideHtml(
+      { n: 1, nameHe: 'דולומיטים', countryHe: 'איטליה', flag: '🇮🇹', fields: [] },
+      { style: 'minimal' }
+    )
   ).includes('דולומיטים, איטליה')
 );
 
@@ -2698,9 +2740,32 @@ ok('opacity is a variable too', placed.includes('opacity: var(--op,'));
   ok('and present on a hard one', hard.includes('rgba(0,0,0,0.55)'));
 }
 
-// The wash behind the text is the last resort and has to stay rare, or every
-// slide grows a panel and the look is gone.
-ok('no wash when the photograph offers enough contrast', !placed.includes('class="assist"'));
+// THE WASH IS NOW UNCONDITIONAL, AND THAT IS A REVERSAL.
+//
+// This used to assert the opposite - "no wash when the photograph offers enough
+// contrast" - on the reasoning that a wash is a last resort and has to stay rare "or
+// every slide grows a panel and the look is gone". That reasoning was right about the
+// treatment it was written for, which was a RADIAL BLOB centred on the text, and a
+// frame full of those would indeed destroy the look.
+//
+// The treatment is now a gradient anchored to the frame edge, and the argument inverts:
+//
+//   It is not a panel. It has no far edge to notice, it runs off the frame, and a light
+//   bottom gradient over a photograph is the house style of every account this project
+//   is modelled on rather than a patch over a problem.
+//
+//   Making it conditional made the DECK inconsistent. Slide 2 with a gradient and slide
+//   3 without reads as two designs shuffled together; a viewer sees six slides in a row,
+//   not each one against a contrast target.
+//
+//   And the block's own score cannot see a note that overruns it. Valletta's town-hall
+//   slide measured comfortably on dark foliage and its second line continued onto sunlit
+//   paving, where it disappeared.
+//
+// So: every slide has one, and the measurement decides how dark rather than whether.
+ok('every slide gets a band', placed.includes('class="assist"'));
+ok('and a comfortable photograph gets only the floor',
+  /rgba\(0,0,0,0\.300\)/.test(placed), placed.slice(placed.indexOf('class="assist"'), placed.indexOf('class="assist"') + 160));
 ok(
   'a wash appears when it does not',
   renderSlideHtml(
@@ -6119,9 +6184,19 @@ group('a plan with no prices prints no prices');
   // survives, the sum runs over an empty list, and the answer still has to be
   // null rather than zero.
   {
-    const keys = { PEXELS_API_KEY: process.env.PEXELS_API_KEY, UNSPLASH_ACCESS_KEY: process.env.UNSPLASH_ACCESS_KEY };
+    const keys = {
+      PEXELS_API_KEY: process.env.PEXELS_API_KEY,
+      UNSPLASH_ACCESS_KEY: process.env.UNSPLASH_ACCESS_KEY,
+      DECK_SOURCED_IMAGES: process.env.DECK_SOURCED_IMAGES,
+    };
     delete process.env.PEXELS_API_KEY;
     delete process.env.UNSPLASH_ACCESS_KEY;
+    // AND THE SOURCED PATH, which needs no key and would otherwise keep this online.
+    // Commons geosearch is tried before either stock library (see sourcedImage), so
+    // unsetting the two keys no longer makes cinematicImage return null before any
+    // request leaves. This case is specifically "nothing could be photographed", so it
+    // has to switch that off too rather than quietly depend on the network.
+    process.env.DECK_SOURCED_IMAGES = 'off';
     try {
       const shape = (priced) => ({
         priced,
@@ -7859,7 +7934,7 @@ group('the contrast gate - no slide ships under target');
   const mid = treatmentFor(0.21);
   const night = treatmentFor(0.012);
 
-  ok('a blown-out sky cannot be carried by a gradient and gets a plate', white.treatment === 'plate', JSON.stringify(white));
+  ok('a blown-out sky cannot be carried by a soft wash and gets a band', white.treatment === 'band', JSON.stringify(white));
   ok('an ordinary photograph keeps its gradient', mid.treatment === 'veil', JSON.stringify(mid));
   ok('and a dark one keeps it too', night.treatment === 'veil', JSON.stringify(night));
 
@@ -7878,8 +7953,18 @@ group('the contrast gate - no slide ships under target');
 
   // An unmeasurable image gets the treatment that always works, not the worst guess at
   // a gradient. A picture nobody could measure is exactly the white-sky case.
-  eq('an unmeasurable image falls back to a plate', treatmentFor(null).treatment, 'plate');
+  eq('an unmeasurable image falls back to a band', treatmentFor(null).treatment, 'band');
   eq('and says so rather than claiming a measurement', treatmentFor(undefined).measured, false);
+
+  // NEITHER TREATMENT IS EVER A PANEL. An earlier version escalated to a translucent
+  // rounded box with a backdrop blur behind the type; it cleared the target and read as
+  // a patch, which is what "i dont like the blur behind the text, does not look
+  // professional at all" was about. Both answers are now gradients to a frame edge, and
+  // this asserts the vocabulary so a panel cannot creep back in under a new name.
+  for (const lum of [0.01, 0.2, 0.5, 0.8, 0.99]) {
+    ok(`a photograph at ${lum} gets a gradient and not a panel`,
+      ['veil', 'band'].includes(treatmentFor(lum).treatment), treatmentFor(lum).treatment);
+  }
 }
 
 // THE WORST PATCH, NOT THE BRIGHTEST ROW. This is the case a row mean loses: a band

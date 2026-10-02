@@ -229,6 +229,110 @@ export const creditFor = (meta) =>
   [meta?.author, meta?.license].filter(Boolean).join(' / ') || 'Wikimedia Commons';
 
 /**
+ * Photographs taken AT a place, found by its coordinates.
+ *
+ * WHY THIS EXISTS, and it is the most serious thing in this repo's history of image bugs.
+ *
+ * A deck slide names a specific building and shows a photograph of it. Until now that
+ * photograph came from a stock library, chosen by a vision call asked "which of these is
+ * the place". That question is unanswerable when the pool contains nothing of the place,
+ * and the model does not answer "none" - it answers with the closest thing and writes a
+ * plausible reason. Two shipped examples, both from one afternoon:
+ *
+ *   "מנזר מלק" - Melk Abbey, in Austria, over a night shot of ANKARA, with an Austrian
+ *   flag beside the name.
+ *
+ *   "בית העירייה וכיכר הרטהאוס" - Vienna's town hall, over Republic Square in VALLETTA,
+ *   with a Maltese flag flying in the photograph and an Austrian one printed on the slide.
+ *
+ * Nothing in the pipeline could catch either, because both photographs are genuinely
+ * "a grand civic building at golden hour" and that is all the judge can see.
+ *
+ * GEOTAGS ANSWER THE QUESTION THE JUDGE CANNOT. A Commons file tagged within 300 metres
+ * of Melk Abbey IS a photograph of Melk Abbey - not probably, not according to a model,
+ * but as a matter of the metadata the uploader attached. Commons has a geosearch
+ * generator, it needs no key, and for Melk it returns eight files of Stift Melk at up to
+ * 9248px. The question stops being "does this look like the place" and becomes "was the
+ * camera there", which has an answer.
+ *
+ * WHAT IT CANNOT DO. A place with no coordinates gets nothing here, and a place nobody
+ * has photographed within the radius gets nothing either. Both fall through to the stock
+ * ladder, which is the right order: a sourced photograph when one exists, a curated
+ * guess when one does not, and no slide at all when neither works.
+ */
+export async function nearby(lat, lng, { radius = 300, limit = 12, width = 1440, minWidth = 1000, timeoutMs = 20_000 } = {}) {
+  const la = Number(lat);
+  const lo = Number(lng);
+  if (!Number.isFinite(la) || !Number.isFinite(lo)) return [];
+
+  const params = new URLSearchParams({
+    action: 'query',
+    format: 'json',
+    formatversion: '2',
+    generator: 'geosearch',
+    ggscoord: `${la}|${lo}`,
+    // Metres. 300 is a building and its square; much more and a photograph of the
+    // thing across the street qualifies, which is how this would become the bug it
+    // replaces.
+    ggsradius: String(Math.max(10, Math.min(1000, radius))),
+    ggslimit: String(Math.max(1, Math.min(50, limit))),
+    // Namespace 6 is File:. Without it the generator returns articles.
+    ggsnamespace: '6',
+    prop: 'imageinfo',
+    iiprop: 'url|size|extmetadata',
+    iiurlwidth: String(width),
+  });
+
+  let body;
+  try {
+    const res = await fetch(`${API}?${params}`, {
+      headers: {
+        accept: 'application/json',
+        'user-agent': process.env.PLACES_USER_AGENT || 'tiyul-plus/1.0 (own content)',
+      },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) throw new CommonsError(`geosearch answered HTTP ${res.status}`, { step: 'geosearch' });
+    body = await res.json();
+  } catch (err) {
+    if (err instanceof CommonsError) throw err;
+    throw new CommonsError(`geosearch failed - ${err.message}`, { step: 'geosearch' });
+  }
+
+  const pages = body?.query?.pages || [];
+  return pages
+    .map((p) => {
+      const info = p?.imageinfo?.[0];
+      if (!info?.thumburl) return null;
+      // The same quality bar fillFromSite uses: the frame is 1080 wide and upscaling a
+      // small original is visibly soft.
+      if (Number(info.width) < minWidth) return null;
+      const meta = info.extmetadata || {};
+      return {
+        title: String(p.title || '').replace(/^File:/, ''),
+        src: info.thumburl,
+        width: Number(info.thumbwidth) || null,
+        height: Number(info.thumbheight) || null,
+        credit: creditFor({
+          author: stripHtml(meta.Artist?.value),
+          license: meta.LicenseShortName?.value || meta.License?.value,
+        }),
+        page: info.descriptionurl || null,
+        // How this photograph was established to be of this place, carried so an
+        // approval card can say so and a reviewer can check it.
+        via: 'commons-geosearch',
+      };
+    })
+    .filter(Boolean);
+}
+
+const stripHtml = (s) =>
+  String(s || '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/\s+/g, ' ')
+    .trim() || null;
+
+/**
  * A photograph per place, for the places the site gave one.
  *
  * MUTATES the place objects, exactly as fillImages does, so the caller's day

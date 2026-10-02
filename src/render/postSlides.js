@@ -174,7 +174,7 @@ const step = (text, { mid, long }) => {
 
 const emojiRow = (emojis) =>
   (emojis || []).length
-    ? `<div class="emoji">${emojis.map((e) => emojiHtml(e, { size: '1em' })).join('')}</div>`
+    ? `<div class="emoji-row">${emojis.map((e) => emojiHtml(e, { size: '1em' })).join('')}</div>`
     : '';
 
 /**
@@ -265,9 +265,11 @@ export function renderLabelSlideHtml(slide, { size = 'tiktok', frame = 'tall' } 
   // and shipping anyway is what the previous version did, and it is why bright slides
   // were unreadable.
   const plan = slide.legible || null;
-  const plated = plan?.treatment === 'plate';
-  const veil = plated ? '0' : Number.isFinite(plan?.alpha) ? plan.alpha.toFixed(2) : cover ? '0.58' : '0.52';
-  const plateAlpha = plated ? Math.max(0.74, Math.min(0.96, plan.alpha)).toFixed(2) : '0';
+  // `band` is the heavier treatment and it is still a gradient, not a panel. See the
+  // note on escalation in src/render/legibility.js: a floating box behind the type
+  // reads as a patch whatever its alpha, so the weight goes to the frame edge instead.
+  const banded = plan?.treatment === 'band';
+  const veil = Number.isFinite(plan?.alpha) ? plan.alpha.toFixed(2) : cover ? '0.58' : '0.52';
 
   const badgePx = px(geo, 0.075);
   const badgeLabelPx = px(geo, 0.03);
@@ -291,16 +293,16 @@ export function renderLabelSlideHtml(slide, { size = 'tiktok', frame = 'tall' } 
         ${band === 'mid' ? `top:${Math.round(geo.h * 0.16)}px;
         background: radial-gradient(ellipse at center, rgba(0,0,0,${veil}), rgba(0,0,0,${(veil * 0.34).toFixed(2)}) 55%, rgba(0,0,0,0) 78%);`
           : `bottom:0; background: linear-gradient(to top, rgba(0,0,0,${veil}) 12%, rgba(0,0,0,${(veil * 0.55).toFixed(2)}) 46%, rgba(0,0,0,0));`} }
-/* THE PLATE. What a photograph gets when a gradient cannot carry type over it.
-   Rounded, inset to the type's own box rather than bleeding to the frame edge, and
-   with a soft blur behind it so the picture still shows through at the rim - that is
-   what keeps it reading as a caption laid on a photograph rather than as a slide that
-   gave up and went grey. Sized by the gate, not by eye. */
-${plated ? `.wrap { background: rgba(10,12,16,${plateAlpha}); backdrop-filter: blur(${Math.round(geo.w * 0.012)}px);
-         border-radius: ${Math.round(geo.w * 0.045)}px;
-         padding: ${Math.round(geo.h * 0.032)}px ${Math.round(geo.w * 0.055)}px;
-         inset-inline: ${Math.round(geo.w * 0.05)}px !important;
-         box-shadow: 0 ${Math.round(geo.h * 0.012)}px ${Math.round(geo.h * 0.05)}px rgba(0,0,0,.42); }` : ''}
+/* THE BAND. What a photograph gets when a soft wash cannot carry type over it.
+   NOT A PANEL. An earlier version drew a rounded translucent box with a backdrop blur
+   here; it cleared the contrast target and looked, correctly, like a patch. A box has
+   edges that belong to nothing in the picture and the blur drags the picture's colour
+   through it, so it never reads as a deliberate surface.
+   This instead extends the veil already above to the full height of the frame's text
+   half and lets it reach the edge opaque. It can be far darker than a wash without
+   being noticeable as an object, because it has no far edge - it runs off the frame,
+   which is what a graduated filter does on a photograph. */
+${banded ? `.veil { height: ${Math.round(geo.h * (cover ? 0.74 : 0.6))}px; }` : ''}
 /* THE COVER GETS A SECOND, WIDER WASH. The published Santorini cover put white type
    over a hillside of white buildings, and an outline alone is the wrong tool for that:
    a stroke is the same width everywhere, so where the photograph is the same value as
@@ -342,7 +344,16 @@ ${cover ? `.wash { position: absolute; inset: 0; background: linear-gradient(180
 .note { font-weight: 600; font-size: ${notePx}px; line-height: 1.3; white-space: nowrap;
         ${outlined(Math.max(2, Math.round(notePx * 0.05)))} opacity: .97; }
 .note img.emoji { vertical-align: -0.12em; }
-.emoji { font-size: ${px(geo, 0.055)}px; line-height: 1; display: flex; gap: .12em; }
+/* THE ROW IS A FLEX BOX; A SINGLE EMOJI IS NOT.
+   These shared one class name. emojiHtml stamps class="emoji" on every img it produces,
+   and the row below was also class="emoji" - so display:flex applied to BOTH, and every
+   inline emoji in a title or a note became a block-level flex container with a line to
+   itself. That is "check for an emoji in a newline": a flag at the end of a hook, or the
+   star in a note, sitting alone above its own sentence.
+   The row is now .emoji-row, and img.emoji is pinned inline so no future rule on a
+   container can knock it out of the line it belongs to. */
+img.emoji { display: inline-block; vertical-align: -0.12em; }
+.emoji-row { font-size: ${px(geo, 0.055)}px; line-height: 1; display: flex; gap: .12em; }
 </style></head><body>
 ${PROBE}
 ${photo(slide.image)}
@@ -409,7 +420,8 @@ export function renderSheetSlideHtml(slide, { size = 'tiktok', frame = 'tall' } 
        width: fit-content; max-width: 88%; text-align: start;
        box-shadow: 0 ${Math.round(pad * 0.4)}px ${Math.round(pad * 1.6)}px rgba(0,0,0,.34); }
 .row.mark { background: #FFD84D; }
-.emoji { font-size: ${px(geo, 0.055)}px; line-height: 1; display: flex; gap: .12em; margin-bottom: ${pad}px; }
+img.emoji { display: inline-block; vertical-align: -0.12em; }
+.emoji-row { font-size: ${px(geo, 0.055)}px; line-height: 1; display: flex; gap: .12em; margin-bottom: ${pad}px; }
 </style></head><body>
 ${PROBE}
 ${photo(slide.image)}
@@ -492,7 +504,7 @@ export function renderRouteCardHtml(slide, { size = 'tiktok', frame = 'tall' } =
    post having ended. The type carries its own contrast, so the ground does not have to
    be dark, only quiet. */
 .bg { position: absolute; inset: 0; background-size: cover; background-position: center;
-      filter: blur(30px) saturate(1.1) brightness(.62); transform: scale(1.2); }
+      filter: blur(26px) saturate(1.08) brightness(.78); transform: scale(1.16); }
 /* MEASURED, not fixed. .52/.68 was sized for an average photograph, and a route card
    whose first stop is a white-walled courtyard at noon got the same tint as one shot at
    dusk. The gate measures this ground AFTER the brightness above (see GAIN in
@@ -588,7 +600,7 @@ body { background: #000; }
    than a picture, so the checklist is still the only thing being read, and the slide is
    still visibly part of the same post. */
 .bg { position: absolute; inset: 0; background-size: cover; background-position: center;
-      filter: blur(46px) saturate(1.05) brightness(.42); transform: scale(1.25); }
+      filter: blur(30px) saturate(1.06) brightness(.72); transform: scale(1.18); }
 /* Measured off this ground after its own brightness, exactly as the route card's is. */
 .tint { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,${groundTint(slide, 0.62)}), rgba(0,0,0,${groundTint(slide, 0.76)})); }
 .wrap { position: absolute; inset: 0; padding: ${Math.round(geo.h * 0.13)}px ${Math.round(geo.w * 0.085)}px;
@@ -822,9 +834,10 @@ ${photo(slide.image)}
   }
 
   const plan = slide.legible || null;
-  const plated = plan?.treatment === 'plate';
-  const veil = plated ? '0' : Number.isFinite(plan?.alpha) ? plan.alpha.toFixed(2) : '0.42';
-  const plateAlpha = plated ? Math.max(0.68, Math.min(0.92, plan.alpha)).toFixed(2) : '0';
+  // Same rule as the label look: the heavier treatment is a taller gradient to the
+  // frame edge, never a box behind the words.
+  const banded = plan?.treatment === 'band';
+  const veil = Number.isFinite(plan?.alpha) ? plan.alpha.toFixed(2) : '0.42';
 
   const titlePx = px(geo, slide.cta ? 0.062 : 0.076);
   const notePx = px(geo, 0.032);
@@ -835,15 +848,10 @@ ${photo(slide.image)}
    reference, and a hard-edged gradient under it would read as a banner - which is the
    look this format exists to avoid. This is closer to what a graduated filter does to a
    sky: strongest at the top, gone by the middle, and never visibly edged. */
-.veil { position: absolute; inset-inline: 0; top: 0; height: ${Math.round(geo.h * 0.62)}px;
+.veil { position: absolute; inset-inline: 0; top: 0; height: ${Math.round(geo.h * (banded ? 0.78 : 0.62))}px;
         background: linear-gradient(to bottom, rgba(6,8,12,${veil}) 0%, rgba(6,8,12,${(veil * 0.62).toFixed(2)}) 42%, rgba(6,8,12,0) 100%); }
 .wrap { position: absolute; top: ${Math.round(geo.h * (slide.cta ? 0.3 : 0.2))}px;
-        inset-inline: ${Math.round(geo.w * 0.09)}px; text-align: center;
-        ${plated
-          ? `background: rgba(8,10,14,${plateAlpha}); backdrop-filter: blur(${Math.round(geo.w * 0.01)}px);
-             border-radius: ${Math.round(geo.w * 0.04)}px;
-             padding: ${Math.round(geo.h * 0.03)}px ${Math.round(geo.w * 0.05)}px;`
-          : ''} }
+        inset-inline: ${Math.round(geo.w * 0.09)}px; text-align: center; }
 /* THE SOFT TINT, not white. The reference sets its headline in a pale pink; pure white
    on a photograph is what a subtitle burner produces. A warm off-white keeps the
    softness and survives a wider range of pictures than a pink would - a pink headline

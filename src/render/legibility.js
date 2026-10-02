@@ -44,12 +44,31 @@ import { sampleGrids, scrimAlpha, underScrim, CONTRAST_WHITE, toSrgb, toLinear }
  *      to "this picture needs more than a gradient can give" is a DIFFERENT TREATMENT,
  *      not the same treatment underpowered.
  *
- *   3. ESCALATION. Two treatments, and the gate picks between them per slide:
- *        veil  - a gradient over the text band, which is what the platform's own player
- *                does and what keeps the photograph a photograph. Preferred always.
- *        plate - an opaque panel behind the type. Reads as deliberate design (it is the
- *                reference account's own boxed-text look) and can always reach target
- *                because it is uniform, so it is the floor nothing falls through.
+ *   3. ESCALATION, AND NEITHER STEP OF IT IS A BOX.
+ *
+ *      The first version escalated to a PLATE - a translucent rounded panel with a
+ *      backdrop blur behind the type. It reached the contrast target perfectly and it
+ *      looked, in the owner's words, "not professional at all". That judgement is
+ *      correct and worth recording, because the reasoning that produced the plate was
+ *      sound and the result was still wrong:
+ *
+ *        A floating panel ALWAYS reads as a patch. It has edges that belong to nothing
+ *        in the photograph, the backdrop blur drags the picture's colour through it so
+ *        it is never a clean fill, and a viewer reads it as the design having run into
+ *        trouble - which it had. Every reference this account is modelled on puts type
+ *        straight onto the photograph with no box anywhere.
+ *
+ *      So both treatments are GRADIENTS ANCHORED TO A FRAME EDGE, and the difference
+ *      between them is only how far they go:
+ *
+ *        veil - a soft wash over the text's band. Gentle, keeps the photograph bright,
+ *               what the platform's own player already does over a caption.
+ *        band - the same wash, heavier and taller, running to near-opaque AT THE EDGE
+ *               of the frame. It can go much darker than a veil without ever looking
+ *               like a panel, because it has no far edge: it bleeds off the frame, the
+ *               way a graduated filter does on a photograph. This is the floor nothing
+ *               falls through, and it always reaches target because its dark end is as
+ *               dark as it needs to be.
  */
 
 /**
@@ -64,25 +83,32 @@ import { sampleGrids, scrimAlpha, underScrim, CONTRAST_WHITE, toSrgb, toLinear }
 export const TARGET = 7.0;
 
 /**
- * The heaviest gradient that still reads as a photograph with a wash on it.
+ * The heaviest SOFT wash that still leaves the photograph looking untouched.
  *
- * Past this the picture is a texture behind a grey card, and at that point a plate is
- * both more legible AND more honest about what it is doing. Found by eye, not derived.
+ * Past this a veil starts to flatten the picture, and the answer is not a heavier veil
+ * of the same shape - it is the band below, which puts the weight at the frame edge
+ * where the photograph was going to be cropped by the player anyway.
  */
 export const VEIL_MAX = 0.62;
 
-/** The lightest plate worth drawing. Below this it reads as a smudge rather than a panel. */
-export const PLATE_MIN = 0.74;
+/**
+ * The lightest band worth drawing, at its darkest point.
+ *
+ * A band is a gradient to the frame edge, so this is the alpha AT THE EDGE and not an
+ * average: the end nearest the middle of the picture is always transparent. That is why
+ * it can be this heavy and still read as a photograph rather than as a panel.
+ */
+export const BAND_MIN = 0.72;
 
 /**
  * The treatment for a slide whose photograph could not be measured at all.
  *
- * A plate, not a heavy veil. An unmeasurable image is the case the worst-photograph
- * constant was written for, and the worst photograph there is - a white sky - is one a
- * gradient cannot save. Choosing the treatment that always works costs one slide its
- * gradient and cannot cost the post a reader.
+ * A band, not a light veil. An unmeasurable image is exactly the case the
+ * worst-photograph constant was written for, and the worst photograph there is - a
+ * white sky - is one a soft wash cannot carry. Choosing the treatment that always works
+ * costs one slide a little brightness and cannot cost the post a reader.
  */
-export const UNMEASURED = Object.freeze({ treatment: 'plate', alpha: 0.82, ratio: null, measured: false });
+export const UNMEASURED = Object.freeze({ treatment: 'band', alpha: 0.82, ratio: null, measured: false });
 
 /**
  * Where a look puts its type, as [x0, y0, x1, y1] in fractions of the frame.
@@ -164,12 +190,12 @@ export function treatmentFor(lum, { floor = 0.2 } = {}) {
     };
   }
 
-  // A gradient cannot get there without becoming a grey card, so the slide changes
-  // shape. The plate is sized the same way - the lightest one that clears target - so a
-  // picture that only just needed a plate gets a panel you can still see through.
-  const alpha = Math.max(PLATE_MIN, needed);
+  // A soft wash cannot get there without flattening the picture, so the weight moves to
+  // the frame edge. Sized the same way - the lightest band that clears target - so a
+  // photograph that only just needed one gets a band you can barely see.
+  const alpha = Math.max(BAND_MIN, needed);
   return {
-    treatment: 'plate',
+    treatment: 'band',
     alpha: Math.round(Math.min(0.96, alpha) * 100) / 100,
     ratio: round2(CONTRAST_WHITE(underScrim(lum, Math.min(0.96, alpha)))),
     measured: true,
@@ -229,7 +255,7 @@ export async function planLegibility(items, { onError = null } = {}) {
 /**
  * THE GATE. Throws if any planned slide would ship under target.
  *
- * It cannot fire for a measured slide, because `treatmentFor` escalates to a plate that
+ * It cannot fire for a measured slide, because `treatmentFor` escalates to a band that
  * always reaches target - which is the point. What it catches is the class of bug that
  * caused this module to exist: a measurement path that silently stops producing numbers.
  * If that happens again the build stops instead of the type going dim.
