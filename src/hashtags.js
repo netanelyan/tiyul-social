@@ -369,7 +369,11 @@ export function clipCaption(cand, opts) {
 export function gemsCaption(cand, { rand = Math.random } = {}) {
   const cfg = postConfig().gems.caption;
   const places = cand?.clip?.places || [];
-  const joined = places.join(', ');
+  // JOINED WITH A MIDDLE DOT, NOT A COMMA, because each label already contains one.
+  // "לאוטרברונן, שווייץ" plus "מטאורה, יוון" joined with ", " reads as four places,
+  // which is exactly the ambiguity a counted hook above it cannot afford. The dot is
+  // the separator this project already uses for a list of places on one line.
+  const joined = places.join(' · ');
 
   // A line whose variable cannot be filled is skipped rather than printed with a
   // gap in it, the same rule the hook templates follow.

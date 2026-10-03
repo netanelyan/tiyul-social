@@ -1421,13 +1421,20 @@
         "not close by asking.",
         "",
         "`lines` are filled with {places}, the labels joined, so the one short line",
-        "is about the actual post. A line whose variable cannot be filled is skipped."
+        "is about the actual post. A line whose variable cannot be filled is skipped.",
+        "",
+        "EVERY LINE HERE IS TRUE OF EVERY REEL, and two earlier ones were not. The",
+        "first drafts were `שלושה מהם היו ברשימה שלנו לשנה הבאה` and `אחד מהם לא היה",
+        "ברשימה של אף אחד`: the first hardcodes three on a format that runs at three to",
+        "five, and both describe a list that does not exist. A caption is the one part",
+        "of a post nobody checks against the slides, which is exactly why it has to be",
+        "written as carefully as a slide."
       ],
       "lines": [
-        "{places}. שלושה מהם היו ברשימה שלנו לשנה הבאה",
-        "{places}. אחד מהם לא היה ברשימה של אף אחד",
         "כל אלה במרחק טיסה: {places}",
-        "{places}, לפי הסדר הזה"
+        "{places}, לפי הסדר שבסרטון",
+        "השמות שעל המסך: {places}",
+        "{places}. שומרים לטיול הבא"
       ],
       "questions": [
         "איזה מהם הייתם בוחרים?",

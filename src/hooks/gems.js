@@ -5,6 +5,7 @@ import { modelFor } from '../models.js';
 import { stripDashes } from '../dashes.js';
 import { URL_LIKE } from '../urlLike.js';
 import { isLabel, trailsOff, namesOtherCountry } from '../video/hooks.js';
+import { dailyCostOf } from '../posts/verdict.js';
 
 // THE HOOK, GENERATED AND THEN SCORED, FOR ANY FORMAT THAT CAN DELIVER IT.
 //
@@ -114,6 +115,11 @@ const PRESENCE = /(^|\s|ו|ש|ב|ל|כ|מ)(אני|אנחנו|שלי|שלנו|א�
 
 export const claimsPresence = (line) => PRESENCE.test(String(line || ''));
 
+// The five Hebrew letters that change shape at the end of a word, folded to their
+// medial forms. For COMPARISON only; nothing is ever published from this.
+const FINALS = { ף: 'פ', ם: 'מ', ן: 'נ', ך: 'כ', ץ: 'צ' };
+const unfinal = (s) => String(s || '').replace(/[ףםןךץ]/g, (c) => FINALS[c]);
+
 // Address: a line spoken TO the viewer. Used only to exempt a line from the label
 // check, because an instruction asserts something whether or not it has a pronoun
 // in it. The verb pattern is the second person plural future, which is how Hebrew
@@ -153,8 +159,16 @@ export function rejectHook(text, { maxWords, minWords, banned = [], deliverable 
   const unfinished = trailsOff(s);
   if (unfinished) return unfinished;
 
+  // THE BANNED LIST, MATCHED THROUGH THE FINAL LETTERS.
+  //
+  // Hebrew writes five letters differently at the end of a word, so "מטורף" and
+  // "מטורפים" share no substring: the first ends in ף and the second has פ in the
+  // middle. A plain includes() therefore catches the singular clickbait word and
+  // misses every inflection of it, which is most of how it would actually be
+  // written. Both sides are normalised to the medial forms before comparing.
+  const plain = unfinal(s);
   for (const word of banned) {
-    if (s.includes(word)) return `uses "${word}", which is on the banned list`;
+    if (plain.includes(unfinal(word))) return `uses "${word}", which is on the banned list`;
   }
 
   // First or second person is allowed here where it is address rather than
@@ -417,17 +431,29 @@ export async function writtenCandidates({ format, vars = {}, deliverable = null,
     vars.alt ? `יעד להשוות אליו, מותר לנקוב: ${vars.alt}` : null,
     vars.hours ? `זמן טיסה מישראל, מתוך העמוד שלנו: ${vars.hours} שעות` : null,
     '',
-    'הקטגוריות, שורה אחת לכל אחת:',
+    `החזר ${want} שורות. מותר יותר מאחת מאותה קטגוריה.`,
+    '',
+    'הקטגוריות והדוגמאות:',
     ...[...byCategory.entries()].map(([id, c]) =>
       `- ${id} (${c.he}): בסגנון של ${c.examples.slice(0, 2).map((e) => `"${e}"`).join(' · ')}`
     ),
+    '',
+    // THE ONE INSTRUCTION THE FIRST VERSION WAS MISSING, and without it the model is
+    // right to do what it did: it was shown the filled templates as the standard and
+    // told to add no ideas of its own, so it returned the templates verbatim. The
+    // dedupe then dropped its lines in favour of the owner's copies, and the pool
+    // that was supposed to hold ten candidates held six.
+    //
+    // What is wanted is a different WORDING of the same shape, not a different idea.
+    'אל תחזור על הדוגמאות מילה במילה. כתוב ניסוח אחר של אותה תבנית: אותו סוג הבטחה,',
+    'מילים אחרות. אם אין לך ניסוח אחר שעומד בחוקים, החזר פחות שורות.',
   ]
     .filter((x) => x != null)
     .join('\n');
 
   const system = SYSTEM.replace(/\{MAXWORDS\}/g, String(cfg.maxWords))
     .replace(/\{COUNT\}/g, String(deliverable ?? places.length))
-    .replace(/\{COUNTOUT\}/g, String(Math.max(1, Math.min(want, byCategory.size))))
+    .replace(/\{COUNTOUT\}/g, String(Math.max(1, want)))
     .replace(/\{BANNED\}/g, cfg.banned.join(', '));
 
   try {
@@ -493,13 +519,33 @@ export async function writeGemHook({
       format,
       vars,
       deliverable,
-      // The written half is capped so the pool stays mostly owner-written: the
-      // templates are lines that worked and a model line is a variation on them.
-      want: Math.max(1, Math.round(cfg.candidates / 3)),
+      // ENOUGH TO FILL THE POOL TO `candidates`, which the brief puts at ten. The
+      // templates supply six on a reel, so the model is asked for the remaining four
+      // rather than for a fixed fraction: a format with fewer templates gets more
+      // written lines, which is the direction that keeps the pool the same size.
+      want: Math.max(1, cfg.candidates - templated.length),
     });
   }
 
-  const pool = [...written.lines, ...templated].slice(0, cfg.candidates);
+  // DEDUPLICATED BY TEXT, HIGHEST SCORE KEPT, and the first run needed it: the model
+  // filled the overlooked category with the exact sentence the template had already
+  // produced, so the approval card listed the chosen hook again as its own runner up
+  // with a lower score. The scores differed because a written line inherits only the
+  // category's weight, not the template's, which is correct and makes the duplicate
+  // look like a worse alternative to itself.
+  //
+  // The written copy is dropped rather than the template one, because a line that is
+  // already in post-config.json is a line the owner wrote.
+  const byText = new Map();
+  for (const cand of [...templated, ...written.lines]) {
+    if (!byText.has(cand.text)) byText.set(cand.text, cand);
+  }
+  // The written lines go first in the pool so they survive the candidate cap, which
+  // is the only reason to call the model at all: a pool that is all templates is what
+  // `--no-hook` already produces.
+  const pool = [...byText.values()]
+    .sort((a, b) => (a.from === 'written' ? -1 : 0) - (b.from === 'written' ? -1 : 0))
+    .slice(0, cfg.candidates);
 
   const scored = [];
   const rejected = [];
@@ -556,13 +602,14 @@ export async function writeGemHook({
  * exists to stop.
  */
 export function cheaperThan(cheap, dear, { margin = 0.2 } = {}) {
-  const of = (city) => {
-    const c = city?.dailyCost || city?.dailyBudget;
-    const mid = Number(c?.mid ?? c?.midRange ?? c?.budget);
-    return c?.currency && Number.isFinite(mid) && mid > 0 ? { currency: String(c.currency), mid } : null;
-  };
-  const a = of(cheap);
-  const b = of(dear);
+  // THROUGH dailyCostOf, NOT Number(mid). The first version of this read the figure
+  // the way costLine used to, and costLine turned out to have been returning null for
+  // every destination in the catalogue for the same reason: the site publishes `mid`
+  // as an object split by line item on 21 pages and `midRange` as a pair on 20, and
+  // Number() of either is NaN. So the gate on the one price claim in the hook pool
+  // would have refused every comparison that was actually true.
+  const a = dailyCostOf(cheap);
+  const b = dailyCostOf(dear);
   if (!a || !b || a.currency !== b.currency) return false;
-  return a.mid <= b.mid * (1 - margin);
+  return a.amount <= b.amount * (1 - margin);
 }

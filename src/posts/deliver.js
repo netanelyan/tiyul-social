@@ -151,7 +151,7 @@ export function promisedBy(titleHe) {
  */
 export function assertDelivers(post, { where = '' } = {}) {
   const cfg = postConfig().posts.deliver;
-  const audit = { promised: promisedBy(post?.titleHe), carries: specificsIn(post), ok: true, why: null };
+  const audit = { promised: promisedBy(post?.titleHe), carries: specificsIn(post), ok: true, why: null, reason: null };
   if (!cfg.on) return audit;
 
   const { counted, specifics } = audit.promised;
@@ -163,6 +163,7 @@ export function assertDelivers(post, { where = '' } = {}) {
     const items = (post?.slides || []).filter((s) => s.placeId || s.number || s.day).length;
     if (items && items < counted) {
       audit.ok = false;
+      audit.reason = 'overpromised_count';
       audit.why = `the cover promises ${counted} and the post has ${items} items`;
     }
   }
@@ -170,6 +171,7 @@ export function assertDelivers(post, { where = '' } = {}) {
   // A COVER THAT PROMISES THE PRACTICAL ANSWER. This is the 0.5% post.
   if (audit.ok && specifics && audit.carries.length < cfg.minSpecifics) {
     audit.ok = false;
+    audit.reason = 'undelivered_promise';
     audit.why =
       `the cover promises something practical and the slides carry ${audit.carries.length} concrete ` +
       `fact kind(s) (${audit.carries.join(', ') || 'none'}), needs ${cfg.minSpecifics}`;
@@ -179,10 +181,19 @@ export function assertDelivers(post, { where = '' } = {}) {
   return audit;
 }
 
+/**
+ * A post that does not keep its own promise.
+ *
+ * `reason` is the field the rest of this project's typed errors carry and the one the
+ * tests assert on: VoiceError has it, RejectedError has it, and a caller that wants
+ * to tell "promised twenty, has nine" from "promised the practical answer, has an
+ * opinion" needs to do it on something other than the English.
+ */
 export class DeliveryError extends Error {
   constructor(message, audit) {
     super(message);
     this.name = 'DeliveryError';
+    this.reason = audit?.reason || 'undelivered_promise';
     this.audit = audit;
   }
 }

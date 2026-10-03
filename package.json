@@ -34,6 +34,7 @@
     "redraw": "node scripts/redraw.js",
     "ig-subscribe": "node scripts/ig-subscribe.js",
     "post-lab": "node scripts/post-lab.js",
+    "gems-lab": "node scripts/gems-lab.js",
     "slide-lint": "node scripts/slide-lint.js"
   },
   "dependencies": {

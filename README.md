@@ -115,6 +115,78 @@ into a template.
 All of it, with the weights it justifies, is in `post-config.json` under
 `_posts_comment`.
 
+### And then the account's own numbers arrived, and moved the weights again
+
+The table above is somebody else's account. This one is ours, read off the app on
+3 Oct 2026, and it is now the governing evidence because it is this audience rather
+than a comparable one.
+
+| Post | Format | Views | Likes | Likes/view |
+|---|---|---:|---:|---:|
+| 3 יעדים שאנשים לא חושבים עליהם מספיק | 12s video | 197 | 12 | **6.1%** |
+| 4 יעדים שנראים כמו ציור | video | 474 | 18 | 3.8% |
+| נתנו לטוקיו 4.8, וזה למה | slideshow | 711 | 9 | 1.3% |
+| לפני שאתם מזמינים לסנטוריני, שתי דקות | slideshow | **1,993** | 9 | 0.5% |
+| other scenic slideshows | slideshow | 150-430 | 2-10 | 1-2.5% |
+
+**The slideshow out-reaches the reel four to one and the reel out-likes it twelve to
+one**, and the two halves of that sentence point in opposite directions, which is why
+neither number alone decides anything here.
+
+A view is the feed deciding to show the post. Both slideshows opened on a specific
+practical promise and that is what earned the reach: the single highest-reach post
+this account has published is a cover that says "two minutes before you book". A like
+is a person deciding they got something, and 0.5% says they did not. So the promise
+works and the payoff did not arrive, which is a fixable fault rather than a reason to
+stop making them.
+
+Three things changed as a result, and all three are config rather than code:
+
+- **Half the output is now the 12 second reel** - `formats.mix` in `post-config.json`,
+  a new block that decides how often each format is built at all. It fills the slots
+  the four daily counters already added up to, so the mix changed and the posting
+  volume did not.
+- **The slideshows keep a quarter of the output and have to earn it.** A cover that
+  promises the practical answer is now checked against the slides, and a post that
+  carries fewer than two kinds of concrete fact is refused rather than published. See
+  `src/posts/deliver.js`.
+- **Inside that quarter the verdict type leads**, at weight 20 against 13 for
+  everything else, because the two best-reaching posts this account has are both that
+  type under the two hooks that promise a specific practical thing.
+
+Fixing the payoff turned up the reason it was missing. The verdict post's own price
+line had been returning `null` for every destination in the catalogue since the day it
+was written: it read the site's `dailyCost.mid` as a number, and the site publishes it
+as `{transport, food, activities}` on 21 pages and as a `[low, high]` pair on 20.
+`Number()` of either is `NaN`. The post whose cover says "two minutes before you book"
+had never once carried a price, and nothing noticed, because a missing fact just makes
+a slide shorter.
+
+### The hidden gems reel
+
+Twelve seconds, 9:16, and the shape the table above asked for: a curiosity hook on
+screen from the first frame for three seconds, then three to five real moving shots
+with nothing on them but the place name in Hebrew. `src/video/hiddenGems.js`, built on
+the postcard reel's encode path rather than beside it.
+
+Two things make it different from the reel it is a refinement of. The holds are
+**solved for** rather than fixed, so three shots and five shots both land inside the 10
+to 15 second window instead of running 17 to 19. And the hook is **generated and
+scored**: `src/hooks/gems.js` produces ten candidates per post, six filled from
+templates in `post-config.json` and four written by the editorial model, and ranks them
+on specificity, curiosity and honesty.
+
+Honesty is a multiplier in that score rather than one term of three, and that is the
+0.5% post expressed as a line of code: a hook that the post cannot pay off does not
+become publishable by reading well. The mechanism is per category - each hook category
+declares which formats can DELIVER it, so a reel of place labels is offered the counted
+shapes and never "the mistake every Israeli makes in Georgia", because nothing in a run
+of stock footage is a mistake.
+
+`/gems` builds one. `/formats` prints the mix. `/report hooks` ranks hooks and formats
+by likes per view with the views beside them, and the weekly `/report` still leads on
+saves, because the two measure different things and the account needs both.
+
 ### The five post types
 
 Each is built from a tiyulplus.com destination page, so every fact on it is ours
@@ -742,7 +814,11 @@ separately, with its last error · `/usage` tokens and cost · `/igquota` ·
 stand one down · `/mix` topic balance · `/why` last run's rejections ·
 `/deck` build one now, `/deck Kyoto temple` name it · `/clip` build a clip now,
 `/clip 3` build three · `/shoot` a shot list to film now, `/shoot 3` three of
-them · `/pending` ·
+them · `/gems` build a hidden gems reel, `/gems nohook` with the template hooks
+only · `/formats` the mix the rotation builds, the slots a day and the recent
+run · `/reel 2` encode a waiting slideshow as one vertical video, leaving the
+carousel alone · `/report hooks` rank hooks and formats by likes per view ·
+`/views 1 1993 9` type a post's numbers in by hand · `/pending` ·
 `/queue` what is waiting, numbered, with destinations · `/next` publish the
 next · `/post 3` publish that one, out of turn · `/held` `/retry` `/clear_held`
 

@@ -435,34 +435,52 @@ const CURRENCY_HE = {
  * and the reader does the sum they were going to do anyway.
  */
 export function costLine(city) {
+  const cost = dailyCostOf(city);
+  if (!cost) return null;
+  const he = CURRENCY_HE[cost.currency] || cost.currency;
+  const n = (x) => Math.round(x).toLocaleString('en-US');
+
+  // The split shape says what it covers rather than implying a total: lodging is not
+  // among the line items on any page in the catalogue.
+  if (cost.shape === 'split') return `יום טיפוסי: כ-${n(cost.amount)} ${he} לאדם, בלי לינה`;
+  if (cost.shape === 'range') return `יום טיפוסי: ${n(cost.low)} עד ${n(cost.high)} ${he} לאדם`;
+  return `יום טיפוסי: כ-${n(cost.amount)} ${he} לאדם`;
+}
+
+/**
+ * What a day costs on this page, as a number, whichever way the page says it.
+ *
+ * ONE PARSER, BECAUSE THERE ARE THREE SHAPES AND TWO READERS. The slide line needs
+ * the figure formatted and the hook's price comparison needs it compared; both got
+ * it wrong independently, in the same way, by calling Number() on a thing that is
+ * not a number. See the note above costLine.
+ *
+ * `amount` is the single figure to compare on: the sum of the line items on a split
+ * page, and the midpoint of a published range. A midpoint may be PRINTED nowhere -
+ * the range prints as a range, because flattening it would claim a precision the
+ * source does not - but it is the right thing to rank two destinations by.
+ */
+export function dailyCostOf(city) {
   const c = city?.dailyCost || city?.dailyBudget;
   const currency = String(c?.currency || '').toUpperCase();
   if (!currency) return null;
-  const he = CURRENCY_HE[currency] || currency;
-  const n = (x) => Math.round(Number(x)).toLocaleString('en-US');
-
   const raw = c.mid ?? c.midRange ?? c.budget;
 
-  // The split shape. Summed, because the question on a slide is what a day costs
-  // and the page's own answer is these three added together. Lodging is not among
-  // them on any page, so the line says what it covers rather than implying a total.
   if (raw && !Array.isArray(raw) && typeof raw === 'object') {
     const parts = Object.values(raw).map(Number).filter((x) => Number.isFinite(x) && x > 0);
     if (!parts.length) return null;
-    const sum = parts.reduce((a, b) => a + b, 0);
-    return `יום טיפוסי: כ-${n(sum)} ${he} לאדם, בלי לינה`;
+    return { currency, shape: 'split', amount: parts.reduce((a, b) => a + b, 0) };
   }
 
-  // The range shape, printed as one.
   if (Array.isArray(raw)) {
     const [lo, hi] = raw.map(Number);
     if (Number.isFinite(lo) && Number.isFinite(hi) && lo > 0 && hi > lo) {
-      return `יום טיפוסי: ${n(lo)} עד ${n(hi)} ${he} לאדם`;
+      return { currency, shape: 'range', low: lo, high: hi, amount: (lo + hi) / 2 };
     }
-    if (Number.isFinite(lo) && lo > 0) return `יום טיפוסי: כ-${n(lo)} ${he} לאדם`;
+    if (Number.isFinite(lo) && lo > 0) return { currency, shape: 'one', amount: lo };
     return null;
   }
 
   const one = Number(raw);
-  return Number.isFinite(one) && one > 0 ? `יום טיפוסי: כ-${n(one)} ${he} לאדם` : null;
+  return Number.isFinite(one) && one > 0 ? { currency, shape: 'one', amount: one } : null;
 }

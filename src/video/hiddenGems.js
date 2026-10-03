@@ -9,6 +9,7 @@ import { findClips } from './pexels.js';
 import { clipPlaceLabel } from '../hashtags.js';
 import { gemsCaption } from '../hashtags.js';
 import { targetsForKind } from '../publish/targets.js';
+import { assertNoUrl } from '../format.js';
 import { writeGemHook } from '../hooks/gems.js';
 import { placesNamedSince } from '../store.js';
 
@@ -183,7 +184,11 @@ export async function buildHiddenGemsClip(
     const chosen = wantsBed ? (track ? { file: track, name: path.basename(track) } : pickTrack(new Set())) : null;
     const bed = chosen?.file || null;
     const audio = postConfig().clips.audio;
-    const seconds = clock;
+    // ROUNDED, because this number is printed. Three plus three holds of 3.2 is
+    // 12.600000000000001 in binary floating point, and the approval card read
+    // "12.600000000000001 שניות". It also reaches ffmpeg's -t, where the extra
+    // digits are noise in a log nobody can scan.
+    const seconds = Math.round(clock * 10) / 10;
 
     const args = ['-y', '-hide_banner', '-loglevel', 'error'];
     for (const [i, local] of files.entries()) {
@@ -404,7 +409,22 @@ export async function buildHiddenGemsCandidate({
     },
   };
 
-  cand.caption = gemsCaption(cand, { rand });
+  // THE DESCRIPTION, UNDER THE NAME THE PUBLISHER ACTUALLY READS.
+  //
+  // `src/publish/tiktok.js` sends `cand.tiktokCaption`, and the first version of this
+  // function set `cand.caption` instead - a field nothing reads, so the reel would
+  // have published with no description at all. Three names for one string, exactly as
+  // src/video/clip.js sets them, because the three platforms take the same words and
+  // a reader looking for the Instagram copy should not have to know that.
+  //
+  // assertNoUrl for the reason every other caption has it: the link lives in the bio
+  // and the caption says so in words. It throws, which is right - a description with
+  // an address in it is a post that has to be edited after it is live.
+  const caption = assertNoUrl(gemsCaption(cand, { rand }), 'the hidden gems description');
+  cand.caption = caption;
+  cand.tiktokCaption = caption;
+  cand.instagramCaption = caption;
+  cand.channelCaption = caption;
   return cand;
 }
 
