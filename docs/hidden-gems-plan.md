@@ -163,12 +163,19 @@ same as data. Nothing is published and none of the three ledgers is written to.
 
 Two things the first full run found, both now fixed:
 
-- **Five reels built in one sitting produce three.** The first three take every clip the
-  vision judge will commit to a place on, and the last two come back with `only 2 of 17
-  could be placed`. The candidate queue is ordered by title score, so a second reel in
-  the same ten minutes is working down the same list rather than looking somewhere else.
-  The live drip builds two a day, hours apart, and does not have this problem, so
-  `queries` defaults to the whole catalogue and only the lab slices it per reel.
+- **Five reels built in one sitting produce three**, and narrowing the search per reel
+  does not fix it. The first three take every clip the vision judge will commit to a
+  place on, and the last two come back with `only 2 of 17 could be placed`. Pointing
+  each reel at its own slice of `clips.search.queries` was the obvious fix and it was
+  measured twice: six searches each gave 3 of 5 with a different two failing, and
+  fifteen stepped per reel made the FIRST reel fail at 1 of 21 placed. Narrowing stops
+  the reels competing and also decides which part of the catalogue each is stuck with,
+  and the window that opens on the Greek island searches is almost all people walking
+  through streets, which the judge vetoes. Breadth is what makes a placeable clip
+  likely at all. So the lab searches everything, three of five is the honest answer to
+  how many can be built at once, and the drip builds two a day hours apart and never
+  asks. The `queries` parameter stays on the builder, where it is the right handle for
+  a `/gems` that names a region.
 - **A failed build used to cost the day a post.** Each per-kind counter incremented
   before its build and never rolled back. That was survivable when each counter was one
   post of four; with the gems reel at half the slots and the format that fails most, the

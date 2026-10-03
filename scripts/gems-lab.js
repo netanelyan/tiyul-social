@@ -67,26 +67,36 @@ let failed = 0;
 // the whole pool, which is why `queries` defaults to all of them. A lab that builds
 // five in ten minutes does, and the honest fix is to look somewhere else rather than
 // to report a format that cannot be built five times.
-// OVERLAPPING WINDOWS RATHER THAN EQUAL SLICES, and the first attempt at this is why.
-// Cutting thirty searches into five blocks of six gave each reel its own footage and
-// gave two of them nothing to work with: six searches is 60 to 100 candidates, the
-// vision judge commits to a place on maybe a sixth of them, and a sixth of that is
-// under the three a reel needs. A half-catalogue window stepped per reel keeps the
-// breadth and still points each reel somewhere else.
-const ALL_QUERIES = postConfig().clips.search.queries;
-const sliceFor = (i, of) => {
-  if (of <= 1) return null;
-  const size = Math.max(6, Math.ceil(ALL_QUERIES.length / 2));
-  const step = Math.max(1, Math.floor(ALL_QUERIES.length / of));
-  const from = (i * step) % ALL_QUERIES.length;
-  return Array.from({ length: size }, (_, k) => ALL_QUERIES[(from + k) % ALL_QUERIES.length]);
-};
+// THE WHOLE CATALOGUE FOR EVERY REEL, WHICH IS NOT WHAT THIS LAB TRIED FIRST.
+//
+// Five reels from one pool produce three: the first three take every clip the vision
+// judge will commit to a place on, and the last two come back with "only 2 of 17
+// could be placed". The obvious fix was to point each reel at its own slice of
+// clips.search.queries. It was tried twice and measured both times:
+//
+//   all 30 searches, five reels sharing    3 of 5 built
+//   six searches each, nothing shared      3 of 5, and a different two failed
+//   fifteen searches, stepped per reel     the FIRST reel failed, 1 of 21 placed
+//
+// The third row is the answer. Narrowing does stop the reels competing, and it also
+// decides which part of the catalogue each one is stuck with: the window that opens on
+// the Greek island searches comes back almost entirely as people walking through
+// streets, which the judge vetoes, so a reel pointed there has nothing at all rather
+// than a share of something. Breadth is what makes a placeable clip likely in the
+// first place, and sharing the pool costs less than being narrowed into the wrong part
+// of it.
+//
+// So the lab searches everything, as the drip does, and three of five is the honest
+// answer to "how many of these can be built in one sitting". The drip builds two a
+// day, hours apart, and never asks the question.
+//
+// `queries` stays a parameter on the builder. It is the right handle for a `/gems` that
+// names a region, and the montage shape already narrows for its own reasons.
 
 for (let i = 0; i < reels; i++) {
-  const queries = sliceFor(i, reels);
-  console.log(`--- reel ${i + 1} of ${reels}${queries ? ` · ${queries.length} searches` : ''} ---`);
+  console.log(`--- reel ${i + 1} of ${reels} ---`);
   try {
-    const cand = await buildHiddenGemsCandidate({ outDir, seen, write, queries });
+    const cand = await buildHiddenGemsCandidate({ outDir, seen, write });
     // Spent HERE, in memory, rather than in the store. The next reel of this run must
     // not be handed the same footage; the live account's ledger is none of a lab's
     // business. See the note at the top.
