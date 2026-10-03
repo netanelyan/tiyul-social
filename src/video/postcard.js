@@ -1,305 +1,214 @@
 import { spawn } from 'node:child_process';
 import { rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { ffmpegPath, clipOutputDir, download } from './overlay.js';
+import { ffmpegPath, clipOutputDir, download, measureClip, pickWindow } from './overlay.js';
 import { getBrowser } from '../render/index.js';
-import { frankRuhlDataUri, escapeHtml } from '../render/theme.js';
+import { assistantDataUri, escapeHtml } from '../render/theme.js';
 import { postConfig } from '../postConfig.js';
 import { pickTrack } from './tracks.js';
-import { planLegibility, pickGround } from '../render/legibility.js';
-import { hookShape, fill, assertNoExperience, assertNoFiller } from '../posts/voice.js';
-import { captionFollow } from '../hashtags.js';
+import { findClips } from './pexels.js';
+import { clipPlaceLabel } from '../hashtags.js';
 import { targetsForKind } from '../publish/targets.js';
+import { captionFollow } from '../hashtags.js';
 
-// THE FOURTH CLIP SHAPE: a counted postcard reel.
+// THE COUNTED POSTCARD REEL: a hook, then four places, each one a moving shot.
 //
-// THE REFERENCE, supplied by the owner as a video that "went well": seventeen seconds,
-// four destinations, one gorgeous shot each held for about four seconds with a slow
-// drift on it. The first frame carries a counted hook - "4 יעדים שנראים כמו ציור" - and
-// each shot after it carries the place's name and country in small warm-cream type,
-// placed off-centre on a quiet part of the frame. No boxes, no outline, no music video
-// cutting. The type is a caption on a photograph, not a title over it.
+// THE REFERENCE, which the owner described as "perfect other than the hook": seventeen
+// seconds, four destinations, one clip each held about four seconds. The first frames
+// carry a counted line and nothing else; once it clears, each shot carries the place's
+// name and country in small type. No boxes, no panel, no outline - a shadow and that is
+// all.
 //
-// WHY THIS SHAPE IS BUILT FROM STILLS AND THE OTHER THREE ARE BUILT FROM VIDEO.
+// THREE THINGS THIS GOT WRONG BEFORE, all reported together:
 //
-// This is the whole design decision and it is an honesty decision, not an aesthetic
-// one. The existing three shapes take Pexels stock video, and the comment at the top of
-// the `clips` block in post-config.json explains at length why their lines never name a
-// location: a stock clip's only evidence of where it was shot is an uploader's title,
-// so "מפלים באיסלנד" over a generic waterfall is a place claim with nothing behind it.
-// The format sidesteps the problem by never making the claim.
+//   IT WAS NOT A CLIP. The first version was a slow zoom on a still photograph, on the
+//   reasoning that a geotagged Commons file is provably of the place while stock video
+//   is not. The reasoning was sound and the result was a slideshow: "not a zoomed in
+//   picture, but a clip instead". Footage moves, and the movement is most of why the
+//   reference holds a viewer for seventeen seconds.
 //
-// This shape MAKES THE CLAIM. "לאוטרברונן, שווייץ" on the screen is the format - take
-// the names off and it is four pretty pictures with no reason to exist. So it cannot be
-// built from stock video, and it is built instead from the same Wikimedia Commons
-// photographs the five post types use, which are attached to a specific place on our
-// own destination pages and carry a credit and a licence. The place claim is then as
-// well-sourced as the one on a slide.
+//   THE TYPE WAS SET IN A SERIF. Frank Ruhl is the right face for the camera-roll
+//   cover, which is a title over a photograph. This is a caption burned into a video,
+//   and the app's own captions are a grotesque - "font is not the same font we use on
+//   tiktok". Assistant, like every other burned line in this project.
 //
-// WHAT IS LOST, AND WHY IT IS ALMOST NOTHING. A still is not footage. At seventeen
-// seconds, in a 9:16 frame, with a slow push across it, the difference between a drone
-// shot drifting over a valley and a 4000px photograph of the same valley being panned
-// is much smaller than it sounds - this is the Ken Burns effect and it has carried
-// documentaries for fifty years. What is genuinely lost is motion IN the scene: water
-// does not move. For a format whose subject is "places that look like a painting", a
-// still is arguably the honest medium.
+//   THE HOOK AND THE FIRST LABEL SHARED A FRAME. They stacked, which is two messages
+//   in the half second a viewer decides on. "first hook, then the places."
+//
+// HOW IT NAMES A PLACE HONESTLY NOW. Not by trusting the search. The clip is judged by
+// the same vision call the `cuts` shape has always used, and the label printed is the
+// judge's own answer - `clipPlaceLabel` - which is dropped entirely unless the judge was
+// confident. So the reel does not claim "this is Santorini because we searched for
+// Santorini"; it says what somebody looking at the frame was sure of, and a clip nobody
+// could place does not get into the reel at all.
 
-/** How long each destination is held, and how far the push travels. */
+/** How long each place is held, and how long the hook has the frame to itself. */
 const HOLD_SECONDS = 4;
-const PUSH = 1.12; // the zoom at the end of a shot; 1.0 would be a static image.
+const HOOK_SECONDS = 2.6;
 
 /**
- * One counted-postcard clip.
+ * One postcard reel from already-judged clips.
  *
- * `places` is [{ nameHe, countryHe, image: { src } }] - already photographed, already
- * sourced, in the order they should appear. `hookHe` is the counted line over the first
- * shot.
+ * `shots` is [{ src, duration, labelHe }] - the file, its length, and the line to burn
+ * on it. `hookHe` opens the reel alone.
  */
-export async function buildPostcardClip(places, { hookHe, id = 'postcard', outDir = clipOutputDir(), track = null } = {}) {
-  const shots = (places || []).filter((p) => p?.image?.src && p?.nameHe).slice(0, 6);
-  if (shots.length < 3) throw new Error(`a postcard clip needs three photographed places (got ${shots.length})`);
+export async function buildPostcardClip(shots, { hookHe, id = 'postcard', outDir = clipOutputDir(), track = null } = {}) {
+  const picked = (shots || []).filter((s) => s?.src && s?.labelHe).slice(0, 6);
+  if (picked.length < 3) throw new Error(`a postcard reel needs three placed clips (got ${picked.length})`);
 
   const cfg = postConfig().clips.video;
   const { width: w, height: h, fps, crf, preset } = cfg;
   const file = path.join(outDir, `clip-${id}.mp4`);
 
-  // THE TYPE, RENDERED IN CHROMIUM AND OVERLAID AS A PNG.
-  //
-  // Not drawn by ffmpeg. src/video/overlay.js refuses to let ffmpeg draw Hebrew and the
-  // reason is in that file: drawtext has no bidi support, so it lays Hebrew out left to
-  // right and the line comes out reversed. Every other shape here renders its text in
-  // the browser that already renders every slide, and so does this one.
-  // THE SAME CONTRAST GATE THE SLIDES USE, because a clip frame is a slide that moves.
-  //
-  // The type here is deliberately small, thin and un-outlined - that restraint is the
-  // format - and restraint over a sunlit square full of pale stone is illegible. So the
-  // block's own corner of each photograph is measured and the result decides how much
-  // help it gets: nothing over a dark frame, a soft scrim behind the words over a bright
-  // one. See src/render/legibility.js; this is the same escalation the label look gets,
-  // tuned softer because a hard panel would undo the look.
-  const plans = await planLegibility(
-    shots.map((shot) => ({ src: shot.image.src, box: BLOCK_BOX, lines: 3, floor: 0 }))
-  ).catch(() => shots.map(() => null));
-
-  const pngs = [];
-  for (const [i, shot] of shots.entries()) {
-    const png = path.join(outDir, `clip-${id}-label-${i}.png`);
-    // The hook rides the FIRST shot rather than a title card of its own. A title card
-    // is a slide, and a slide at the top of a video is where a viewer leaves; the
-    // reference puts its hook over the opening shot and lets the picture do the
-    // stopping.
-    await renderPostcardPng({
-      hookHe: i === 0 ? hookHe : null,
-      labelHe: label(shot),
-      width: w,
-      height: h,
-      file: png,
-      plan: plans[i] || null,
-    });
-    pngs.push(png);
-  }
-
-  // pickTrack takes the set of track NAMES already used, not an id. Passing the clip
-  // id made every clip draw from the full pool as though nothing had been used, which
-  // is not wrong so much as it is not the rotation the function exists to provide.
-  const chosen = track ? { file: track } : pickTrack(new Set());
-  const bed = chosen?.file || null;
-  const seconds = shots.length * HOLD_SECONDS;
-
-  // THE PHOTOGRAPHS, ON DISK.
-  //
-  // `image.src` is whatever the photo ladder produced, and for a Commons photograph
-  // that is a DATA URI - the renderer wants one, because an <img> with the bytes inline
-  // cannot fail to load halfway through a screenshot. ffmpeg wants a path, and handing
-  // it a 400KB base64 string as an input filename fails with ENAMETOOLONG, which is a
-  // confusing way to be told the obvious.
-  //
-  // So anything that is not already a local path is materialised first, and cleaned up
-  // in the `finally` below whether or not the render worked.
   const files = [];
-  for (const [i, shot] of shots.entries()) {
-    files.push(await materialise(shot.image.src, path.join(outDir, `clip-${id}-shot-${i}.jpg`)));
-  }
-
-  const args = ['-y', '-hide_banner', '-loglevel', 'error'];
-  // Each photograph as a looping single-frame input, held for its own span.
-  // ONE FRAME PER PHOTOGRAPH, and zoompan makes the rest.
-  //
-  // This was `-loop 1 -t 4 -i file`, which feeds zoompan 120 frames at 30fps - and
-  // zoompan's `d` is frames produced PER INPUT FRAME, not frames of output. So each
-  // shot became 120x120 frames, concat put them end to end, and `-t 16` cut the result
-  // sixteen seconds into the FIRST one. Every frame of the reel was Santorini.
-  //
-  // A single input frame and d=hold*fps gives exactly the span intended.
-  for (const f of files) args.push('-i', f);
-  for (const png of pngs) args.push('-i', png);
-  if (bed) args.push('-i', bed);
-
-  const n = shots.length;
-  const steps = [];
-  for (let i = 0; i < n; i++) {
-    // SCALE FIRST, THEN PUSH. zoompan operates on its input resolution, so zooming a
-    // 4000px photograph and then scaling produces a different result on every image
-    // depending on how big the original happened to be. Scaling to a fixed oversize
-    // frame first makes the motion identical for every shot, which is what makes the
-    // sequence read as one piece rather than as four clips.
-    //
-    // The push alternates direction by index. Four shots all drifting the same way is a
-    // tic a viewer notices by the third one.
-    const zoomIn = i % 2 === 0;
-    const z = zoomIn
-      ? `1+(${(PUSH - 1).toFixed(3)}*on/${HOLD_SECONDS * fps})`
-      : `${PUSH.toFixed(3)}-(${(PUSH - 1).toFixed(3)}*on/${HOLD_SECONDS * fps})`;
-    steps.push(
-      `[${i}:v]scale=${Math.round(w * 1.4)}:${Math.round(h * 1.4)}:force_original_aspect_ratio=increase,` +
-        `crop=${Math.round(w * 1.3)}:${Math.round(h * 1.3)},` +
-        `zoompan=z='${z}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${HOLD_SECONDS * fps}:s=${w}x${h}:fps=${fps},` +
-        `setsar=1[v${i}]`
-    );
-    // The label over it. The hook's PNG is held for the whole of the first shot, which
-    // is the one place the type is allowed to be the subject.
-    steps.push(`[v${i}][${n + i}:v]overlay=0:0:format=auto[l${i}]`);
-  }
-
-  // Concatenated rather than crossfaded. The reference cuts hard between destinations,
-  // and a crossfade between two still photographs reads as a screensaver.
-  steps.push(`${Array.from({ length: n }, (_, i) => `[l${i}]`).join('')}concat=n=${n}:v=1:a=0[vout]`);
-
-  args.push('-filter_complex', steps.join(';'), '-map', '[vout]');
-  if (bed) args.push('-map', `${2 * n}:a`, '-shortest', '-c:a', 'aac', '-b:a', '128k');
-  args.push(
-    '-c:v', 'libx264',
-    '-preset', preset,
-    '-crf', String(crf),
-    '-pix_fmt', 'yuv420p',
-    '-r', String(fps),
-    '-t', String(seconds),
-    file
-  );
+  const pngs = [];
 
   try {
+    // The footage, and where in each clip to start. pickWindow finds the part of a stock
+    // clip worth showing, which is rarely the first four seconds - those are usually the
+    // camera settling.
+    const starts = [];
+    for (const [i, shot] of picked.entries()) {
+      const local = path.join(outDir, `clip-${id}-src-${i}.mp4`);
+      await download(shot.src, local);
+      files.push(local);
+      starts.push(await pickWindow(local, shot.duration).catch(() => cfg.startAt || 0));
+    }
+
+    // THE TYPE, MEASURED AGAINST THE FRAME IT LANDS ON. measureClip samples the actual
+    // window being used, so a label over a bright sky gets more help than one over a
+    // forest - the same bargain every slide in this project makes.
+    const spots = [];
+    for (const [i, local] of files.entries()) {
+      spots.push(await measureClip(local, { startAt: starts[i], seconds: HOLD_SECONDS }).catch(() => null));
+    }
+
+    const hookPng = path.join(outDir, `clip-${id}-hook.png`);
+    await renderPostcardPng({ text: hookHe, hook: true, width: w, height: h, file: hookPng, spot: spots[0] });
+    pngs.push({ file: hookPng, from: 0, to: HOOK_SECONDS });
+
+    for (const [i, shot] of picked.entries()) {
+      const png = path.join(outDir, `clip-${id}-label-${i}.png`);
+      await renderPostcardPng({ text: shot.labelHe, hook: false, width: w, height: h, file: png, spot: spots[i] });
+      // The first label waits for the hook to clear. "first hook, then the places."
+      const from = i === 0 ? HOOK_SECONDS : i * HOLD_SECONDS;
+      pngs.push({ file: png, from, to: (i + 1) * HOLD_SECONDS });
+    }
+
+    const chosen = track ? { file: track } : pickTrack(new Set());
+    const bed = chosen?.file || null;
+    const seconds = picked.length * HOLD_SECONDS;
+
+    const args = ['-y', '-hide_banner', '-loglevel', 'error'];
+    for (const [i, local] of files.entries()) {
+      args.push('-ss', String(starts[i]), '-t', String(HOLD_SECONDS), '-i', local);
+    }
+    for (const p of pngs) args.push('-i', p.file);
+    if (bed) args.push('-i', bed);
+
+    const n = files.length;
+    const steps = [];
+    for (let i = 0; i < n; i++) {
+      // Fill the 9:16 frame from whatever the stock clip happens to be, exactly as
+      // burnCuts does: cover, then centre-crop. A pillarboxed shot is the loudest
+      // "this was not filmed for here" signal there is.
+      steps.push(
+        `[${i}:v]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},fps=${fps},setsar=1[v${i}]`
+      );
+    }
+    steps.push(`${Array.from({ length: n }, (_, i) => `[v${i}]`).join('')}concat=n=${n}:v=1:a=0[bg]`);
+
+    let chain = 'bg';
+    for (const [i, p] of pngs.entries()) {
+      const next = i === pngs.length - 1 ? 'vout' : `o${i}`;
+      steps.push(
+        `[${chain}][${n + i}:v]overlay=0:0:format=auto:enable='between(t,${p.from.toFixed(2)},${p.to.toFixed(2)})'[${next}]`
+      );
+      chain = next;
+    }
+
+    args.push('-filter_complex', steps.join(';'), '-map', '[vout]');
+    if (bed) args.push('-map', `${n + pngs.length}:a`, '-shortest', '-c:a', 'aac', '-b:a', '128k');
+    args.push('-c:v', 'libx264', '-preset', preset, '-crf', String(crf), '-pix_fmt', 'yuv420p', '-r', String(fps), '-t', String(seconds), file);
+
     await run(ffmpegPath(), args);
+    return { file, seconds, shots: picked.length, audio: Boolean(bed) };
   } finally {
-    for (const png of pngs) rmSync(png, { force: true });
+    for (const p of pngs) rmSync(p.file, { force: true });
     for (const f of files) rmSync(f, { force: true });
   }
-
-  return { file, seconds, shots: shots.length, audio: Boolean(bed) };
 }
 
 /**
- * A photograph as a file ffmpeg can open.
+ * One burned line, as a transparent PNG.
  *
- * Three cases, because the photo ladder produces all three: a data URI (Commons, the
- * common case), an http URL (stock), and an existing path (a re-render).
+ * NO BOX, NO BACKDROP BLUR, AND NO SHADOW SHAPED LIKE EITHER. The first version drew a
+ * soft radial behind the words to lift them off the footage; at the sizes involved it
+ * read as a grey smudge following the text around - "text has a strange shadow
+ * underneath it, which seems to be added unprofessionaly". It is exactly right: a scrim
+ * sized to a text block is a box with soft edges, and a box is what every reference this
+ * account is modelled on does without.
+ *
+ * What replaces it is what the references actually use: a tight drop shadow on the
+ * letterforms themselves, and - only when the footage genuinely cannot carry white type
+ * - a gradient running off the TOP of the frame. A gradient to a frame edge has no shape
+ * to notice, which is the whole reason the slides use one too.
  */
-async function materialise(src, dest) {
-  const s = String(src || '');
-  if (s.startsWith('data:')) {
-    const comma = s.indexOf(',');
-    writeFileSync(dest, Buffer.from(s.slice(comma + 1), 'base64'));
-    return dest;
-  }
-  if (/^https?:/i.test(s)) {
-    await download(s, dest);
-    return dest;
-  }
-  return s;
-}
-
-
-/**
- * The type for one postcard shot, as a transparent PNG the size of the frame.
- *
- * ITS OWN RENDERER RATHER THAN renderOverlayPng, and the reason is that the two formats
- * want opposite things. The clip overlay exists for the other three shapes: ONE line, a
- * mundane Israeli moment, set large and centred because the line IS the post and the
- * footage is wallpaper behind it. Reusing it here put a counted hook and a place name
- * into one centred block in a face sized for neither, and the result was a cramped
- * paragraph in the middle of a photograph of Prague.
- *
- * This format is the inverse: the PHOTOGRAPH is the post and the type is a caption on
- * it. So, following the reference the owner supplied:
- *
- *   SMALL. Around 4% of the frame width, which is roughly half what the other shapes
- *   set. Type this size cannot compete with the picture and is not trying to.
- *
- *   WARM CREAM, NOT WHITE, and no outline. A stroke is what a subtitle burner produces.
- *   The reference uses a pale warm tint with a soft shadow, which separates the type
- *   from the picture without drawing a line around every letter.
- *
- *   IN THE UPPER THIRD, flush to one side rather than centred. Centred type over a
- *   landscape reads as a title card; offset reads as a caption somebody placed.
- *
- *   THE SAME SERIF THE CAMERA-ROLL COVER USES. Frank Ruhl Libre - see the note above
- *   frankRuhlDataUri in render/theme.js. The two formats are the same editorial voice
- *   and they should not be set in two faces.
- */
-export async function renderPostcardPng({ hookHe, labelHe, width, height, file, plan = null }) {
+export async function renderPostcardPng({ text, hook = false, width, height, file, spot = null }) {
   const browser = await getBrowser();
   const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1, locale: 'he-IL' });
   const page = await context.newPage();
   try {
-    await page.setContent(postcardOverlayHtml({ hookHe, labelHe, width, height, plan }), { waitUntil: 'load' });
+    await page.setContent(postcardOverlayHtml({ text, hook, width, height, spot }), { waitUntil: 'load' });
     await page.evaluate(() => document.fonts.ready);
-    const buf = await page.screenshot({ type: 'png', omitBackground: true });
-    writeFileSync(file, buf);
+    writeFileSync(file, await page.screenshot({ type: 'png', omitBackground: true }));
     return file;
   } finally {
     await context.close().catch(() => {});
   }
 }
 
-// Where the block sits, as [x0, y0, x1, y1] fractions - the same contract TEXT_BOXES
-// uses, and the numbers below have to agree with the CSS that follows.
-const BLOCK_BOX = [0.18, 0.15, 0.94, 0.34];
+export function postcardOverlayHtml({ text, hook = false, width, height, spot = null }) {
+  // The hook is the one line that has to stop a thumb, so it is set larger. The labels
+  // are captions and stay small, which is what keeps the footage the subject.
+  const px = Math.round(width * (hook ? 0.058 : 0.042));
 
-export function postcardOverlayHtml({ hookHe = null, labelHe = '', width, height, plan = null }) {
-  const hookPx = Math.round(width * 0.052);
-  const labelPx = Math.round(width * 0.038);
-  // Half of what the gate asked for, floored at nothing and capped well below a panel.
-  // See the note on `.block::before` below.
-  const needed = Number(plan?.alpha);
-  const scrim = Number.isFinite(needed) && plan?.measured ? Math.min(0.5, Math.max(0, needed * 0.5)) : 0;
+  // How much the footage needs. `spot.contrast` is the ink against the block measured on
+  // the real frames, and the threshold is deliberately generous: on MOVING pictures the
+  // background under a word changes every frame, so a line that measures comfortably on
+  // the sampled frames can still flicker in and out of legibility across four seconds.
+  // A still only has to survive one background; this has to survive 120.
+  //
+  // An unmeasured clip gets the help too, for the same reason an unmeasured slide does -
+  // not knowing is the risky case, not the safe one.
+  const contrast = Number(spot?.contrast);
+  const a = !Number.isFinite(contrast)
+    ? 0.26
+    : contrast < 6 ? Math.min(0.5, (6 - contrast) / 7 + 0.16) : 0;
+
   return `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><style>
-@font-face { font-family: 'FrankRuhl'; src: url(${frankRuhlDataUri()}) format('truetype'); font-weight: 300 900; font-display: block; }
+@font-face { font-family: 'Assistant'; src: url(${assistantDataUri()}) format('truetype'); font-weight: 200 800; font-display: block; }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { width: ${width}px; height: ${height}px; background: transparent; overflow: hidden; }
-body { position: relative; font-family: 'FrankRuhl', serif; -webkit-font-smoothing: antialiased; }
-/* Upper third, flush to the trailing edge. In an RTL page that is the physical LEFT,
-   which is where the reference puts it - and getting this backwards would pin the words
-   against the edge the script starts from, which reads as an overflow rather than as a
-   placement. */
-.block { position: absolute; top: ${Math.round(height * 0.17)}px;
-         inset-inline-end: ${Math.round(width * 0.08)}px;
-         max-width: ${Math.round(width * 0.74)}px; text-align: end; }
-/* THE SCRIM, MEASURED. A soft radial behind the words and nothing else - no panel, no
-   rectangle, no visible edge. The alpha is what the gate says this photograph needs,
-   halved and capped, because the type also carries two shadows of its own and a scrim
-   sized as though it were the only defence would be a grey cloud over the picture. A
-   dark frame gets zero and the words simply sit on it, which is the look. */
-${scrim ? `.block::before { content: ''; position: absolute; inset: ${-Math.round(height * 0.03)}px ${-Math.round(width * 0.07)}px;
-          background: radial-gradient(ellipse at center, rgba(0,0,0,${scrim}) 0%, rgba(0,0,0,${(scrim * 0.5).toFixed(2)}) 52%, rgba(0,0,0,0) 100%);
-          z-index: -1; }` : ''}
-/* A soft shadow rather than a stroke, and two of them: a tight dark one for the edge of
-   each letter and a wide diffuse one to lift the whole block off a busy photograph. One
-   alone is not enough over foliage, which is most of what these pictures are. */
-.hook { font-size: ${hookPx}px; font-weight: 500; line-height: 1.24; color: #FBEFE4;
-        letter-spacing: -0.01em; text-wrap: balance;
-        text-shadow: 0 2px 10px rgba(0,0,0,.55), 0 0 ${Math.round(hookPx * 0.9)}px rgba(0,0,0,.4); }
-.label { font-size: ${labelPx}px; font-weight: 400; line-height: 1.3; color: #FBEFE4;
-         margin-top: ${hookHe ? Math.round(labelPx * 0.7) : 0}px; opacity: .96;
-         text-shadow: 0 2px 10px rgba(0,0,0,.55), 0 0 ${Math.round(labelPx * 0.9)}px rgba(0,0,0,.4); }
+body { position: relative; -webkit-font-smoothing: antialiased; }
+/* Only when the footage cannot carry the type, and anchored to the frame edge so there
+   is no shape to see. Never a panel behind the words. */
+${a ? `.lift { position:absolute; inset-inline:0; top:0; height:${Math.round(height * 0.46)}px;
+        background:linear-gradient(180deg, rgba(6,8,12,${a.toFixed(2)}) 0%, rgba(6,8,12,${(a * 0.5).toFixed(2)}) 48%, rgba(6,8,12,0) 100%); }` : ''}
+/* Upper third, centred, exactly where the reference puts it - clear of the search bar
+   at the top and of the caption and button rail at the bottom. */
+.line { position:absolute; top:${Math.round(height * 0.2)}px; inset-inline:${Math.round(width * 0.1)}px;
+        font-family:'Assistant', sans-serif; font-weight:${hook ? 800 : 700}; font-size:${px}px;
+        line-height:1.26; color:#fff; text-align:center; text-wrap:balance;
+        /* A tight shadow for the edge of each letter and one wider pass to lift the
+           block off a busy frame. Two passes, both soft: a hard offset reads as a
+           1990s word processor and a blur this size reads as depth. */
+        text-shadow: 0 2px 6px rgba(0,0,0,.55), 0 0 ${Math.round(px * 0.7)}px rgba(0,0,0,.4); }
 </style></head><body>
-<div class="block">
-  ${hookHe ? `<div class="hook">${escapeHtml(hookHe)}</div>` : ''}
-  ${labelHe ? `<div class="label">${escapeHtml(labelHe)}</div>` : ''}
-</div>
+${a ? '<div class="lift"></div>' : ''}
+<div class="line">${escapeHtml(text)}</div>
 </body></html>`;
 }
-
-/** "לאוטרברונן, שווייץ" - the reference's own label shape. */
-const label = (shot) => [shot.nameHe, shot.countryHe].filter(Boolean).join(', ');
 
 function run(bin, args) {
   return new Promise((resolve, reject) => {
@@ -309,121 +218,70 @@ function run(bin, args) {
       err += d.toString();
     });
     p.on('error', reject);
-    p.on('close', (code) =>
-      code === 0 ? resolve() : reject(new Error(`ffmpeg exited ${code}: ${err.slice(-600)}`))
-    );
+    p.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`ffmpeg exited ${code}: ${err.slice(-700)}`))));
   });
 }
 
 /**
  * One postcard reel, as an approvable candidate.
  *
- * FOUR DESTINATIONS, NOT FOUR PLACES IN ONE CITY, and that is the correction that
- * matters most about this format.
+ * THE PLACES ARE WHAT THE JUDGE COULD NAME, not what we went looking for. findClips
+ * searches the configured destination queries and puts every candidate past the vision
+ * call the `cuts` shape has always used; `clipPlaceLabel` prints the judge's answer and
+ * returns null unless it was confident. A clip nobody could place is simply not in the
+ * reel.
  *
- * The first version took one destination and used four places from its page. On Prague
- * that produced Charles Bridge, the Jewish Quarter, the castle and the Old Town Square -
- * four genuinely different places that, at four seconds each in a 9:16 frame, are four
- * shots of the same red roofs and the same river. The owner's verdict was exact: "shows
- * only 1 place and will not get numbers."
- *
- * The reference video is "4 יעדים שנראים כמו ציור" - four DESTINATIONS, in different
- * countries, and the cut between them is the whole effect. A viewer stays because each
- * shot is somewhere else; four angles on one old town gives them no reason to.
- *
- * So the pool is the catalogue, one shot per destination, and the hook counts
- * destinations. It also makes the format honest about what it is: a reason to look at
- * the site, which has pages for all four, rather than a tour of one city we would
- * rather someone read the itinerary for.
+ * ONE SHOT PER PLACE. Four angles on one city is four shots of the same city, which is
+ * what the Prague version was and why it "will not get numbers".
  */
-export async function buildPostcardCandidate(destOrRows, { outDir = clipOutputDir(), shots = 4, recent = [] } = {}) {
-  const { loadCity, listPlaces } = await import('../posts/source.js');
-  const { fillPostPhotos } = await import('../posts/photos.js');
-  const { readFileSync } = await import('node:fs');
+export async function buildPostcardCandidate({ outDir = clipOutputDir(), shots = 4, seen = new Set() } = {}) {
+  // findClips returns a report, not an array: { clips, vetoed, nowhere, ... }. The
+  // vetoed and nowhere lists are what make a failure explainable, so they are carried
+  // into the error below rather than thrown away.
+  const found = await findClips({ limit: 24, seen, judge: true });
+  const placed = [];
+  const places = new Set();
 
-  // A single row still works - it is what `/postcard פראג` asks for - and it seeds the
-  // reel rather than filling it.
-  const seed = Array.isArray(destOrRows) ? null : destOrRows;
-  const catalogue = JSON.parse(readFileSync(new URL('../../destinations.json', import.meta.url), 'utf8')).destinations;
-
-  const pool = Array.isArray(destOrRows)
-    ? destOrRows
-    : [seed, ...catalogue.filter((r) => r.siteSlug && r.id !== seed?.id)].filter(Boolean);
-
-  // One place per destination, and the destination is skipped if its best place has no
-  // photograph. There is no text-only version of a postcard.
-  const chosen = [];
-  const seen = new Set((recent || []).map((r) => String(r).toLowerCase()));
-  for (const row of pool) {
-    if (chosen.length >= shots) break;
-    const slug = row?.siteSlug || row?.id;
-    if (!slug || seen.has(String(row.he || '').toLowerCase())) continue;
-
-    const city = await loadCity(slug).catch(() => null);
-    if (!city) continue;
-
-    // SEVERAL CANDIDATES, AND THE BEST-LOOKING ONE WINS - but only one is used. A second
-    // shot of the same destination is the mistake this format was rebuilt to avoid.
-    //
-    // Taking the first photographed place put a municipal park BENCH in for Batumi,
-    // between Santorini at dusk and the Burj Khalifa. On a format whose entire premise
-    // is "look at this", one ordinary frame is the one a viewer leaves on. pickGround
-    // scores colour and midtone, which is as close to "striking" as a measurement gets,
-    // and it is already the scorer the deck uses to choose a ground.
-    const want = listPlaces(city, { want: 6, needPhoto: false }).slice(0, 6);
-    await fillPostPhotos(want, { dest: row?.en || city.name }).catch(() => null);
-    const shot = want.filter((p) => p.image?.src);
-    if (!shot.length) continue;
-    const best = shot.length > 1 ? await pickGround(shot.map((p) => p.image.src)).catch(() => null) : null;
-    const withPhoto = (best && shot.find((p) => p.image.src === best)) || shot[0];
-
-    chosen.push({
-      nameHe: row?.he || city.name,
-      countryHe: row?.country || city.countryHe || null,
-      image: withPhoto.image,
-      slug,
-    });
+  for (const c of found.clips || []) {
+    if (placed.length >= shots) break;
+    const labelHe = clipPlaceLabel({ vision: c.vision });
+    if (!labelHe) continue;
+    const key = String(c.vision?.place || '').toLowerCase();
+    if (!key || places.has(key)) continue;
+    places.add(key);
+    placed.push({ src: c.src, duration: c.duration, labelHe, id: c.id, credit: c.credit, page: c.page });
   }
 
-  if (chosen.length < 3) {
-    throw new Error(`only ${chosen.length} destination(s) had a usable photograph, and a postcard reel needs 3`);
+  if (placed.length < 3) {
+    throw new Error(
+      `only ${placed.length} clip(s) of ${(found.clips || []).length} could be placed confidently, and a postcard reel needs 3` +
+        (found.nowhere?.length ? ` - ${found.nowhere.slice(0, 3).join('; ')}` : '')
+    );
   }
 
-  const n = chosen.length;
-
-  // A HOOK THAT NAMES NO DESTINATION, because this reel is four of them.
-  //
-  // The shared pool's shapes all carry a {dest} slot - they were written for a post
-  // about one place - and filling it from the first destination produced "יוון ב-4
-  // תמונות" over Santorini, Reykjavik, Dubai and Batumi. One of those is in Greece. A
-  // hook that is false about three quarters of its own content is worse than a plain
-  // one, so the plain one is used and it counts, which is the part that matters: the
-  // reference works because "4 יעדים" tells a viewer exactly how long this is.
+  const n = placed.length;
+  // Counted, and naming no destination - the reel is several of them. See the note on
+  // the hook in the previous version: filling a {dest} slot from the first clip produced
+  // a line that was false about three quarters of its own content.
   const COUNTED = [
     `${n} יעדים ששווים את הטיסה`,
     `${n} יעדים לרשימה של השנה הבאה`,
     `${n} יעדים שאנשים לא חושבים עליהם מספיק`,
   ];
-  const counted = COUNTED[Math.abs([...chosen.map((c) => c.slug).join('')].reduce((a, c) => a + c.charCodeAt(0), 0)) % COUNTED.length];
-  assertNoExperience(counted, 'postcard hook');
-  assertNoFiller(counted, 'postcard hook');
+  const hookHe = COUNTED[Math.abs(placed.reduce((a, p) => a + p.id.charCodeAt(0), 0)) % COUNTED.length];
 
-  const id = `pc${Math.abs([...chosen.map((c) => c.slug).join('')].reduce((a, c) => (a * 31 + c.charCodeAt(0)) | 0, 7))
-    .toString(16)
-    .slice(0, 10)}`;
+  const id = `pc${Math.abs(placed.reduce((a, p) => (a * 31 + Number(p.id)) | 0, 7)).toString(16).slice(0, 10)}`;
+  const built = await buildPostcardClip(placed, { hookHe, id, outDir });
 
-  const built = await buildPostcardClip(chosen, { hookHe: counted, id, outDir });
-
-  const follow = captionFollow();
   return {
     kind: 'clip',
     id,
-    hook: counted,
-    headline: counted,
+    hook: hookHe,
+    headline: hookHe,
     hookWritten: false,
-    hookNote: 'postcard: one shot per destination, counted',
-    sourceName: `tiyulplus.com · ${chosen.map((c) => c.nameHe).join(', ')}`,
-    sourceUrl: null,
+    hookNote: 'postcard: counted, and the places are what the vision judge could name',
+    sourceName: `Pexels · ${[...new Set(placed.map((p) => p.credit).filter(Boolean))].join(', ') || 'unknown'}`,
+    sourceUrl: placed[0].page,
     pillar: 'day',
     tags: [],
     createdAt: new Date().toISOString(),
@@ -431,19 +289,18 @@ export async function buildPostcardCandidate(destOrRows, { outDir = clipOutputDi
     tiktokDraft: true,
     overrides: [],
     notes: [],
-    place: chosen.map((c) => c.nameHe).join(' · '),
-    siteSlug: chosen[0].slug,
+    place: placed.map((p) => p.labelHe).join(' · '),
     clip: {
       shape: 'postcard',
       file: built.file,
       audio: built.audio,
       seconds: built.seconds,
-      follow,
+      follow: captionFollow(),
       followAt: null,
       width: postConfig().clips.video.width,
       height: postConfig().clips.video.height,
-      postcardPlaces: chosen.map((c) => c.nameHe),
-      destinations: chosen.map((c) => c.slug),
+      postcardPlaces: placed.map((p) => p.labelHe),
+      pexelsIds: placed.map((p) => p.id),
     },
   };
 }

@@ -198,7 +198,7 @@ export async function lookup(titles, { width = 1440, timeoutMs = 20_000 } = {}) 
 }
 
 /** Bytes, as the data URI the renderer wants. Null on anything going wrong. */
-async function download(url, timeoutMs) {
+export async function download(url, timeoutMs = 20_000) {
   try {
     const res = await fetch(url, {
       headers: { 'user-agent': process.env.PLACES_USER_AGENT || 'tiyul-plus/1.0 (own content)' },

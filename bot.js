@@ -2131,63 +2131,17 @@ const spendClipFootage = (clips) => {
  * destination argument that means nothing to the other three.
  */
 bot.command('postcard', async (ctx) => {
-  const asked = (ctx.message.text || '').replace(/^\/postcard(@\S+)?\s*/, '').trim();
   const { buildPostcardCandidate, postcardApprovalMessage } = await import('./src/video/postcard.js');
-  const { resolveDestination, pickDestination } = await import('./src/plan/write.js');
 
-  const recent = store.recentPublished().slice(0, 12).map((p) => p.place);
-  const found = asked ? await resolveDestination(asked, { recent }) : null;
-  if (asked && !found) {
-    await ctx.reply(`❌ לא הצלחתי להבין איזה יעד זה: ${asked}`);
-    return;
-  }
-  const dest = found?.dest || pickDestination(recent);
-  if (!dest?.siteSlug) {
-    await ctx.reply(`❌ ל${dest?.he || 'יעד הזה'} אין עמוד באתר, וגלויות נבנות מהעמוד`);
-    return;
-  }
-
-  await ctx.reply(`⏳ בונה גלויות · ${dest.he}...`);
+  // NO DESTINATION ARGUMENT, and that is the format rather than a limitation. The reel's
+  // places are whatever the vision judge could name with confidence out of the day's
+  // footage - see buildPostcardCandidate. Asking for a destination would be asking for
+  // a claim the judge might not support.
+  await ctx.reply('⏳ בונה גלויות...');
   detach('גלויות', () =>
     forKind('clip', async () => {
-      const cand = await buildPostcardCandidate(dest);
-      await stage(cand);
-      await notify.send(bot.telegram, ctx.chat.id, postcardApprovalMessage(cand)).catch(() => {});
-    })
-  );
-});
-
-/**
- * A postcard reel, now.
- *
- * `/postcard` draws the next destination from the rotation; `/postcard פראג` names one.
- *
- * ITS OWN COMMAND RATHER THAN A SHAPE OF /clip, for the reason given at the top of
- * src/video/postcard.js: the three clip shapes are functions of a Pexels pool and this
- * one is a function of a destination page. `/clip postcard` would have to accept a
- * destination argument that means nothing to the other three.
- */
-bot.command('postcard', async (ctx) => {
-  const asked = (ctx.message.text || '').replace(/^\/postcard(@\S+)?\s*/, '').trim();
-  const { buildPostcardCandidate, postcardApprovalMessage } = await import('./src/video/postcard.js');
-  const { resolveDestination, pickDestination } = await import('./src/plan/write.js');
-
-  const recent = store.recentPublished().slice(0, 12).map((p) => p.place);
-  const found = asked ? await resolveDestination(asked, { recent }) : null;
-  if (asked && !found) {
-    await ctx.reply(`❌ לא הצלחתי להבין איזה יעד זה: ${asked}`);
-    return;
-  }
-  const dest = found?.dest || pickDestination(recent);
-  if (!dest?.siteSlug) {
-    await ctx.reply(`❌ ל${dest?.he || 'יעד הזה'} אין עמוד באתר, וגלויות נבנות מהעמוד`);
-    return;
-  }
-
-  await ctx.reply(`⏳ בונה גלויות · ${dest.he}...`);
-  detach('גלויות', () =>
-    forKind('clip', async () => {
-      const cand = await buildPostcardCandidate(dest);
+      const cand = await buildPostcardCandidate({ seen: clipFootageSeen() });
+      spendClipFootage([cand]);
       await stage(cand);
       await notify.send(bot.telegram, ctx.chat.id, postcardApprovalMessage(cand)).catch(() => {});
     })
@@ -2959,13 +2913,11 @@ let postcardsToday = 0;
 let postcardDay = null;
 let lastPostcardAt = 0;
 
-/** One postcard reel for the next destination in the rotation, staged for approval. */
+/** One postcard reel, staged for approval. Its places are whatever the judge could name. */
 const suggestPostcard = billed('clip', async function suggestPostcardJob(chatId = staging) {
   const { buildPostcardCandidate, postcardApprovalMessage } = await import('./src/video/postcard.js');
-  const { pickDestination } = await import('./src/plan/write.js');
-  const dest = pickDestination(store.recentPublished().slice(0, 12).map((p) => p.place));
-  if (!dest?.siteSlug) return null;
-  const cand = await buildPostcardCandidate(dest);
+  const cand = await buildPostcardCandidate({ seen: clipFootageSeen() });
+  spendClipFootage([cand]);
   await stage(cand);
   await notify.send(bot.telegram, chatId, postcardApprovalMessage(cand)).catch(() => {});
   return cand;

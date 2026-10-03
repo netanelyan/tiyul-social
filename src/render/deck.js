@@ -221,10 +221,22 @@ export async function renderDeckSize(deck, { size = 'tiktok', outDir = cardOutpu
       // configured column, in the upper or the lower band. The measurement
       // still chooses between them and still chooses the colour — what it no
       // longer gets to do is put the type across the middle of the picture.
+      // THE LOWER BAND ONLY. A deck slide is a photograph with a TITLE on it, and a
+      // title is at the bottom - that is what makes six slides read as one set rather
+      // than as six captions that each landed somewhere different.
+      //
+      // The upper band was there so the placement search could dodge a busy foreground,
+      // and it worked: about half the slides came out with the type in the top third.
+      // The cost was that the bottom-up gradient behind the text could only be a title
+      // treatment on half of them, and on the other half it had to anchor to the top
+      // instead - so the same deck carried two arrangements and looked it.
+      //
+      // The search still chooses WHERE in the lower band and which side, which is where
+      // most of its value was anyway.
       confine: {
         x: postConfig().overlay.x,
         width: postConfig().overlay.width,
-        bands: [postConfig().overlay.bands.upper, postConfig().overlay.bands.lower],
+        bands: [postConfig().overlay.bands.lower],
       },
       // Where the background is. The pixel heuristic could not tell sky from a
       // snowfield — see the note in images/textbox.js — so the semantic half of

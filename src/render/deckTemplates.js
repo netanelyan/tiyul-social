@@ -765,21 +765,29 @@ function assistTag(spot, { w, h }, blockH) {
   // because it runs off the frame. It is what a graduated filter does on a photograph
   // and what sits under every streaming service's hero title.
   const tint = spot?.onDark === false ? '255,255,255' : '0,0,0';
-  // With no spot the block's own position is unknown too. The lower band is where the
-  // placement search puts type on most photographs and where both styles default, so a
-  // bottom-anchored gradient is the one that covers it.
-  const fromTop = Number.isFinite(spot?.y) ? spot.y < 0.5 : false;
+  // ALWAYS FROM THE BOTTOM. The placement search is confined to the lower band (see
+  // render/deck.js), so the gradient rises from the foot of the frame to just above the
+  // type every time - which is what makes it read as a title rather than as a patch that
+  // moved. It also means a slide with no measurement gets the same arrangement as one
+  // with, so the set is uniform whatever the network did.
 
   // Tall enough to clear the block with room either side, so the gradient is still
   // fading where the type ends rather than stopping at it.
-  const height = Math.round(h * Math.min(0.62, Math.max(0.4, (blockH || 0.12) * 2.6 + 0.26)));
-  const a = treatment.alpha;
+  // Tall enough to start fading well above the type, so the words sit in the settled
+  // part of the gradient rather than in the part that is still changing.
+  const top = Math.max(0, (spot?.y ?? 0.7) - (blockH || 0.12) - 0.16);
+  const height = Math.round(h * (1 - top));
+
+  // NEVER FULLY OPAQUE. "opacity is not full" - a gradient that reaches 1 at the frame
+  // edge is a black bar with a photograph above it, and the point of a title treatment
+  // is that the picture keeps going underneath. Capped, and the measured alpha moves
+  // inside the cap.
+  const a = Math.min(0.78, treatment.alpha);
 
   return (
-    `<div class="assist" style="left:0;width:${w}px;height:${height}px;` +
-    `${fromTop ? 'top:0' : `top:${h - height}px`};border-radius:0;` +
-    `background:linear-gradient(${fromTop ? '180deg' : '0deg'}, rgba(${tint},${a.toFixed(3)}) 0%, ` +
-    `rgba(${tint},${(a * 0.66).toFixed(3)}) 42%, rgba(${tint},0) 100%)"></div>`
+    `<div class="assist" style="left:0;width:${w}px;height:${height}px;top:${h - height}px;border-radius:0;` +
+    `background:linear-gradient(0deg, rgba(${tint},${a.toFixed(3)}) 0%, ` +
+    `rgba(${tint},${(a * 0.72).toFixed(3)}) 34%, rgba(${tint},${(a * 0.3).toFixed(3)}) 68%, rgba(${tint},0) 100%)"></div>`
   );
 }
 

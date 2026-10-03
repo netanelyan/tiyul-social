@@ -8,7 +8,7 @@ import { findImage } from '../images.js';
 import * as unsplash from '../images/unsplash.js';
 import * as pexels from '../images/pexels.js';
 import { pickCinematic, cinematicQueries } from '../images/curate.js';
-import { nearby } from '../images/commons.js';
+import { nearby, download as commonsDownload } from '../images/commons.js';
 import { SIZES } from '../render/deckTemplates.js';
 import { destinationPlaces, pick, slugFromUrl } from '../sources/tiyulplus.js';
 import { coverForDeck } from './ideas.js';
@@ -734,10 +734,20 @@ async function sourcedImage({ nameEn, where, used, at = null }) {
   // only proxy available without another call per file; at this radius every result is
   // the right subject, so the remaining question is only which is worth looking at.
   const pick = fresh.sort((a, b) => (b.width || 0) * (b.height || 0) - (a.width || 0) * (a.height || 0))[0];
+
+  // FETCHED, NOT LINKED. The renderer measures every photograph by drawing it to a
+  // canvas and reading the pixels back, and a canvas that has drawn a CROSS-ORIGIN image
+  // is tainted - getImageData throws a SecurityError and takes the whole deck down with
+  // it. Every other image path in this project hands the renderer a data URI for exactly
+  // this reason; leaving a Commons thumbnail as an https URL was the one that did not,
+  // and it failed the build rather than the slide.
+  const inlined = await commonsDownload(pick.src).catch(() => null);
+  if (!inlined) return null;
+
   used.add(`commons:${pick.title}`);
 
   return {
-    src: pick.src,
+    src: inlined,
     credit: pick.credit,
     page: pick.page,
     width: pick.width,

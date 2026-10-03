@@ -276,6 +276,14 @@ export function clipPexelsIds(cand) {
     return [...new Set(cuts.map((c) => c?.pexelsId).filter(Boolean).map(String))];
   }
 
+  // A postcard reel spends one clip per place, recorded as a flat list - the same
+  // problem a cuts clip has and the same answer. Without this the reel would record
+  // nothing and re-offer all four of its clips tomorrow.
+  const postcard = cand.clip?.pexelsIds;
+  if (Array.isArray(postcard) && postcard.length) {
+    return [...new Set(postcard.filter(Boolean).map(String))];
+  }
+
   const direct = cand.clip?.pexelsId;
   if (direct) return [String(direct)];
   // Clips built before `clip.pexelsId` existed used the Pexels id AS the
