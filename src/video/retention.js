@@ -393,17 +393,22 @@ function capture(bin, args) {
  *   hook, full size   the upper third, exactly where the postcard puts it. Unchanged.
  *   open loop         under the hook, two thirds the size. It is a subordinate clause
  *                     of the same sentence and reads as one.
- *   header            11% from the top. Clear of TikTok's own search bar, which is
- *                     why the full-size hook sits at 20% and not higher, and small
- *                     enough that it is furniture rather than a second message.
+ *   header            16% from the top, which is the first row this project treats as
+ *                     safe: measureClip excludes the top 300px of 1920 from every
+ *                     placement decision it makes, so 11% was inside the band the
+ *                     measurement itself calls unusable. 16% clears it by seven
+ *                     pixels and still reads as furniture rather than a message.
  *   counter           just under the header, centred, bold. Its own line because
- *                     "2/3" beside a sentence reads as part of the sentence.
- *   place name        the LOWER band, 68%, which is where this project's own `label`
+ *                     "2/3" beside a sentence reads as part of the sentence. It sits
+ *                     in the band the full-size hook used, which is free by then:
+ *                     the hook card and the place cards are never on screen together.
+ *   place name        the LOWER band, 66%, which is where this project's own `label`
  *                     slide look puts a place name. It moved down because the top is
  *                     now occupied, and it moved to a position the house style
  *                     already uses rather than to a new one.
- *   question          under the place name, at 76%, inside the bottom safe area the
- *                     measurement already excludes for the caption rail.
+ *   question          under the place name at 74%, which with its line height ends
+ *                     above the 400px bottom exclusion the same measurement applies
+ *                     for TikTok's caption and button rail.
  */
 export function retentionCardHtml({ card, width, height, spot = null }) {
   const big = Math.round(width * 0.058);
@@ -438,12 +443,12 @@ ${a ? `.liftLow { position:absolute; inset-inline:0; bottom:0; height:${Math.rou
 .hook { top:${Math.round(height * 0.2)}px; font-weight:800; font-size:${big}px; line-height:1.26; ${shadow(big)} }
 .loop { top:${Math.round(height * 0.2 + big * 1.26 * 2 + big * 0.5)}px; font-weight:700; font-size:${loop}px;
         line-height:1.3; opacity:.95; ${shadow(loop)} }
-.header { top:${Math.round(height * 0.11)}px; font-weight:700; font-size:${header}px; line-height:1.25;
+.header { top:${Math.round(height * 0.16)}px; font-weight:700; font-size:${header}px; line-height:1.25;
           opacity:.92; ${shadow(header)} }
-.counter { top:${Math.round(height * 0.11 + header * 1.25 * 2 + header * 0.35)}px; font-weight:800;
+.counter { top:${Math.round(height * 0.16 + header * 1.25 * 2 + header * 0.35)}px; font-weight:800;
            font-size:${counter}px; letter-spacing:.02em; ${shadow(counter)} }
-.label { top:${Math.round(height * 0.68)}px; font-weight:700; font-size:${label}px; line-height:1.25; ${shadow(label)} }
-.ask { top:${Math.round(height * 0.76)}px; font-weight:800; font-size:${ask}px; line-height:1.25; ${shadow(ask)} }
+.label { top:${Math.round(height * 0.66)}px; font-weight:700; font-size:${label}px; line-height:1.25; ${shadow(label)} }
+.ask { top:${Math.round(height * 0.74)}px; font-weight:800; font-size:${ask}px; line-height:1.25; ${shadow(ask)} }
 </style></head><body>
 ${a && (card.big || card.headerHe || card.counterHe) ? '<div class="lift"></div>' : ''}
 ${a && (card.labelHe || card.questionHe) ? '<div class="liftLow"></div>' : ''}
