@@ -175,7 +175,51 @@ failing: on those mornings every placed shot scored the same on every measure, s
 comparative claim could be ordered and the only honest loop left is the one that
 promises an end and nothing about which item wins.
 
-### 0.7 What is still unknown
+### 0.7 Why the reels were never arriving, which was a different problem
+
+The retention work went live and the owner's next question was why the suggestions
+were never the format they like. The live log answered it:
+
+```
+hidden_gems_video suggestion failed: only 2 clip(s) of 10 could be placed
+postcard  suggestion failed: only 1 clip(s) of 9  could be placed confidently
+```
+
+Both reel formats need three placed clips. They were getting one or two, every run,
+so the reel slots produced nothing and the day's output was whatever else could
+build: a news card, a narrated guide, a slideshow. Those three were exactly what was
+sitting in staging.
+
+**The cause was not the footage pool.** Measured on the box: 88 candidates past the
+cheap gates, 24 judged, 20 past the destination gate, 16 labelled with a place, and
+**six distinct places, every one of them in Greece**. Thirty-eight of the forty-four
+queries were never looked at, because the queue was ranked by title score alone and
+the whole judging budget went to whichever two or three queries word their titles
+best.
+
+A reel needs three *different* places. A judging pass that spends itself inside one
+country starves the format however many candidates the search returned.
+
+| | before | after |
+|---|---|---|
+| queue order | title score alone | **interleaved by query**: best of each, then second of each |
+| distinct places found | 6, all Greek | **9**, across Japan, Italy, Greece and Cyprus |
+| queries | 26 | 44, adding every country `clips.places` can already spell |
+| pages per query | 2, hardcoded | 2, now configurable, after 4 was tried and rate limited |
+
+Two things that went wrong on the way and are worth keeping:
+
+- **Four pages returned fewer clips than two.** 44 queries by 4 pages is 176 requests
+  per build and Pexels throttles; `findClips` breaks out of a query's page loop on the
+  first error, so the deeper search came back smaller. It also works out at 21,000
+  requests a month against a free tier. The arithmetic is now in the config beside the
+  number.
+- **The raw pool was never short.** Two pages across the query list returns 1,504
+  candidates with the 81 spent clips already excluded. Adding queries helped because
+  the new ones name distinctive places the judge can confirm, not because there was a
+  shortage.
+
+### 0.8 What is still unknown
 
 **Whether it works.** Everything above is an argument from one post's analytics, and
 the goal the brief set, 60% watch ratio and 30% completion, is a target rather than a
