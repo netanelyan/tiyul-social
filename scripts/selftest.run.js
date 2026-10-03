@@ -8863,6 +8863,26 @@ group('retention - 3.1 seconds of 12 is where the hook used to disappear');
   eq('a bare country cannot be measured for surprise', shotMeasure({ labelHe: 'יוון' }, 'surprise'), null);
   ok('and can be for beauty', shotMeasure({ labelHe: 'יוון', vision: { destination: 8 } }, 'beauty') === 8);
 
+  // THE MEASURES ARE CHECKED AGAINST THE RECORD THE PIPELINE ACTUALLY BUILDS, not
+  // against a hand-made one. Both beauty loops were dead code in production for a
+  // commit because sortShots built its shot without the judge's verdict on it, and
+  // every test here passed: the fixtures carried a vision object and the real data did
+  // not. A test that invents its own input is right about the function and can be
+  // wrong about everything else.
+  {
+    const { sortShots } = await import('../src/video/hiddenGems.js');
+    const judged = [
+      { id: '1', src: 'a', duration: 20, rank: 9, vision: { place: 'Switzerland', site: 'Lauterbrunnen', destination: 9 } },
+      { id: '2', src: 'b', duration: 20, rank: 7, vision: { place: 'Georgia', site: 'Ushguli', siteHe: 'אושגולי', destination: 8 } },
+      { id: '3', src: 'c', duration: 20, rank: 8, vision: { place: 'Greece', site: 'Meteora', destination: 7 } },
+    ];
+    const real = sortShots(judged, { want: 5, floor: 3 }).placed;
+    ok('a shot off the real path can be measured for beauty',
+      real.every((s) => shotMeasure(s, 'beauty') != null), JSON.stringify(real.map((s) => s.vision?.destination)));
+    ok('and for surprise', real.every((s) => shotMeasure(s, 'surprise') != null));
+    ok('and carries the rank the opening order needs', real.every((s) => Number.isFinite(s.rank)));
+  }
+
   // WHICH LOOPS ARE OFFERED IS A QUESTION ABOUT THE SHOTS, not about the words.
   const offered = new Set();
   for (let i = 0; i < 12; i++) {
