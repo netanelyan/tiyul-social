@@ -67,12 +67,18 @@ let failed = 0;
 // the whole pool, which is why `queries` defaults to all of them. A lab that builds
 // five in ten minutes does, and the honest fix is to look somewhere else rather than
 // to report a format that cannot be built five times.
+// OVERLAPPING WINDOWS RATHER THAN EQUAL SLICES, and the first attempt at this is why.
+// Cutting thirty searches into five blocks of six gave each reel its own footage and
+// gave two of them nothing to work with: six searches is 60 to 100 candidates, the
+// vision judge commits to a place on maybe a sixth of them, and a sixth of that is
+// under the three a reel needs. A half-catalogue window stepped per reel keeps the
+// breadth and still points each reel somewhere else.
 const ALL_QUERIES = postConfig().clips.search.queries;
 const sliceFor = (i, of) => {
   if (of <= 1) return null;
-  const size = Math.ceil(ALL_QUERIES.length / of);
-  const from = (i * size) % ALL_QUERIES.length;
-  // Wrapped, so the last slice is a full one rather than whatever is left over.
+  const size = Math.max(6, Math.ceil(ALL_QUERIES.length / 2));
+  const step = Math.max(1, Math.floor(ALL_QUERIES.length / of));
+  const from = (i * step) % ALL_QUERIES.length;
   return Array.from({ length: size }, (_, k) => ALL_QUERIES[(from + k) % ALL_QUERIES.length]);
 };
 
