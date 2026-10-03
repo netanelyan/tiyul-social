@@ -206,6 +206,18 @@ price at all.
    `src/video/postcard.js` and `clips.cuts`, is that this account never states where
    footage was shot on the strength of a search query. So an unplaceable clip is used for
    the hook shot, which makes no location claim, and never for a labelled one.
+3a. **The fortnight rule is a preference rather than a refusal**, which is the one place
+   this work does not take the brief literally. "Do not repeat a destination posted in
+   the last 14 days" as a hard filter can stop the lead format being built at all: a
+   live morning's search yields one to five placeable clips, so reserving a fortnight of
+   names is the difference between a post and nothing on more days than is comfortable,
+   and the dry run hit exactly that. Both precedents in this codebase overrule it and
+   hard rule 1 says they win: `drawWeighted` falls back to its full pool because
+   "refusing to build is a worse answer than repeating the oldest of them", and
+   `pickTrack` falls back to every track because "publishing silence to avoid a repeat
+   is the wrong way round". So fresh places come first always, a place inside the window
+   returns only to reach the minimum shot count, oldest first, never for a fourth or
+   fifth shot, and every one of those decisions is printed on the approval card.
 4. **The price comparison category is allowed only with a published number behind it.**
    `נראה כמו שוויץ, עולה חצי` is a cost claim. `clips.hooks` has a standing ban on the
    price comparison template, written after it failed, so the comparison category ships

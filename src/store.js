@@ -565,12 +565,19 @@ export function notePlacesNamed(labels, { at = Date.now() } = {}) {
   save();
 }
 
-/** The labels named within the window, as a Set, newest first is irrelevant here. */
+/**
+ * The labels named within the window, with WHEN, as a Map.
+ *
+ * A Map rather than a Set because the caller needs to rank them. The fortnight rule
+ * is a preference rather than a refusal - see the note in sortShots - and a reel that
+ * has to reuse a place should reuse the one named longest ago, which is a question a
+ * Set cannot answer.
+ */
 export function placesNamedSince(days = 14, { now = Date.now() } = {}) {
   const cutoff = now - Math.max(0, days) * 86_400_000;
-  const out = new Set();
+  const out = new Map();
   for (const [label, ts] of Object.entries(state.placesNamed || {})) {
-    if (Number(ts) >= cutoff) out.add(label);
+    if (Number(ts) >= cutoff) out.set(label, Number(ts));
   }
   return out;
 }

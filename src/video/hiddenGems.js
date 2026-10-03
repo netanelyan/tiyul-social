@@ -274,8 +274,9 @@ function run(bin, args) {
  * Everything filtered out becomes a spare, and the spares are useful rather than
  * waste: the hook's shot carries no place name, so it needs no evidence for one.
  */
-export function sortShots(clips, { seenPlaces = new Set(), want = 5, strongestLast = true } = {}) {
-  const placed = [];
+export function sortShots(clips, { seenPlaces = new Map(), want = 5, floor = 3, strongestLast = true } = {}) {
+  const fresh = [];
+  const stale = [];
   const spare = [];
   const places = new Set();
   const skipped = [];
@@ -291,23 +292,58 @@ export function sortShots(clips, { seenPlaces = new Set(), want = 5, strongestLa
       spare.push(c);
       continue;
     }
-    if (seenPlaces.has(labelHe)) {
-      skipped.push(`${labelHe} was named in the last fortnight`);
-      spare.push(c);
-      continue;
-    }
-    if (placed.length >= want) {
-      spare.push(c);
-      continue;
-    }
     places.add(key);
-    placed.push({ src: c.src, duration: c.duration, labelHe, id: c.id, credit: c.credit, page: c.page, rank: c.rank ?? null });
+    const shot = { src: c.src, duration: c.duration, labelHe, id: c.id, credit: c.credit, page: c.page, rank: c.rank ?? null };
+    // `seenPlaces` may be a Map of label -> when, or a Set with no timestamps. A Set
+    // means every entry is equally old, which ranks them all at 0 and is the right
+    // reading: without a time the only honest order is the order they arrived in.
+    const namedAt = seenPlaces.get?.(labelHe) ?? (seenPlaces.has(labelHe) ? 0 : null);
+    if (namedAt == null) fresh.push(shot);
+    else stale.push({ ...shot, namedAt });
   }
+
+  // THE FORTNIGHT RULE IS A PREFERENCE, AND THIS PROJECT HAS SETTLED THAT TWICE.
+  //
+  // The brief says not to repeat a destination posted in the last 14 days, and taken
+  // as a refusal that is a rule which can stop the lead format being built at all:
+  // the reel needs three places a vision judge will commit to, the recognizable pool
+  // from the configured searches is perhaps fifty names, and at two reels a day a
+  // fortnight reserves a real fraction of it. Measured on a live search, a single
+  // morning's pool yields one to five placeable clips - so the reserved names are the
+  // difference between a post and nothing on more days than is comfortable.
+  //
+  // Both precedents in this codebase point the same way. drawWeighted falls back to
+  // the full pool when its exclusions empty it, because "refusing to build is a worse
+  // answer than repeating the oldest of them". pickTrack falls back to every track,
+  // because "returning null and publishing silence to avoid a repeat is the wrong way
+  // round". This is the same shape of question and it gets the same answer.
+  //
+  // So: fresh places first, always. A place named inside the window comes back only
+  // to reach the floor, OLDEST FIRST, and it is recorded in `skipped` either way -
+  // the ones that were held back when there was no need, and the ones that had to be
+  // reused. The approval card prints them, because a repeat the owner cannot see is
+  // the one thing worse than a repeat.
+  const placed = [...fresh];
+  if (placed.length < floor && stale.length) {
+    const byAge = [...stale].sort((a, b) => a.namedAt - b.namedAt);
+    for (const shot of byAge) {
+      if (placed.length >= floor) break;
+      placed.push(shot);
+      skipped.push(`${shot.labelHe} was named in the last fortnight and is back, to reach ${floor} places`);
+    }
+  }
+  for (const shot of stale) {
+    if (!placed.includes(shot)) skipped.push(`${shot.labelHe} was held back, named in the last fortnight`);
+  }
+  // Whatever is over the ceiling is a spare rather than a shot, which is also what
+  // feeds the hook its unlabelled clip.
+  const over = placed.slice(want);
+  const kept = placed.slice(0, want);
 
   // findClips returns best first, so reversing puts the best last. The last frame
   // of a twelve second reel is what somebody is looking at while they decide
   // whether to watch it again.
-  return { placed: strongestLast ? placed.slice().reverse() : placed, spare, skipped };
+  return { placed: strongestLast ? kept.slice().reverse() : kept, spare: [...spare, ...over], skipped };
 }
 
 /**
@@ -344,6 +380,10 @@ export async function buildHiddenGemsCandidate({
   const { placed, spare, skipped } = sortShots(found.clips || [], {
     seenPlaces,
     want: gems.shots.max,
+    // The floor the fortnight rule may be relaxed to reach, and no further: a reel
+    // that can be built from four fresh places is built from four, and the fifth is
+    // never a repeat for the sake of a longer reel.
+    floor: gems.shots.min,
     strongestLast: gems.strongestLast,
   });
 
@@ -459,6 +499,16 @@ export function hiddenGemsApprovalMessage(cand) {
     for (const o of others) lines.push(`   ${o.total.toFixed(2)} ${o.text}`);
   }
   if (c.dropped) lines.push('', `${c.dropped} שוטים ירדו כדי להישאר בטווח האורך`);
+
+  // A PLACE THAT CAME BACK INSIDE THE FORTNIGHT IS SAID OUT LOUD, which is the whole
+  // bargain that makes the rule a preference rather than a refusal. The same doctrine
+  // the owner overrides run on: a bypass is carried out and named, never quiet.
+  const reused = (cand.notes || []).filter((n) => /is back/.test(n));
+  if (reused.length) {
+    lines.push('', `⚠️ ${reused.length} מקומות חוזרים מתוך השבועיים האחרונים, כדי להגיע ל-${c.places.length}:`);
+    for (const r of reused) lines.push(`   ${r.split(' was named')[0]}`);
+  }
+
   if (!c.audio) lines.push('', 'ללא סאונד, לבחירה באפליקציה');
 
   return lines.filter((x) => x != null).join('\n');

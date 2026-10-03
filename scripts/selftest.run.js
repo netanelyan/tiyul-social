@@ -8313,16 +8313,44 @@ group('the hidden gems reel - twelve seconds, and the hook has to be deliverable
     { id: '4', src: 'd', duration: 20, vision: {} },
     { id: '5', src: 'e', duration: 20, vision: { place: 'Iceland', site: 'Skogafoss' } },
   ];
-  const sorted = sortShots(clips, { seenPlaces: new Set(['סקוגאפוס, איסלנד']), want: 5 });
+  // With three fresh places available the fortnight rule costs nothing: Skogafoss is
+  // held back and the reel is built from the other three.
+  const extra = [...clips, { id: '6', src: 'f', duration: 20, vision: { place: 'Italy', site: 'Cinque Torri' } }];
+  const sorted = sortShots(extra, { seenPlaces: new Map([['סקוגאפוס, איסלנד', Date.now()]]), want: 5, floor: 3 });
   const labels = sorted.placed.map((p) => p.labelHe);
-  eq('one shot per place', labels.length, 2);
-  ok('the second angle on one valley is not a second place', !labels.filter((l) => /לאוטרברונן/.test(l))[1]);
-  ok('a place named this fortnight is skipped', !labels.some((l) => /סקוגאפוס/.test(l)), labels.join(' · '));
-  ok('and the skip says so', sorted.skipped.some((s) => /fortnight/.test(s)), sorted.skipped.join('; '));
+  eq('one shot per place', labels.length, 3);
+  ok('the second angle on one valley is not a second place', labels.filter((l) => /לאוטרברונן/.test(l)).length === 1);
+  ok('a place named this fortnight is held back', !labels.some((l) => /סקוגאפוס/.test(l)), labels.join(' · '));
+  ok('and the holding back is recorded', sorted.skipped.some((s) => /held back/.test(s)), sorted.skipped.join('; '));
   ok('an unplaceable clip becomes a spare', sorted.spare.some((c) => c.id === '4'));
   ok('the strongest shot is last', labels[labels.length - 1] === 'לאוטרברונן, שווייץ', labels.join(' · '));
-  const ordered = sortShots(clips, { want: 5, strongestLast: false }).placed.map((p) => p.labelHe);
+  const ordered = sortShots(extra, { want: 5, strongestLast: false }).placed.map((p) => p.labelHe);
   ok('and the order is reversible', ordered[0] === 'לאוטרברונן, שווייץ', ordered.join(' · '));
+
+  // THE RULE YIELDS TO THERE BEING A POST, which is what drawWeighted and pickTrack
+  // both do when their exclusions empty the pool. Two fresh places and a floor of
+  // three: the reel is built, the oldest-named place comes back, and the card says so.
+  const squeezed = sortShots(clips, {
+    seenPlaces: new Map([
+      ['סקוגאפוס, איסלנד', Date.now() - 86_400_000],
+      ['מטאורה, יוון', Date.now() - 10 * 86_400_000],
+    ]),
+    want: 5,
+    // A floor of two against one fresh place, so exactly one repeat is needed and the
+    // question is WHICH. At a floor of three both stale places come back, which is
+    // correct and tests nothing about the ordering.
+    floor: 2,
+  });
+  eq('the reel is built rather than refused', squeezed.placed.length, 2);
+  const back = squeezed.placed.map((p) => p.labelHe);
+  ok('and it is the place named longest ago that comes back', back.some((l) => /מטאורה/.test(l)), back.join(' · '));
+  ok('not the one named yesterday', !back.some((l) => /סקוגאפוס/.test(l)), back.join(' · '));
+  ok('and the reuse is on the record', squeezed.skipped.some((s) => /is back/.test(s)), squeezed.skipped.join('; '));
+
+  // And it never relaxes past the floor: a fourth or fifth shot is never a repeat.
+  const plenty = sortShots(extra, { seenPlaces: new Map([['צ׳ינקווה טורי, איטליה', Date.now()]]), want: 5, floor: 3 });
+  ok('a reel that reaches the floor on fresh places takes no repeat',
+    !plenty.placed.some((p) => /צ׳ינקווה/.test(p.labelHe)), plenty.placed.map((p) => p.labelHe).join(' · '));
 }
 
 {
