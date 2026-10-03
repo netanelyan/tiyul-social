@@ -8272,30 +8272,37 @@ const { pickDestination } = await import('../src/plan/write.js');
 }
 
 /* -------------------------------------------------------------------------- */
-group('the hidden gems reel - twelve seconds, and the hook has to be deliverable');
+group('the hidden gems reel - the length is the format, and the hook has to deliver');
 
 {
   const { fitHolds, sortShots } = await import('../src/video/hiddenGems.js');
   const cfg = postConfig().gems;
 
-  // THE LENGTH IS THE FORMAT. The reference post is 12 seconds and the brief's window
-  // is 10 to 15, so every shot count the reel can be built at has to land inside it.
+  // THE LENGTH IS THE FORMAT, AND EVERY ASSERTION HERE READS THE TARGET RATHER THAN
+  // NAMING A NUMBER. Three of these tests hardcoded "about twelve seconds" and all
+  // three failed the day the target moved to 7-9 for retention. A test that restates
+  // a config value tests the config file, and it fails for the one reason that is
+  // never a bug: somebody changed their mind on purpose.
   for (const n of [3, 4, 5]) {
     const fit = fitHolds(n, cfg);
     ok(
-      `${n} shots land inside the ${cfg.targetSeconds.min} to ${cfg.targetSeconds.max} second target`,
+      `${n} offered lands inside the ${cfg.targetSeconds.min} to ${cfg.targetSeconds.max} second target`,
       fit.seconds >= cfg.targetSeconds.min && fit.seconds <= cfg.targetSeconds.max,
       `${fit.seconds}s`
     );
-    ok(`${n} shots hold within the configured range`,
+    ok(`${n} offered holds within the configured range`,
       fit.holds.every((h) => h >= cfg.holdSeconds.min && h <= cfg.holdSeconds.max), fit.holds.join(','));
-    eq(`${n} shots means ${n} holds`, fit.holds.length, n);
+    ok(`${n} offered is never MORE than ${n} shots`, fit.holds.length <= n, String(fit.holds.length));
+    ok(`${n} offered keeps at least the ${cfg.shots.min} shot floor`, fit.holds.length >= Math.min(n, cfg.shots.min),
+      String(fit.holds.length));
   }
 
-  // Three shots is the reference's own shape, and the hold it solves for puts the
-  // reel within half a second of the post that got 6.1%.
-  const three = fitHolds(3, cfg);
-  ok('a three shot reel is about twelve seconds', three.seconds >= 11 && three.seconds <= 13.5, `${three.seconds}s`);
+  // THE SHOT COUNT FOLLOWS FROM THE LENGTH rather than being configured beside it,
+  // which is the thing that changed. At a 7 to 9 second target four places do not
+  // fit, so a morning that placed five clips still makes a three shot reel and the
+  // brief's "3 clips of about 2 to 3 seconds" is an outcome rather than a setting.
+  const five = fitHolds(5, cfg);
+  ok('a five clip morning is cut to fit the target', five.dropped > 0 && five.holds.length < 5, JSON.stringify(five));
 
   // A configuration that cannot fit drops a shot rather than running long, because
   // the ceiling is the brief's and a viewer leaves a long one.

@@ -6,6 +6,7 @@ import { stripDashes } from '../dashes.js';
 import { URL_LIKE } from '../urlLike.js';
 import { isLabel, trailsOff, namesOtherCountry } from '../video/hooks.js';
 import { dailyCostOf } from '../posts/verdict.js';
+import { ordinalHe, shotMeasure } from '../video/retention.js';
 
 // THE HOOK, GENERATED AND THEN SCORED, FOR ANY FORMAT THAT CAN DELIVER IT.
 //
@@ -336,10 +337,44 @@ export function scoreHook(text, { template = null, vars = {}, maxWeight = 1 } = 
   }
   honesty = Math.max(0, Math.min(1, honesty));
 
+  // A REASON TO STAY, WHICH IS THE TERM THE ANALYTICS ADDED.
+  //
+  // The three terms above all score how well a line STOPS a thumb, and the account's
+  // 3.8% like rate says they were doing it. None of them scores whether the line
+  // gives anybody a reason to still be there at second eight, and the 26% watch ratio
+  // is what that omission looks like: `3 יעדים שאנשים לא חושבים עליהם מספיק` is a
+  // complete sentence, read in under two seconds, after which the post is over.
+  //
+  // So an open loop is worth `stayWeight` of the total, and it is scored on the whole
+  // hook INCLUDING its second line - which is why writeGemHook scores the two lines
+  // joined rather than the first one alone. A counted line gets partial credit on its
+  // own, because a count is itself a small promise that three things are coming, and
+  // that is the same reasoning the curiosity term already applies to it.
+  const cfg = postConfig().gems.hooks;
+  let stay = 0;
+  if (OPEN_LOOP.test(s)) {
+    stay = 1;
+    why.push('opens a loop that only the end closes');
+  } else if (/^\s*\d/.test(s)) {
+    stay = 0.35;
+    why.push('counted, so something is implied to be coming');
+  }
+
   const weight = maxWeight > 0 ? Math.min(1, (template?.weight || 1) / maxWeight) : 0;
-  const total = honesty * (0.45 * specificity + 0.35 * curiosity + 0.2 * weight);
-  return { specificity, curiosity, honesty, weight, total, why };
+  // The four editorial terms are renormalised rather than re-tuned by hand, so that
+  // adding this one moves the ranking only by what it is worth and the balance
+  // between the original three is exactly as it was.
+  const w = 1 - cfg.stayWeight;
+  const total =
+    honesty * (w * (0.45 * specificity + 0.35 * curiosity + 0.2 * weight) + cfg.stayWeight * stay);
+  return { specificity, curiosity, honesty, weight, stay, total, why };
 }
+
+// WHAT COUNTS AS AN UNRESOLVED PROMISE, read off the open loops in post-config.json
+// plus the shapes a written line reaches for. The last item, the ordinal of it, or an
+// instruction to wait: each of them is a sentence the video has to finish.
+const OPEN_LOOP =
+  /(האחרון|האחרונה|הראשון הכי|השני הכי|השלישי|הרביעי|החמישי|תחכו|חכו|תישארו|עד הסוף|בסוף|הכי מפתיע|מחכה לכם)/;
 
 /* -------------------------------------------------------------------------- */
 /* the candidates                                                              */
@@ -514,6 +549,16 @@ export async function writeGemHook({
   vars = {},
   deliverable = null,
   used = new Set(),
+  // THE SECOND LINE, SCORED WITH THE FIRST RATHER THAN AFTER IT.
+  //
+  // A hook and its open loop are one sentence as far as a viewer is concerned, and
+  // the "reason to stay" term is a property of the pair: scored on the first line
+  // alone, every candidate gets the same 0.35 for being counted and the term this
+  // whole change added decides nothing. So the scorer sees them joined, and what
+  // ships is still the first line - the open loop is the same for every candidate in
+  // the draw, because it was chosen before them and from the shots rather than from
+  // the words.
+  openLoopHe = null,
   // WHICH TEMPLATES THE LAST FEW POSTS USED, refused before anything is scored.
   //
   // THE SCORER IS DETERMINISTIC AND THAT IS THE PROBLEM IT CREATES. It ranks ten
@@ -602,7 +647,9 @@ export async function writeGemHook({
       rejected.push({ ...cand, why: 'already used' });
       continue;
     }
-    scored.push({ ...cand, score: scoreHook(cand.text, { template: cand.template, vars, maxWeight }) });
+    // Scored on both lines, published as the first. See `openLoopHe` above.
+    const whole = [cand.text, openLoopHe].filter(Boolean).join(' ');
+    scored.push({ ...cand, score: scoreHook(whole, { template: cand.template, vars, maxWeight }) });
   }
 
   scored.sort((a, b) => b.score.total - a.score.total);
@@ -622,6 +669,65 @@ export async function writeGemHook({
     rejected: rejected.map((c) => ({ text: c.text, from: c.from, why: c.why })),
     error: best ? null : written.error || 'every candidate was rejected',
   };
+}
+
+/* -------------------------------------------------------------------------- */
+/* the open loop                                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The second line of the hook, and the measure that makes it true.
+ *
+ * WHAT IT IS FOR, in one number: 0 comments and a 26% watch ratio on a post whose
+ * first line was a complete sentence. An open loop is the part of a hook that the
+ * video has to finish, which is the only thing on screen that argues for second eight.
+ *
+ * WHICH ONES ARE OFFERED IS A QUESTION ABOUT THE SHOTS, not about the words. A loop
+ * that orders by `surprise` needs at least two shots that can be measured on it, or
+ * the ordering is arbitrary and the claim is decoration; one that orders by `price`
+ * needs published figures, which a reel of stock footage does not have. A loop whose
+ * measure cannot be computed is not offered, which is the same rule the hook
+ * templates follow for their variables.
+ *
+ * `{nth}` is filled with the Hebrew ordinal of the LAST shot, so the line and the
+ * counter on screen cannot disagree about which item pays the promise off.
+ */
+export function pickOpenLoop({ shots = [], measureOf = shotMeasure, rand = Math.random, avoid = [] } = {}) {
+  const cfg = postConfig().gems.hooks;
+  const n = shots.length;
+  if (!cfg.openLoops.length || n < 2) return null;
+
+  const usable = cfg.openLoops.filter((o) => {
+    if (o.weight <= 0) return false;
+    if (!o.orderBy) return true;
+    if (!measureOf) return false;
+    // Two measurable shots at minimum: with one, "the last is the most surprising" is
+    // a comparison against nothing.
+    const measured = shots.filter((s) => measureOf(s, o.orderBy) != null);
+    if (measured.length < 2) return false;
+    // And the winner has to be nameable when the loop makes a claim about the place.
+    if (o.needsSite && !measured.some((s) => String(s.labelHe || '').includes(','))) return false;
+    // A measure that is the same for every shot cannot order them: "the least known"
+    // over three places that are all pinned, or all unpinned, picks one at random and
+    // calls it the answer.
+    return new Set(measured.map((s) => measureOf(s, o.orderBy))).size > 1;
+  });
+
+  const fresh = usable.filter((o) => !avoid.includes(o.id));
+  const pool = fresh.length ? fresh : usable;
+  if (!pool.length) return null;
+
+  const total = pool.reduce((s, o) => s + o.weight, 0);
+  let k = rand() * total;
+  let chosen = pool[pool.length - 1];
+  for (const o of pool) {
+    k -= o.weight;
+    if (k <= 0) {
+      chosen = o;
+      break;
+    }
+  }
+  return { ...chosen, he: fill(chosen.he, { nth: ordinalHe(n), n }) };
 }
 
 /**

@@ -1554,7 +1554,7 @@
         "the emoji is for."
       ],
       "questions": [
-        "{choices} 👇",
+        "{choices}? 👇",
         "איזה מהם הייתם בוחרים? 👇",
         "מי מכיר אחד מהם מקרוב?",
         "לאן הייתם טסים ראשון?",
@@ -1644,13 +1644,15 @@
           "he": "האחרון הכי יפה",
           "weight": 3,
           "orderBy": "beauty",
-          "desc": "Ordered on the judge's own destination score. A different measure from `rank`, which is what lets the strongest shot still open the reel."
+          "needsSite": false,
+          "desc": "Ordered on the judge's own destination score. A different measure from `rank`, which is what lets the strongest shot still open the reel. `needsSite` false because this is the one kind of claim a viewer can check BY LOOKING: whether the last shot is the prettiest needs no name under it, where `the least known` is about a reputation and therefore about a named place. It is also what keeps the format buildable on a morning that produced only bare country labels, which is the brief's own `גאורגיה` example."
         },
         {
           "id": "nthprettiest",
           "he": "{nth} הכי יפה",
           "weight": 2,
           "orderBy": "beauty",
+          "needsSite": false,
           "desc": "The counted version of the same promise."
         },
         {
@@ -1666,6 +1668,13 @@
           "weight": 2,
           "orderBy": "price",
           "desc": "The brief's third example. Offered only when every place on the reel maps to a page with a published daily cost in one currency, which a Pexels reel does not, so in practice this waits for a /gems that is handed destinations."
+        },
+        {
+          "id": "waitend",
+          "he": "תחכו עד הסוף",
+          "weight": 1,
+          "orderBy": null,
+          "desc": "THE ONLY ONE HERE THAT MAKES NO COMPARATIVE CLAIM, which is why it is weighted last and why it exists at all. Every other loop says the final item wins something and is withheld when that cannot be measured - a reel whose three shots all scored the same destination number cannot honestly say any of them is the prettiest. This one says only that there is an end and it is worth reaching, which the counter on screen says too. Without it such a morning produces no reel at all, and a weaker promise beats no post: the same argument placeMemoryDays settles one level down."
         }
       ],
       "stayWeight": 0.25,

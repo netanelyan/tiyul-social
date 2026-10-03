@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { ffmpegPath } from './overlay.js';
-import { fitHolds } from './hiddenGems.js';
+import { solveHolds } from './fit.js';
 import { getBrowser } from '../render/index.js';
 import { assistantDataUri, escapeHtml } from '../render/theme.js';
 import { postConfig } from '../postConfig.js';
@@ -88,10 +88,11 @@ export function retentionPlan({ shots = [], hookHe = '', openLoopHe = null, ques
   // nobody can finish reading is the same defect as no label.
   const firstBonus = r.on ? round(Math.max(0, r.hookFullSeconds - hook) + r.labelMinSeconds) : 0;
 
-  // ONE SOLVER, IN fitHolds. The length arithmetic lives there and is tested there;
-  // what this function knows is the two things the solver cannot: that the hook shot
-  // is as long as the first cut, and why the first place needs the extra second.
-  const fit = fitHolds(shots.length, gems, { hookSeconds: hook, firstBonus });
+  // ONE SOLVER, IN ./fit.js. The length arithmetic lives there and is tested through
+  // fitHolds; what this function knows is the two things the solver cannot: that the
+  // hook shot is as long as the first cut, and why the first place needs the extra
+  // second.
+  const fit = solveHolds(shots.length, gems, { hookSeconds: hook, firstBonus });
   const holds = fit.holds;
   const dropped = fit.dropped;
   const kept = shots.slice(0, holds.length);
@@ -253,34 +254,35 @@ export function validateRetentionPlan(plan, { cfg = null, openLoop = null, lastS
  * When the same shot wins both, the PROMISE takes the last slot and the next best
  * goes first. A promise is a claim and the opening is a preference.
  */
+export function shotMeasure(shot, orderBy) {
+  if (!shot || !orderBy) return null;
+  if (orderBy === 'surprise') {
+    const label = String(shot.labelHe || '');
+    const site = label.split(',')[0].trim();
+    // A claim about the last PLACE needs a place, not a country. An unnamed shot is
+    // unmeasurable on surprise by definition: nothing is surprising about a country.
+    if (!site || !label.includes(',')) return null;
+    // Pinned means familiar, so an unpinned site scores higher on surprise. Keyed on
+    // the Hebrew spelling the pinning table holds, which is what the label carries.
+    return Object.values(postConfig().sites).includes(site) ? 0 : 1;
+  }
+  if (orderBy === 'beauty') {
+    const d = Number(shot.vision?.destination);
+    return Number.isFinite(d) ? d : null;
+  }
+  if (orderBy === 'price') {
+    const c = Number(shot.dailyCost);
+    // Cheapest wins, so the measure is negated: the highest measure is always the one
+    // that goes last, whatever the dimension happens to mean.
+    return Number.isFinite(c) && c > 0 ? -c : null;
+  }
+  return null;
+}
+
 export function orderForOpenLoop(shots, { openLoop = null, strongestFirst = true } = {}) {
   const list = [...(shots || [])];
-  if (list.length < 2) return { ordered: list, last: list[0] || null };
-
-  const sites = postConfig().sites;
-  const measureOf = (s) => {
-    if (!openLoop?.orderBy) return null;
-    if (openLoop.orderBy === 'surprise') {
-      const site = String(s.labelHe || '').split(',')[0].trim();
-      if (!site || !String(s.labelHe || '').includes(',')) return null;
-      // Pinned means familiar, so an unpinned site scores higher on surprise. Keyed on
-      // the Hebrew spelling the pinning table holds, which is what the label carries.
-      return Object.values(sites).includes(site) ? 0 : 1;
-    }
-    if (openLoop.orderBy === 'beauty') {
-      const d = Number(s.vision?.destination);
-      return Number.isFinite(d) ? d : null;
-    }
-    if (openLoop.orderBy === 'price') {
-      const c = Number(s.dailyCost);
-      // Cheapest wins, so the measure is negated: the highest measure is always the
-      // one that goes last, whatever the dimension means.
-      return Number.isFinite(c) && c > 0 ? -c : null;
-    }
-    return null;
-  };
-
-  const scored = list.map((s) => ({ ...s, measure: measureOf(s) }));
+  const scored = list.map((s) => ({ ...s, measure: shotMeasure(s, openLoop?.orderBy) }));
+  if (scored.length < 2) return { ordered: scored, last: scored[0] || null };
   const rankOf = (s) => (Number.isFinite(Number(s.rank)) ? Number(s.rank) : -1);
 
   // The payoff slot. Among the shots that can be measured at all, the best; ties go to

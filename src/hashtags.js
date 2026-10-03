@@ -379,7 +379,17 @@ export function gemsCaption(cand, { rand = Math.random } = {}) {
   // gap in it, the same rule the hook templates follow.
   const usable = cfg.lines.filter((l) => !l.includes('{places}') || joined);
   const line = usable.length ? fillPlaces(usable[Math.floor(rand() * usable.length)], joined) : joined || null;
-  const question = cfg.questions.length ? cfg.questions[Math.floor(rand() * cfg.questions.length)] : null;
+
+  // THE SAME QUESTION THAT IS BURNED ONTO THE LAST SHOT, when there is one.
+  //
+  // 0 comments on 559 views is the number this is for. A question in the caption is
+  // read by whoever opens the caption; the same words on the closing frame are read
+  // by everyone who gets there, and asking two DIFFERENT questions in the two places
+  // is one post talking over itself. The candidate carries the chosen one, so this
+  // takes it rather than drawing again.
+  const question =
+    cand?.clip?.questionHe ||
+    (cfg.questions.length ? cfg.questions[Math.floor(rand() * cfg.questions.length)] : null);
 
   const brand = postConfig().hashtags.brand;
   const taken = new Set(brand ? [brand] : []);
