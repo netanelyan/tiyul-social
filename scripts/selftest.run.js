@@ -8313,6 +8313,40 @@ group('the hidden gems reel - twelve seconds, and the hook has to be deliverable
     { id: '4', src: 'd', duration: 20, vision: {} },
     { id: '5', src: 'e', duration: 20, vision: { place: 'Iceland', site: 'Skogafoss' } },
   ];
+
+  // TWO SITES IN ONE COUNTRY ARE TWO PLACES, which keying the dedupe on the country
+  // got wrong and which cost five consecutive dry runs. Measured on a live search:
+  // 14 labelled clips keyed by country are three places, barely the minimum, and on
+  // an hour when one country dominates the reel cannot be built at all.
+  const greek = sortShots(
+    [
+      { id: '1', src: 'a', duration: 20, vision: { place: 'Greece', site: 'Santorini' } },
+      { id: '2', src: 'b', duration: 20, vision: { place: 'Greece', site: 'Meteora' } },
+      // siteHe as the judge actually returns it, which is what makes the label a site
+      // rather than the bare country - see clipSiteName.
+      { id: '3', src: 'c', duration: 20, vision: { place: 'Italy', site: 'Dolomites', siteHe: 'דולומיטים' } },
+      { id: '4', src: 'd', duration: 20, vision: { place: 'Italy', site: 'Dolomites', siteHe: 'דולומיטים' } },
+      { id: '5', src: 'e', duration: 20, vision: { place: 'Greece' } },
+    ],
+    { want: 5, floor: 3 }
+  );
+  const greekLabels = greek.placed.map((p) => p.labelHe);
+  eq('two Greek sites and one Italian are three places', greekLabels.length, 3);
+  ok('the same site twice is one place', greekLabels.filter((l) => /דולומיטים/.test(l)).length === 1, greekLabels.join(' · '));
+  ok('and a bare country is dropped beside a named site in it',
+    !greekLabels.includes('יוון'), greekLabels.join(' · '));
+  // The reverse of that rule: a bare country with no named site of its own stays, and
+  // is exactly what the brief's own example label "גאורגיה" is.
+  const bare = sortShots(
+    [
+      { id: '1', src: 'a', duration: 20, vision: { place: 'Georgia' } },
+      { id: '2', src: 'b', duration: 20, vision: { place: 'Greece', site: 'Meteora' } },
+      { id: '3', src: 'c', duration: 20, vision: { place: 'Iceland', site: 'Skogafoss' } },
+    ],
+    { want: 5, floor: 3 }
+  );
+  ok('a country with no site of its own is still a place',
+    bare.placed.some((p) => p.labelHe === 'גאורגיה'), bare.placed.map((p) => p.labelHe).join(' · '));
   // With three fresh places available the fortnight rule costs nothing: Skogafoss is
   // held back and the reel is built from the other three.
   const extra = [...clips, { id: '6', src: 'f', duration: 20, vision: { place: 'Italy', site: 'Cinque Torri' } }];

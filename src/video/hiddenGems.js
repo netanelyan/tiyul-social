@@ -281,14 +281,46 @@ export function sortShots(clips, { seenPlaces = new Map(), want = 5, floor = 3, 
   const places = new Set();
   const skipped = [];
 
+  // THE SAME PLACE TWICE IS KEYED ON THE LABEL, NOT ON THE COUNTRY, and this was the
+  // single biggest thing wrong with the format.
+  //
+  // The postcard reel keys its dedupe on `vision.place`, which its comment calls a
+  // city and which is in fact the COUNTRY the judge named. Measured on one live
+  // search: 17 clips passed the destination gate and 14 could be labelled, as eight
+  // separate Dolomites shots, three Vietnamese sites and three Greek ones. Keyed on
+  // the country that is three places, barely the minimum, and on an hour when one
+  // country dominates it is one or two and the reel cannot be built at all. Five
+  // consecutive dry runs failed on exactly that, every one reporting "only 1 of 20
+  // could be placed" while sitting on a pool of fourteen labelled clips.
+  //
+  // Keyed on the label it is six places, which is what the pool actually contained.
+  // Santorini and Meteora are two destinations and the brief's own reference post is
+  // a list of them; eight angles on the Dolomites is one place eight times, which is
+  // the failure the postcard comment is really about and which the label catches
+  // properly because the label IS the site.
+  //
+  // Left alone in postcard.js on purpose. That format is the control the gems reel is
+  // measured against, and changing it mid-comparison would make the numbers
+  // unreadable. It is written down in docs/hidden-gems-plan.md instead.
   for (const c of clips || []) {
     const labelHe = clipPlaceLabel({ vision: c.vision });
-    const key = String(c.vision?.place || '').toLowerCase();
-    if (!labelHe || !key) {
+    const country = String(c.vision?.place || '').toLowerCase();
+    if (!labelHe || !country) {
       spare.push(c);
       continue;
     }
+    const key = labelHe;
     if (places.has(key)) {
+      spare.push(c);
+      continue;
+    }
+    // A COUNTRY-ONLY LABEL IS DROPPED WHEN A NAMED SITE IN IT IS ALREADY ON THE REEL.
+    // "יוון" beside "סנטוריני, יוון" is two shots of one country where one of them
+    // admits it does not know where it is, which reads as a gap rather than as a
+    // second destination. The other way round is fine: a named site is always more
+    // specific than the bare country already shown.
+    const bare = !labelHe.includes(',');
+    if (bare && [...places].some((p) => p.endsWith(`, ${labelHe}`))) {
       spare.push(c);
       continue;
     }
