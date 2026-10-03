@@ -3851,7 +3851,23 @@ function tick() {
         // a history that only recorded successes would offer the same format again
         // immediately after it failed twice.
         store.noteFormat(format.id);
-        buildFormat(format.id).catch((e) => console.error(`${format.id} suggestion failed:`, e.message));
+        buildFormat(format.id).catch((e) => {
+          console.error(`${format.id} suggestion failed:`, e.message);
+          // THE SLOT IS GIVEN BACK, AND THIS IS A REAL CHANGE FROM THE COUNTERS.
+          //
+          // Each per-kind counter incremented before its build and never rolled back,
+          // so a postcard reel that could not be built cost the day its postcard.
+          // That was survivable when the four counters were independent and each was
+          // one post; under the rotation the gems reel is half the slots and it is
+          // the format that fails most, because it needs three places a vision judge
+          // will commit to and some mornings the footage does not have them.
+          //
+          // `lastSlotAt` is NOT rolled back with it, so the retry waits a full drip
+          // interval rather than running straight into the same empty search. That
+          // keeps the pace identical to today's and makes a transient failure cost
+          // nothing instead of costing a post.
+          slotsToday = Math.max(0, slotsToday - 1);
+        });
       }
     }
   }

@@ -1371,6 +1371,23 @@
       "min": 2,
       "max": 4
     },
+    "_placeMemoryDays_comment": [
+      "THE BRIEF'S FORTNIGHT RULE: a place a post has named is off limits for this",
+      "many days. It is about the PLACE rather than the footage, which clipsUsed",
+      "already covers; two different files of Lauterbrunnen a week apart are the",
+      "repeat this stops. See notePlacesNamed in src/store.js.",
+      "",
+      "IT IS THE ONE RULE HERE THAT CAN STARVE THE FORMAT, which is why it is a dial.",
+      "A reel needs three to five places the vision judge can name with confidence,",
+      "and the recognizable pool from clips.search.queries is perhaps fifty names. At",
+      "two reels a day a fortnight's reservation is a real fraction of that, and the",
+      "symptom is a run of days where nothing can be built.",
+      "",
+      "The error says how many clips were skipped for THIS rule as opposed to not",
+      "being placeable at all, so the two causes can be told apart before anybody",
+      "lowers this number."
+    ],
+    "placeMemoryDays": 14,
     "targetSeconds": {
       "min": 10,
       "max": 15

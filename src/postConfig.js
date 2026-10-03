@@ -1079,6 +1079,17 @@ function gems(raw) {
     holdSeconds: hold,
     targetSeconds: target,
     hookSeconds: Math.max(0.5, num(raw.hookSeconds, 3)),
+    // HOW LONG A PLACE IS OFF LIMITS AFTER A POST NAMES IT. The brief says 14 days
+    // and 14 is the default; it is a dial rather than a constant because it is the
+    // one rule here that can starve the format.
+    //
+    // The reel needs three to five places the vision judge can name with confidence,
+    // and the recognizable pool from the configured queries is perhaps fifty. At two
+    // reels a day the fortnight rule reserves something like a hundred place-days out
+    // of that, so a run of reels that cannot be built looks exactly like a search
+    // that has gone stale. The error names how many places were skipped for this rule
+    // so the two can be told apart, and this is what to lower when it is this.
+    placeMemoryDays: Math.max(0, count(raw.placeMemoryDays, 14)),
     strongestLast: raw.strongestLast !== false,
     loop: raw.loop === true,
     loopSeconds: Math.max(0, num(raw.loopSeconds, 0.4)),

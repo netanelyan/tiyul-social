@@ -56,10 +56,31 @@ const examples = [];
 const seen = new Set();
 let failed = 0;
 
+// EACH REEL SEARCHES A DIFFERENT SLICE OF THE CATALOGUE, and the first run of this
+// lab is why. Five reels from one pool produced three: the first three took every
+// clip the vision judge would commit to a place on, and the last two came back with
+// "only 2 of 17 could be placed". The queue is ordered by title score, so a second
+// reel in the same sitting is working down the same list rather than looking
+// somewhere else.
+//
+// The live drip does not have this problem - it builds two a day, hours apart, from
+// the whole pool, which is why `queries` defaults to all of them. A lab that builds
+// five in ten minutes does, and the honest fix is to look somewhere else rather than
+// to report a format that cannot be built five times.
+const ALL_QUERIES = postConfig().clips.search.queries;
+const sliceFor = (i, of) => {
+  if (of <= 1) return null;
+  const size = Math.ceil(ALL_QUERIES.length / of);
+  const from = (i * size) % ALL_QUERIES.length;
+  // Wrapped, so the last slice is a full one rather than whatever is left over.
+  return Array.from({ length: size }, (_, k) => ALL_QUERIES[(from + k) % ALL_QUERIES.length]);
+};
+
 for (let i = 0; i < reels; i++) {
-  console.log(`--- reel ${i + 1} of ${reels} ---`);
+  const queries = sliceFor(i, reels);
+  console.log(`--- reel ${i + 1} of ${reels}${queries ? ` · ${queries.length} searches` : ''} ---`);
   try {
-    const cand = await buildHiddenGemsCandidate({ outDir, seen, write });
+    const cand = await buildHiddenGemsCandidate({ outDir, seen, write, queries });
     // Spent HERE, in memory, rather than in the store. The next reel of this run must
     // not be handed the same footage; the live account's ledger is none of a lab's
     // business. See the note at the top.

@@ -1,4 +1,4 @@
-import { rmSync, writeFileSync } from 'node:fs';
+import { rmSync } from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { ffmpegPath, clipOutputDir, download, measureClip, pickWindow } from './overlay.js';
@@ -6,8 +6,7 @@ import { renderPostcardPng } from './postcard.js';
 import { postConfig } from '../postConfig.js';
 import { pickTrack, trackOffset } from './tracks.js';
 import { findClips } from './pexels.js';
-import { clipPlaceLabel } from '../hashtags.js';
-import { gemsCaption } from '../hashtags.js';
+import { clipPlaceLabel, gemsCaption } from '../hashtags.js';
 import { targetsForKind } from '../publish/targets.js';
 import { assertNoUrl } from '../format.js';
 import { writeGemHook } from '../hooks/gems.js';
@@ -321,13 +320,27 @@ export function sortShots(clips, { seenPlaces = new Set(), want = 5, strongestLa
 export async function buildHiddenGemsCandidate({
   outDir = clipOutputDir(),
   seen = new Set(),
-  days = 14,
+  days = null,
   write = true,
+  // WHICH SEARCHES TO RUN, OR ALL OF THEM, which is the default and what the drip
+  // wants: breadth, so the judge picks the best places the morning happens to offer.
+  //
+  // It is a parameter because of what the dry run found. Five reels built in one
+  // sitting, from one pool: the first three took the placeable clips and the last two
+  // could not be built at all, with "destination 6" and "person in front of the
+  // camera" as the reasons. The queue is ordered by title score, so a second reel is
+  // working its way down the same list rather than looking somewhere else.
+  //
+  // The montage shape already narrows for the opposite reason, needing six shots of
+  // ONE place. See the note above the loop in findClips.
+  queries = null,
   rand = Math.random,
 } = {}) {
   const gems = postConfig().gems;
-  const found = await findClips({ limit: 24, seen, judge: true });
-  const seenPlaces = placesNamedSince(days);
+  const found = await findClips({ limit: 24, seen, judge: true, queries });
+  // The brief's fortnight, from the config so it can be lowered without a deploy if
+  // it starves the format. See placeMemoryDays in src/postConfig.js.
+  const seenPlaces = placesNamedSince(days == null ? gems.placeMemoryDays : days);
   const { placed, spare, skipped } = sortShots(found.clips || [], {
     seenPlaces,
     want: gems.shots.max,
