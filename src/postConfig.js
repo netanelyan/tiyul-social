@@ -415,6 +415,12 @@ function clips(raw) {
       // decides whether a clip is used, this one becomes a factual claim.
       placeMinConfidence: num(s.placeMinConfidence, 7),
       visionMaxCandidates: Math.max(1, Math.round(num(s.visionMaxCandidates, 24))),
+      // HOW MANY PAGES OF EACH SEARCH TO READ. Four, up from the two that were
+      // hardcoded, because the pool ran dry: see the note in findClips. Each page is
+      // 24 results and costs one request, so this is the cheapest lever here - no
+      // vision calls, no editorial judgement, just reading further down a list the
+      // account was already searching.
+      pages: Math.max(1, Math.round(num(s.pages, 4))),
       // How tall a frame the judge is sent, which is the largest single number
       // in this pipeline's bill. Measured rather than chosen: the 1200px poster
       // Pexels hands back is 1,008 image tokens and 640 is 287, across the cap

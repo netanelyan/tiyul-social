@@ -718,7 +718,44 @@
         "czech countryside castle",
         "swiss alps village",
         "iceland waterfall",
-        "norway fjord village"
+        "norway fjord village",
+        "hallstatt austria",
+        "austrian alps village",
+        "lake bled slovenia",
+        "slovenia mountain valley",
+        "plitvice croatia waterfalls",
+        "dubrovnik croatia old town",
+        "french alps village",
+        "provence france village",
+        "cappadocia turkey",
+        "turkey coast village",
+        "chefchaouen morocco",
+        "morocco atlas mountains",
+        "bali rice terraces indonesia",
+        "indonesia island waterfall",
+        "machu picchu peru",
+        "peru andes valley",
+        "nepal himalaya village",
+        "nepal mountain trail"
+      ],
+      "_added_comment": [
+        "THE NINETEEN ABOVE WERE ADDED 3 Oct 2026 BECAUSE THE POOL HAD RUN DRY.",
+        "",
+        "A live morning was offering NINE judged candidates and placing one or two of",
+        "them; a reel needs three, so both reel formats failed on most runs and the",
+        "day's slots went to whatever else could build - which is why the owner was",
+        "seeing narrated guides and slideshows instead of the format they like.",
+        "",
+        "THE CHOICE OF WHAT TO ADD WAS NOT EDITORIAL, which matters because the note",
+        "above says editing this list is editing what the account is about. Every one",
+        "of these is a country `clips.places` can already spell in Hebrew, and three",
+        "of them name sites already pinned in `clips.sites` - Lake Bled, Plitvice and",
+        "Machu Picchu were in the spelling table and had never been searched for. The",
+        "account had decided it covers these places and was not looking for them.",
+        "",
+        "Countries the label table can name that are still not searched: none. If a",
+        "country is added to clips.places later, add a query for it here too, or its",
+        "footage can be labelled and will never be found."
       ],
       "prefer": [
         "pov",
@@ -2238,7 +2275,10 @@
         "needs": [
           "places"
         ],
-        "desc": "Owner-supplied reference: a serif headline over one stunning photograph, then a run of beautiful photographs with NO text on them, and one CTA mid-roll or at the end. The only format here that asks the viewer to look rather than to read, and the cheapest to build - it is the Commons photo ladder with the captions taken off."
+        "platforms": [
+          "tiktok"
+        ],
+        "desc": "Owner-supplied reference: a serif headline over one stunning photograph, then a run of beautiful photographs with NO text on them, and one CTA mid-roll or at the end. The only format here that asks the viewer to look rather than to read, and the cheapest to build - it is the Commons photo ladder with the captions taken off. TIKTOK ONLY, AND IT WAS FAILING BEFORE THIS LINE EXISTED: the builder makes up to 14 slides including the closing ones, Instagram's carousel takes 10, and the roll was declared for both. The live log is full of `a roll is 14 slides and an Instagram carousel takes 10 - this type should not be routed to Instagram`, which is the render refusing to build and a post slot producing nothing. Same reason the list type is TikTok only: there is no honest nine-slide version of a format whose whole shape is the run."
       }
     ],
     "_looks_comment": [
@@ -2814,8 +2854,8 @@
         "id": "guide",
         "he": "מדריכים",
         "kind": "clip",
-        "weight": 5,
-        "desc": "The narrated guide. The most expensive format here per post and the only one that speaks, so it stays in the mix at a low weight rather than being measured on nothing."
+        "weight": 0,
+        "desc": "THE NARRATED GUIDE, THE ONE FORMAT HERE THAT SPEAKS. TURNED OFF 3 Oct 2026 at the owner's instruction, and turned off rather than deleted because that is what a weight of 0 is for: the format, the voice, the subtitle timing and /guide all still work and nothing in the rotation will build one. Set this back to 5 to resume. It was also the format taking a slot while both reel formats were failing to find footage, so it is the thing the owner saw most of and liked least."
       },
       {
         "id": "clip",

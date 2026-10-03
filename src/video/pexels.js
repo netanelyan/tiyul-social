@@ -130,10 +130,21 @@ async function search(query, page, { timeoutMs }) {
  * that Pexels rate-limits should not cost the other eleven, for the same reason
  * one unreachable destination does not stop the climate rotation.
  */
-export async function findClips({ limit = 12, seen = new Set(), pages = 2, timeoutMs = 20_000, judge = true, queries = null } = {}) {
+export async function findClips({ limit = 12, seen = new Set(), pages = null, timeoutMs = 20_000, judge = true, queries = null } = {}) {
   if (!configured()) throw new Error('PEXELS_API_KEY is not set');
 
   const cfg = postConfig().clips.search;
+  // HOW DEEP INTO EACH SEARCH TO GO, AND IT IS A CONFIG VALUE NOW BECAUSE THE POOL
+  // RAN DRY. Two pages of 24 across 26 queries is about 1,250 raw results, and after
+  // the portrait, height and duration gates, after 81 clips already spent, and after
+  // the judge's destination floor of 7, a live morning was offering NINE candidates
+  // and placing one or two of them. A reel needs three, so both reel formats failed
+  // on most runs and the day's slots went to whatever else could build.
+  //
+  // `seen` is what makes this a ratchet rather than a plateau: a spent clip is
+  // excluded for two years, so the usable part of a fixed pool only ever shrinks.
+  // Going deeper is the cheap half of the answer and more queries is the other half.
+  const depth = pages ?? cfg.pages;
   const out = new Map();
   const errors = [];
   const vetoed = [];
@@ -151,7 +162,7 @@ export async function findClips({ limit = 12, seen = new Set(), pages = 2, timeo
   // vision budget is spent looking at one destination rather than at all of
   // them.
   for (const query of queries?.length ? queries : cfg.queries) {
-    for (let page = 1; page <= pages; page++) {
+    for (let page = 1; page <= depth; page++) {
       let videos;
       try {
         videos = await search(query, page, { timeoutMs });
