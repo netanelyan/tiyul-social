@@ -154,11 +154,31 @@ Found while building the above, each with its own commit message:
    refused every price comparison that was actually true. Both now go through one parser,
    `dailyCostOf`.
 
-### 2.7 What the dry run produces
+### 2.7 What the dry run produces, and what it found
 
 `npm run gems-lab` writes to `output/examples/`: the mp4s, a `README.md` with each hook,
 its score, its runners up, the shot list and the caption, and a `manifest.json` with the
 same as data. Nothing is published and none of the three ledgers is written to.
+`output/` is gitignored: thirteen megabytes per reel, all of it reproducible.
+
+Two things the first full run found, both now fixed:
+
+- **Five reels built in one sitting produce three.** The first three take every clip the
+  vision judge will commit to a place on, and the last two come back with `only 2 of 17
+  could be placed`. The candidate queue is ordered by title score, so a second reel in
+  the same ten minutes is working down the same list rather than looking somewhere else.
+  The live drip builds two a day, hours apart, and does not have this problem, so
+  `queries` defaults to the whole catalogue and only the lab slices it per reel.
+- **A failed build used to cost the day a post.** Each per-kind counter incremented
+  before its build and never rolled back. That was survivable when each counter was one
+  post of four; with the gems reel at half the slots and the format that fails most, the
+  slot is now given back while `lastSlotAt` is not, so the retry waits a full drip
+  interval rather than running into the same empty search.
+
+The slideshow half of the run is the part worth reading: Prague and Barcelona both came
+out carrying four and five kinds of concrete fact (price, season, booking, flight,
+transport) under the `score` hook. Before the price fix, neither would have carried a
+price at all.
 
 ## 3. Decisions taken without asking
 
@@ -230,9 +250,18 @@ All of it is `post-config.json`, no code change:
 - Which slideshow the rotation makes: `posts.types[].weight`, and `posts.types[].memory`
   for how many posts a type refuses to repeat itself within.
 - The hook categories: `gems.hooks.categories[].weight`, and `gems.hooks.candidates` for
-  how many are generated per post.
+  how many are generated per post. `gems.hooks.on: false` goes back to the three counted
+  lines the postcard reel already had.
 - Length and shot count: `gems.shots`, `gems.holdSeconds`, `gems.hookSeconds`,
   `gems.targetSeconds`.
+- How long a place is off limits after a post names it: `gems.placeMemoryDays`, 14 as the
+  brief asks. **This is the one dial that can starve the format rather than merely
+  change it**, so it is the first thing to look at if reels stop being buildable: the
+  error distinguishes a place held back by this rule from a clip nobody could place.
+- Whether a slideshow is also encoded as a video: `posts.video.on`, and
+  `posts.video.types` for which types may be.
+- Whether a cover's promise is checked against the slides: `posts.deliver.on`, and
+  `posts.deliver.minSpecifics` for how many kinds of concrete fact it takes.
 
 ## 4a. Two things left alone, on purpose
 
@@ -250,6 +279,23 @@ slideshow share. Neither is this branch's to decide.
   nearly shipped is already live on the format the gems reel is being compared against.
   Fixing it would change the control midway through the comparison, so it is written down
   here instead. One line, next to `cand.place`, whenever the owner wants it.
+
+## 4b. What this is worth watching for
+
+Nothing here is a reason to hold the change, and all three are worth knowing in the
+first fortnight.
+
+1. **The format fails on some mornings and the message says why.** It needs three places
+   a vision judge will commit to, and `only 2 of 17 could be placed` is an ordinary
+   outcome rather than a fault. The slot is retried rather than lost. If it happens
+   every day, read whether the reasons are `destination N` (the search is asking for the
+   wrong thing) or the fortnight rule (`placeMemoryDays` is too high for the pool).
+2. **Two of the 61 destination pages cannot build a verdict post at all**, and now that
+   the verdict type leads the slideshow share that is 2 of 54 rather than 2 of 61 of a
+   minor type. See 4a: the cause is the filler guard refusing the page's own words.
+3. **The realized mix is not the weights.** 43% rather than 50% for the reel, because it
+   is the only format that ever hits the run limit. `/formats` prints the declared mix
+   and the recent run; the realized share is in the config comment.
 
 ## 5. Rolling back
 
