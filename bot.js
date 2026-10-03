@@ -4437,9 +4437,24 @@ async function main() {
   // endpoint that sends direct messages must not come up unauthenticated.
   startIgWebhook();
   console.log(`   daily run at ${RUN_HOUR}:00 · target ${dailyTarget()} · drip every ${POST_INTERVAL_MINUTES} min`);
-  console.log(
-    `   suggestions per day: ${dailyTarget()} cards · ${POSTS_PER_DAY} posts · ${DECKS_PER_DAY} decks · ${CLIPS_PER_DAY} clips · ${POSTCARDS_PER_DAY} postcards · ${GUIDES_PER_DAY} guides`
-  );
+  // WHAT IT WILL ACTUALLY BUILD, which stopped being the per-kind counters the day
+  // the format rotation went in. The banner kept printing them, so a box with the
+  // guide format switched off in formats.mix still announced "1 guides" at boot, and
+  // the only way to know better was to read the config. A status line that disagrees
+  // with the program is worse than no status line.
+  if (rotationOn()) {
+    const mix = mixShares()
+      .map((s) => `${s.id} ${(s.share * 100).toFixed(0)}%`)
+      .join(' · ');
+    const off = postConfig().formats.mix.filter((f) => f.weight === 0).map((f) => f.id);
+    console.log(`   ${slotsPerDay()} posts a day, by the rotation: ${mix}`);
+    if (off.length) console.log(`   switched off: ${off.join(', ')}`);
+    console.log(`   (per-kind counters ignored while formats.rotation.on is true)`);
+  } else {
+    console.log(
+      `   suggestions per day: ${dailyTarget()} cards · ${POSTS_PER_DAY} posts · ${DECKS_PER_DAY} decks · ${CLIPS_PER_DAY} clips · ${POSTCARDS_PER_DAY} postcards · ${GUIDES_PER_DAY} guides`
+    );
+  }
 
   // Do the budgets fit down the drip?
   //
