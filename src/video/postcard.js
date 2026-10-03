@@ -6,7 +6,7 @@ import { getBrowser } from '../render/index.js';
 import { frankRuhlDataUri, escapeHtml } from '../render/theme.js';
 import { postConfig } from '../postConfig.js';
 import { pickTrack } from './tracks.js';
-import { planLegibility } from '../render/legibility.js';
+import { planLegibility, pickGround } from '../render/legibility.js';
 import { hookShape, fill, assertNoExperience, assertNoFiller } from '../posts/voice.js';
 import { captionFollow } from '../hashtags.js';
 import { targetsForKind } from '../publish/targets.js';
@@ -123,7 +123,15 @@ export async function buildPostcardClip(places, { hookHe, id = 'postcard', outDi
 
   const args = ['-y', '-hide_banner', '-loglevel', 'error'];
   // Each photograph as a looping single-frame input, held for its own span.
-  for (const f of files) args.push('-loop', '1', '-t', String(HOLD_SECONDS), '-i', f);
+  // ONE FRAME PER PHOTOGRAPH, and zoompan makes the rest.
+  //
+  // This was `-loop 1 -t 4 -i file`, which feeds zoompan 120 frames at 30fps - and
+  // zoompan's `d` is frames produced PER INPUT FRAME, not frames of output. So each
+  // shot became 120x120 frames, concat put them end to end, and `-t 16` cut the result
+  // sixteen seconds into the FIRST one. Every frame of the reel was Santorini.
+  //
+  // A single input frame and d=hold*fps gives exactly the span intended.
+  for (const f of files) args.push('-i', f);
   for (const png of pngs) args.push('-i', png);
   if (bed) args.push('-i', bed);
 
@@ -308,82 +316,114 @@ function run(bin, args) {
 }
 
 /**
- * One postcard clip, as an approvable candidate.
+ * One postcard reel, as an approvable candidate.
  *
- * `dest` is a destinations.json row. Everything else comes off that destination's own
- * page: the places, their photographs, their credits.
+ * FOUR DESTINATIONS, NOT FOUR PLACES IN ONE CITY, and that is the correction that
+ * matters most about this format.
  *
- * WHY THIS IS ITS OWN KIND RATHER THAN A FOURTH ENTRY IN nextShapes.
+ * The first version took one destination and used four places from its page. On Prague
+ * that produced Charles Bridge, the Jewish Quarter, the castle and the Old Town Square -
+ * four genuinely different places that, at four seconds each in a 9:16 frame, are four
+ * shots of the same red roofs and the same river. The owner's verdict was exact: "shows
+ * only 1 place and will not get numbers."
  *
- * The three existing shapes are all the same function of the same input - a pool of
- * Pexels results and a written line - and `buildClips` is built around spending that
- * pool. This shape's input is a DESTINATION PAGE. It shares the output format and
- * nothing else: no stock query, no vision call, no footage ledger, and a completely
- * different honesty contract (it names places, which the others may not). Threading a
- * destination through a function whose whole shape is "here is a pool of stock clips,
- * spend it" would make both harder to read for no gain.
+ * The reference video is "4 יעדים שנראים כמו ציור" - four DESTINATIONS, in different
+ * countries, and the cut between them is the whole effect. A viewer stays because each
+ * shot is somewhere else; four angles on one old town gives them no reason to.
+ *
+ * So the pool is the catalogue, one shot per destination, and the hook counts
+ * destinations. It also makes the format honest about what it is: a reason to look at
+ * the site, which has pages for all four, rather than a tour of one city we would
+ * rather someone read the itinerary for.
  */
-export async function buildPostcardCandidate(dest, { outDir = clipOutputDir(), shots = 4 } = {}) {
-  const { loadCity, listPlaces, daysOf } = await import('../posts/source.js');
+export async function buildPostcardCandidate(destOrRows, { outDir = clipOutputDir(), shots = 4, recent = [] } = {}) {
+  const { loadCity, listPlaces } = await import('../posts/source.js');
   const { fillPostPhotos } = await import('../posts/photos.js');
+  const { readFileSync } = await import('node:fs');
 
-  const slug = dest?.siteSlug || dest?.id;
-  const city = await loadCity(slug);
-  if (!city) throw new Error(`no page for ${dest?.he || slug} - a postcard clip is built from one`);
+  // A single row still works - it is what `/postcard פראג` asks for - and it seeds the
+  // reel rather than filling it.
+  const seed = Array.isArray(destOrRows) ? null : destOrRows;
+  const catalogue = JSON.parse(readFileSync(new URL('../../destinations.json', import.meta.url), 'utf8')).destinations;
 
-  // A couple of spares, because a place whose photograph cannot be found is a shot this
-  // format does not have - there is no text-only version of a postcard.
-  const want = listPlaces(city, { want: shots + 4, needPhoto: false }).slice(0, shots + 4);
-  const got = await fillPostPhotos(want, { dest: dest?.en || city.name });
-  const picked = want.filter((p) => p.image?.src).slice(0, shots);
-  if (picked.length < 3) {
-    throw new Error(`only ${picked.length} places in ${city.name} have a photograph, and a postcard clip needs 3`);
+  const pool = Array.isArray(destOrRows)
+    ? destOrRows
+    : [seed, ...catalogue.filter((r) => r.siteSlug && r.id !== seed?.id)].filter(Boolean);
+
+  // One place per destination, and the destination is skipped if its best place has no
+  // photograph. There is no text-only version of a postcard.
+  const chosen = [];
+  const seen = new Set((recent || []).map((r) => String(r).toLowerCase()));
+  for (const row of pool) {
+    if (chosen.length >= shots) break;
+    const slug = row?.siteSlug || row?.id;
+    if (!slug || seen.has(String(row.he || '').toLowerCase())) continue;
+
+    const city = await loadCity(slug).catch(() => null);
+    if (!city) continue;
+
+    // SEVERAL CANDIDATES, AND THE BEST-LOOKING ONE WINS - but only one is used. A second
+    // shot of the same destination is the mistake this format was rebuilt to avoid.
+    //
+    // Taking the first photographed place put a municipal park BENCH in for Batumi,
+    // between Santorini at dusk and the Burj Khalifa. On a format whose entire premise
+    // is "look at this", one ordinary frame is the one a viewer leaves on. pickGround
+    // scores colour and midtone, which is as close to "striking" as a measurement gets,
+    // and it is already the scorer the deck uses to choose a ground.
+    const want = listPlaces(city, { want: 6, needPhoto: false }).slice(0, 6);
+    await fillPostPhotos(want, { dest: row?.en || city.name }).catch(() => null);
+    const shot = want.filter((p) => p.image?.src);
+    if (!shot.length) continue;
+    const best = shot.length > 1 ? await pickGround(shot.map((p) => p.image.src)).catch(() => null) : null;
+    const withPhoto = (best && shot.find((p) => p.image.src === best)) || shot[0];
+
+    chosen.push({
+      nameHe: row?.he || city.name,
+      countryHe: row?.country || city.countryHe || null,
+      image: withPhoto.image,
+      slug,
+    });
   }
 
-  const countryHe = dest?.country || city.countryHe || null;
+  if (chosen.length < 3) {
+    throw new Error(`only ${chosen.length} destination(s) had a usable photograph, and a postcard reel needs 3`);
+  }
 
-  // THE HOOK, AND THE SLOTS IT IS ALLOWED TO ASK FOR.
+  const n = chosen.length;
+
+  // A HOOK THAT NAMES NO DESTINATION, because this reel is four of them.
   //
-  // The shared pool includes day-counted shapes ("ככה נראים {days} ימים ב{dest}"), and
-  // a destination whose page has no itinerary cannot fill `{days}`. Filling it with an
-  // empty string produces "ככה נראים ימים בניו יורק" - a sentence with a hole in it,
-  // which is what the first version shipped. So a shape is only eligible if every slot
-  // it names can be filled, and the draw is retried until one is.
-  const span = daysOf(city)?.days?.length || null;
-  const vars = { dest: dest?.he || city.name, n: picked.length, ...(span ? { days: span } : {}) };
-  const fillable = (shape) => ![...String(shape.he).matchAll(/\{(\w+)\}/g)].some((m) => vars[m[1]] == null);
+  // The shared pool's shapes all carry a {dest} slot - they were written for a post
+  // about one place - and filling it from the first destination produced "יוון ב-4
+  // תמונות" over Santorini, Reykjavik, Dubai and Batumi. One of those is in Greece. A
+  // hook that is false about three quarters of its own content is worse than a plain
+  // one, so the plain one is used and it counts, which is the part that matters: the
+  // reference works because "4 יעדים" tells a viewer exactly how long this is.
+  const COUNTED = [
+    `${n} יעדים ששווים את הטיסה`,
+    `${n} יעדים לרשימה של השנה הבאה`,
+    `${n} יעדים שאנשים לא חושבים עליהם מספיק`,
+  ];
+  const counted = COUNTED[Math.abs([...chosen.map((c) => c.slug).join('')].reduce((a, c) => a + c.charCodeAt(0), 0)) % COUNTED.length];
+  assertNoExperience(counted, 'postcard hook');
+  assertNoFiller(counted, 'postcard hook');
 
-  let shape = null;
-  for (let tries = 0; tries < 12 && !shape; tries++) {
-    const candidate = hookShape('roll');
-    if (fillable(candidate)) shape = candidate;
-  }
-  if (!shape) throw new Error(`no hook shape for ${city.name} can be filled from this page (days: ${span ?? 'none'})`);
+  const id = `pc${Math.abs([...chosen.map((c) => c.slug).join('')].reduce((a, c) => (a * 31 + c.charCodeAt(0)) | 0, 7))
+    .toString(16)
+    .slice(0, 10)}`;
 
-  const hookHe = fill(shape.he, vars).replace(/\s+/g, ' ').trim();
-  assertNoExperience(hookHe, 'postcard hook');
-  assertNoFiller(hookHe, 'postcard hook');
-
-  const id = `pc${Math.abs([...`${slug}${picked.length}`].reduce((a, c) => (a * 31 + c.charCodeAt(0)) | 0, 7)).toString(16).slice(0, 10)}`;
-
-  const built = await buildPostcardClip(
-    picked.map((p) => ({ nameHe: p.name, countryHe, image: p.image })),
-    { hookHe, id, outDir }
-  );
+  const built = await buildPostcardClip(chosen, { hookHe: counted, id, outDir });
 
   const follow = captionFollow();
   return {
     kind: 'clip',
     id,
-    hook: hookHe,
-    headline: hookHe,
+    hook: counted,
+    headline: counted,
     hookWritten: false,
-    hookNote: 'postcard: the hook is a counted format filled with the page\'s own place count',
-    // WHAT PROVENANCE MEANS FOR THIS SHAPE. Not a stock library and an uploader - the
-    // photographs are the ones our own destination page carries, each with its Commons
-    // credit, which is the same provenance a slide has.
-    sourceName: `tiyulplus.com · ${city.name}`,
-    sourceUrl: city.url || null,
+    hookNote: 'postcard: one shot per destination, counted',
+    sourceName: `tiyulplus.com · ${chosen.map((c) => c.nameHe).join(', ')}`,
+    sourceUrl: null,
     pillar: 'day',
     tags: [],
     createdAt: new Date().toISOString(),
@@ -391,8 +431,8 @@ export async function buildPostcardCandidate(dest, { outDir = clipOutputDir(), s
     tiktokDraft: true,
     overrides: [],
     notes: [],
-    place: city.name,
-    siteSlug: slug,
+    place: chosen.map((c) => c.nameHe).join(' · '),
+    siteSlug: chosen[0].slug,
     clip: {
       shape: 'postcard',
       file: built.file,
@@ -402,21 +442,20 @@ export async function buildPostcardCandidate(dest, { outDir = clipOutputDir(), s
       followAt: null,
       width: postConfig().clips.video.width,
       height: postConfig().clips.video.height,
-      postcardPlaces: picked.map((p) => p.name),
-      photos: got,
+      postcardPlaces: chosen.map((c) => c.nameHe),
+      destinations: chosen.map((c) => c.slug),
     },
   };
 }
 
-/** The approval card for a postcard clip. */
+/** The approval card for a postcard reel. */
 export function postcardApprovalMessage(cand) {
   const c = cand.clip;
-  const lines = [
-    `🖼️ גלויות · ${cand.place} · ${c.seconds} שניות · ${c.postcardPlaces.length} מקומות`,
+  return [
+    `🖼️ גלויות · ${c.seconds} שניות · ${c.postcardPlaces.length} יעדים`,
     '',
     cand.hook,
     '',
     c.postcardPlaces.map((n, i) => `${i + 1}. ${n}`).join('\n'),
-  ];
-  return lines.join('\n');
+  ].join('\n');
 }

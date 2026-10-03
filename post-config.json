@@ -1840,14 +1840,14 @@
           "desc": "The superlative shape the owner pointed at. Promises a feeling rather than a chore, which is what lets it carry a run of photographs."
         },
         {
-          "id": "likeapainting",
-          "he": "{n} מקומות ב{dest} שנראים כמו ציור",
+          "id": "worthit",
+          "he": "{n} מקומות ב{dest} ששווים את הנסיעה",
           "weight": 2,
           "for": [
             "list",
             "roll"
           ],
-          "desc": "From the clip that worked - \"4 יעדים שנראים כמו ציור\". The claim is about the PICTURES rather than about the place, which is both true and the reason to keep watching."
+          "desc": "Counted and superlative without describing the photographs. \"נראים כמו ציור\" was dropped by the owner: it praises the picture rather than the place, which is the one thing a travel account cannot be caught doing."
         }
       ]
     },

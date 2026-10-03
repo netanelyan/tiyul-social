@@ -35,7 +35,11 @@ import { renderHtml as renderCardHtml } from '../src/render/templates.js';
 // It is a script rather than a test because it renders real content and takes a minute;
 // the selftest asserts the INVARIANTS these findings produced, which is the cheap half.
 
-const FRAME = { w: 1080, h: 1920 };
+// TikTok's own furniture, and ONLY TikTok's. Instagram's topSafe/bottomSafe in
+// deckTemplates are composition margins rather than furniture - the feed draws almost
+// nothing over the image - so a card's brand mark sitting above them is a design choice,
+// not a line nobody can read.
+const FRAME = { w: 1080, h: 1920, topSafe: 300, bottomSafe: 400 };
 
 /** Content chosen to be awkward: long names, flags, numbers, mixed scripts. */
 const CASES = [];
@@ -196,7 +200,11 @@ const note = (slide, kind, detail) => findings.push({ slide, kind, detail });
 const browser = await getBrowser();
 
 for (const c of CASES) {
-  const size = c.size || FRAME;
+  // Instagram's topSafe/bottomSafe are composition margins rather than platform
+  // furniture - the feed draws almost nothing over the image - so the furniture check is
+  // zeroed there. A card's brand mark above them is a design choice, not a covered line.
+  const base = c.size || FRAME;
+  const size = base === SIZES.instagram ? { ...base, topSafe: 0, bottomSafe: 0 } : base;
   const context = await browser.newContext({ viewport: { width: size.w, height: size.h }, deviceScaleFactor: 1, locale: 'he-IL' });
   const page = await context.newPage();
   try {
@@ -211,7 +219,7 @@ for (const c of CASES) {
     await page.evaluate(() => document.fonts.ready);
 
     const report = await page.evaluate((frame) => {
-      const out = { stranded: [], empty: [], overflow: [], tiny: [], clipped: [] };
+      const out = { stranded: [], empty: [], overflow: [], tiny: [], clipped: [], unsafe: [] };
       const vis = (el) => {
         const s = getComputedStyle(el);
         return s.display !== 'none' && s.visibility !== 'hidden' && Number(s.opacity) > 0.05;
@@ -265,6 +273,20 @@ for (const c of CASES) {
         if (el.scrollHeight > el.clientHeight + 4 && getComputedStyle(el).overflow === 'hidden') {
           out.clipped.push({ text: own.slice(0, 40), cls: el.className, lost: el.scrollHeight - el.clientHeight });
         }
+        // INSIDE THE PLATFORM'S OWN FURNITURE.
+        //
+        // TikTok draws its search bar and slide counter across the top of the frame and
+        // the caption, handle and button rail across the bottom. Text under either is
+        // text nobody reads - it is not clipped, it is covered, which is worse because
+        // the render looks fine. The deck has respected these numbers since it was
+        // written; the post looks were given them by geometryFor and never used them.
+        if (frame.topSafe && r.top < frame.topSafe) {
+          out.unsafe.push({ text: own.slice(0, 32), edge: 'top', at: Math.round(r.top), safe: frame.topSafe });
+        }
+        if (frame.bottomSafe && r.bottom > frame.h - frame.bottomSafe) {
+          out.unsafe.push({ text: own.slice(0, 32), edge: 'bottom', at: Math.round(r.bottom), safe: frame.h - frame.bottomSafe });
+        }
+
         const px = parseFloat(getComputedStyle(el).fontSize);
         // 1080px of frame shown across about 390 CSS px on a phone: a 30px glyph lands
         // at roughly 11pt in the hand, which is the floor for a caption read at a glance.
@@ -278,6 +300,7 @@ for (const c of CASES) {
     for (const o of report.overflow) note(c.name, 'text outside the frame', `"${o.text}" box=${o.box.join(',')}`);
     for (const k of report.clipped) note(c.name, 'text clipped away', `"${k.text}" lost ${k.lost}px`);
     for (const t of report.tiny) note(c.name, 'type under 28px', `"${t.text}" at ${t.px}px`);
+    for (const u of report.unsafe) note(c.name, `text under TikTok's ${u.edge} furniture`, `"${u.text}" reaches ${u.at}, safe is ${u.safe}`);
   } finally {
     await context.close().catch(() => {});
   }

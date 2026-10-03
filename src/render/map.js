@@ -385,7 +385,7 @@ window.__mapReady = (async () => {
  * degrees north a degree of longitude is two thirds of a degree of latitude, and
  * plotting them as a square grid stretches Prague sideways by half.
  */
-export function fitPoints(points, { width, height, padding = 0.14 } = {}) {
+export function fitPoints(points, { width, height, padding = 0.14, topSafe = 0, bottomSafe = 0 } = {}) {
   const pts = (points || []).filter((p) => Number.isFinite(Number(p.lat)) && Number.isFinite(Number(p.lng)));
   if (pts.length < 2) return null;
 
@@ -407,14 +407,25 @@ export function fitPoints(points, { width, height, padding = 0.14 } = {}) {
   const spanX = Math.max(box.x1 - box.x0, MIN);
   const spanY = Math.max(box.y1 - box.y0, MIN);
 
+  // THE PINS FIT THE BAND THE PLATFORM LEAVES ALONE, not the whole frame.
+  //
+  // TikTok draws its own furniture over the top 300px and the bottom 400px of a 1920
+  // frame, so a pin projected into either is a pin under the search bar or under the
+  // caption. Scaling to the full height put a third of a city's stops where nobody can
+  // see them, and the map still looked right in the render.
+  //
+  // So the available height is the safe band, and the map is centred ON THAT BAND rather
+  // than on the frame - otherwise the pins would be the right size and still sit too low.
   const usable = 1 - padding * 2;
-  const scale = Math.min((width * usable) / spanX, (height * usable) / spanY);
+  const safeH = Math.max(height * 0.3, height - topSafe - bottomSafe);
+  const scale = Math.min((width * usable) / spanX, (safeH * usable) / spanY);
   const cx = (box.x0 + box.x1) / 2;
   const cy = (box.y0 + box.y1) / 2;
+  const midY = topSafe + safeH / 2;
 
   const project = (p) => ({
     x: width / 2 + (mx(p.lng) - cx) * scale,
-    y: height / 2 + (my(p.lat) - cy) * scale,
+    y: midY + (my(p.lat) - cy) * scale,
   });
 
   // Metres per pixel, for the scale bar.
@@ -460,7 +471,7 @@ export function scaleBar(metresPerPixel, width) {
  * it either. The numbers key to the list post's own numbering, which is what makes a
  * map post worth posting alongside one.
  */
-export function pinMapHtml({ points, width, height, titleHe = null, subHe = null, bar = null, dayColours = [], base = null }) {
+export function pinMapHtml({ points, width, height, titleHe = null, subHe = null, bar = null, dayColours = [], base = null, topSafe = 0, bottomSafe = 0 }) {
   const pin = Math.round(width * 0.052);
   const font = Math.round(pin * 0.52);
 
@@ -496,6 +507,11 @@ html, body { width:${width}px; height:${height}px; overflow:hidden;
    on any city map and the thing a reader orients by before anything else. */
 .basemap { z-index:0; }
 .water { fill:rgba(58,96,150,.5); stroke:rgba(78,126,190,.55); stroke-width:${Math.max(1, Math.round(width * 0.0016))}; }
+/* A river's centreline, STROKED and never filled. See the note in cityVectors: filling
+   an open path closes it with a chord, which is how a river became a blue wedge. The
+   width is what makes a one-pixel line read as a river at this zoom. */
+.waterway { fill:none; stroke:rgba(58,96,150,.62); stroke-width:${Math.max(3, Math.round(width * 0.009))};
+            stroke-linecap:round; stroke-linejoin:round; }
 .road  { fill:none; stroke:rgba(255,255,255,.15); stroke-width:${Math.max(1, Math.round(width * 0.0022))};
          stroke-linecap:round; stroke-linejoin:round; }
 /* The grid stands in when there is no basemap - an Overpass outage, or a destination
@@ -514,17 +530,19 @@ svg { position:absolute; inset:0; }
        border-radius:50%; color:#14161c; font-weight:800; font-size:${font}px;
        display:flex; align-items:center; justify-content:center;
        box-shadow:0 0 0 ${Math.max(2, Math.round(pin * 0.06))}px rgba(11,15,22,.9), 0 ${Math.round(pin * 0.12)}px ${Math.round(pin * 0.3)}px rgba(0,0,0,.5); }
-.head { position:absolute; inset-inline:0; top:${Math.round(height * 0.07)}px; text-align:center; padding:0 ${Math.round(width * 0.07)}px; }
+.head { position:absolute; inset-inline:0; top:${Math.round(topSafe + height * 0.025)}px; text-align:center; padding:0 ${Math.round(width * 0.07)}px; }
 .head .t { color:#fff; font-weight:800; font-size:${Math.round(width * 0.062)}px; line-height:1.16;
            text-shadow:0 2px 14px rgba(0,0,0,.6); }
 .head .s { color:rgba(255,255,255,.74); font-weight:600; font-size:${Math.round(width * 0.036)}px; margin-top:6px; }
 /* The scale bar. The one piece of small type on the slide that earns its place: it is
    what makes the geometry mean something rather than being decoration. */
-.bar { position:absolute; inset-inline-start:${Math.round(width * 0.075)}px; bottom:${Math.round(height * 0.075)}px;
+.bar { position:absolute; inset-inline-start:${Math.round(width * 0.075)}px; bottom:${Math.round(bottomSafe + height * 0.03)}px;
        color:rgba(255,255,255,.86); font-weight:700; font-size:${Math.round(width * 0.029)}px; }
 /* REQUIRED BY ODbL, not decoration, and in the corner where every map anyone has ever
    seen puts it. */
-.osm { position:absolute; inset-inline-end:${Math.round(width * 0.03)}px; bottom:${Math.round(height * 0.022)}px;
+/* The ODbL credit is owed and has to be VISIBLE, so it sits inside the safe band too -
+   a credit under the caption bar is a credit nobody can read. */
+.osm { position:absolute; inset-inline-end:${Math.round(width * 0.03)}px; bottom:${Math.round(bottomSafe * 0.5 + height * 0.012)}px;
        color:rgba(255,255,255,.45); font-size:${Math.round(width * 0.018)}px; font-weight:600; direction:ltr; }
 .bar i { display:block; height:${Math.max(3, Math.round(width * 0.004))}px; background:rgba(255,255,255,.86);
          border-radius:2px; margin-bottom:6px; }
@@ -539,7 +557,9 @@ ${
   base
     ? `<svg class="basemap" viewBox="0 0 ${width} ${height}">${base.roads
         .map((d) => `<path class="road" d="${d}"/>`)
-        .join('')}${base.water.map((d) => `<path class="water" d="${d}"/>`).join('')}</svg>`
+        .join('')}${(base.waterways || []).map((d) => `<path class="waterway" d="${d}"/>`).join('')}${(base.water || [])
+        .map((d) => `<path class="water" d="${d}"/>`)
+        .join('')}</svg>`
     : '<div id="grid"></div>'
 }
 <div id="glow"></div>
@@ -685,7 +705,10 @@ const VECTOR_CACHE = new URL('../../data/basemaps/', import.meta.url);
 // decoration for the pins.
 const VECTOR_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
-const vectorCachePath = (box) => new URL(`${box.replace(/[^0-9.,-]/g, '')}.json`, VECTOR_CACHE);
+// v2: the cache format changed when water was split into rings and lines. A file
+// written by the old code has no `waterways` key and its `water` holds both, which
+// would draw the wedges this split exists to remove - so the name changes with it.
+const vectorCachePath = (box) => new URL(`${box.replace(/[^0-9.,-]/g, '')}-v2.json`, VECTOR_CACHE);
 
 function readVectorCache(box) {
   try {
@@ -693,7 +716,7 @@ function readVectorCache(box) {
     const stat = statSync(file);
     if (Date.now() - stat.mtimeMs > VECTOR_TTL_MS) return null;
     const json = JSON.parse(readFileSync(file, 'utf8'));
-    if (!json?.roads && !json?.water) return null;
+    if (!json?.roads && !json?.water && !json?.waterways) return null;
     return json;
   } catch {
     // A cache miss is the normal case and says nothing worth printing. Every OTHER
@@ -826,8 +849,28 @@ out geom;`;
         console.error(`map: ${new URL(host).hostname} returned no ways for this box`);
         continue;
       }
+      // WATER COMES IN TWO SHAPES AND THEY CANNOT BE DRAWN THE SAME WAY.
+      //
+      // `natural=water` is an AREA - a lake, a riverbank polygon - and it is a closed
+      // ring that wants filling. `waterway=river` is a LINE: the centreline of the
+      // river, open at both ends.
+      //
+      // Both were being filled. SVG closes an open path with a straight chord before
+      // filling it, so every river centreline became a blue WEDGE between its first and
+      // last point - a triangle across the city that is not a river, not a lake, and not
+      // anything. The owner checked the Paris map against the real one and said the blue
+      // part is not water. It was not.
+      //
+      // So they are separated here, where the tags are still available, and drawn
+      // differently: rings filled, lines stroked at a width that reads as a river.
+      const isWater = (el) => el.tags?.natural === 'water' || el.tags?.waterway;
+      const closed = (g) =>
+        g.length > 2 && g[0].lat === g[g.length - 1].lat && (g[0].lon ?? g[0].lng) === (g[g.length - 1].lon ?? g[g.length - 1].lng);
+      const waters = simplify(ways.filter(isWater).map((el) => el.geometry));
+
       const out = {
-        water: simplify(ways.filter((el) => el.tags?.natural === 'water' || el.tags?.waterway).map((el) => el.geometry)),
+        water: waters.filter(closed),
+        waterways: waters.filter((g) => !closed(g)),
         roads: simplify(ways.filter((el) => el.tags?.highway).map((el) => el.geometry)),
       };
       writeVectorCache(box, out);

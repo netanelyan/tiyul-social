@@ -134,6 +134,26 @@ function groundTint(slide, fallback) {
   return Math.max(0.3, Math.min(0.88, scaled)).toFixed(2);
 }
 
+
+/**
+ * The band of the frame the platform does not draw its own furniture over.
+ *
+ * TikTok puts a search bar and a slide counter across the top and a caption, a handle
+ * and the button rail across the bottom. Text under either is not clipped, it is
+ * COVERED - so the render looks perfect and the published post does not. That is the
+ * worst kind of layout bug, because nothing in the file is wrong.
+ *
+ * geometryFor has returned topSafe and bottomSafe since it was written and not one of
+ * these looks read them: every vertical offset here was a percentage picked by eye. The
+ * owner's report was "the texts should be closer to the middle, as the top and bottom
+ * space is for tiktok ui", which is exactly what those two numbers mean.
+ *
+ * `extra` is breathing room beyond the furniture, because type that stops precisely at
+ * the edge of the search bar reads as crowded even though nothing covers it.
+ */
+const safeTop = (geo, extra = 0.02) => Math.round((geo.topSafe || 0) + geo.h * extra);
+const safeBottom = (geo, extra = 0.02) => Math.round((geo.bottomSafe || 0) + geo.h * extra);
+
 /**
  * The outline that makes white type survive any photograph.
  *
@@ -273,8 +293,9 @@ export function renderLabelSlideHtml(slide, { size = 'tiktok', frame = 'tall' } 
 
   const badgePx = px(geo, 0.075);
   const badgeLabelPx = px(geo, 0.03);
-  const top = band === 'mid' ? Math.round(geo.h * 0.3) : null;
-  const bottom = band === 'mid' ? null : Math.round(geo.h * 0.2);
+  const top = band === 'mid' ? Math.max(safeTop(geo), Math.round(geo.h * 0.3)) : null;
+  // The lower band ended at y=1536 on a 1920 frame, sixteen pixels inside the caption.
+  const bottom = band === 'mid' ? null : Math.max(safeBottom(geo), Math.round(geo.h * 0.2));
 
   return `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><style>${base(geo)}
 .wrap { position: absolute; ${top != null ? `top:${top}px;` : `bottom:${bottom}px;`}
@@ -406,7 +427,8 @@ export function renderSheetSlideHtml(slide, { size = 'tiktok', frame = 'tall' } 
   return `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><style>${base(geo)}
 .dim { position: absolute; inset: 0; background: rgba(8,10,14,.52); }
 .wrap { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center;
-        align-items: center; gap: ${pad}px; padding: ${Math.round(geo.h * 0.12)}px ${Math.round(geo.w * 0.075)}px; }
+        align-items: center; gap: ${pad}px;
+        padding: ${safeTop(geo)}px ${Math.round(geo.w * 0.075)}px ${safeBottom(geo)}px; }
 .head { font-weight: 800; font-size: ${headPx}px; line-height: 1.16; text-align: center;
         margin-bottom: ${pad}px; ${outlined(Math.max(3, Math.round(headPx * 0.055)))} }
 /* The box hugs its line: fit-content with a max is what makes the stack ragged,
@@ -511,7 +533,8 @@ export function renderRouteCardHtml(slide, { size = 'tiktok', frame = 'tall' } =
    render/post.js) and returns the tint that carries the type at target. */
 .tint { position: absolute; inset: 0;
         background: linear-gradient(180deg, rgba(9,11,16,${groundTint(slide, 0.52)}), rgba(9,11,16,${groundTint(slide, 0.68)})); }
-.wrap { position: absolute; inset: 0; padding: ${Math.round(geo.h * 0.1)}px ${Math.round(geo.w * 0.07)}px;
+.wrap { position: absolute; inset: 0;
+        padding: ${safeTop(geo)}px ${Math.round(geo.w * 0.07)}px ${safeBottom(geo)}px;
         display: flex; flex-direction: column; justify-content: center; }
 .head { color: #fff; font-weight: 800; font-size: ${headPx}px; line-height: 1.16; text-align: center;
         margin-bottom: ${Math.round(gap * 1.6)}px; }
@@ -603,7 +626,8 @@ body { background: #000; }
       filter: blur(30px) saturate(1.06) brightness(.72); transform: scale(1.18); }
 /* Measured off this ground after its own brightness, exactly as the route card's is. */
 .tint { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,${groundTint(slide, 0.62)}), rgba(0,0,0,${groundTint(slide, 0.76)})); }
-.wrap { position: absolute; inset: 0; padding: ${Math.round(geo.h * 0.13)}px ${Math.round(geo.w * 0.085)}px;
+.wrap { position: absolute; inset: 0;
+        padding: ${safeTop(geo)}px ${Math.round(geo.w * 0.085)}px ${safeBottom(geo)}px;
         display: flex; flex-direction: column; justify-content: center; }
 .head { color: #fff; font-weight: 800; font-size: ${headPx}px; line-height: 1.14;
         margin-bottom: ${Math.round(rowPx * 1.1)}px; }
@@ -729,7 +753,7 @@ export async function renderPinMapHtml(slide, { size = 'tiktok', frame = 'tall' 
   const geo = geometryFor(size, frame);
   const pts = slide.points || [];
 
-  const fit = fitPoints(pts, { width: geo.w, height: geo.h, padding: 0.16 });
+  const fit = fitPoints(pts, { width: geo.w, height: geo.h, padding: 0.16, topSafe: geo.topSafe || 0, bottomSafe: geo.bottomSafe || 0 });
   if (!fit) throw new Error('renderPinMapHtml: fewer than two points with coordinates');
   const placed = pts.map((p) => ({ ...p, ...fit.project(p) }));
   const bar = scaleBar(fit.metresPerPixel, geo.w);
@@ -773,8 +797,11 @@ export async function renderPinMapHtml(slide, { size = 'tiktok', frame = 'tall' 
 
   const base = vectors
     ? {
-        roads: vectors.roads.filter(onFrame).map(toPath),
-        water: vectors.water.filter(onFrame).map(toPath),
+        roads: (vectors.roads || []).filter(onFrame).map(toPath),
+        // Rings and lines stay apart all the way to the SVG - see cityVectors for why
+        // filling a river's centreline draws a wedge instead of a river.
+        water: (vectors.water || []).filter(onFrame).map(toPath),
+        waterways: (vectors.waterways || []).filter(onFrame).map(toPath),
       }
     : null;
 
@@ -782,11 +809,13 @@ export async function renderPinMapHtml(slide, { size = 'tiktok', frame = 'tall' 
     points: placed,
     width: geo.w,
     height: geo.h,
+    topSafe: geo.topSafe || 0,
+    bottomSafe: geo.bottomSafe || 0,
     titleHe: slide.titleHe || null,
     subHe: slide.subHe || null,
     bar,
     dayColours: DAY_COLOURS,
-    base: base && (base.roads.length || base.water.length) ? base : null,
+    base: base && (base.roads.length || base.water.length || base.waterways.length) ? base : null,
   });
 }
 
@@ -850,7 +879,7 @@ ${photo(slide.image)}
    sky: strongest at the top, gone by the middle, and never visibly edged. */
 .veil { position: absolute; inset-inline: 0; top: 0; height: ${Math.round(geo.h * (banded ? 0.78 : 0.62))}px;
         background: linear-gradient(to bottom, rgba(6,8,12,${veil}) 0%, rgba(6,8,12,${(veil * 0.62).toFixed(2)}) 42%, rgba(6,8,12,0) 100%); }
-.wrap { position: absolute; top: ${Math.round(geo.h * (slide.cta ? 0.3 : 0.2))}px;
+.wrap { position: absolute; top: ${Math.max(safeTop(geo), Math.round(geo.h * (slide.cta ? 0.3 : 0.2)))}px;
         inset-inline: ${Math.round(geo.w * 0.09)}px; text-align: center; }
 /* THE SOFT TINT, not white. The reference sets its headline in a pale pink; pure white
    on a photograph is what a subtitle burner produces. A warm off-white keeps the

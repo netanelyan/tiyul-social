@@ -1,5 +1,5 @@
 import { verdictOf, practicalOf, firstClause, seasonLine, listPlaces, ratingBadge, placeLine } from './source.js';
-import { line, fill, bestClause } from './voice.js';
+import { line, fill, bestClause, openClause, isConcrete } from './voice.js';
 
 // TYPE C: STOP ONLY GOING TO X. "תפסיקו לטוס רק לרודוס כשיש את האיים האלה"
 //
@@ -69,7 +69,27 @@ export function buildInsteadPost(cities, { hook, defaultHe, regionHe = null, que
     );
   }
 
-  const alts = usable.slice(0, 5);
+  // AN ALTERNATIVE WITH NO REASON IS NOT AN ALTERNATIVE.
+  //
+  // "if there is not enough info, drop it." The whole post is an argument, and a
+  // destination whose page gives no concrete reason to prefer it is a name on a slide
+  // with a photograph behind it - which is the generic travel post this format exists to
+  // beat. Filtered here rather than rendered thin, and the count the cover promises is
+  // the count of the ones that had something to say.
+  // CONCRETE, not merely present. bestClause falls back to the longest clause when a
+  // page offers nothing concrete, which is the right behaviour for a line that has to
+  // exist and the wrong test for whether a destination belongs in this post at all:
+  // Andalusia passed the filter on "אנדלוסיה מספקת את הסחורה", which is the exact
+  // sentence this type was corrected for once already.
+  const reasonFor = (c) => (verdictOf(c)?.prosHe || []).map(openClause).filter((x) => isConcrete(x) && x.length <= 95);
+  const arguable = usable.filter((c) => reasonFor(c).length);
+  if (arguable.length < 3) {
+    throw new Error(
+      `only ${arguable.length} alternative(s) have a concrete reason on their page, and this post needs 3`
+    );
+  }
+
+  const alts = arguable.slice(0, 5);
 
   const cover = {
     look: 'label',
@@ -113,7 +133,9 @@ export function buildInsteadPost(cities, { hook, defaultHe, regionHe = null, que
     // entire case was "אנדלוסיה מספקת את הסחורה". bestClause takes the shortest clause
     // that NAMES something - a beach, a price, an old town, a flight time - and only
     // falls back to length when the page offers nothing concrete at all.
-    const reason = bestClause(verdict?.prosHe || [], { max: 95 });
+    // Only ever a concrete clause here - the alternatives were filtered on exactly this
+    // above, so one always exists.
+    const reason = reasonFor(city).sort((a, b) => a.length - b.length)[0];
 
     // THE SECOND LINE IS THE FLIGHT, BUT ONLY WHEN THE FLIGHT IS AN ARGUMENT.
     //
@@ -136,15 +158,21 @@ export function buildInsteadPost(cities, { hook, defaultHe, regionHe = null, que
         ? { text: line(seasonLine(practical), { where: `alt${i}.season` }) }
         : null;
 
-    // A THIRD LINE: WHAT IS ACTUALLY THERE.
+    // A SECOND REASON, NOT A SECOND FACT.
     //
-    // "the instead slides are too thin" - two quoted clauses about a whole destination
-    // is a card, not a case. The third line names the best place on that destination's
-    // own page, which is the most concrete thing the post can say about it and the one
-    // that turns "Valencia is nice" into somewhere to go. Verbatim from the page, like
-    // everything else here.
-    const top = listPlaces(city, { want: 3, needPhoto: false }).filter((p) => p?.name)[0];
-    const anchor = top ? `${top.name}${placeLine(top) ? ` - ${placeLine(top)}` : ''}` : null;
+    // The third line used to name the destination's best place with its own detail -
+    // "מוזיאון פראדו - כשלוש שעות". The owner's verdict: "that is nothing". And it is
+    // right, because this is the one post type that is making an ARGUMENT. Every line on
+    // an alternative's slide has to answer "why this instead of Barcelona", and an
+    // opening time answers "what is in Madrid", which nobody asked.
+    //
+    // So the third line is another clause from the destination's own verdict - a second
+    // reason - and the place list is not consulted at all. `spent` keeps it from
+    // repeating the first.
+    const spent = new Set([reason].filter(Boolean));
+    const second2 = reasonFor(city)
+      .filter((c) => !spent.has(c))
+      .sort((a, b) => a.length - b.length)[0];
 
     slides.push({
       look: 'sheet',
@@ -158,7 +186,7 @@ export function buildInsteadPost(cities, { hook, defaultHe, regionHe = null, que
       lines: [
         ...(reason ? [{ text: line(reason, { where: `alt${i}.reason`, quote: verdict.source }) }] : []),
         ...(second ? [second] : []),
-        ...(anchor ? [{ text: line(anchor, { where: `alt${i}.anchor` }) }] : []),
+        ...(second2 ? [{ text: line(second2, { where: `alt${i}.reason2`, quote: verdict.source }) }] : []),
       ],
       image: bestPhoto(city),
       slug: city.slug,

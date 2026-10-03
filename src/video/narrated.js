@@ -115,7 +115,10 @@ export async function buildNarratedVideo(city, { dest, id = 'narrated', outDir =
     }
 
     const args = ['-y', '-hide_banner', '-loglevel', 'error'];
-    for (const f of files) args.push('-loop', '1', '-t', String(hold.toFixed(3)), '-i', f);
+    // One frame per photograph; zoompan produces d frames from it. See the note in
+    // src/video/postcard.js: looping the input made zoompan emit d frames per input
+    // frame and the first shot filled the whole video.
+    for (const f of files) args.push('-i', f);
     for (const p of pngs) args.push('-i', p.file);
     if (spoken) args.push('-i', voiceFile);
 
