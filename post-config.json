@@ -2481,7 +2481,19 @@
     "produces a run of three hidden gems reels one time in four, and three identical",
     "formats in a row is what a viewer reads as a template - the same argument",
     "typeMemory makes one level down. 2 means a run of two is fine and a third in a",
-    "row is refused."
+    "row is refused.",
+    "",
+    "WHICH MEANS THE REALIZED SHARE IS NOT THE WEIGHT, and it is worth knowing by",
+    "how much before somebody reads 50 and measures 43. Over six thousand draws:",
+    "",
+    "  hidden_gems_video  43.5%     postcard  17.4%     guide  6.3%",
+    "  post               27.1%     clip       5.7%",
+    "",
+    "The heavy format loses about six points to the run limit and the rest pick them",
+    "up, because it is the only one that ever hits the limit. 73% video against 27%",
+    "slideshow, where the instruction was 75 and 25. Raising the weight to compensate",
+    "would be tuning one number against another in the same file; the honest version",
+    "is that these two rules disagree slightly and the run limit wins."
   ],
   "formats": {
     "rotation": {
