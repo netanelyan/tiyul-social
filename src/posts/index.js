@@ -9,6 +9,8 @@ import { notePostShape } from '../store.js';
 import { loadCity, verdictOf, firstClause } from './source.js';
 import { nextShape, canBuild, platformsFor } from './types.js';
 import { hookShape, fill, assertPostVoice, questionFor } from './voice.js';
+import { assertDelivers } from './deliver.js';
+import { buildSlideReel, reelable } from '../video/slideReel.js';
 import { fillPostPhotos, coverPhoto } from './photos.js';
 import { captionsFor } from './caption.js';
 import { buildPlanPost } from './plan.js';
@@ -115,6 +117,10 @@ export async function buildPost({
   regionHe = null,
   targets = targetsForKind('deck'),
   photos = true,
+  // Whether to also encode the slides as one vertical video. Null follows
+  // posts.video.on in post-config.json, which is off; true is `/make ... video` and
+  // the lab. See src/video/slideReel.js.
+  video = null,
   // Rung two of the photo ladder, separately switchable. `photos: false` skips the
   // pictures entirely, which is a layout-only render; `search: false` keeps the site's
   // own Commons files and skips the stock search, which is the fast iteration the labs
@@ -276,6 +282,19 @@ export async function buildPost({
   // next year is covered by a check nobody had to remember to write.
   assertPostVoice(post, { where: `${shape.type}/${dest?.he || slug}` });
 
+  // THE DELIVERY GATE, OVER THE SAME FINISHED OBJECT.
+  //
+  // Beside the voice gate because it is the same kind of check at the same moment:
+  // the voice gate asks whether the post says anything it may not, and this asks
+  // whether it says what its own cover promised. Both run over the result rather
+  // than inside the builders, for the reason the voice gate's note gives.
+  //
+  // It is here rather than earlier because the slides are the evidence. Nothing
+  // before this point knows what the post ended up containing - the photograph pass
+  // drops places, the clause ledger spends facts, and a slide that fell below its
+  // own floor is simply absent. See ./deliver.js for what it counts and why.
+  post.delivers = assertDelivers(post, { where: `${shape.type}/${dest?.he || slug}` });
+
   if (!render) return { post, shape, city };
 
   // The platforms this TYPE goes to, intersected with the ones that were asked for.
@@ -296,6 +315,28 @@ export async function buildPost({
   say('rendering');
   const rendered = await renderPost(post, { sizes, outDir });
   if (!rendered.siteSlide) post.siteSlug = null;
+
+  // THE OPTIONAL VIDEO VARIANT, from the slides that were just drawn.
+  //
+  // After the render rather than instead of it, and that is the whole design: the
+  // reel is the same post, not a second one. The carousel still goes out as a
+  // carousel and the mp4 is an extra file beside it, so nothing downstream has to
+  // choose between them and the comparison the config comment wants is between two
+  // deliveries of identical content.
+  //
+  // Needs the TikTok size, because that is the geometry a vertical video wants.
+  // Routed to Instagram only, the reel is skipped rather than built from 3:4 slides.
+  const wantsReel = (video == null ? postConfig().posts.video.on : video) && reelable(shape.type);
+  if (wantsReel && rendered.tiktok?.length) {
+    say('encoding the slide reel');
+    post.reel = await buildSlideReel(rendered.tiktok.map((s) => s.file), { id: `pr${post.id}`, outDir }).catch((e) => {
+      // A failed encode must not lose the post. The carousel is the deliverable and
+      // the reel is the experiment; ffmpeg being absent on a box is a reason to
+      // publish without it, not a reason to publish nothing.
+      console.error(`post: the slide reel failed, the carousel is unaffected - ${e.message}`);
+      return null;
+    });
+  }
 
   const captions = captionsFor(
     { ...post, slides: post.slides.map((s) => ({ ...s, countryHe: post.countryHe })) },

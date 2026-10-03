@@ -152,9 +152,30 @@ export const __reset = () => {
  * has no rate, and calling it zero would rank it below a post that genuinely failed.
  */
 export function rates(stats) {
-  if (!stats) return { saveRate: null, shareRate: null, views: null };
+  const empty = { saveRate: null, shareRate: null, likeRate: null, commentRate: null, views: null, likes: null };
+  if (!stats) return empty;
   const views = Number(stats.views ?? stats.reach);
-  if (!Number.isFinite(views) || views <= 0) return { saveRate: null, shareRate: null, views: null };
+  if (!Number.isFinite(views) || views <= 0) return empty;
   const rate = (n) => (Number.isFinite(Number(n)) ? Number(n) / views : null);
-  return { saveRate: rate(stats.saved), shareRate: rate(stats.shares), views };
+  const likes = Number.isFinite(Number(stats.likes)) ? Number(stats.likes) : null;
+  return {
+    saveRate: rate(stats.saved),
+    shareRate: rate(stats.shares),
+    // LIKES PER VIEW, ADDED RATHER THAN SUBSTITUTED.
+    //
+    // The weekly report ranks on saves and shares and its own note explains why: a
+    // report led by likes would have ranked the old scenic decks top and steered the
+    // account back to where it started. That argument stands and that report is
+    // unchanged.
+    //
+    // This exists because the owner's newest numbers are a like rate comparison and
+    // they say something saves cannot: 6.1% on a twelve second video against 0.5% on
+    // a slideshow that out-reached it four to one. Saves measure whether a post is a
+    // tool; likes per view measure whether the post paid off the promise that got it
+    // shown. Both are worth having, and /report hooks is where this one is read.
+    likeRate: rate(stats.likes),
+    commentRate: rate(stats.comments),
+    views,
+    likes,
+  };
 }

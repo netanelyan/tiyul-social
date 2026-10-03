@@ -1067,6 +1067,12 @@ export function recordPublished({
   topic = null,
   headline = null,
   place = null,
+  // Which format this was, and which hook category, for the rows that have one.
+  // Read back by /views so a hand-typed view count can be grouped by format, which
+  // is the one grouping the account's own evidence is expressed in. See
+  // publishedFacts in bot.js.
+  format = null,
+  hookCategory = null,
   pexelsId = null,
   pexelsIds = [],
   angle = null,
@@ -1133,6 +1139,8 @@ export function recordPublished({
       // the world became a run of one city.
       headline,
       place,
+      format,
+      hookCategory,
       // Which stock video this was, for clips. The field the /clip dedupe was
       // already reading — `recentPublished().map(p => p.pexelsId)` — on rows
       // that had never carried it, so the set of "already used" ids handed to

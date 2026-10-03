@@ -183,6 +183,116 @@ export function weeklyReport({ days = 7, rows = null, now = Date.now() } = {}) {
   return lines.join('\n');
 }
 
+/**
+ * The hook and format report, ranked by LIKES per view and by views.
+ *
+ * A SECOND REPORT RATHER THAN A CHANGE TO THE FIRST, and the reason is at the top of
+ * this file: weeklyReport refuses to lead with likes because that would have ranked
+ * the scenic decks top and steered the account back to where it started. That is
+ * still true of the weekly table.
+ *
+ * It is also not the question the newest numbers ask. Those numbers are a like rate
+ * comparison between a twelve second video and a slideshow, 6.1% against 0.5%, where
+ * the slideshow had four times the reach. Saves cannot see that: it is about whether
+ * a post paid off the promise that got it shown. So this ranks on likes per view,
+ * prints views beside it so the trade is visible, and groups by the two dimensions
+ * the brief names, the hook and the format.
+ *
+ * BOTH NUMBERS, ALWAYS, BECAUSE EITHER ONE ALONE PICKS THE WRONG WINNER. A format
+ * with a 6% like rate and 197 views and one with 0.5% and 1993 views are 12 likes
+ * and 9 likes: ranking on the rate says the first is twelve times better and ranking
+ * on views says the second is ten times better, and the honest answer is that they
+ * performed about the same and did it in different ways.
+ */
+export function hookReport({ days = 14, rows = null, now = Date.now() } = {}) {
+  const entries = window(days, { rows, now });
+  const lines = [`🪝 ${days} ימים · ${posts(entries.length)} · דירוג לפי לייקים לצפייה`];
+
+  const measured = entries.filter((e) => e.best.likeRate != null);
+  if (!measured.length) {
+    lines.push('', 'אין מספרים עם לייקים בחלון הזה.', 'אפשר להזין ביד: /views <מספר> <צפיות> <לייקים>');
+    return lines.join('\n');
+  }
+  lines.push(`   ${measured.length} עם לייקים · ${entries.length - measured.length} בלי`);
+
+  for (const [field, titleHe] of [
+    ['format', '🎬 לפי פורמט'],
+    ['hookCategory', '🗂️ לפי קטגוריית פתיח'],
+    ['type', '📄 לפי סוג פוסט'],
+  ]) {
+    const ranked = rankLikes(measured, field);
+    if (!ranked.length) continue;
+    lines.push('');
+    lines.push(`${titleHe} (לייקים/צפיות · צפיות בממוצע)`);
+    for (const r of ranked) {
+      lines.push(
+        `   ${String(r.key).slice(0, 18).padEnd(18)} ${pct(r.likeRate)} · ${num(r.views)}  (${posts(r.posts)}${r.thin ? ', מעט מדי' : ''})`
+      );
+    }
+  }
+
+  // THE HOOKS THEMSELVES, BY TEXT, which is the half a grouping cannot give you. A
+  // category tells you which shape to write more of; the line tells you which line
+  // did it, and the brief asks for the hooks to be ranked rather than only the
+  // formats. One row per post because a hook text is close to unique per post.
+  const byLikes = [...measured].sort((a, b) => b.best.likeRate - a.best.likeRate);
+  const name = (r) => r.shape?.hookText || r.shape?.hook || r.shape?.where || r.id;
+  lines.push('', '🏅 הפתיחים שעבדו');
+  for (const r of byLikes.slice(0, 5)) {
+    lines.push(`   ${pct(r.best.likeRate)} · ${num(r.best.views)} צפיות · ${name(r)}`);
+  }
+  if (byLikes.length > 5) {
+    lines.push('', '🥀 והפחות');
+    for (const r of byLikes.slice(-3).reverse()) {
+      lines.push(`   ${pct(r.best.likeRate)} · ${num(r.best.views)} צפיות · ${name(r)}`);
+    }
+  }
+
+  // REACH, SEPARATELY, because the two rankings disagree and that disagreement is
+  // the finding. A reader who sees only the like rate concludes the slideshows do
+  // not work; these two lists together say they reach people and do not land.
+  const byViews = [...measured].sort((a, b) => b.best.views - a.best.views);
+  if (byViews.length >= 2 && name(byViews[0]) !== name(byLikes[0])) {
+    lines.push('', '👀 הכי נצפים (לא אותו דירוג)');
+    for (const r of byViews.slice(0, 3)) {
+      lines.push(`   ${num(r.best.views)} צפיות · ${pct(r.best.likeRate)} · ${name(r)}`);
+    }
+  }
+
+  lines.push('', 'הדירוג השבועי ב-/report נשאר על שמירות ושיתופים. שניהם נכונים, ומודדים דברים שונים.');
+  return lines.join('\n');
+}
+
+/**
+ * Group by one shape field and rank on likes per view.
+ *
+ * MEAN OF THE RATES, not the rate of the totals, for the reason rankBy gives: summing
+ * likes and dividing by summed views lets the one post that reached two thousand
+ * people decide the row, and that is the post least like the others.
+ */
+export function rankLikes(entries, field, { min = 2 } = {}) {
+  const groups = new Map();
+  for (const row of entries) {
+    const key = row.shape?.[field];
+    if (!key) continue;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+  const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+  return [...groups.entries()]
+    .map(([key, rows]) => {
+      const likes = rows.map((r) => r.best.likeRate).filter((n) => n != null);
+      return {
+        key,
+        posts: rows.length,
+        likeRate: mean(likes),
+        views: mean(rows.map((r) => r.best.views).filter((n) => n != null)),
+        thin: likes.length < min,
+      };
+    })
+    .sort((a, b) => (b.likeRate ?? -1) - (a.likeRate ?? -1));
+}
+
 /** One post, in a line: what it was and where. */
 function describe(row) {
   const s = row.shape || {};

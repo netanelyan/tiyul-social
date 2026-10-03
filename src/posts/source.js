@@ -441,6 +441,67 @@ export function seasonLine(practical, { max = 60 } = {}) {
   return first ? `העונה הטובה: ${first}` : null;
 }
 
+// What makes an itinerary note a BOOKING fact rather than a plan for the day.
+//
+// The site writes its day notes as instructions, and buried in them is the one kind
+// of fact a post about "before you book" is actually for: Sagrada Familia tickets are
+// sold by entry hour and should be booked ahead, Anne Frank's house is booked-slot
+// only, the Jewish Quarter needs a combined ticket. 44 of the 61 pages carry at least
+// one, which makes this the widest source of concrete practical detail in the
+// catalogue after the verdict itself.
+const BOOKING_CUE = /(מראש|כרטיס|כרטיסים|הזמנה|להזמין|תורים|התורים|שעת כניסה|שעות כניסה|כניסה חופשית|סגור)/;
+
+/**
+ * The one thing on this page worth booking or timing, verbatim.
+ *
+ * THE DELIVERY FOR A HOOK THAT SAYS "BEFORE YOU BOOK". That hook earned the most
+ * reach of any post this account has published and the fewest likes per view, and
+ * the reading in docs/hidden-gems-plan.md is that the slides did not pay it off:
+ * they carried the page's drawbacks, which is what is wrong with the place, and
+ * nothing about what to actually do before booking.
+ *
+ * VERBATIM AND WHOLE-SENTENCE, like every other quote here. The notes are the page's
+ * own words and this picks one, so there is nothing to source beyond the page and
+ * nothing a model could get wrong. `max` is generous because these sentences are
+ * genuinely longer than a verdict clause and the information is the point.
+ */
+export function bookingLine(city, { max = 120 } = {}) {
+  for (const day of city?.itinerary || []) {
+    for (const sentence of sentences(day?.notes)) {
+      const s = tidy(sentence);
+      if (s && s.length <= max && BOOKING_CUE.test(s)) return s;
+    }
+  }
+  return null;
+}
+
+/**
+ * Everything the page's day notes say, as one string.
+ *
+ * What a booking line is a verbatim substring OF, for `quoted` in ./voice.js. The
+ * quote check is a substring test against the source it claims to come from, and
+ * `tidy` only ever removes characters from the ends of a sentence, so a tidied note
+ * is still a substring of this.
+ */
+export const notesSource = (city) =>
+  (city?.itinerary || [])
+    .map((d) => String(d?.notes || ''))
+    .filter(Boolean)
+    .join('\n');
+
+/** Every booking fact, for the caller that wants more than one. Deduplicated. */
+export function bookingLines(city, { max = 120, want = 3 } = {}) {
+  const out = [];
+  for (const day of city?.itinerary || []) {
+    for (const sentence of sentences(day?.notes)) {
+      const s = tidy(sentence);
+      if (s && s.length <= max && BOOKING_CUE.test(s) && !out.includes(s)) out.push(s);
+      if (out.length >= want) return out;
+    }
+  }
+  return out;
+}
+
 /** The practical paragraphs, trimmed. Flights and kosher are the Israeli angle. */
 export const practicalOf = (city) => ({
   flightsHe: String(city?.practical?.flights || '').trim() || null,

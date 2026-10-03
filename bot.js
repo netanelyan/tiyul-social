@@ -19,7 +19,13 @@ import { proposeIdeas, titleForRequest, reviseIdea, freeformIdea, freeformFromId
 import { pickAngle } from './src/angles.js';
 import { postConfig } from './src/postConfig.js';
 import { pickFormat, rotationOn, slotsPerDay, mixShares } from './src/formats/rotation.js';
-import { notePublished as noteMetricsPublished, collect as collectMetrics, describeCollection, weeklyReport } from './src/metrics/index.js';
+import {
+  notePublished as noteMetricsPublished,
+  collect as collectMetrics,
+  describeCollection,
+  weeklyReport,
+  hookReport,
+} from './src/metrics/index.js';
 import { clipPublicUrl } from './src/publish/imageHosts.js';
 import { buildDeck } from './src/deck/build.js';
 import { toDeckCandidate, deckTopic } from './src/deck/candidate.js';
@@ -849,9 +855,23 @@ const publishedFacts = (cand) => ({
   sourceId: cand.sourceId,
   topic: cand.deck ? deckTopic(cand.deck) : null,
   headline: cand.headline || null,
+  // WHICH FORMAT, and which hook category, for the rows that have one.
+  //
+  // Recorded here as well as in the metrics store because the two are read at
+  // different moments and only one of them survives a restart with the numbers
+  // attached. `/views` reads this ledger to offer the last twelve posts and types a
+  // view count against one of them, and until now the shape it could attach was a
+  // place and a topic - so a number typed in by hand could not be grouped by format
+  // at all, which is the one grouping the owner's own comparison needs.
+  format: cand.clip?.format || cand.clip?.shape || cand.deck?.type || cand.kind || null,
+  hookCategory: cand.clip?.hookCategory || null,
   // Where the post was about. A deck names its region; a card names it on the
   // trip, which is the field verify.js already insists every card have.
-  place: (cand.deck ? cand.deck.where : cand.trip?.where) || null,
+  //
+  // A clip has neither and names its own: a gems reel's `place` is the labels it
+  // burned onto the shots, which is what the geographic quota should be measuring
+  // for a post about four places.
+  place: (cand.deck ? cand.deck.where : cand.trip?.where) || cand.place || null,
   // Which stock video a clip was built from, so the row can answer "have we
   // used this footage". It was read back by /clip long before anything wrote
   // it — see the note in store.recordPublished.
@@ -1094,18 +1114,39 @@ async function publishNext(item = null) {
       // publish it twice.
       try {
         const mediaId = done[target]?.mediaId || done[target]?.publishId || done[target]?.id || null;
-        if (mediaId && (cand.kind === 'post' || cand.kind === 'deck' || cand.kind === 'plan')) {
+        // CLIPS ARE RECORDED NOW TOO, and their absence was the gap that made the
+        // owner's own comparison impossible to make from inside this program.
+        //
+        // The three kinds below were recorded because the weekly report groups by
+        // post type, look and hook shape, all of which are slideshow fields. So
+        // every video this account published went out with no metrics row, and the
+        // numbers that started this change - a 6.1% like rate on a twelve second
+        // reel against 0.5% on a slideshow - had to be read off the app by hand and
+        // typed into a message. The format is now the first thing the row carries.
+        if (mediaId && (cand.kind === 'post' || cand.kind === 'deck' || cand.kind === 'plan' || cand.kind === 'clip')) {
           noteMetricsPublished(cand.id, {
             platform: target,
             mediaId,
             shape: {
               kind: cand.kind,
-              type: cand.deck?.type || cand.kind,
+              // WHICH FORMAT, as the rotation names it. One field that answers "was
+              // this a gems reel or a slideshow" without the reader having to know
+              // that a `clip` with `shape: postcard` is a video and a `post` with
+              // `type: verdict` is not.
+              format: cand.clip?.format || cand.clip?.shape || cand.deck?.type || cand.kind,
+              type: cand.deck?.type || cand.clip?.shape || cand.kind,
               look: cand.deck?.look || cand.deck?.style || null,
               hook: cand.deck?.hook || null,
+              // THE HOOK AS TEXT, AND ITS CATEGORY. `hook` above is the id of a
+              // template, which is the right thing to group a slideshow by and says
+              // nothing about a reel whose line was generated. The text is what the
+              // owner actually compares, and the category is what a ranking can
+              // group by. See src/hooks/gems.js.
+              hookText: cand.clip?.format ? cand.hook || null : cand.deck?.titleHe || cand.hook || null,
+              hookCategory: cand.clip?.hookCategory || null,
               frame: cand.deck?.frame || null,
               caption: cand.captionShape || null,
-              where: cand.deck?.where || null,
+              where: cand.deck?.where || cand.place || null,
             },
           });
         }
@@ -1524,6 +1565,60 @@ bot.command('pending', (ctx) => {
       .filter(Boolean)
       .join('\n')
   );
+});
+
+/**
+ * `/reel <n>`: the same staged slideshow, as one vertical video.
+ *
+ * ON A POST THAT IS ALREADY BUILT, which is the whole appeal: the slides are drawn,
+ * measured and sitting on disk, so this costs one ffmpeg pass and no API calls. It
+ * answers a question nobody can answer by arguing, which is whether this account's
+ * slideshows do better when the app is handed an mp4.
+ *
+ * It does NOT replace the carousel and it does not change what will publish. The file
+ * is produced and its path is reported, for the owner to post by hand alongside or
+ * instead. See the note at the top of src/video/slideReel.js for why it is not simply
+ * switched on, and posts.video in post-config.json for how to.
+ */
+bot.command('reel', async (ctx) => {
+  const arg = (ctx.message.text || '').replace(/^\/reel(@\S+)?\s*/, '').trim();
+  const rows = store.stagingItems();
+  const n = Number(arg.match(/\d+/)?.[0]);
+
+  const reelable = rows
+    .map(({ cand }, i) => ({ cand, i }))
+    .filter(({ cand }) => (cand?.deck?.tiktok || []).some((s) => s?.file));
+
+  if (!reelable.length) return ctx.reply('אין פוסט ממתין עם שקופיות שאפשר לקודד לסרטון.');
+  if (!Number.isInteger(n) || n < 1 || n > rows.length) {
+    return ctx.reply(
+      [
+        'שימוש: /reel <מספר מתוך /pending>',
+        '',
+        ...reelable.map(({ cand, i }) => `${i + 1}. ${cand.deck.tiktok.length} שקופיות · ${cand.headline}`),
+      ].join(NL)
+    );
+  }
+
+  const cand = rows[n - 1]?.cand;
+  const files = (cand?.deck?.tiktok || []).map((s) => s.file).filter(Boolean);
+  if (!files.length) return ctx.reply(`לפוסט ${n} אין שקופיות מקודדות על הדיסק.`);
+
+  await ctx.reply(`⏳ מקודד ${files.length} שקופיות לסרטון...`);
+  detach('סרטון משקופיות', async () => {
+    const { buildSlideReel } = await import('./src/video/slideReel.js');
+    const built = await buildSlideReel(files, { id: `pr${cand.id}` });
+    await notify.send(
+      bot.telegram,
+      ctx.chat.id,
+      [
+        `🎞️ ${built.seconds} שניות · ${built.slides} שקופיות${built.dropped ? ` · ${built.dropped} ירדו בגלל אורך` : ''}`,
+        built.file,
+        '',
+        'הקרוסלה לא השתנתה. זה קובץ נוסף, להעלאה ביד, כדי להשוות.',
+      ].join(NL)
+    ).catch(() => {});
+  }, ctx.chat.id);
 });
 
 /**
@@ -2558,9 +2653,9 @@ bot.command('views', async (ctx) => {
   }
 
   const nums = arg.split(/\s+/).map((x) => Number(String(x).replace(/,/g, '')));
-  const [n, views, likes, saved, shares] = nums;
+  const [n, views, likes, saved, shares, comments] = nums;
   if (!Number.isInteger(n) || n < 1 || n > recent.length || !Number.isFinite(views)) {
-    return ctx.reply(`שימוש: /views <מספר 1-${recent.length}> <צפיות> [לייקים] [שמירות] [שיתופים]`);
+    return ctx.reply(`שימוש: /views <מספר 1-${recent.length}> <צפיות> [לייקים] [שמירות] [שיתופים] [תגובות]`);
   }
 
   const post = recent[n - 1];
@@ -2573,12 +2668,23 @@ bot.command('views', async (ctx) => {
       ...(Number.isFinite(likes) ? { likes } : {}),
       ...(Number.isFinite(saved) ? { saved } : {}),
       ...(Number.isFinite(shares) ? { shares } : {}),
+      ...(Number.isFinite(comments) ? { comments } : {}),
     },
     {
       // The shape, recovered from the published ledger for a post recorded before the
       // metrics hook existed. Without it the row has numbers and nothing to group them
       // by, which is a row the report cannot use.
-      shape: { where: post.place || null, type: post.topic || null },
+      //
+      // THE FORMAT AND THE HOOK TOO, where the ledger kept them. A typed-in number is
+      // the only evidence this account has about TikTok, and until now it arrived with
+      // a place and a topic attached, which /report hooks cannot group by at all.
+      shape: {
+        where: post.place || null,
+        type: post.topic || null,
+        format: post.format || post.clipShape || post.kind || null,
+        hookText: post.headline || post.hook || null,
+        hookCategory: post.hookCategory || null,
+      },
       at: post.ts ? new Date(post.ts).toISOString() : null,
     }
   );
@@ -2588,10 +2694,13 @@ bot.command('views', async (ctx) => {
     [
       `✅ נרשם: ${post.place || post.id}`,
       `   ${views.toLocaleString('en-US')} צפיות`,
+      Number.isFinite(likes) ? `   לייקים: ${likes} (${rate(likes)} מהצפיות)` : null,
       Number.isFinite(saved) ? `   שמירות: ${saved} (${rate(saved)} מהצפיות)` : null,
       Number.isFinite(shares) ? `   שיתופים: ${shares} (${rate(shares)} מהצפיות)` : null,
+      Number.isFinite(comments) ? `   תגובות: ${comments}` : null,
       '',
       'הדירוג ב-/report מעדיף עכשיו את המספרים מטיקטוק.',
+      Number.isFinite(likes) ? '/report hooks מדרג פתיחים ופורמטים לפי לייקים לצפייה.' : null,
     ]
       .filter(Boolean)
       .join(NL)
@@ -2607,6 +2716,19 @@ bot.command('report', async (ctx) => {
     const got = await collectMetrics().catch((e) => ({ error: e.message }));
     if (got.error) await ctx.reply(`⚠️ ${got.error}`);
     else await ctx.reply(`📥 ${describeCollection(got)}`);
+  }
+
+  // `/report hooks` IS A DIFFERENT QUESTION, NOT A DIFFERENT WINDOW.
+  //
+  // The weekly table ranks on saves and shares per view and refuses to lead with
+  // likes, for the reason written at the top of src/metrics/report.js. This ranks on
+  // likes per view and prints views beside them, because that is the comparison the
+  // owner's own numbers are, and because the two rankings disagreeing is the finding
+  // rather than a problem. Fourteen days by default: a like rate needs more posts
+  // under it than a save rate does, since most of the account's posts have single
+  // digit like counts and a week of them is noise.
+  if (/hooks?|פתיח/i.test(arg)) {
+    return ctx.reply(hookReport({ days: Math.max(1, Math.min(90, Number(arg.match(/\d+/)?.[0]) || 14)) }));
   }
 
   await ctx.reply(weeklyReport({ days }));
@@ -3484,6 +3606,9 @@ bot.command('help', (ctx) =>
       '/mix - תמהיל הנושאים שפורסמו',
       '/report - דירוג הפורמטים לפי שמירות ושיתופים ביחס לצפיות, לא לפי לייקים',
       '/report 30 - חלון ארוך יותר · /report fetch - מושך מספרים לפני',
+      '/report hooks - דירוג פתיחים ופורמטים לפי לייקים לצפייה, עם הצפיות לידם',
+      '   שני הדירוגים נכונים ומודדים דברים שונים: שמירות אומרות אם הפוסט כלי,',
+      '   לייקים לצפייה אומרים אם הוא קיים את ההבטחה שבזכותה הוא הוצג',
       '/views - מה פורסם לאחרונה, ממוספר, עם המספרים שכבר נרשמו',
       '/views 1 1919 9 1 0 - צפיות, לייקים, שמירות, שיתופים לפוסט מספר 1',
       '   טיקטוק לא נותן את המספרים האלה ב-API, אז הם נרשמים ביד. הדירוג מעדיף אותם',
@@ -3533,6 +3658,7 @@ bot.command('help', (ctx) =>
       '   הפתיח נבחר מתוך 10 מועמדים, מדורגים לפי ספציפיות, סקרנות ויושר',
       '   מקום שהוזכר בפוסט בשבועיים האחרונים לא חוזר',
       '/formats - התמהיל: מה הסבב בונה ובאיזה יחס, ומה היה לאחרונה',
+      '/reel <מספר> - מקודד פוסט ממתין לסרטון אנכי אחד, בלי לשנות את הקרוסלה',
       '/clear_pending',
       '',
       '',

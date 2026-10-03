@@ -1,5 +1,6 @@
 import { postConfig } from '../postConfig.js';
 import { postShapeHistory } from '../store.js';
+import { pageSpecifics } from './deliver.js';
 
 // The menu, and the rotation that keeps it from becoming a template.
 //
@@ -202,6 +203,18 @@ export function canBuild(type, city, { verdict = null } = {}) {
     }
     if (need === 'coords8' && places.filter((p) => p.lat && p.lng).length < 8) {
       return { ok: false, why: `only ${places.filter((p) => p.lat && p.lng).length} places with coordinates` };
+    }
+    // CAN THIS PAGE BACK A PRACTICAL PROMISE? Asked here, where it is free, rather
+    // than after the photograph pass where the finished slides are checked by
+    // assertDelivers. Both exist on purpose: this one saves the spend, and that one
+    // catches a post whose facts were dropped between here and the render. See the
+    // note above pageSpecifics.
+    if (need === 'specifics') {
+      const floor = postConfig().posts.deliver.minSpecifics;
+      const got = pageSpecifics(city);
+      if (postConfig().posts.deliver.on && got.length < floor) {
+        return { ok: false, why: `the page carries ${got.length} kind(s) of concrete fact (${got.join(', ') || 'none'}), needs ${floor}` };
+      }
     }
     if (need === 'cons') {
       // The drawbacks are the whole post. `cued` false means the verdict does not

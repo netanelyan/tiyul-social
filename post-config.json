@@ -1976,7 +1976,8 @@
         "slidesMin": 5,
         "slidesMax": 8,
         "needs": [
-          "cons"
+          "cons",
+          "specifics"
         ],
         "desc": "The honest answer, and now the account's lead format. Pros, then the page's own drawbacks quoted verbatim, then who it is for, then the best three places. Refuses to build when the verdict names no drawbacks, because a one-sided verdict post is an advertisement. WEIGHT 20 AGAINST 13 FOR EVERYTHING ELSE, which is the owner's instruction off our own numbers rather than the reference study's: the two best-performing posts this account has ever published are both this type under the hooks that promise a specific practical thing, `before` (\"לפני שאתם מזמינים, שתי דקות\") and `score` (\"נתנו לזה 4.5, וזה למה\"). Nothing in the reference set predicted that, and it outranks the reference set, because it is this account's audience rather than somebody else's. `memory: 0` is the other half and without it the weight does nothing - see the note beside typeMemory. The supply holds: 55 of the 61 destination pages carry a verdict that names drawbacks, and all 55 publish a score."
       },
@@ -2432,6 +2433,63 @@
         "אם זה עזר, זה כבר שווה את זה 🤍",
         "מה הייתם מוסיפים?"
       ]
+    },
+    "_deliver_comment": [
+      "DOES THE POST CONTAIN WHAT ITS COVER PROMISED? CHECKED, NOT ASSUMED.",
+      "",
+      "The two highest-reach posts this account has published are both slideshows",
+      "that opened on a specific promise, and both have the lowest like rates in the",
+      "set: 1993 views and 0.5%, 711 views and 1.3%. The feed showed them to more",
+      "people than anything else here and those people did not think they got",
+      "anything. See _gems_comment for the whole table.",
+      "",
+      "WHAT WAS ACTUALLY MISSING, found while writing the check rather than guessed:",
+      "the verdict post's own price line had been returning null for every",
+      "destination in the catalogue since the day it was written. It read the site's",
+      "dailyCost.mid as a number, and the site publishes it as {transport, food,",
+      "activities} on 21 pages and as a [low, high] pair on 20. So the post whose",
+      "cover says `two minutes before you book` carried no price, and nothing",
+      "noticed, because a missing fact just makes a slide shorter.",
+      "",
+      "`minSpecifics` counts KINDS of concrete fact, not facts: a price, a season, a",
+      "booking note, a flight time, a way of getting around. Two, measured rather",
+      "than chosen - see the note in src/postConfig.js for the distribution and what",
+      "a floor of three would throw away.",
+      "",
+      "`on: false` is the old behaviour, which is to publish whatever came out."
+    ],
+    "deliver": {
+      "on": true,
+      "minSpecifics": 2
+    },
+    "_video_comment": [
+      "THE OPTIONAL VIDEO VARIANT of a slideshow, so the same content can go out as a",
+      "short video. OFF, and the reason is a finding this project already paid for.",
+      "",
+      "src/video/postcard.js records its own first version being exactly this: a slow",
+      "zoom over a still photograph, with the owner's verdict `not a zoomed in",
+      "picture, but a clip instead`. A pan over a still is a slideshow in an mp4",
+      "container and a viewer can tell, so this is not a way to turn a slideshow into",
+      "the format that wins. It is a way to put a slideshow on the surface that",
+      "favours video, which is a smaller and genuinely untested claim.",
+      "",
+      "It costs one ffmpeg pass over slides that are already rendered and no API",
+      "calls, which is why it is worth having switchable rather than arguing about.",
+      "`/reel <n>` builds one from a staged post without turning anything on.",
+      "",
+      "`zoom` 0 gives hard cuts between stills, which is the honest version."
+    ],
+    "video": {
+      "on": false,
+      "types": [
+        "list",
+        "roll",
+        "verdict"
+      ],
+      "holdSeconds": 2,
+      "coverSeconds": 3,
+      "maxSeconds": 30,
+      "zoom": 0.04
     },
     "lookMemory": 3,
     "_typeMemory_comment": [

@@ -945,6 +945,39 @@ function posts(raw) {
     // more makes the account visibly cycle.
     lookMemory: Math.max(1, count(raw.lookMemory, 3)),
     typeMemory: Math.max(1, count(raw.typeMemory, 2)),
+    // WHETHER A COVER'S PROMISE IS CHECKED AGAINST THE SLIDES. See ./posts/deliver.js
+    // for the evidence, which is this account's own two highest-reach posts and their
+    // two lowest like rates. `on: false` is the old behaviour, which is to publish
+    // whatever the builder produced.
+    deliver: {
+      on: raw.deliver?.on !== false,
+      // How many KINDS of concrete fact a practical promise has to be backed by, not
+      // how many facts. Two is the floor that distinguishes a post which answers the
+      // question from one that quotes a drawback and stops: a price and a season, or
+      // a booking note and a flight time.
+      //
+      // MEASURED RATHER THAN CHOSEN. Over the 159 verdict posts the catalogue can
+      // build today, by hook and destination, the number of fact kinds each one
+      // carries comes out as 1:6, 2:24, 3:21, 4:42, 5:66. So a floor of 2 refuses 6
+      // posts and a floor of 3 refuses 30, which is a fifth of the type's output
+      // thrown away over a rule nobody has evidence for. The six it does refuse are
+      // Phuket and Kathmandu, whose pages carry a season or a flight time and
+      // nothing else.
+      minSpecifics: Math.max(0, count(raw.deliver?.minSpecifics, 2)),
+    },
+    // THE OPTIONAL VIDEO VARIANT of the list-style types. Off by default: see the
+    // note at the top of src/video/slideReel.js for why a pan over a still is not
+    // the format that wins, and why it is still worth being able to test.
+    video: {
+      on: raw.video?.on === true,
+      types: list(raw.video?.types).length ? list(raw.video?.types) : ['list', 'roll', 'verdict'],
+      holdSeconds: Math.max(0.5, num(raw.video?.holdSeconds, 2)),
+      coverSeconds: Math.max(0.5, num(raw.video?.coverSeconds, 3)),
+      maxSeconds: Math.max(2, num(raw.video?.maxSeconds, 30)),
+      // How far the gentle drift travels, as a fraction. 0 turns it off and gives a
+      // hard cut between stills, which is the honest version of a slideshow.
+      zoom: Math.max(0, Math.min(0.5, num(raw.video?.zoom, 0.04))),
+    },
     // The default ask. "שמרו את זה לטיול" is the one the evidence points at: saves
     // run at 47 to 95% of likes on every post that worked, and a save is somebody
     // planning a trip rather than admiring a photograph.
