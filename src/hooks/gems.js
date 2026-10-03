@@ -143,7 +143,7 @@ const ADDRESS = /(^|\s|ו|ש|כ|ל|ב|מ|ה)(ת[א-ת]{2,}ו|אתם|אתן|של�
  * because a held clip has one line and no second frame; this format's second frame
  * is the first item of the list.
  */
-export function rejectHook(text, { maxWords, minWords, banned = [], deliverable = null, placeHe = null } = {}) {
+export function rejectHook(text, { maxWords, minWords, banned = [], deliverable = null, placeHe = null, places = [] } = {}) {
   const s = String(text || '').trim();
   if (!s) return 'empty';
   if (URL_LIKE.test(s)) return 'carries a URL';
@@ -219,17 +219,27 @@ export function rejectHook(text, { maxWords, minWords, banned = [], deliverable 
     return 'a label, not a statement - nothing is asserted';
   }
 
-  // The line may name the post's own country and no other, the same rule the clip
-  // writer applies for the same reason: the burned line, the caption and the
-  // country hashtag are three statements of one fact.
+  // A COUNTRY IN THE LINE HAS TO BE TRUE OF EVERY SHOT, which is a stronger rule than
+  // the clip writer's and it needs to be.
   //
-  // ONLY WHEN THE POST HAS ONE COUNTRY. A gems reel names three or four, and the
-  // guard takes a single `placeHe` - handed every country in the reel it would
-  // reject the reel's own second place. So it is applied to the single-country
-  // formats and skipped on the reel, where the labels on screen are the check.
-  if (placeHe) {
-    const other = namesOtherCountry(s, placeHe);
-    if (other) return `names ${other}, and this post is ${placeHe}`;
+  // That one takes a single `placeHe` and refuses any other country, because a held
+  // clip is one shot in one place. A reel is three to five, and the honest reading of
+  // "5 מקומות ביוון" over five shots is that all five are in Greece. The model does
+  // get this right - it is handed the labels and it read them - and nothing was
+  // checking: a written line naming one country over a reel of three would have been
+  // published with the counter-evidence burned onto the shots underneath it.
+  //
+  // So: one country across the reel means it may be named and no other may be. More
+  // than one means none may be, because a counted hook that names a country while
+  // showing several is false however carefully it is worded.
+  const countries = [...new Set((places || []).map((p) => String(p).split(', ').pop().trim()).filter(Boolean))];
+  const only = countries.length === 1 ? countries[0] : null;
+  if (only || placeHe) {
+    const other = namesOtherCountry(s, only || placeHe);
+    if (other) return `names ${other}, and this post is ${only || placeHe}`;
+  } else if (countries.length > 1) {
+    const named = namesOtherCountry(s, null);
+    if (named) return `names ${named}, and this post is ${countries.join(' and ')}`;
   }
   return null;
 }
@@ -580,6 +590,9 @@ export async function writeGemHook({
       banned: cfg.banned,
       deliverable,
       placeHe,
+      // The labels the reel actually burns on, so a country in the line can be
+      // checked against every one of them rather than against nothing.
+      places: Array.isArray(vars.placeList) ? vars.placeList : [],
     });
     if (why) {
       rejected.push({ ...cand, why });

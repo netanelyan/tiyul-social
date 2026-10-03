@@ -8440,6 +8440,21 @@ group('the hidden gems reel - twelve seconds, and the hook has to be deliverable
   ok('a claim of having been there is refused',
     /been there/.test(gems.rejectHook('3 יעדים שהייתי בהם בשנה האחרונה', guard) || ''));
 
+  // A COUNTRY IN THE LINE HAS TO BE TRUE OF EVERY SHOT. The model writes "5 מקומות
+  // ביוון" when it is handed five Greek labels, which is correct and was unchecked:
+  // over a reel of three countries the same sentence is false, with the
+  // counter-evidence burned onto the shots underneath it.
+  const greekOnly = ['סנטוריני, יוון', 'מטאורה, יוון', 'לוטרו, יוון'];
+  const mixed = ['סנטוריני, יוון', 'לאוטרברונן, שווייץ', 'נין בין, וייטנאם'];
+  eq('naming the one country every shot is in is fine',
+    gems.rejectHook('3 מקומות ביוון לטיול הקרוב שלכם', { ...guard, places: greekOnly }), null);
+  ok('naming a country the reel does not show is refused',
+    /names/.test(gems.rejectHook('3 מקומות באיטליה לטיול הקרוב שלכם', { ...guard, places: greekOnly }) || ''));
+  ok('and naming one country over a reel of three is refused',
+    /names/.test(gems.rejectHook('3 מקומות ביוון לטיול הקרוב שלכם', { ...guard, places: mixed }) || ''));
+  eq('while a line that names none is fine over any reel',
+    gems.rejectHook('3 יעדים שאנשים לא חושבים עליהם מספיק', { ...guard, places: mixed }), null);
+
   // THE THREE GUARDS THAT HAD TO BE NARROWED, each of which had rejected a line the
   // owner wrote himself. These are regression tests for exactly that.
   eq('an owner-written counted noun phrase is not a label',
