@@ -420,7 +420,20 @@
     ],
     "broadCount": 2,
     "nicheCount": 3,
-    "useDestination": true
+    "useDestination": true,
+    "_brand_comment": [
+      "THE ACCOUNT'S OWN TAG, AND THE ONE PLACE A LATIN WORD IS ALLOWED.",
+      "",
+      "Every other rule in this project says a Hebrew post is Hebrew all the way",
+      "through, including the awkward names - see clipSiteName. This is the",
+      "exception because it is not a word, it is the handle: somebody who taps it",
+      "gets this account's other posts, which is the only hashtag on a post that",
+      "does anything for the account rather than for the post.",
+      "",
+      "Counted as one of the tags rather than added to them. A post is still five",
+      "tags, or on a gems reel the brand tag plus gems.caption.tagCount."
+    ],
+    "brand": "#TiyulPlus"
   },
   "overlay": {
     "_comment": [
@@ -1295,6 +1308,382 @@
       "Machu Picchu": "מאצ׳ו פיצ׳ו"
     }
   },
+  "_gems_comment": [
+    "THE HIDDEN GEMS REEL, AND THE NUMBERS THAT ASKED FOR IT.",
+    "",
+    "Read off this account's own posts rather than off a reference study, which",
+    "is the first time that has been true of anything in this file:",
+    "",
+    "  post                                        format      views  likes  like rate",
+    "  3 יעדים שאנשים לא חושבים עליהם מספיק         12s video     197     12       6.1%",
+    "  4 יעדים שנראים כמו ציור                      video         474     18       3.8%",
+    "  לפני שאתם מזמינים לסנטוריני, שתי דקות         slideshow    1993      9       0.5%",
+    "  נתנו לטוקיו 4.8, וזה למה                      slideshow     711      9       1.3%",
+    "  other scenic slideshows                      slideshow  150-430   2-10    1-2.5%",
+    "",
+    "THREE THINGS THAT SAYS, in the order they changed this file:",
+    "",
+    "  1. THE VIDEO EARNS THE LIKE AND THE SLIDESHOW EARNS THE VIEW. The two",
+    "     slideshows got four and ten times the reach of the best video and a",
+    "     fifth of its like rate. A view is the feed deciding to show the post;",
+    "     a like is a person deciding they got something. So the mix moves to",
+    "     video and the slideshows stay, because the reach is real and the",
+    "     problem with them is fixable - see `deliver` in posts.",
+    "  2. THE WINNING SHAPE IS SHORT AND IT CUTS. Twelve seconds, a curiosity",
+    "     hook from the first frame, then three real moving shots with nothing on",
+    "     them but a place name. That is the postcard reel with the holds",
+    "     shortened, which is why this block configures a format rather than",
+    "     introducing a renderer.",
+    "  3. A PROMISE THE POST DOES NOT KEEP COSTS THE LIKE, NOT THE VIEW. Both",
+    "     slideshows opened on a specific promise and got the reach to prove the",
+    "     promise works. 0.5% says the slides did not pay it off. That is the",
+    "     whole argument for the honesty score in `hooks` below: a hook is scored",
+    "     on whether THIS post can deliver it, not on how well it reads.",
+    "",
+    "WHAT IS NOT HERE, DELIBERATELY. `4 יעדים שנראים כמו ציור` is the second",
+    "best post in the table and it is not in any template below, because the",
+    "owner dropped that line on the record - it praises the picture rather than",
+    "the place. See posts.hooks.shared.worthit. A number is not a reason to",
+    "republish a line somebody already rejected."
+  ],
+  "gems": {
+    "_shots_comment": [
+      "THE SHAPE OF THE REEL, and every number in it is from the reference post.",
+      "",
+      "Twelve seconds, which is `hookSeconds` plus three holds of three. The",
+      "ranges exist because the shot count is not fixed: the reel is built from",
+      "whatever the vision judge could place that day, so three to five shots have",
+      "to fit the same 10 to 15 second target. fitHolds in src/video/hiddenGems.js",
+      "solves for the hold rather than hardcoding it, and a reel that cannot fit",
+      "the target is built short rather than long - a viewer leaves a long one.",
+      "",
+      "`hookSeconds` is its own shot and carries no place name. That is not a",
+      "stylistic choice, it is what lets the reel use a beautiful clip nobody could",
+      "identify: a shot that claims no location needs no evidence for one. See the",
+      "note at the top of src/video/postcard.js."
+    ],
+    "shots": {
+      "min": 3,
+      "max": 5
+    },
+    "hookSeconds": 3,
+    "holdSeconds": {
+      "min": 2,
+      "max": 4
+    },
+    "targetSeconds": {
+      "min": 10,
+      "max": 15
+    },
+    "_loop_comment": [
+      "HOW IT ENDS. Two mechanisms, and both are about the same second.",
+      "",
+      "`strongestLast` orders the placed shots by the vision judge's own score, so",
+      "the reel ends on its best frame. On a format this short the last frame is",
+      "what a viewer is looking at when they decide whether to watch it again.",
+      "",
+      "`loop` cross fades the tail back toward the opening frame, which is what",
+      "makes a second lap feel deliberate rather than like a restart. It costs one",
+      "filter pass and `loopSeconds` of the last shot, so it is off by default on",
+      "a three shot reel where the tail is a third of the post - set it per run.",
+      "",
+      "There is no hard ad at the end and there is no follow slide. A reel of this",
+      "length that spends its last second asking for something spends the frame",
+      "that decides the second lap. The ask lives in the caption."
+    ],
+    "strongestLast": true,
+    "loop": false,
+    "loopSeconds": 0.4,
+    "_sound_comment": [
+      "DEFAULTS TO THE CURRENT BEHAVIOUR, which is silence plus a track chosen by",
+      "hand in the app. `app` is that. The whole reason a clip goes to TikTok as a",
+      "MEDIA_UPLOAD draft is so the owner picks the sound, and mixing a bed in",
+      "would mean muting the file by hand before the chosen track sounded right.",
+      "See clips.audio and src/publish/targets.js.",
+      "",
+      "`library` mixes a declared track from assets/audio/tracks.json instead, and",
+      "it exists for one reason: a post cannot be promoted with a sound the",
+      "account does not hold the rights to. A promoted post needs the file to",
+      "carry its own licensed audio. It uses the same allowlist, the same volume",
+      "and the same fades as clips.audio, so switching this to `library` on a box",
+      "with no tracks.json declared is a no-op rather than an error."
+    ],
+    "sound": "app",
+    "caption": {
+      "_comment": [
+        "One short line, then a question, then the brand tag and two or three more.",
+        "",
+        "SHORTER THAN clipCaption ON PURPOSE. That one carries a pin, a question, an",
+        "ask, a reason to follow and five tags, which is right for a format whose",
+        "single burned line said nothing about where it was. This reel names every",
+        "place on screen, so the pin would be the fourth time the viewer is told,",
+        "and the ask is dropped for the reason in `_loop_comment`: this format does",
+        "not close by asking.",
+        "",
+        "`lines` are filled with {places}, the labels joined, so the one short line",
+        "is about the actual post. A line whose variable cannot be filled is skipped."
+      ],
+      "lines": [
+        "{places}. שלושה מהם היו ברשימה שלנו לשנה הבאה",
+        "{places}. אחד מהם לא היה ברשימה של אף אחד",
+        "כל אלה במרחק טיסה: {places}",
+        "{places}, לפי הסדר הזה"
+      ],
+      "questions": [
+        "איזה מהם הייתם בוחרים?",
+        "מי מכיר אחד מהם מקרוב?",
+        "לאן הייתם טסים ראשון?",
+        "איזה מהם שווה את הטיסה?"
+      ],
+      "tagCount": 3
+    },
+    "hooks": {
+      "_comment": [
+        "THE HOOK GENERATOR'S MENU. Five categories, each declaring which formats",
+        "can actually deliver it.",
+        "",
+        "`formats` IS THE HONESTY MECHANISM AND IT IS THE POINT OF THIS BLOCK.",
+        "A reel of labelled places can deliver `3 יעדים שאנשים לא חושבים עליהם",
+        "מספיק`, because the three places ARE the delivery. It cannot deliver `הטעות",
+        "שכל ישראלי עושה בגאורגיה`: nothing in a run of stock shots is a mistake,",
+        "and the two slideshows in the table above are what a promise with nothing",
+        "behind it looks like in the numbers. So the mistake and insider shapes are",
+        "offered to the post types that quote a real drawback off the page, and not",
+        "to the reel.",
+        "",
+        "`needs` is the same rule for variables: a template asking for {alt} is not",
+        "offered without an alternative to name, and one asking for {hours} is not",
+        "offered unless the destination page published a flight time. Skipped, never",
+        "printed with a gap in it.",
+        "",
+        "`honesty` is a score the generator applies, 1 being a claim the post can",
+        "stand behind and 0 a claim nobody could source. It is declared per template",
+        "rather than inferred, because the unsourceable ones are unsourceable for",
+        "different reasons: a superlative needs a measurement nobody made, and `אף",
+        "ישראלי לא מכיר` is simply false of somebody. They are kept in the pool at a",
+        "low score rather than deleted, so they ship only when nothing better filled",
+        "that day, and so the scorer has something to demote."
+      ],
+      "on": true,
+      "candidates": 10,
+      "maxWords": 8,
+      "minWords": 3,
+      "banned": [
+        "מטורף",
+        "לא תאמינו",
+        "בשוק",
+        "הזוי",
+        "חובה לראות",
+        "אסור לפספס",
+        "שוקינג",
+        "אתם חייבים",
+        "הסודות"
+      ],
+      "categories": [
+        {
+          "id": "overlooked",
+          "he": "לא מדובר מספיק",
+          "weight": 5,
+          "formats": [
+            "hidden_gems_video",
+            "roll",
+            "list"
+          ],
+          "desc": "The curiosity gap this account's best post ran on. Something is being under-rated, and the reel is the evidence.",
+          "templates": [
+            {
+              "id": "notenough",
+              "he": "{n} יעדים שאנשים לא חושבים עליהם מספיק",
+              "weight": 5,
+              "honesty": 1,
+              "desc": "The winner, verbatim. 6.1% like rate, the highest this account has recorded. Counted, so the reel's own shot count delivers it, and it rates the TALK about the places rather than the places."
+            },
+            {
+              "id": "worthflight",
+              "he": "{n} יעדים ששווים את הטיסה",
+              "weight": 3,
+              "honesty": 1,
+              "desc": "Already in the postcard reel's pool and kept. A judgement of ours, stated as one."
+            },
+            {
+              "id": "nextyear",
+              "he": "{n} יעדים לרשימה של השנה הבאה",
+              "weight": 2,
+              "honesty": 1,
+              "desc": "Also from the postcard pool. Forward-looking, which addresses somebody already planning."
+            },
+            {
+              "id": "beforeeveryone",
+              "he": "{n} יעדים שכדאי להכיר לפני כולם",
+              "weight": 2,
+              "honesty": 0.7,
+              "desc": "\"Before everyone else\" implies a crowd that has not arrived, which is a claim about the future and only mostly true. Scored down rather than dropped."
+            },
+            {
+              "id": "noisraeli",
+              "he": "{n} מקומות באירופה שכמעט אף ישראלי לא מכיר",
+              "weight": 1,
+              "honesty": 0.3,
+              "desc": "The brief's own example, adapted twice. \"המקום הכי יפה באירופה\" became a count, because a superlative needs a measurement nobody made; \"אף ישראלי\" became \"כמעט אף ישראלי\", because the absolute is simply false of somebody. Low honesty on purpose: it ships when the day produced nothing better."
+            }
+          ]
+        },
+        {
+          "id": "comparison",
+          "he": "במקום",
+          "weight": 3,
+          "formats": [
+            "hidden_gems_video",
+            "instead",
+            "roll"
+          ],
+          "desc": "The shape with the highest shares in the reference set. It argues with a habit, and an argument gets forwarded.",
+          "templates": [
+            {
+              "id": "insteadof",
+              "he": "במקום {alt}, תטוסו לכאן",
+              "weight": 4,
+              "honesty": 1,
+              "needs": [
+                "alt"
+              ],
+              "desc": "The brief's example, verbatim. Makes no measurable claim at all, which is why it carries any footage honestly."
+            },
+            {
+              "id": "insteadcount",
+              "he": "{n} יעדים במקום {alt}",
+              "weight": 3,
+              "honesty": 1,
+              "needs": [
+                "alt"
+              ],
+              "desc": "Counted version, so the reel's shot count is the delivery."
+            },
+            {
+              "id": "lookslike",
+              "he": "נראה כמו {alt} ועולה פחות",
+              "weight": 2,
+              "honesty": 1,
+              "needs": [
+                "alt",
+                "cheaper"
+              ],
+              "desc": "THE PRICE CLAIM, AND IT IS GATED. clips.hooks bans the price comparison template outright after it failed there, and that ban stands for a line nobody can source. This one is offered only when both pages publish a dailyCost and the ratio actually supports \"less\" - see cheaperThan in src/hooks/gems.js. Unsourced, it is not in the pool at all."
+            }
+          ]
+        },
+        {
+          "id": "number",
+          "he": "מספר וזמן",
+          "weight": 3,
+          "formats": [
+            "hidden_gems_video",
+            "list",
+            "roll",
+            "plan"
+          ],
+          "desc": "A number the viewer can hold you to. The reference set's highest saves per like came from the counted shapes.",
+          "templates": [
+            {
+              "id": "hours",
+              "he": "{hours} שעות טיסה מישראל ונראה ככה",
+              "weight": 4,
+              "honesty": 1,
+              "needs": [
+                "hours"
+              ],
+              "desc": "The brief's example. Offered only when the destination page itself published the flight time, which is the one number on this subject the site actually states."
+            },
+            {
+              "id": "nexttrip",
+              "he": "{n} מקומות לטיול הבא שלכם",
+              "weight": 3,
+              "honesty": 1,
+              "desc": "Owner-supplied, from posts.hooks.shared. Second person and forward-looking, which addresses somebody already planning rather than somebody browsing."
+            },
+            {
+              "id": "indays",
+              "he": "{n} יעדים שעושים ב{days} ימים",
+              "weight": 2,
+              "honesty": 0.8,
+              "needs": [
+                "days"
+              ],
+              "desc": "A length the site publishes an itinerary for. Scored slightly down because the reel shows the places rather than the days, so the number is true and the delivery is partial."
+            }
+          ]
+        },
+        {
+          "id": "mistake",
+          "he": "הטעות",
+          "weight": 2,
+          "formats": [
+            "verdict",
+            "instead"
+          ],
+          "desc": "NOT OFFERED TO THE REEL. A mistake is a claim and a run of stock shots cannot pay it off. The verdict post can: its drawbacks are quoted verbatim off the destination page.",
+          "templates": [
+            {
+              "id": "everyisraeli",
+              "he": "הטעות שישראלים עושים ב{dest}",
+              "weight": 3,
+              "honesty": 0.8,
+              "needs": [
+                "dest",
+                "cons"
+              ],
+              "desc": "The brief's example, finished. The original ends on \"ב\", which trailsOff rejects as half a sentence, and \"כל ישראלי\" claims every one of them. Requires the page to name a real drawback."
+            },
+            {
+              "id": "beforebooking",
+              "he": "לפני שאתם מזמינים ל{dest}, שתי דקות",
+              "weight": 2,
+              "honesty": 1,
+              "needs": [
+                "dest",
+                "cons"
+              ],
+              "desc": "Already posts.hooks.verdict.before. 1993 views, the highest reach in the table and the lowest like rate, which is a delivery problem rather than a hook problem. Kept, and the slides now carry the specifics that pay it off."
+            }
+          ]
+        },
+        {
+          "id": "insider",
+          "he": "מה שלא מספרים",
+          "weight": 2,
+          "formats": [
+            "verdict"
+          ],
+          "desc": "Also not offered to the reel, and for the same reason. The brief's example is \"מה שהמדריכים לא מספרים לכם על...\", which ends mid phrase and makes an unsourceable claim about what other guides say. What replaces it names the thing instead, so the post can deliver it.",
+          "templates": [
+            {
+              "id": "notinbrochure",
+              "he": "מה שלא כתוב בעמוד של {dest}",
+              "weight": 2,
+              "honesty": 0.6,
+              "needs": [
+                "dest",
+                "cons"
+              ],
+              "desc": "Our own page is the thing being argued with, which is the only version of this claim the account can make honestly: the drawbacks ARE on our page, and the hook means the brochure voice rather than the page."
+            },
+            {
+              "id": "wewouldsay",
+              "he": "{n} דברים שכדאי לדעת על {dest}",
+              "weight": 3,
+              "honesty": 1,
+              "needs": [
+                "dest",
+                "cons",
+                "n"
+              ],
+              "desc": "Counted and flat. The count is the number of drawbacks the post actually quotes, so the promise and the delivery are the same number by construction."
+            }
+          ]
+        }
+      ]
+    }
+  },
   "plans": {
     "_comment": [
       "THE FOURTH PUBLISHED KIND: an itinerary an AI wrote, shown as a slideshow.",
@@ -1582,13 +1971,14 @@
       {
         "id": "verdict",
         "he": "שווה או לא",
-        "weight": 2,
+        "weight": 20,
+        "memory": 0,
         "slidesMin": 5,
         "slidesMax": 8,
         "needs": [
           "cons"
         ],
-        "desc": "The honest answer. Pros, then the page's own drawbacks quoted verbatim, then who it is for, then the best three places. Refuses to build when the verdict names no drawbacks, because a one-sided verdict post is an advertisement."
+        "desc": "The honest answer, and now the account's lead format. Pros, then the page's own drawbacks quoted verbatim, then who it is for, then the best three places. Refuses to build when the verdict names no drawbacks, because a one-sided verdict post is an advertisement. WEIGHT 20 AGAINST 13 FOR EVERYTHING ELSE, which is the owner's instruction off our own numbers rather than the reference study's: the two best-performing posts this account has ever published are both this type under the hooks that promise a specific practical thing, `before` (\"לפני שאתם מזמינים, שתי דקות\") and `score` (\"נתנו לזה 4.5, וזה למה\"). Nothing in the reference set predicted that, and it outranks the reference set, because it is this account's audience rather than somebody else's. `memory: 0` is the other half and without it the weight does nothing - see the note beside typeMemory. The supply holds: 55 of the 61 destination pages carry a verdict that names drawbacks, and all 55 publish a score."
       },
       {
         "id": "map",
@@ -1764,24 +2154,44 @@
           "desc": "Same argument, counted, which adds the completion loop."
         }
       ],
+      "_verdict_weights_comment": [
+        "THE TWO THAT PROMISE A SPECIFIC PRACTICAL THING NOW LEAD, 5 AND 5 AGAINST 1.",
+        "",
+        "The owner's instruction, off this account's own reach: `before` took 1993",
+        "views and `score` 711, the two highest of any post in the table in",
+        "_gems_comment, against 150 to 430 for the scenic slideshows. A hook that",
+        "names what the viewer gets before they swipe is the only thing this account",
+        "has done that reliably earns reach.",
+        "",
+        "THEIR LIKE RATES WERE 0.5% AND 1.3%, AND THAT IS NOT AN ARGUMENT AGAINST",
+        "THESE LINES. It is an argument about what came after them, and it is the",
+        "reason posts.deliver exists: the promise is good and the slides did not pay",
+        "it off. Demoting the hooks would have cost the reach as well as the likes.",
+        "",
+        "`worth` stays at 1 rather than going to 0. It is the question somebody",
+        "types into a search bar, so it is the one shape here with a reason to exist",
+        "beyond the feed, and the hook draw excludes the last hook of the same type,",
+        "which means at 5/5/1 it appears on about one verdict post in six while the",
+        "other two alternate. See hookShape in src/posts/voice.js."
+      ],
       "verdict": [
-        {
-          "id": "worth",
-          "he": "{dest}: שווה או לא?",
-          "weight": 3,
-          "desc": "The question somebody types into the search bar."
-        },
         {
           "id": "before",
           "he": "לפני שאתם מזמינים ל{dest}, שתי דקות",
-          "weight": 2,
-          "desc": "Frames the drawbacks as a favour rather than as a complaint."
+          "weight": 5,
+          "desc": "Frames the drawbacks as a favour rather than as a complaint. 1993 views, the most reach of any post this account has published."
         },
         {
           "id": "score",
           "he": "נתנו ל{dest} {score}. וזה למה",
+          "weight": 5,
+          "desc": "Uses the page's own score, which is a number we publish and stand behind. 711 views, second most. What it withholds is the why, which the slides then have to actually be."
+        },
+        {
+          "id": "worth",
+          "he": "{dest}: שווה או לא?",
           "weight": 1,
-          "desc": "Uses the page's own score, which is a number we publish and stand behind."
+          "desc": "The question somebody types into the search bar. Quiet weight, kept for the rotation and for search."
         }
       ],
       "map": [
@@ -2024,11 +2434,97 @@
       ]
     },
     "lookMemory": 3,
+    "_typeMemory_comment": [
+      "HOW MANY POSTS A TYPE REFUSES TO REPEAT ITSELF WITHIN, and the per type",
+      "override that makes a lead format possible.",
+      "",
+      "2 is the default and it is a CEILING ON SHARE as much as a variety rule: a",
+      "type excluded for two draws after it is used can appear at most one post in",
+      "three, whatever its weight says. That is the right default and it was the",
+      "wrong one for a format the owner wants to lead with, because raising the",
+      "weight of such a type does almost nothing. The draw is a weighted draw over",
+      "whatever is not excluded, so the 33% ceiling binds first.",
+      "",
+      "So a type may declare its own `memory`, and `memory: 0` means it is never",
+      "excluded for being recent. See pickType in src/posts/types.js. Only the",
+      "verdict type sets it, and the note beside that type says why."
+    ],
     "typeMemory": 2,
     "days": 4,
     "stopsMin": 3,
     "stopsMax": 5,
     "walkMaxKm": 3
+  },
+  "_formats_comment": [
+    "THE MIX ACROSS FORMATS, WHICH IS A DIFFERENT QUESTION FROM THE MIX WITHIN ONE.",
+    "",
+    "`posts.types` decides which slideshow gets made when the rotation calls for a",
+    "slideshow. This decides how often it calls for one at all, against the video",
+    "formats, and it is the owner's instruction off the table in _gems_comment:",
+    "half the output is the hidden gems reel, a quarter is the other video shapes,",
+    "a quarter is slideshows.",
+    "",
+    "IT FILLS THE SLOTS THAT ALREADY EXIST. It does not add a post a day. Before",
+    "this block each kind had its own daily counter and they ran independently:",
+    "POSTS_PER_DAY 2, POSTCARDS_PER_DAY 1, GUIDES_PER_DAY 1, CLIPS_PER_DAY 0. The",
+    "rotation takes the sum of those, four, and fills four slots a day with these",
+    "weights instead. Posting hours, the gather interval and every backlog cap are",
+    "untouched, because the instruction was to change the mix and not the",
+    "frequency, and those two are easy to change by accident together.",
+    "",
+    "WEIGHTS ARE RELATIVE, NOT PERCENTAGES. 50/15/5/5/25 sums to 100 here because",
+    "that reads clearly beside the brief, and nothing requires it to. A weight of 0",
+    "retires a format without deleting it, which is how the three paused stock clip",
+    "shapes are expressed: they are still built by /clip and never by the rotation.",
+    "",
+    "`maxRun` IS THE ONE RULE THE WEIGHTS CANNOT EXPRESS. At weight 50 a fair draw",
+    "produces a run of three hidden gems reels one time in four, and three identical",
+    "formats in a row is what a viewer reads as a template - the same argument",
+    "typeMemory makes one level down. 2 means a run of two is fine and a third in a",
+    "row is refused."
+  ],
+  "formats": {
+    "rotation": {
+      "on": true,
+      "maxRun": 2
+    },
+    "mix": [
+      {
+        "id": "hidden_gems_video",
+        "he": "ג׳מים",
+        "kind": "clip",
+        "weight": 50,
+        "desc": "The 12 second reel the numbers asked for. See _gems_comment."
+      },
+      {
+        "id": "postcard",
+        "he": "גלויות",
+        "kind": "clip",
+        "weight": 15,
+        "desc": "The longer reel the gems format is a refinement of: 4 second holds, 17 to 19 seconds. Kept at a real weight rather than retired, because it is the control - the gems reel differs from it in length and hook only, so a week of both is the only way to know which half of the change did the work."
+      },
+      {
+        "id": "guide",
+        "he": "מדריכים",
+        "kind": "clip",
+        "weight": 5,
+        "desc": "The narrated guide. The most expensive format here per post and the only one that speaks, so it stays in the mix at a low weight rather than being measured on nothing."
+      },
+      {
+        "id": "clip",
+        "he": "קליפים",
+        "kind": "clip",
+        "weight": 5,
+        "desc": "The three stock shapes: held, cuts, montage. Paused by the owner at CLIPS_PER_DAY 0 and given a weight here, which is not a contradiction - the weight is what the rotation uses and the counter is what the legacy path uses. Set to 0 to keep them paused under the rotation too."
+      },
+      {
+        "id": "post",
+        "he": "פוסטים",
+        "kind": "post",
+        "weight": 25,
+        "desc": "The slideshows, all six types. Which one is posts.types, and it leads with the verdict type - see the note there. 1993 views on one of them is why this is 25 and not 0: the reach is real and the fault was the delivery."
+      }
+    ]
   },
   "_igReplies_comment": [
     "THE INSTAGRAM HALF OF \"the post points at the page\".",

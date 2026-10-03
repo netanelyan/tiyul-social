@@ -153,6 +153,11 @@ export function postConfig() {
       // One of the niche slots is spent on the deck's own country rather than
       // added as a sixth tag — see the note in the file.
       useDestination: hashtags.useDestination !== false,
+      // The account's own tag, and the one place a Latin word is allowed in a
+      // Hebrew caption: it is a handle rather than a word. Normalised through
+      // `tags` like every other pool so "TiyulPlus" and "#TiyulPlus" both work,
+      // and null when the file does not declare one.
+      brand: tags([hashtags.brand], 'hashtags.brand')[0] || null,
     },
     overlay: {
       sizePct: num(overlay.sizePct, 0.03),
@@ -188,6 +193,14 @@ export function postConfig() {
     // which is the part that matters.
     angles,
     clips: clips(raw.clips || {}),
+    // The hidden gems reel. Its own block rather than a fifth clip shape under
+    // `clips`, because `clips` is the configuration of ONE renderer and three
+    // shapes of it; this is a format with its own length, its own caption rules
+    // and its own hook menu, and the hook menu is shared with the post types.
+    gems: gems(raw.gems || {}),
+    // How often each format is built, which is a different question from how any
+    // one of them is built. See _formats_comment in post-config.json.
+    formats: formats(raw.formats || {}),
     plans: plans(raw.plans || {}),
     // The five post types, their looks, their frames and their hook shapes. The
     // block that decides what this account actually posts, which is why the
@@ -772,6 +785,17 @@ function posts(raw) {
       // version of that - so it is a TikTok type, declared rather than discovered by
       // a rejected publish. Empty means both, which is the ordinary case.
       platforms: list(t?.platforms),
+      // HOW MANY POSTS THIS TYPE REFUSES TO REPEAT ITSELF WITHIN.
+      //
+      // Null means "use posts.typeMemory", which is every type but one. 0 means it
+      // is never excluded for being recent, which is what lets a type actually be
+      // a majority: the global memory of 2 is a 33% ceiling on share whatever the
+      // weight says, because the draw only ever sees what is not excluded. See the
+      // note beside typeMemory in post-config.json and pickType in posts/types.js.
+      //
+      // Read with `== null` rather than `||` so a declared 0 survives, which is the
+      // only value anybody would declare it for.
+      memory: t?.memory == null ? null : Math.max(0, count(t.memory, 0)),
       desc: String(t?.desc || '').trim(),
     }))
     .filter((t) => t.id);
@@ -939,6 +963,152 @@ function posts(raw) {
   };
 }
 
+/**
+ * The hidden gems reel: its shape, its sound, its caption and its hook menu.
+ *
+ * NORMALISED HARD, because every number in it is a duration that reaches ffmpeg.
+ * A shot count of 2.5 or a hold of -1 is not a bad post, it is a filter graph that
+ * fails after the footage has been downloaded and the vision calls paid for.
+ *
+ * The one check that THROWS rather than falling back is an empty category list with
+ * the generator switched on. Everything else has an honest default: no templates for
+ * a category simply withdraws that category, no caption lines falls back to the
+ * places on their own, and an unknown `sound` is read as the current behaviour.
+ */
+function gems(raw) {
+  const h = raw.hooks || {};
+  const cap = raw.caption || {};
+
+  const templates = (list, where) =>
+    (Array.isArray(list) ? list : [])
+      .filter((t) => t && String(t.he || '').trim())
+      .map((t) => {
+        const he = String(t.he).trim();
+        if (URL_LIKE.test(he)) throw new Error(`post-config.json: gems.hooks.${where}.${t.id} contains a URL`);
+        // The same check posts.hooks makes, and for the same reason: a dash in a
+        // template is a dash in every post it fills, and this project bans them.
+        if (/[—–]/.test(he)) throw new Error(`post-config.json: gems.hooks.${where}.${t.id} contains an em or en dash`);
+        return {
+          id: String(t.id || '').trim() || he.slice(0, 12),
+          he,
+          weight: Math.max(0, num(t.weight, 1)),
+          // 1 is a claim the post can stand behind. Clamped rather than trusted,
+          // because the scorer multiplies by it and a 5 typed here would let one
+          // template outrank every honest one.
+          honesty: Math.max(0, Math.min(1, num(t.honesty, 1))),
+          needs: list2(t.needs),
+          desc: String(t.desc || ''),
+        };
+      });
+
+  const categories = (Array.isArray(h.categories) ? h.categories : [])
+    .filter((c) => c && String(c.id || '').trim())
+    .map((c) => ({
+      id: String(c.id).trim(),
+      he: String(c.he || c.id).trim(),
+      weight: Math.max(0, num(c.weight, 1)),
+      // Which formats can DELIVER this category. Empty means every format, which
+      // is the permissive direction and the wrong default for this field, so the
+      // file always states it. See the note beside gems.hooks in post-config.json.
+      formats: list2(c.formats),
+      desc: String(c.desc || ''),
+      templates: templates(c.templates, c.id),
+    }))
+    .filter((c) => c.templates.length);
+
+  const on = h.on !== false;
+  if (on && !categories.length) {
+    throw new Error(
+      'post-config.json: gems.hooks.on is true and no category has a usable template - the reel would have no hook to open on'
+    );
+  }
+
+  const shots = {
+    min: Math.max(2, count(raw.shots?.min, 3)),
+    max: Math.max(2, count(raw.shots?.max, 5)),
+  };
+  shots.max = Math.max(shots.min, shots.max);
+
+  const hold = {
+    min: Math.max(0.5, num(raw.holdSeconds?.min, 2)),
+    max: Math.max(0.5, num(raw.holdSeconds?.max, 4)),
+  };
+  hold.max = Math.max(hold.min, hold.max);
+
+  const target = {
+    min: Math.max(1, num(raw.targetSeconds?.min, 10)),
+    max: Math.max(1, num(raw.targetSeconds?.max, 15)),
+  };
+  target.max = Math.max(target.min, target.max);
+
+  return {
+    shots,
+    holdSeconds: hold,
+    targetSeconds: target,
+    hookSeconds: Math.max(0.5, num(raw.hookSeconds, 3)),
+    strongestLast: raw.strongestLast !== false,
+    loop: raw.loop === true,
+    loopSeconds: Math.max(0, num(raw.loopSeconds, 0.4)),
+    // `app` is the current behaviour: the file goes out silent and the owner picks
+    // the track in TikTok. `library` mixes a declared track so the post can be
+    // promoted. Anything else is read as `app`, which is the safe direction.
+    sound: raw.sound === 'library' ? 'library' : 'app',
+    caption: {
+      lines: list(cap.lines),
+      questions: list(cap.questions),
+      tagCount: Math.max(0, count(cap.tagCount, 3)),
+    },
+    hooks: {
+      on,
+      candidates: Math.max(1, count(h.candidates, 10)),
+      maxWords: Math.max(2, count(h.maxWords, 8)),
+      minWords: Math.max(1, count(h.minWords, 3)),
+      banned: list(h.banned),
+      categories,
+    },
+  };
+}
+
+/**
+ * The mix across formats, and the run limit the weights cannot express.
+ *
+ * `on` false restores the previous behaviour exactly: each kind's own daily counter
+ * runs independently and nothing consults this block. That is the rollback, and it
+ * is one word in the file rather than a revert.
+ */
+function formats(raw) {
+  const mix = (Array.isArray(raw.mix) ? raw.mix : [])
+    .filter((f) => f && String(f.id || '').trim())
+    .map((f) => ({
+      id: String(f.id).trim(),
+      he: String(f.he || f.id).trim(),
+      // Which pipeline builds it. Only `clip` and `post` exist today; an unknown
+      // kind is kept rather than dropped so the rotation can report it as
+      // unbuildable instead of silently never drawing it.
+      kind: String(f.kind || 'clip').trim(),
+      weight: Math.max(0, num(f.weight, 0)),
+      desc: String(f.desc || ''),
+    }));
+
+  const on = raw.rotation?.on !== false;
+  if (on && !mix.some((f) => f.weight > 0)) {
+    throw new Error(
+      'post-config.json: formats.rotation.on is true and every formats.mix weight is 0 - the rotation would have nothing to build'
+    );
+  }
+
+  return {
+    rotation: {
+      on,
+      // 1 means never twice in a row, 2 means never three times. Floored at 1
+      // because 0 would exclude the format that was just used from being used
+      // again ever, which is not what the number means.
+      maxRun: Math.max(1, count(raw.rotation?.maxRun, 2)),
+    },
+    mix,
+  };
+}
+
 function schedule(raw) {
   const windows = (Array.isArray(raw.windows) ? raw.windows : [])
     .map((w) => pair(w, null))
@@ -971,6 +1141,15 @@ function schedule(raw) {
 
 /** A list of non-empty trimmed strings, which is most of what this file holds. */
 const list = (v) => (Array.isArray(v) ? v : []).map((s) => String(s).trim()).filter(Boolean);
+
+/**
+ * The same thing, lowercased, for the lists that are matched against rather than
+ * printed: a category's `formats` and a template's `needs`.
+ *
+ * Separate from `list` so a caller cannot lowercase a Hebrew caption line by
+ * reaching for the wrong helper. Hebrew has no case, so it would be silent.
+ */
+const list2 = (v) => list(v).map((s) => s.toLowerCase());
 
 /** A numeric [a, b] pair, or the fallback. */
 function pair(v, fallback) {
