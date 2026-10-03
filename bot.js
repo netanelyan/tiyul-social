@@ -2164,7 +2164,10 @@ bot.command('guide', async (ctx) => {
   const { speechReady } = await import('./src/video/speech.js');
   const { resolveDestination, pickDestination } = await import('./src/plan/write.js');
 
-  const recent = store.recentPublished().slice(0, 12).map((p) => p.place);
+  // PUBLISHED *AND* SUGGESTED. A destination proposed this morning and not yet approved
+  // is not in `published`, so without the second list five formats drawing independently
+  // can offer the same place all day. See noteSuggestedPlace in src/store.js.
+  const recent = [...store.recentPublished().slice(0, 12).map((p) => p.place), ...store.recentSuggested()];
   const found = asked ? await resolveDestination(asked, { recent }) : null;
   if (asked && !found) {
     await ctx.reply(`❌ לא הצלחתי להבין איזה יעד זה: ${asked}`);
@@ -2281,7 +2284,10 @@ async function suggestPlanJob(asked, days, chatId = staging, budgetIls = null) {
   // them. The same history the deck's repeat notes are counted from, and the
   // resolver gets it too: `/trip norway` is a request for a Norwegian
   // itinerary, and which Norwegian city is the freshness rules' business.
-  const recent = store.recentPublished().slice(0, 12).map((p) => p.place);
+  // PUBLISHED *AND* SUGGESTED. A destination proposed this morning and not yet approved
+  // is not in `published`, so without the second list five formats drawing independently
+  // can offer the same place all day. See noteSuggestedPlace in src/store.js.
+  const recent = [...store.recentPublished().slice(0, 12).map((p) => p.place), ...store.recentSuggested()];
 
   // A destination typed by hand is RESOLVED rather than refused. It used to
   // answer "not in destinations.json, add it with the Hebrew spelling",
@@ -2383,7 +2389,10 @@ async function suggestPostJob(asked, { type = null, look = null, frame = null, d
   const { buildPost } = await import('./src/posts/index.js');
   const { resolveDestination, pickDestination } = await import('./src/plan/write.js');
 
-  const recent = store.recentPublished().slice(0, 12).map((p) => p.place);
+  // PUBLISHED *AND* SUGGESTED. A destination proposed this morning and not yet approved
+  // is not in `published`, so without the second list five formats drawing independently
+  // can offer the same place all day. See noteSuggestedPlace in src/store.js.
+  const recent = [...store.recentPublished().slice(0, 12).map((p) => p.place), ...store.recentSuggested()];
   const found = asked ? await resolveDestination(asked, { recent }) : null;
   if (asked && !found) {
     await notify.send(bot.telegram, chatId, `❌ לא הצלחתי להבין איזה יעד זה: ${asked}`).catch(() => {});
@@ -2920,6 +2929,39 @@ const suggestPostcard = billed('clip', async function suggestPostcardJob(chatId 
   spendClipFootage([cand]);
   await stage(cand);
   await notify.send(bot.telegram, chatId, postcardApprovalMessage(cand)).catch(() => {});
+  return cand;
+});
+
+/**
+ * How many narrated guides a day.
+ *
+ * ONE, so every format this project can make is actually offered. Until now the guide
+ * existed only behind `/guide`: it was built, tested and deployed, and the rotation
+ * never produced one, so the only way to see the format was to remember it was there.
+ * A format nobody is shown is a format that does not exist.
+ *
+ * It is the most expensive thing here per post - a script, a speech call, a subtitle
+ * render per line and a multi-input encode - which is the argument for one rather than
+ * for none.
+ */
+const GUIDES_PER_DAY = Math.max(0, Number(process.env.GUIDES_PER_DAY ?? '1'));
+let guidesToday = 0;
+let guideDay = null;
+let lastGuideAt = 0;
+
+/** One narrated guide, staged for approval. Silent when no voice is configured. */
+const suggestGuide = billed('clip', async function suggestGuideJob(chatId = staging) {
+  const { buildNarratedCandidate } = await import('./src/video/narrated.js');
+  const { pickDestination } = await import('./src/plan/write.js');
+
+  const recent = [...store.recentPublished().slice(0, 12).map((p) => p.place), ...store.recentSuggested()];
+  const dest = pickDestination(recent);
+  if (!dest?.siteSlug) return null;
+
+  const cand = await buildNarratedCandidate(dest);
+  await stage(cand);
+  const head = `🎙️ מדריך · ${cand.place} · ${cand.clip.seconds} שניות${cand.clip.narrated ? '' : ' · ללא קול'}`;
+  await notify.send(bot.telegram, chatId, `${head}\n\n${cand.clip.script}`).catch(() => {});
   return cand;
 });
 
@@ -3583,6 +3625,25 @@ function tick() {
     suggestPostcard().catch((e) => console.error('postcard suggestion failed:', e.message));
   }
 
+  // Narrated guides, on their own budget for the same reason postcards are: the three
+  // paused stock shapes, the postcard reel and the guide are three different decisions
+  // and sharing a counter would couple them.
+  if (guideDay !== day) {
+    guideDay = day;
+    guidesToday = 0;
+  }
+  if (
+    inHours &&
+    GUIDES_PER_DAY > 0 &&
+    guidesToday < GUIDES_PER_DAY &&
+    clipsWaiting() < CLIP_BACKLOG_MAX &&
+    Date.now() - lastGuideAt >= gatherIntervalMs
+  ) {
+    lastGuideAt = Date.now();
+    guidesToday += 1;
+    suggestGuide().catch((e) => console.error('guide suggestion failed:', e.message));
+  }
+
   if (inHours && remaining > 0 && due) {
     lastGatherAt = Date.now();
     if (day !== lastRunDay) {
@@ -3946,7 +4007,7 @@ async function main() {
   startIgWebhook();
   console.log(`   daily run at ${RUN_HOUR}:00 · target ${dailyTarget()} · drip every ${POST_INTERVAL_MINUTES} min`);
   console.log(
-    `   suggestions per day: ${dailyTarget()} cards · ${POSTS_PER_DAY} posts · ${DECKS_PER_DAY} decks · ${CLIPS_PER_DAY} clips · ${POSTCARDS_PER_DAY} postcards`
+    `   suggestions per day: ${dailyTarget()} cards · ${POSTS_PER_DAY} posts · ${DECKS_PER_DAY} decks · ${CLIPS_PER_DAY} clips · ${POSTCARDS_PER_DAY} postcards · ${GUIDES_PER_DAY} guides`
   );
 
   // Do the budgets fit down the drip?

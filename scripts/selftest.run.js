@@ -8145,6 +8145,113 @@ group('narration - the voice, and what the subtitles do with it');
 }
 
 /* -------------------------------------------------------------------------- */
+group('the rotation offers every format, on different topics');
+
+const { pickType } = await import('../src/posts/types.js');
+const { hookShape } = await import('../src/posts/voice.js');
+const { pickDestination } = await import('../src/plan/write.js');
+
+{
+  const botSrc = readFileSync(new URL('../bot.js', import.meta.url), 'utf8');
+
+  // A FORMAT WITH NO DAILY BUDGET IS A FORMAT NOBODY IS SHOWN.
+  //
+  // The narrated guide was built, tested, deployed and reachable only from `/guide`:
+  // the timer never produced one, so the only way to see the format was to remember it
+  // existed. That is the same failure as a command missing from /help, one layer down -
+  // and it is invisible in exactly the same way, because everything works.
+  //
+  // Read off the source rather than off a list, because a list is what just failed.
+  const budgeted = [...botSrc.matchAll(/const ([A-Z]+)_PER_DAY\s*=/g)].map((m) => m[1].toLowerCase());
+  for (const kind of ['decks', 'posts', 'postcards', 'guides', 'clips']) {
+    ok(`${kind} has a daily budget`, budgeted.includes(kind), budgeted.join(', '));
+  }
+
+  // And each budget is actually SPENT by the timer. A constant nothing reads is the
+  // same as no constant.
+  for (const kind of ['DECKS', 'POSTS', 'POSTCARDS', 'GUIDES']) {
+    ok(
+      `${kind}_PER_DAY is read by the timer`,
+      new RegExp(`${kind}_PER_DAY > 0`).test(botSrc),
+      'declared but never compared'
+    );
+  }
+
+  // Clips are the one deliberate zero: the owner paused the three stock shapes and
+  // asked for the code to stay. Asserted so that "0" stays a decision rather than
+  // becoming an accident somebody copies.
+  ok('clips are paused on purpose, not missing', /CLIPS_PER_DAY = Math\.max\(0, Number\(process\.env\.CLIPS_PER_DAY \?\? '0'\)\)/.test(botSrc));
+}
+
+// EVERY POST TYPE CAN ACTUALLY BE DRAWN. A type with weight 0, or one the look table
+// has no entry for, is configured and unreachable - the rotation would never produce it
+// and nothing would say so.
+{
+  const cfg = postConfig().posts;
+  for (const t of cfg.types) {
+    ok(`${t.id} has a weight the rotation can draw`, Number(t.weight) > 0, String(t.weight));
+    ok(
+      `${t.id} has at least one look`,
+      cfg.looks.some((l) => (l.types || []).includes(t.id)),
+      cfg.looks.map((l) => l.id).join(', ')
+    );
+    ok(`${t.id} has at least one hook`, hookShape(t.id)?.he?.length > 0);
+  }
+
+  // And the draw really reaches all of them rather than merely being allowed to.
+  const seen = new Set();
+  for (let i = 0; i < 4000; i++) seen.add(pickType({ history: [] }).id);
+  for (const t of cfg.types) ok(`${t.id} comes up in the rotation`, seen.has(t.id), [...seen].join(', '));
+}
+
+// DIFFERENT TOPICS EACH TIME, which is a property of what the picker is TOLD rather
+// than of the picker. recentPublished answers "what went out"; a destination suggested
+// this morning and still awaiting approval is not in it, so five formats drawing
+// independently could offer the same place all day.
+{
+  const ring = [];
+  const note = (p) => {
+    const name = String(p || '').trim();
+    if (!name) return;
+    ring.length = 0;
+    ring.push(...[name, ...ring.filter((x) => x !== name)].slice(0, 20));
+  };
+  note('פראג');
+  ok('a suggested place is remembered', ring.includes('פראג'));
+
+  // The real one, through the store.
+  const before = store.recentSuggested();
+  store.noteSuggestedPlace('בדיקת רוטציה');
+  ok('the store remembers a suggested place', store.recentSuggested().includes('בדיקת רוטציה'));
+  ok('and it is the most recent one', store.recentSuggested()[0] === 'בדיקת רוטציה');
+  store.noteSuggestedPlace('בדיקה שנייה');
+  store.noteSuggestedPlace('בדיקת רוטציה');
+  const ids = store.recentSuggested();
+  ok('a repeat moves to the front rather than duplicating',
+    ids[0] === 'בדיקת רוטציה' && ids.filter((x) => x === 'בדיקת רוטציה').length === 1, ids.slice(0, 4).join(', '));
+
+  // EVERY KIND'S DESTINATION IS FOUND. Four kinds keep it in four different fields, and
+  // a kind whose field is missed records nothing - the ring would quietly stop covering
+  // it and the repetition would come back for that format alone.
+  for (const [kind, cand, want] of [
+    ['post', { kind: 'post', where: 'פראג' }, 'פראג'],
+    ['deck', { kind: 'deck', where: 'וינה' }, 'וינה'],
+    ['clip', { kind: 'clip', place: 'סנטוריני' }, 'סנטוריני'],
+    ['card', { kind: 'card', card: { place: 'ליסבון' } }, 'ליסבון'],
+  ]) {
+    const key = store.addStaging(cand);
+    ok(`a ${kind} records its destination`, store.recentSuggested()[0] === want, store.recentSuggested()[0]);
+    store.takeStaging(key);
+  }
+
+  // And the picker honours it.
+  const all = pickDestination([]);
+  ok('a picker with nothing excluded returns something', Boolean(all));
+  const avoided = pickDestination([all.he]);
+  ok('and excludes what it was told to avoid', !avoided || avoided.he !== all.he, `${all.he} -> ${avoided?.he}`);
+}
+
+/* -------------------------------------------------------------------------- */
 console.log(`\n${'─'.repeat(56)}`);
 if (fail) {
   console.log(`${pass} passed, ${fail} FAILED\n`);

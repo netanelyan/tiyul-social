@@ -54,6 +54,9 @@ const empty = {
   proposals: {},
   pendingEdit: {},
   published: [],
+  // Destinations suggested lately, so five formats drawing independently do not all
+  // land on the same one. See noteSuggestedPlace.
+  suggestedPlaces: [],
   // Ids of everything ever published, kept separately from `published`.
   //
   // `published` is a 30-day quota window and gets pruned, so it cannot answer
@@ -743,8 +746,49 @@ export function noteStagedAt() {
 export function addStaging(item) {
   const key = Math.random().toString(36).slice(2, 9);
   state.staging[key] = item;
+  // WHERE EACH KIND KEEPS ITS DESTINATION, which is four different fields.
+  //
+  //   post     where         (set from the destinations.json row)
+  //   deck     where         (the idea's subject)
+  //   clip     place         (the postcard reel's places, or the narrated guide's city)
+  //   card     card.place    (the drafted claim's own place, nested)
+  //
+  // Checked in that order rather than normalised at the call sites, because every one of
+  // those fields is load-bearing somewhere else and renaming them to agree would be a
+  // much larger change than this is worth.
+  noteSuggestedPlace(item?.where || item?.place || item?.card?.place || null, { save: false });
   save();
   return key;
+}
+
+/**
+ * The destinations that have been SUGGESTED lately, whatever happened to them next.
+ *
+ * `recentPublished` answers a different question and was being used for this one. A
+ * destination suggested this morning and not yet approved is not in `published`, so the
+ * afternoon's post could pick it again - and with five formats each drawing
+ * independently, a day could easily offer Prague four times in four shapes. The owner's
+ * ask was "different topics each time", and "each time" means each suggestion, not each
+ * publication.
+ *
+ * A short ring, because the point is variety across a few days rather than a permanent
+ * ban: with sixty-one destinations carrying a page, remembering the last twenty keeps
+ * two thirds of the catalogue available at any moment.
+ */
+const SUGGESTED_RING = 20;
+
+export function noteSuggestedPlace(place, { save: persist = true } = {}) {
+  const name = String(place || '').trim();
+  if (!name) return;
+  if (!Array.isArray(state.suggestedPlaces)) state.suggestedPlaces = [];
+  // Moved to the front rather than skipped when it is already there, so a repeat
+  // pushes it back to the end of the queue instead of letting it age out early.
+  state.suggestedPlaces = [name, ...state.suggestedPlaces.filter((p) => p !== name)].slice(0, SUGGESTED_RING);
+  if (persist) save();
+}
+
+export function recentSuggested({ limit = SUGGESTED_RING } = {}) {
+  return (Array.isArray(state.suggestedPlaces) ? state.suggestedPlaces : []).slice(0, limit);
 }
 export function takeStaging(key) {
   const item = state.staging[key];
