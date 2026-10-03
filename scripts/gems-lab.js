@@ -93,10 +93,24 @@ let failed = 0;
 // `queries` stays a parameter on the builder. It is the right handle for a `/gems` that
 // names a region, and the montage shape already narrows for its own reasons.
 
+// AND THE HOOKS IT HAS USED, held here rather than in the store for the same reason
+// `seen` is. Without it the five reels open on the identical line, because the scorer
+// is deterministic and the best line wins every time it is offered: the first run of
+// this lab produced four reels and four copies of "N יעדים שאנשים לא חושבים עליהם
+// מספיק". Which is the right line, and the wrong feed.
+const hooksUsed = [];
+
 for (let i = 0; i < reels; i++) {
   console.log(`--- reel ${i + 1} of ${reels} ---`);
   try {
-    const cand = await buildHiddenGemsCandidate({ outDir, seen, write });
+    const cand = await buildHiddenGemsCandidate({
+      outDir,
+      seen,
+      write,
+      // The lab's own memory, one deep, like the account's.
+      avoid: hooksUsed.slice(0, postConfig().gems.hooks.memory),
+    });
+    if (cand.clip.hookTemplate) hooksUsed.unshift(cand.clip.hookTemplate);
     // Spent HERE, in memory, rather than in the store. The next reel of this run must
     // not be handed the same footage; the live account's ledger is none of a lab's
     // business. See the note at the top.

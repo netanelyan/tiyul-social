@@ -1105,6 +1105,14 @@ function gems(raw) {
     hooks: {
       on,
       candidates: Math.max(1, count(h.candidates, 10)),
+      // HOW MANY RECENT REELS' HOOKS ARE REFUSED. Two, which is a cycle of three
+      // shapes rather than the strict alternation a depth of one produces.
+      //
+      // It is not optional in practice. The scorer is deterministic, so without it
+      // the best line ships every time: four reels in one dry run opened on the
+      // identical sentence. Floored at 0 so it can be switched off, which is a thing
+      // to do while comparing two hooks on purpose and not otherwise.
+      memory: Math.max(0, count(h.memory, 2)),
       maxWords: Math.max(2, count(h.maxWords, 8)),
       minWords: Math.max(1, count(h.minWords, 3)),
       banned: list(h.banned),

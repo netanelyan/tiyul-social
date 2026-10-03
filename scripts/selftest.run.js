@@ -8447,6 +8447,32 @@ group('the hidden gems reel - twelve seconds, and the hook has to be deliverable
   const zero = gems.scoreHook('3 יעדים ששווים את הטיסה', { template: { ...templates.get('worthflight'), honesty: 0 }, maxWeight: 5 });
   eq('honesty zero is a score of zero however it reads', zero.total, 0);
 
+  // THE MEMORY, WHICH IS WHAT STOPS THE SCORER BECOMING A TEMPLATE. Argmax over a
+  // fixed pool ships the same line every time: four reels in one dry run opened on
+  // the identical sentence, which is the right line and the wrong feed.
+  const depth = postConfig().gems.hooks.memory;
+  ok('the hook keeps a memory at all', depth >= 1, String(depth));
+  const run = [];
+  let used = [];
+  for (let i = 0; i < 6; i++) {
+    const one = await gems.writeGemHook({ format: 'hidden_gems_video', vars, deliverable: 3, write: false, avoid: used.slice(0, depth) });
+    run.push(one.templateId);
+    used.unshift(one.templateId);
+  }
+  eq('no two reels running open on the same shape', run.filter((x, i) => i && x === run[i - 1]).length, 0);
+  ok('and the cycle is at least as deep as the memory', new Set(run.slice(0, depth + 1)).size === depth + 1, run.join(' '));
+  ok('the best line still leads it', run[0] === 'notenough', run.join(' '));
+  // And it yields rather than refusing when the memory would empty the pool, which is
+  // the same fallback drawWeighted makes.
+  const cornered = await gems.writeGemHook({
+    format: 'hidden_gems_video',
+    vars,
+    deliverable: 3,
+    write: false,
+    avoid: gems.templatesFor('hidden_gems_video').map((t) => t.id),
+  });
+  ok('a memory that excludes everything still returns a hook', Boolean(cornered.text), cornered.error || '');
+
   // AND THE WHOLE CALL, with the model half switched off so it is deterministic.
   const got = await gems.writeGemHook({ format: 'hidden_gems_video', vars, deliverable: 3, write: false });
   eq('the chosen hook is the line that worked', got.text, '3 יעדים שאנשים לא חושבים עליהם מספיק');

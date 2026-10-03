@@ -2267,6 +2267,7 @@ bot.command('gems', async (ctx) => {
       const cand = await buildHiddenGemsCandidate({ seen: clipFootageSeen(), write });
       spendClipFootage([cand]);
       store.notePlacesNamed(cand.clip.places);
+      store.noteGemHook(cand.clip.hookTemplate);
       await stage(cand);
       await notify.send(bot.telegram, ctx.chat.id, hiddenGemsApprovalMessage(cand)).catch(() => {});
     })
@@ -3099,6 +3100,11 @@ const suggestGems = billed('clip', async function suggestGemsJob(chatId = stagin
   const { buildHiddenGemsCandidate, hiddenGemsApprovalMessage } = await import('./src/video/hiddenGems.js');
   const cand = await buildHiddenGemsCandidate({ seen: clipFootageSeen() });
   spendClipFootage([cand]);
+  // WHICH HOOK IT OPENED ON, so the next reel does not open on the same one. The
+  // scorer is deterministic and ships the best line every time it is offered, which
+  // over four reels is four identical openings. Recorded here beside the footage and
+  // the places, because all three are the same fact: this reel has been built.
+  store.noteGemHook(cand.clip.hookTemplate);
   // WHICH PLACES THIS POST NAMED, so the next fortnight's reels do not name them
   // again. Recorded when BUILT rather than when published, like the footage ledger
   // and for the same reason: a rejected reel still used up the place, and offering

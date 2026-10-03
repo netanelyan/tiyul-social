@@ -45,6 +45,10 @@ const POST_SHAPES_KEPT = 24;
 // these, two by default; the rest is there for the same reason the clip shapes
 // are, which is the morning somebody asks why the feed feels samey.
 const FORMATS_KEPT = 12;
+// Which hook each of the last few gems reels opened on. Only the first one or two are
+// read, by gems.hooks.memory; the rest is there for the morning somebody asks why
+// every reel opens the same way.
+const GEM_HOOKS_KEPT = 8;
 
 const empty = {
   seen: {},
@@ -110,6 +114,9 @@ const empty = {
   // Which format each of the last few posts was, most recent first. Read by the
   // format rotation to refuse a third of the same thing in a row.
   formats: [],
+  // Which hook template each of the last few gems reels opened on, most recent
+  // first. Read by the hook generator to refuse the line it used last time.
+  gemHooks: [],
   // Instagram media id -> what that post was about, for the auto-reply.
   //
   // WITHOUT THIS THE WEBHOOK CANNOT ANSWER ANYTHING. A comment arrives naming
@@ -580,6 +587,29 @@ export function placesNamedSince(days = 14, { now = Date.now() } = {}) {
     if (Number(ts) >= cutoff) out.set(label, Number(ts));
   }
   return out;
+}
+
+// --- which HOOK the last few gems reels opened on ---------------------------
+//
+// THE SAME MEMORY EVERY OTHER DIMENSION HERE HAS, and the dry run is why it exists.
+// The hook generator scores ten candidates and ships the best, which is
+// deterministic: four reels built in a row all opened on "N יעדים שאנשים לא חושבים
+// עליהם מספיק", because it is the best line and it wins every time it is offered.
+//
+// That is the failure this project has written down more times than any other. A
+// pool is a template with extra steps; the look, the type, the caption shape and the
+// clip shape all keep a history for exactly this reason, and a hook is the most
+// visible thing on a post. Keyed on the TEMPLATE id rather than on the text, because
+// the text varies with the shot count and "5 יעדים ש..." and "3 יעדים ש..." are the
+// same line twice.
+export const gemHookHistory = () => (state.gemHooks || []).slice();
+
+/** Record one. Called when the reel is built, like every other shape ledger here. */
+export function noteGemHook(templateId) {
+  const s = String(templateId || '').trim();
+  if (!s) return;
+  state.gemHooks = [s, ...(state.gemHooks || [])].slice(0, GEM_HOOKS_KEPT);
+  save();
 }
 
 // --- which FORMAT the last few posts were -----------------------------------

@@ -10,7 +10,7 @@ import { clipPlaceLabel, gemsCaption } from '../hashtags.js';
 import { targetsForKind } from '../publish/targets.js';
 import { assertNoUrl } from '../format.js';
 import { writeGemHook } from '../hooks/gems.js';
-import { placesNamedSince } from '../store.js';
+import { placesNamedSince, gemHookHistory } from '../store.js';
 
 // THE HIDDEN GEMS REEL: twelve seconds, a curiosity hook, three to five real shots.
 //
@@ -402,6 +402,11 @@ export async function buildHiddenGemsCandidate({
   // The montage shape already narrows for the opposite reason, needing six shots of
   // ONE place. See the note above the loop in findClips.
   queries = null,
+  // Which hook templates to refuse, or null to read the account's own history. The
+  // lab passes its own list so a run of five reels varies without the store being
+  // touched. See the note beside `avoid` in src/hooks/gems.js for why this exists at
+  // all: the scorer is deterministic, so the best line ships every time.
+  avoid = null,
   rand = Math.random,
 } = {}) {
   const gems = postConfig().gems;
@@ -437,6 +442,10 @@ export async function buildHiddenGemsCandidate({
     deliverable: shots.length,
     write,
     rand,
+    // Never the line the last reel opened on. `avoid` is handed in rather than read
+    // inside the generator, for the same reason buildPost hands its history in: a lab
+    // run must be able to ignore the account's memory and must not write to it.
+    avoid: avoid == null ? gemHookHistory().slice(0, postConfig().gems.hooks.memory) : avoid,
     vars: {
       n: shots.length,
       placeList: shots.map((s) => s.labelHe),

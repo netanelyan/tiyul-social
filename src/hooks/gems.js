@@ -504,6 +504,21 @@ export async function writeGemHook({
   vars = {},
   deliverable = null,
   used = new Set(),
+  // WHICH TEMPLATES THE LAST FEW POSTS USED, refused before anything is scored.
+  //
+  // THE SCORER IS DETERMINISTIC AND THAT IS THE PROBLEM IT CREATES. It ranks ten
+  // candidates and ships the best, so the best line wins every single time it is
+  // offered: four reels built in one dry run all opened on "N יעדים שאנשים לא חושבים
+  // עליהם מספיק", which is the right line and the wrong feed. A pool is a template
+  // with extra steps, which src/video/hooks.js says in its first paragraph.
+  //
+  // Keyed on the template id rather than on the text, because the text carries the
+  // shot count and "5 יעדים ש..." and "3 יעדים ש..." are one line twice.
+  //
+  // Excluded BEFORE the scoring and with a fallback to the full pool, the same two
+  // rules drawWeighted follows: a post-scoring filter would let the favourite take
+  // the top two places and the exclusion would only move which of them ships.
+  avoid = [],
   write = true,
   rand = Math.random,
 } = {}) {
@@ -543,12 +558,21 @@ export async function writeGemHook({
   // The written lines go first in the pool so they survive the candidate cap, which
   // is the only reason to call the model at all: a pool that is all templates is what
   // `--no-hook` already produces.
-  const pool = [...byText.values()]
-    .sort((a, b) => (a.from === 'written' ? -1 : 0) - (b.from === 'written' ? -1 : 0))
-    .slice(0, cfg.candidates);
+  const all = [...byText.values()].sort(
+    (a, b) => (a.from === 'written' ? -1 : 0) - (b.from === 'written' ? -1 : 0)
+  );
+
+  // The exclusion, with the fallback. A written line has no template id and is never
+  // excluded by this: it is a line nothing has used yet by construction.
+  const stale = (c) => c.template?.id && avoid.includes(c.template.id);
+  const fresh = all.filter((c) => !stale(c));
+  const pool = (fresh.length ? fresh : all).slice(0, cfg.candidates);
 
   const scored = [];
   const rejected = [];
+  for (const cand of all.filter((c) => stale(c) && pool.length && fresh.length)) {
+    rejected.push({ ...cand, why: `${cand.template.id} was the last reel's hook` });
+  }
   for (const cand of pool) {
     const why = rejectHook(cand.text, {
       maxWords: cfg.maxWords,
