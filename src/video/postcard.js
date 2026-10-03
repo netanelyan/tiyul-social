@@ -287,7 +287,20 @@ export async function buildPostcardCandidate({ outDir = clipOutputDir(), shots =
       continue;
     }
     places.add(key);
-    placed.push({ src: c.src, duration: c.duration, labelHe, id: c.id, credit: c.credit, page: c.page });
+    // The judge's verdict and its rank travel with the shot, because the retention
+    // timeline this format now shares orders on both: `beauty` reads the destination
+    // score and `strongestFirst` reads the rank. Without them a postcard reel gets no
+    // ordering and only the open loops that can be measured off the label.
+    placed.push({
+      src: c.src,
+      duration: c.duration,
+      labelHe,
+      id: c.id,
+      credit: c.credit,
+      page: c.page,
+      rank: c.rank ?? null,
+      vision: c.vision || null,
+    });
   }
 
   if (placed.length < 3) {

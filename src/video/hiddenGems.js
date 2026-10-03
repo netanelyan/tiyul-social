@@ -392,7 +392,23 @@ export function sortShots(clips, { seenPlaces = new Map(), want = 5, floor = 3, 
       continue;
     }
     places.add(key);
-    const shot = { src: c.src, duration: c.duration, labelHe, id: c.id, credit: c.credit, page: c.page, rank: c.rank ?? null };
+    // `vision` AND `rank` COME THROUGH, which they did not and which made two of the
+    // open loops dead code in production. The judge's verdict is what both ordering
+    // measures read: `beauty` is its raw destination score and `strongestFirst` is
+    // `rank`. Stripped here, every beauty loop was unmeasurable on every real reel and
+    // was therefore never offered, while the hand-made shots in the tests carried the
+    // field and passed. The shot record is small and the judge's answer is the reason
+    // any of these clips is on the reel at all.
+    const shot = {
+      src: c.src,
+      duration: c.duration,
+      labelHe,
+      id: c.id,
+      credit: c.credit,
+      page: c.page,
+      rank: c.rank ?? null,
+      vision: c.vision || null,
+    };
     // `seenPlaces` may be a Map of label -> when, or a Set with no timestamps. A Set
     // means every entry is equally old, which ranks them all at 0 and is the right
     // reading: without a time the only honest order is the order they arrived in.
