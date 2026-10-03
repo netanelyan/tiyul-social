@@ -170,21 +170,26 @@ its score, its runners up, the shot list and the caption, and a `manifest.json` 
 same as data. Nothing is published and none of the three ledgers is written to.
 `output/` is gitignored: thirteen megabytes per reel, all of it reproducible.
 
-Two things the first full run found, both now fixed:
+Four things the runs found, all now fixed. Two of them were the format being broken
+rather than the lab being unlucky, which is the whole argument for running it:
 
-- **Five reels built in one sitting produce three**, and narrowing the search per reel
-  does not fix it. The first three take every clip the vision judge will commit to a
-  place on, and the last two come back with `only 2 of 17 could be placed`. Pointing
-  each reel at its own slice of `clips.search.queries` was the obvious fix and it was
-  measured twice: six searches each gave 3 of 5 with a different two failing, and
-  fifteen stepped per reel made the FIRST reel fail at 1 of 21 placed. Narrowing stops
-  the reels competing and also decides which part of the catalogue each is stuck with,
-  and the window that opens on the Greek island searches is almost all people walking
-  through streets, which the judge vetoes. Breadth is what makes a placeable clip
-  likely at all. So the lab searches everything, three of five is the honest answer to
-  how many can be built at once, and the drip builds two a day hours apart and never
-  asks. The `queries` parameter stays on the builder, where it is the right handle for
-  a `/gems` that names a region.
+- **The dedupe key was the country.** Five consecutive runs failed every reel at `only
+  1 of 20 could be placed` while sitting on a pool of fourteen labelled clips, because
+  eight Dolomites shots and three Greek sites counted as two places. See 2.6.4. After
+  the fix, reels come out at four and five places rather than scraping the minimum.
+- **Every reel opened on the same sentence.** The scorer is argmax over a fixed pool,
+  so the best line ships every time it is offered: four reels, four copies of `N יעדים
+  שאנשים לא חושבים עליהם מספיק`. The hook now keeps the same memory the look, the type
+  and the caption shape all keep, two deep, which is a cycle of three shapes with the
+  model varying the wording inside each.
+- **Narrowing the search per reel does not help**, measured three ways: all 30 searches
+  shared gave 3 of 5, six searches each gave 3 of 5 with a different two failing, and
+  fifteen stepped per reel made the FIRST reel fail. Narrowing stops the reels
+  competing and also decides which part of the catalogue each is stuck with, and the
+  window that opens on the Greek island searches is almost all people walking through
+  streets, which the judge vetoes. Breadth is what makes a placeable clip likely at all.
+  The `queries` parameter stays on the builder, where it is the right handle for a
+  `/gems` that names a region.
 - **A failed build used to cost the day a post.** Each per-kind counter incremented
   before its build and never rolled back. That was survivable when each counter was one
   post of four; with the gems reel at half the slots and the format that fails most, the
