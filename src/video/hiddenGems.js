@@ -314,16 +314,6 @@ export function sortShots(clips, { seenPlaces = new Map(), want = 5, floor = 3, 
       spare.push(c);
       continue;
     }
-    // A COUNTRY-ONLY LABEL IS DROPPED WHEN A NAMED SITE IN IT IS ALREADY ON THE REEL.
-    // "יוון" beside "סנטוריני, יוון" is two shots of one country where one of them
-    // admits it does not know where it is, which reads as a gap rather than as a
-    // second destination. The other way round is fine: a named site is always more
-    // specific than the bare country already shown.
-    const bare = !labelHe.includes(',');
-    if (bare && [...places].some((p) => p.endsWith(`, ${labelHe}`))) {
-      spare.push(c);
-      continue;
-    }
     places.add(key);
     const shot = { src: c.src, duration: c.duration, labelHe, id: c.id, credit: c.credit, page: c.page, rank: c.rank ?? null };
     // `seenPlaces` may be a Map of label -> when, or a Set with no timestamps. A Set
@@ -333,6 +323,27 @@ export function sortShots(clips, { seenPlaces = new Map(), want = 5, floor = 3, 
     if (namedAt == null) fresh.push(shot);
     else stale.push({ ...shot, namedAt });
   }
+
+  // A COUNTRY-ONLY LABEL IS DROPPED WHEN A NAMED SITE IN THAT COUNTRY IS ALSO ON THE
+  // REEL, and this runs as a pass over the whole set rather than inside the loop
+  // because order decides nothing here and did decide something in the first version.
+  //
+  // One reel came out as "סנטוריני, יוון · יוון · פושימי אינארי טאישה, יפן": the bare
+  // Greek clip arrived first, so there was no Greek site to compare it against yet,
+  // and both survived. Two shots of one country where one of them admits it does not
+  // know where it is reads as a gap on the reel whichever order they are in.
+  //
+  // The bare label is kept when it is the only thing from there, which is what the
+  // brief's own "גאורגיה" example is.
+  const named = new Set([...fresh, ...stale].filter((s) => s.labelHe.includes(',')).map((s) => s.labelHe.split(', ').pop()));
+  const redundant = (s) => !s.labelHe.includes(',') && named.has(s.labelHe);
+  for (const s of [...fresh, ...stale].filter(redundant)) spare.push(s);
+  const keepFresh = fresh.filter((s) => !redundant(s));
+  const keepStale = stale.filter((s) => !redundant(s));
+  fresh.length = 0;
+  fresh.push(...keepFresh);
+  stale.length = 0;
+  stale.push(...keepStale);
 
   // THE FORTNIGHT RULE IS A PREFERENCE, AND THIS PROJECT HAS SETTLED THAT TWICE.
   //

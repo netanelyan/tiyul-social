@@ -8335,6 +8335,19 @@ group('the hidden gems reel - twelve seconds, and the hook has to be deliverable
   ok('the same site twice is one place', greekLabels.filter((l) => /דולומיטים/.test(l)).length === 1, greekLabels.join(' · '));
   ok('and a bare country is dropped beside a named site in it',
     !greekLabels.includes('יוון'), greekLabels.join(' · '));
+  // WHICHEVER ORDER THEY ARRIVE IN. The first version checked inside the loop, so a
+  // bare label that came first had no named site to be compared against yet: one reel
+  // went out as "סנטוריני, יוון · יוון · פושימי אינארי טאישה, יפן".
+  const bareFirst = sortShots(
+    [
+      { id: '1', src: 'a', duration: 20, vision: { place: 'Greece' } },
+      { id: '2', src: 'b', duration: 20, vision: { place: 'Greece', site: 'Santorini' } },
+      { id: '3', src: 'c', duration: 20, vision: { place: 'Iceland', site: 'Skogafoss' } },
+    ],
+    { want: 5, floor: 3 }
+  ).placed.map((p) => p.labelHe);
+  ok('a bare country arriving first is dropped too', !bareFirst.includes('יוון'), bareFirst.join(' · '));
+  ok('and the named site in it survives', bareFirst.some((l) => /סנטוריני/.test(l)), bareFirst.join(' · '));
   // The reverse of that rule: a bare country with no named site of its own stays, and
   // is exactly what the brief's own example label "גאורגיה" is.
   const bare = sortShots(
