@@ -42,9 +42,9 @@ import { captionFollow } from '../hashtags.js';
 // Santorini"; it says what somebody looking at the frame was sure of, and a clip nobody
 // could place does not get into the reel at all.
 
-/** How long each place is held, and how long the hook has the frame to itself. */
+/** How long each place is held, and how long the hook's own shot runs. */
 const HOLD_SECONDS = 4;
-const HOOK_SECONDS = 2.6;
+const HOOK_SECONDS = 3;
 
 /**
  * One postcard reel from already-judged clips.
@@ -52,9 +52,21 @@ const HOOK_SECONDS = 2.6;
  * `shots` is [{ src, duration, labelHe }] - the file, its length, and the line to burn
  * on it. `hookHe` opens the reel alone.
  */
-export async function buildPostcardClip(shots, { hookHe, id = 'postcard', outDir = clipOutputDir(), track = null } = {}) {
-  const picked = (shots || []).filter((s) => s?.src && s?.labelHe).slice(0, 6);
-  if (picked.length < 3) throw new Error(`a postcard reel needs three placed clips (got ${picked.length})`);
+export async function buildPostcardClip(shots, { hookHe, hookClip = null, id = 'postcard', outDir = clipOutputDir(), track = null } = {}) {
+  const places = (shots || []).filter((s) => s?.src && s?.labelHe).slice(0, 6);
+  if (places.length < 3) throw new Error(`a postcard reel needs three placed clips (got ${places.length})`);
+
+  // THE HOOK GETS ITS OWN SHOT.
+  //
+  // It used to ride the first place's clip - hook for the opening 2.6 seconds, then that
+  // place's name for the rest - so the first destination was on screen while the reel was
+  // still introducing itself, and it got less of its own time than the other three. The
+  // owner: "hook should be a different clip than the first one."
+  //
+  // The hook clip carries NO LABEL, which is why it can be a clip the vision judge could
+  // not place: a shot that makes no claim about where it is needs no evidence for one.
+  // That also means the reel spends its placed clips on places rather than on its title.
+  const picked = hookClip?.src ? [{ ...hookClip, labelHe: null, hook: true }, ...places] : places;
 
   const cfg = postConfig().clips.video;
   const { width: w, height: h, fps, crf, preset } = cfg;
@@ -67,6 +79,10 @@ export async function buildPostcardClip(shots, { hookHe, id = 'postcard', outDir
     // The footage, and where in each clip to start. pickWindow finds the part of a stock
     // clip worth showing, which is rarely the first four seconds - those are usually the
     // camera settling.
+    // The hook holds for less than a place does. It carries one line and the viewer has
+    // read it; a place is the thing they are actually being shown.
+    const holdOf = (shot) => (shot.hook ? HOOK_SECONDS : HOLD_SECONDS);
+
     const starts = [];
     for (const [i, shot] of picked.entries()) {
       const local = path.join(outDir, `clip-${id}-src-${i}.mp4`);
@@ -75,33 +91,39 @@ export async function buildPostcardClip(shots, { hookHe, id = 'postcard', outDir
       starts.push(await pickWindow(local, shot.duration).catch(() => cfg.startAt || 0));
     }
 
+    // Where each shot begins on the timeline, which is no longer i * HOLD now that the
+    // shots are different lengths.
+    const at = [];
+    let clock = 0;
+    for (const shot of picked) {
+      at.push(clock);
+      clock += holdOf(shot);
+    }
+
     // THE TYPE, MEASURED AGAINST THE FRAME IT LANDS ON. measureClip samples the actual
     // window being used, so a label over a bright sky gets more help than one over a
     // forest - the same bargain every slide in this project makes.
     const spots = [];
     for (const [i, local] of files.entries()) {
-      spots.push(await measureClip(local, { startAt: starts[i], seconds: HOLD_SECONDS }).catch(() => null));
+      spots.push(await measureClip(local, { startAt: starts[i], seconds: holdOf(picked[i]) }).catch(() => null));
     }
 
-    const hookPng = path.join(outDir, `clip-${id}-hook.png`);
-    await renderPostcardPng({ text: hookHe, hook: true, width: w, height: h, file: hookPng, spot: spots[0] });
-    pngs.push({ file: hookPng, from: 0, to: HOOK_SECONDS });
-
     for (const [i, shot] of picked.entries()) {
-      const png = path.join(outDir, `clip-${id}-label-${i}.png`);
-      await renderPostcardPng({ text: shot.labelHe, hook: false, width: w, height: h, file: png, spot: spots[i] });
-      // The first label waits for the hook to clear. "first hook, then the places."
-      const from = i === 0 ? HOOK_SECONDS : i * HOLD_SECONDS;
-      pngs.push({ file: png, from, to: (i + 1) * HOLD_SECONDS });
+      const png = path.join(outDir, `clip-${id}-txt-${i}.png`);
+      const text = shot.hook ? hookHe : shot.labelHe;
+      await renderPostcardPng({ text, hook: Boolean(shot.hook), width: w, height: h, file: png, spot: spots[i] });
+      // Each line is on screen for exactly its own shot. The hook clears when its clip
+      // does, so nothing overlaps and no place shares a frame with the title.
+      pngs.push({ file: png, from: at[i], to: at[i] + holdOf(shot) });
     }
 
     const chosen = track ? { file: track } : pickTrack(new Set());
     const bed = chosen?.file || null;
-    const seconds = picked.length * HOLD_SECONDS;
+    const seconds = clock;
 
     const args = ['-y', '-hide_banner', '-loglevel', 'error'];
     for (const [i, local] of files.entries()) {
-      args.push('-ss', String(starts[i]), '-t', String(HOLD_SECONDS), '-i', local);
+      args.push('-ss', String(starts[i]), '-t', String(holdOf(picked[i])), '-i', local);
     }
     for (const p of pngs) args.push('-i', p.file);
     if (bed) args.push('-i', bed);
@@ -132,7 +154,7 @@ export async function buildPostcardClip(shots, { hookHe, id = 'postcard', outDir
     args.push('-c:v', 'libx264', '-preset', preset, '-crf', String(crf), '-pix_fmt', 'yuv420p', '-r', String(fps), '-t', String(seconds), file);
 
     await run(ffmpegPath(), args);
-    return { file, seconds, shots: picked.length, audio: Boolean(bed) };
+    return { file, seconds, shots: places.length, audio: Boolean(bed) };
   } finally {
     for (const p of pngs) rmSync(p.file, { force: true });
     for (const f of files) rmSync(f, { force: true });
@@ -242,12 +264,27 @@ export async function buildPostcardCandidate({ outDir = clipOutputDir(), shots =
   const placed = [];
   const places = new Set();
 
+  const spare = [];
   for (const c of found.clips || []) {
-    if (placed.length >= shots) break;
     const labelHe = clipPlaceLabel({ vision: c.vision });
-    if (!labelHe) continue;
     const key = String(c.vision?.place || '').toLowerCase();
-    if (!key || places.has(key)) continue;
+
+    // THE SPARES ARE THE CLIPS THAT COULD NOT BE PLACED, and they are useful rather than
+    // waste. The hook's shot carries no place name, so it needs no evidence for one -
+    // which makes a beautiful clip nobody could identify exactly right for it, and keeps
+    // every placed clip for an actual place.
+    if (!labelHe || !key) {
+      spare.push(c);
+      continue;
+    }
+    if (places.has(key)) {
+      spare.push(c);
+      continue;
+    }
+    if (placed.length >= shots) {
+      spare.push(c);
+      continue;
+    }
     places.add(key);
     placed.push({ src: c.src, duration: c.duration, labelHe, id: c.id, credit: c.credit, page: c.page });
   }
@@ -270,8 +307,14 @@ export async function buildPostcardCandidate({ outDir = clipOutputDir(), shots =
   ];
   const hookHe = COUNTED[Math.abs(placed.reduce((a, p) => a + p.id.charCodeAt(0), 0)) % COUNTED.length];
 
+  // findClips returns best-first, so the first spare is the best-looking clip that is
+  // not carrying a place. If every clip was placed, the hook borrows the LAST of them
+  // rather than going without - a reel whose title shares a frame with its first
+  // destination is the thing this exists to stop.
+  const hookClip = spare[0] || placed[placed.length - 1] || null;
+
   const id = `pc${Math.abs(placed.reduce((a, p) => (a * 31 + Number(p.id)) | 0, 7)).toString(16).slice(0, 10)}`;
-  const built = await buildPostcardClip(placed, { hookHe, id, outDir });
+  const built = await buildPostcardClip(placed, { hookHe, hookClip, id, outDir });
 
   return {
     kind: 'clip',
@@ -300,7 +343,9 @@ export async function buildPostcardCandidate({ outDir = clipOutputDir(), shots =
       width: postConfig().clips.video.width,
       height: postConfig().clips.video.height,
       postcardPlaces: placed.map((p) => p.labelHe),
-      pexelsIds: placed.map((p) => p.id),
+      // The hook's clip is spent like any other, or it comes back tomorrow as somebody
+      // else's shot.
+      pexelsIds: [...new Set([...placed.map((p) => p.id), hookClip?.id].filter(Boolean).map(String))],
     },
   };
 }
