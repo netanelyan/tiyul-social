@@ -10,6 +10,7 @@ import { findClips } from './pexels.js';
 import { clipPlaceLabel } from '../hashtags.js';
 import { targetsForKind } from '../publish/targets.js';
 import { captionFollow } from '../hashtags.js';
+import { planGemsReel, buildHiddenGemsClip } from './hiddenGems.js';
 
 // THE COUNTED POSTCARD REEL: a hook, then four places, each one a moving shot.
 //
@@ -314,13 +315,65 @@ export async function buildPostcardCandidate({ outDir = clipOutputDir(), shots =
   const hookClip = spare[0] || placed[placed.length - 1] || null;
 
   const id = `pc${Math.abs(placed.reduce((a, p) => (a * 31 + Number(p.id)) | 0, 7)).toString(16).slice(0, 10)}`;
-  const built = await buildPostcardClip(placed, { hookHe, hookClip, id, outDir });
+
+  // THE SAME RETENTION TIMELINE THE GEMS REEL USES, AND IT IS THIS FORMAT'S PROBLEM
+  // TOO. The post the analytics describe - 559 views, 3.1 seconds of watch time, 0
+  // comments - opened on `3 יעדים שאנשים לא חושבים עליהם מספיק`, which is the third
+  // line of the COUNTED pool above. HOOK_SECONDS here is 3, the same place the average
+  // view ended. Leaving this format on the old timeline would mean fixing the reel
+  // that is 50% of the rotation and leaving the one that is 15% doing the thing the
+  // numbers were measured on.
+  //
+  // DELEGATED RATHER THAN DUPLICATED. The two formats now differ in exactly one way,
+  // which is where the line comes from: this one draws from a pool of three counted
+  // sentences, the other generates and scores ten. So the line is handed to
+  // planGemsReel and everything after it - the open loop, the ordering, the counter,
+  // the question, the timeline and the quality gate - is the same code. A second copy
+  // would be a second place for the timing to drift, which is the argument the gems
+  // module already makes about the renderer.
+  const gems = postConfig().gems;
+  let built;
+  let plan = null;
+  let openLoop = null;
+  let questionHe = null;
+  // Named `ordered` and not `shots`, because this function already has a parameter
+  // called `shots` and it means how MANY to use rather than which.
+  let ordered = placed;
+
+  if (gems.retention.on) {
+    const planned = await planGemsReel(placed, { gems, hookText: hookHe, rand: Math.random });
+    if (planned.error) throw new Error(planned.error);
+    if (!planned.check.ok) {
+      // No retry here, unlike the gems reel: the hook is a fixed pool line rather than
+      // a generated one, so a second attempt would redraw the same sentence and fail
+      // the same way. The reasons are reported and the format falls back to its own
+      // timeline, which is the behaviour it had yesterday and is not a regression.
+      console.log(`postcard: retention plan refused - ${planned.check.problems.join('; ')}`);
+      built = await buildPostcardClip(placed, { hookHe, hookClip, id, outDir });
+    } else {
+      ({ plan, openLoop, questionHe } = planned);
+      ordered = planned.shots;
+      built = await buildHiddenGemsClip(ordered, {
+        hookHe,
+        openLoopHe: openLoop?.he || null,
+        questionHe,
+        plan,
+        hookClip,
+        id,
+        outDir,
+        cfg: gems,
+      });
+    }
+  } else {
+    built = await buildPostcardClip(placed, { hookHe, hookClip, id, outDir });
+  }
 
   return {
     kind: 'clip',
     id,
-    hook: hookHe,
-    headline: hookHe,
+    hook: [hookHe, openLoop?.he].filter(Boolean).join(' · '),
+    hookLine: hookHe,
+    headline: [hookHe, openLoop?.he].filter(Boolean).join(' · '),
     hookWritten: false,
     hookNote: 'postcard: counted, and the places are what the vision judge could name',
     sourceName: `Pexels · ${[...new Set(placed.map((p) => p.credit).filter(Boolean))].join(', ') || 'unknown'}`,
@@ -332,7 +385,7 @@ export async function buildPostcardCandidate({ outDir = clipOutputDir(), shots =
     tiktokDraft: true,
     overrides: [],
     notes: [],
-    place: placed.map((p) => p.labelHe).join(' · '),
+    place: ordered.map((p) => p.labelHe).join(' · '),
     clip: {
       shape: 'postcard',
       file: built.file,
@@ -342,10 +395,24 @@ export async function buildPostcardCandidate({ outDir = clipOutputDir(), shots =
       followAt: null,
       width: postConfig().clips.video.width,
       height: postConfig().clips.video.height,
-      postcardPlaces: placed.map((p) => p.labelHe),
+      postcardPlaces: ordered.map((p) => p.labelHe),
+      // The same retention fields the gems reel records, under the same names, so the
+      // report can compare the two formats on the numbers that matter rather than on
+      // whichever fields each one happened to invent.
+      places: ordered.map((p) => p.labelHe),
+      openLoop: openLoop?.he || null,
+      openLoopId: openLoop?.id || null,
+      orderBy: openLoop?.orderBy || null,
+      questionHe,
+      counter: built.counter ?? null,
+      firstCutAt: built.firstCutAt ?? null,
+      hookFullUntil: built.hookFullUntil ?? null,
+      holds: built.holds ?? null,
+      looped: built.looped ?? null,
+      loopDistance: built.loopDistance ?? null,
       // The hook's clip is spent like any other, or it comes back tomorrow as somebody
       // else's shot.
-      pexelsIds: [...new Set([...placed.map((p) => p.id), hookClip?.id].filter(Boolean).map(String))],
+      pexelsIds: [...new Set([...ordered.map((p) => p.id), hookClip?.id].filter(Boolean).map(String))],
     },
   };
 }
@@ -353,11 +420,24 @@ export async function buildPostcardCandidate({ outDir = clipOutputDir(), shots =
 /** The approval card for a postcard reel. */
 export function postcardApprovalMessage(cand) {
   const c = cand.clip;
-  return [
-    `🖼️ גלויות · ${c.seconds} שניות · ${c.postcardPlaces.length} יעדים`,
+  const lines = [
+    `🖼️ גלויות · ${c.seconds} שניות · ${c.postcardPlaces.length} יעדים${c.looped ? ` · לופ ${c.looped}` : ''}`,
     '',
-    cand.hook,
+    c.hookLine || cand.hook,
+  ];
+  if (c.openLoop) lines.push(`   ↳ ${c.openLoop}`);
+  lines.push(
     '',
-    c.postcardPlaces.map((n, i) => `${i + 1}. ${n}`).join('\n'),
-  ].join('\n');
+    c.postcardPlaces
+      .map((n, i) => `${c.counter ? `${i + 1}/${c.postcardPlaces.length}` : `${i + 1}.`} ${n}${i === c.postcardPlaces.length - 1 && c.openLoop ? '  ← הבטחה' : ''}`)
+      .join('\n')
+  );
+  // The same retention line the gems card prints, because the owner is comparing the
+  // two formats and a card that showed the numbers for one of them would make the
+  // comparison harder rather than easier.
+  if (c.firstCutAt != null) {
+    lines.push('', `⏱️ חיתוך ראשון ${c.firstCutAt}ש׳ · פתיח גדול עד ${c.hookFullUntil}ש׳ ואז כותרת`);
+  }
+  if (c.questionHe) lines.push(`💬 בסוף ובכיתוב: ${c.questionHe}`);
+  return lines.join('\n');
 }

@@ -2,7 +2,6 @@ import { rmSync } from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { ffmpegPath, clipOutputDir, download, measureClip, pickWindow } from './overlay.js';
-import { renderPostcardPng } from './postcard.js';
 import { postConfig } from '../postConfig.js';
 import { solveHolds } from './fit.js';
 import { pickTrack, trackOffset } from './tracks.js';
@@ -232,7 +231,13 @@ export async function buildHiddenGemsClip(
         const text = shot.hook ? hookHe : shot.labelHe;
         if (!text) continue;
         const png = path.join(outDir, `clip-${id}-txt-${i}.png`);
-        await renderPostcardPng({ text, hook: Boolean(shot.hook), width: w, height: h, file: png, spot: spots[i] });
+        await renderRetentionCard({
+          card: { id: `legacy${i}`, legacyLineHe: text, big: Boolean(shot.hook) },
+          width: w,
+          height: h,
+          file: png,
+          spot: spots[i],
+        });
         pngs.push({ file: png, from: at[i], to: at[i] + shot.hold });
       }
     }
@@ -483,7 +488,7 @@ export function sortShots(clips, { seenPlaces = new Map(), want = 5, floor = 3, 
  */
 export async function planGemsReel(
   candidates,
-  { gems = null, write = true, rand = Math.random, avoid = [], avoidLoops = [] } = {}
+  { gems = null, write = true, rand = Math.random, avoid = [], avoidLoops = [], hookText = null } = {}
 ) {
   const cfg = gems || postConfig().gems;
   const r = cfg.retention;
@@ -493,19 +498,27 @@ export async function planGemsReel(
     ? orderForOpenLoop(candidates, { openLoop, strongestFirst: r.strongestFirst })
     : { ordered: candidates, last: candidates[candidates.length - 1] };
 
-  const hook = await writeGemHook({
-    format: 'hidden_gems_video',
-    deliverable: ordered.length,
-    write,
-    rand,
-    avoid,
-    // THE OPEN LOOP IS SCORED WITH THE HOOK RATHER THAN AFTER IT. A line and its
-    // second line are one sentence as far as a viewer is concerned, and the "reason
-    // to stay" term is about the pair: scoring the first line alone would rank every
-    // candidate identically on the one axis this change exists to add.
-    openLoopHe: openLoop?.he || null,
-    vars: { n: ordered.length, placeList: ordered.map((s) => s.labelHe) },
-  });
+  // `hookText` IS THE POSTCARD REEL'S DOOR IN. That format picks its line from a pool
+  // of three counted sentences rather than generating one, and everything else about
+  // the two formats is now identical - so it hands its line in here and gets the open
+  // loop, the ordering, the timeline and the gate for free. The alternative was a
+  // second copy of this function, and the note at the top of this file already says
+  // what a second copy of the renderer would have cost.
+  const hook = hookText
+    ? { text: hookText, from: 'pool', category: null, templateId: null, score: null, considered: [], rejected: [] }
+    : await writeGemHook({
+        format: 'hidden_gems_video',
+        deliverable: ordered.length,
+        write,
+        rand,
+        avoid,
+        // THE OPEN LOOP IS SCORED WITH THE HOOK RATHER THAN AFTER IT. A line and its
+        // second line are one sentence as far as a viewer is concerned, and the
+        // "reason to stay" term is about the pair: scoring the first line alone would
+        // rank every candidate identically on the one axis this change exists to add.
+        openLoopHe: openLoop?.he || null,
+        vars: { n: ordered.length, placeList: ordered.map((s) => s.labelHe) },
+      });
   if (!hook.text) return { error: `no usable hook: ${hook.error || 'every candidate was rejected'}` };
 
   // ONE QUESTION, FOR THE SCREEN AND THE CAPTION. Drawn here and handed to both, so

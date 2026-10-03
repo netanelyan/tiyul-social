@@ -440,6 +440,17 @@ ${a ? `.lift { position:absolute; inset-inline:0; top:0; height:${Math.round(hei
 ${a ? `.liftLow { position:absolute; inset-inline:0; bottom:0; height:${Math.round(height * 0.34)}px;
         background:linear-gradient(0deg, rgba(6,8,12,${(a * 0.9).toFixed(2)}) 0%, rgba(6,8,12,${(a * 0.4).toFixed(2)}) 52%, rgba(6,8,12,0) 100%); }` : ''}
 .block { position:absolute; inset-inline:${Math.round(width * 0.1)}px; text-align:center; text-wrap:balance; }
+/* THE OLD SINGLE LINE, for retention.on false. Byte for byte the postcard reel's own
+   treatment: one line, upper third, 5.8% of the width for a hook and 4.2% for a place
+   name. It lives here rather than being imported from postcard.js so that the import
+   runs one way - postcard delegates to the gems builder now, and a module that both
+   imports and is imported by the same file is the cycle this project does not have.
+   postcard.js keeps its own copy for its own legacy path.
+   NO BACKTICKS IN THIS COMMENT: it is inside a JS template literal, and the first
+   version of it closed the literal here and broke the module. node --check did not
+   catch it because that parses as a script and this is ESM. */
+.legacy { top:${Math.round(height * 0.2)}px; font-weight:${card.big ? 800 : 700};
+          font-size:${card.big ? big : label}px; line-height:1.26; ${shadow(card.big ? big : label)} }
 .hook { top:${Math.round(height * 0.2)}px; font-weight:800; font-size:${big}px; line-height:1.26; ${shadow(big)} }
 .loop { top:${Math.round(height * 0.2 + big * 1.26 * 2 + big * 0.5)}px; font-weight:700; font-size:${loop}px;
         line-height:1.3; opacity:.95; ${shadow(loop)} }
@@ -450,9 +461,10 @@ ${a ? `.liftLow { position:absolute; inset-inline:0; bottom:0; height:${Math.rou
 .label { top:${Math.round(height * 0.66)}px; font-weight:700; font-size:${label}px; line-height:1.25; ${shadow(label)} }
 .ask { top:${Math.round(height * 0.74)}px; font-weight:800; font-size:${ask}px; line-height:1.25; ${shadow(ask)} }
 </style></head><body>
-${a && (card.big || card.headerHe || card.counterHe) ? '<div class="lift"></div>' : ''}
+${a && (card.big || card.headerHe || card.counterHe || card.legacyLineHe) ? '<div class="lift"></div>' : ''}
 ${a && (card.labelHe || card.questionHe) ? '<div class="liftLow"></div>' : ''}
-${el('block hook', card.big ? card.hookHe : null, '')}
+${el('block legacy', card.legacyLineHe, '')}
+${el('block hook', card.big && !card.legacyLineHe ? card.hookHe : null, '')}
 ${el('block loop', card.big ? card.openLoopHe : null, '')}
 ${el('block header', card.headerHe, '')}
 ${el('block counter', card.counterHe, '')}
