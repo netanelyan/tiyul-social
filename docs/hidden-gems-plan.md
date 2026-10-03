@@ -1,4 +1,155 @@
-# Hidden gems video, and a hook generator
+# Hidden gems video, a hook generator, and the retention fix
+
+> **Second pass, 3 Oct 2026.** The format shipped and the analytics came back. Section
+> 0 is what they said and what changed because of it; everything from section 1 is the
+> original build and still accurate except where section 0 overrides it.
+
+## 0. The retention fix
+
+### 0.1 What the numbers said
+
+One reel, read off the app:
+
+| | |
+|---|---|
+| hook | 3 יעדים שאנשים לא חושבים עליהם מספיק |
+| length | about 12 seconds |
+| views | 559 |
+| likes | 21 (3.8%) |
+| comments | **0** |
+| shares | 1 |
+| saves | 1 |
+| new followers | 0 |
+| average watch time | **3.1s** |
+| watched in full | **5.03%** |
+| distribution | climbed for two hours, stopped by hour three |
+
+**3.1 seconds is not a coincidence and it is not the footage.** `hookSeconds` was 3, in
+this format and in the postcard reel both, so at exactly three seconds the hook text
+vanished and the first shot cut away. The line had been read, the promise was closed,
+and nothing on screen said more was coming. TikTok showed it to 559 people, measured a
+26% watch ratio and 5% completion, and stopped.
+
+The like rate was this account's second best. It did not help, and it was never going
+to: watch time is the input to distribution and likes are an output of having been
+distributed, which is why a table led by likes shows a healthy number on a post the
+feed has already given up on.
+
+### 0.2 What changed
+
+All of it is `gems.retention` in `post-config.json`, on by default, and `on: false`
+restores the previous timeline exactly.
+
+| | before | after |
+|---|---|---|
+| first cut | 3.0s, where the average view ended | **1.6s**, before the drop |
+| hook at full size | 0 to 3.0s, then gone | 0 to **3.2s**, then a header that stays |
+| counter | none | **1/3, 2/3, 3/3**, the whole video |
+| open loop | none | a second hook line the end pays off |
+| shot order | weakest to strongest | **strongest first**, payoff last |
+| length | 10 to 15s | **7 to 9s** |
+| loop | off | opening and closing windows **matched** |
+| end question | caption only | **on the last shot and in the caption** |
+| quality gate | none | six refusal reasons, logged, one retry |
+
+### 0.3 The two that needed thinking about
+
+**Strongest first and the promise last are not in conflict**, because they are different
+measures. "Strongest" is this project's own `rank`, where a drone shot is penalised four
+points because `BRIEF.md` lists aerials under Never, so the most dramatic shot cannot
+mean the drone shot and does mean the highest-ranked one, usually a POV shot that moves.
+The open loop orders on something else: `surprise` is whether the site is absent from
+the owner's pinned `clips.sites` list, `beauty` is the judge's raw destination score. On
+a live example Lauterbrunnen opened on rank 9 and Ushguli closed as the one place not in
+the pinned list.
+
+**The hook staying on screen does not break the owner's own rule.** "The hook and the
+first label shared a frame, which is two messages in the half second a viewer decides
+on" (git e64f71c) still holds: the hook shot is still its own shot carrying no label,
+just shorter, and the first place's label is withheld until the hook has shrunk to a
+header. At no moment are there two full-size messages. What changed is that the hook
+stops being full size before it stops being present. The first shot is held longest, by
+exactly the seconds its label needs after the shrink.
+
+### 0.4 Decisions taken without asking
+
+1. **The retention policy lives in `gems.retention` and the postcard reel reads it
+   too.** Those two formats now differ in exactly one way, which is where the hook line
+   comes from, so the postcard hands its pooled line to `planGemsReel` and gets the open
+   loop, the ordering, the counter, the question and the gate from the same code. A
+   second copy would be a second place for the timing to drift. The block keeps the
+   `gems` name because that is the format the analytics were measured on.
+2. **The three stock clip shapes, the narrated guide and the slide reel are not
+   changed.** `held` is one shot, so a counter over it would be a lie; `montage` holds
+   one line over several shots of one place, so there is no list to count; the guide's
+   on-screen text is its narration, timed to a voice, and a counter would fight it; the
+   slide reel is off by default and its frames already carry their own text. Between
+   them they are 10% of the rotation's weight and the three stock shapes are paused at
+   0 a day. The two reel formats this does change are 65%.
+3. **`strongestLast` is now false and the setting is kept.** It was true that the last
+   frame is what a viewer is looking at when they decide to watch again. It was also
+   true of a frame 95% of viewers never reached, while the opening frame that every
+   viewer sees was whatever came back third best.
+4. **The loop is a matched window rather than a cross fade or a cut back.** The closing
+   frame now has a question on it that has to be read, and spending 0.4s of an 8.6s reel
+   replaying the opening is 5% of the post plus the frame the question needed. Matching
+   costs no screen time: the last shot's window is nudged to whichever candidate second
+   looks most like the opening frame, measured on colour and a coarse 8x8 brightness
+   grid. A match that is not close enough is simply not applied, because a jarring cut
+   dressed up as a loop is worse than an honest one.
+5. **A price open loop is wired up and will almost never appear.** `האחרון עולה הכי
+   פחות` needs a published daily cost for every place on the reel, which the site has
+   for its own destinations and nobody has for a stock clip. It is in the pool because
+   the brief names it and because `/gems` may one day be handed a region.
+6. **`needsSite` is false for the beauty loops and true for the surprise ones.** Whether
+   the last shot is the prettiest is checkable by looking; "the least known" is a claim
+   about a reputation and therefore about a place that has a name. It is also what keeps
+   the format buildable on a morning that produced only bare country labels, which is
+   the brief's own `גאורגיה` example.
+7. **One loop makes no comparative claim at all.** `תחכו עד הסוף` is offered when
+   nothing can be measured, which happens when every shot scored the same. Without it
+   such a morning produces no reel, and a weaker promise beats no post: the same
+   argument `placeMemoryDays` settles one level down.
+8. **The emoji in the end question is allowed and the hook still may not have one.** A
+   hook is a sentence and the banned list stands; `👇` is a signpost to the comment
+   field, which is what the emoji is for.
+9. **The weekly `/report` still leads on saves and shares.** Watch time leads in
+   `/report hooks`, beside completion, with the like table kept underneath. Three
+   measures printed together, because the lesson of the last two changes here is that
+   one number at a time picks the wrong winner.
+
+### 0.5 The new config, and how to roll back
+
+Everything is in `post-config.json` under `gems`:
+
+| setting | default | what it does |
+|---|---|---|
+| `retention.on` | `true` | **the rollback switch.** False restores the old timeline exactly |
+| `retention.counter` | `true` | `1/3` on every place shot |
+| `retention.headerOn` | `true` | the hook stays as a small header after it shrinks |
+| `retention.question` | `true` | the end question, on screen and in the caption |
+| `retention.openLoop` | `true` | the second hook line |
+| `retention.strongestFirst` | `true` | highest-ranked shot opens |
+| `retention.firstCutSeconds` | `1.6` | the hook shot's length, which is the first cut |
+| `retention.maxFirstCutSeconds` | `2.5` | the gate refuses a later one |
+| `retention.hookFullSeconds` | `3.2` | how long the hook is the only message |
+| `retention.labelMinSeconds` | `1.2` | how long the first place's name needs after that |
+| `retention.loop` | `match` | `match`, `cut` or `off` |
+| `retention.loopMaxDistance` | `0.22` | above this the two frames are too unalike to call it a loop |
+| `retention.retries` | `1` | rebuilds of a plan that fails the gate |
+| `targetSeconds` | `7` to `9` | the length, which decides the shot count |
+| `holdSeconds` | `2` to `3` | per shot |
+| `hooks.openLoops` | 7 entries | the second lines and the measure each one orders by |
+| `hooks.stayWeight` | `0.25` | what "a reason to stay" is worth in the hook score |
+
+To roll back in order of size: `retention.on: false` returns the timeline and the
+overlay to what they were, leaving the shorter length; `targetSeconds` back to 10 and 15
+returns that too; `git revert` of this branch leaves a working bot, because nothing was
+removed and every old path is still reachable.
+
+---
+
+# The original build
 
 Written before the code, as the brief asked. Section 1 is the map of what was already
 here. Section 2 onwards is what changed, every decision taken without asking, how to
