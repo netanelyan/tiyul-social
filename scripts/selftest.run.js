@@ -8972,6 +8972,38 @@ group('retention - 3.1 seconds of 12 is where the hook used to disappear');
 }
 
 /* -------------------------------------------------------------------------- */
+group('the judging budget is spread across queries, not spent inside one');
+
+{
+  // THE MEASUREMENT THAT PRODUCED THIS, on the live box: 24 clips judged, 20 past the
+  // destination gate, 16 labelled, and SIX distinct places - every one of them in
+  // Greece. Thirty-eight other queries were never looked at, because their clips sat
+  // below the Greek ones on a title string score. A reel needs three DIFFERENT places,
+  // so a judging pass that spends itself inside one country starves the format
+  // however many candidates the search returned.
+  const { interleaveByQuery } = await import('../src/video/pexels.js');
+
+  const ranked = [];
+  for (const q of ['greece', 'italy', 'japan']) {
+    for (let i = 0; i < 10; i++) ranked.push({ id: `${q}${i}`, query: q, score: q === 'greece' ? 100 - i : 10 - i });
+  }
+  ranked.sort((a, b) => b.score - a.score);
+  ok('ranked by score alone, the first six are one query',
+    new Set(ranked.slice(0, 6).map((c) => c.query)).size === 1, ranked.slice(0, 6).map((c) => c.query).join(' '));
+
+  const queue = interleaveByQuery(ranked);
+  eq('interleaved, the first three are three queries', new Set(queue.slice(0, 3).map((c) => c.query)).size, 3);
+  eq('nothing is lost', queue.length, ranked.length);
+  ok('and within a query the title order is kept',
+    queue.filter((c) => c.query === 'greece').every((c, i, a) => i === 0 || a[i - 1].score >= c.score));
+  // The best clip of the strongest query is still first, so the formats that want the
+  // single best frame of the day are unaffected.
+  eq('the best clip overall still leads', queue[0].id, 'greece0');
+  eq('one query in is a no-op, which is what the montage shape passes', interleaveByQuery(ranked.filter((c) => c.query === 'italy')).length, 10);
+  eq('and an empty pool stays empty', interleaveByQuery([]).length, 0);
+}
+
+/* -------------------------------------------------------------------------- */
 group('every module loads - the check node --check cannot make');
 
 {

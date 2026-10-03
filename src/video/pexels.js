@@ -104,6 +104,33 @@ export function pickFile(v, { minWidth = 1080 } = {}) {
   return files.find((f) => f.width >= minWidth) || files[files.length - 1] || null;
 }
 
+/**
+ * The best of each query, then the second best of each, and so on.
+ *
+ * Exported so the ordering can be asserted without a network call, which is the only
+ * way this gets a test: everything around it is a live search.
+ */
+export function interleaveByQuery(ranked) {
+  const byQuery = new Map();
+  for (const c of ranked || []) {
+    if (!byQuery.has(c.query)) byQuery.set(c.query, []);
+    byQuery.get(c.query).push(c);
+  }
+  const lists = [...byQuery.values()];
+  const out = [];
+  for (let round = 0; ; round++) {
+    let added = 0;
+    for (const list of lists) {
+      if (list[round]) {
+        out.push(list[round]);
+        added += 1;
+      }
+    }
+    if (!added) break;
+  }
+  return out;
+}
+
 async function search(query, page, { timeoutMs }) {
   const url = `${API}?${new URLSearchParams({
     query,
@@ -214,7 +241,28 @@ export async function findClips({ limit = 12, seen = new Set(), pages = null, ti
   // Title ranking orders the QUEUE for the judge; it no longer decides
   // anything. Cheapest first: the free string checks above have already thrown
   // out the vetoes, and what survives is offered to the picture.
-  const queue = [...out.values()].sort((a, b) => b.score - a.score || a.duration - b.duration);
+  const ranked = [...out.values()].sort((a, b) => b.score - a.score || a.duration - b.duration);
+
+  // ONE QUERY AT A TIME, ROUND ROBIN, AND THIS IS THE FIX FOR THE REEL DROUGHT.
+  //
+  // Ranked by title score alone, the judging budget goes to whichever two or three
+  // queries happen to word their titles best. Measured on the live box: 24 judged, 20
+  // past the destination gate, 16 labelled - and SIX distinct places, every one of
+  // them in Greece. Thirty-eight other queries, including every one added that day,
+  // were never looked at, because their clips sat below the Greek ones on a string
+  // score. A reel needs three DIFFERENT places, so a judging pass that spends itself
+  // inside one country starves it however many candidates the search returned.
+  //
+  // So the queue is interleaved: the best clip of each query, then the second best of
+  // each, and so on. The first 24 judged now span up to 24 destinations instead of
+  // two or three, which is the diversity the format is built on. Within a query the
+  // order is unchanged, so the title score still decides which clip of a place is
+  // offered first - it just no longer decides which PLACES are offered at all.
+  //
+  // The held and cuts shapes are not harmed by this: they want the best frames the
+  // day offers and the best frame of each destination is still at the front. The
+  // montage narrows to one query anyway, where interleaving is a no-op.
+  const queue = interleaveByQuery(ranked);
 
   if (!judge) {
     return { clips: queue.slice(0, limit), total: queue.length, vetoed, errors, judged: 0, nowhere: [] };
