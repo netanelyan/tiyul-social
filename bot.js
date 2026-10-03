@@ -865,6 +865,11 @@ const publishedFacts = (cand) => ({
   // at all, which is the one grouping the owner's own comparison needs.
   format: cand.clip?.format || cand.clip?.shape || cand.deck?.type || cand.kind || null,
   hookCategory: cand.clip?.hookCategory || null,
+  // HOW LONG THE VIDEO WAS, so `/views` can compute a watch RATIO from a watch time
+  // without anybody typing the denominator. It is the one number in the whole
+  // measurement that the program already knows and a person would have to look up.
+  seconds: cand.clip?.seconds ?? null,
+  openLoopId: cand.clip?.openLoopId || null,
   // Where the post was about. A deck names its region; a card names it on the
   // trip, which is the field verify.js already insists every card have.
   //
@@ -1144,6 +1149,18 @@ async function publishNext(item = null) {
               // group by. See src/hooks/gems.js.
               hookText: cand.clip?.format ? cand.hook || null : cand.deck?.titleHe || cand.hook || null,
               hookCategory: cand.clip?.hookCategory || null,
+              // THE VIDEO'S OWN LENGTH AND WHAT IT DID TO HOLD A VIEWER, recorded at
+              // publish time because this is the only moment both halves exist. The
+              // watch RATIO is the number the ranking turns on and it needs the
+              // denominator; typed in a week later it is a number somebody has to
+              // remember, and a format whose target length moved makes the memory
+              // wrong. `openLoopId` and `counter` are here so the report can answer
+              // the question this whole change asks: did the open loop hold anybody.
+              seconds: cand.clip?.seconds ?? null,
+              openLoopId: cand.clip?.openLoopId || null,
+              orderBy: cand.clip?.orderBy || null,
+              counter: cand.clip?.counter ? true : false,
+              firstCutAt: cand.clip?.firstCutAt ?? null,
               frame: cand.deck?.frame || null,
               caption: cand.captionShape || null,
               where: cand.deck?.where || cand.place || null,
@@ -2653,10 +2670,55 @@ bot.command('views', async (ctx) => {
     return ctx.reply(lines.join(NL));
   }
 
-  const nums = arg.split(/\s+/).map((x) => Number(String(x).replace(/,/g, '')));
-  const [n, views, likes, saved, shares, comments] = nums;
+  // TWO FORMS, AND THE NAMED ONE EXISTS BECAUSE THE POSITIONAL ONE RAN OUT.
+  //
+  // `/views 1 559 21 1 1 0` is six numbers and was already at the edge of what anybody
+  // can type correctly. The retention change added four more that matter more than
+  // most of those: average watch time, full watches, and the followers a post won.
+  // Ten positional numbers is a form nobody fills in right.
+  //
+  // So the old form still works exactly as it did, and anything of the shape key=value
+  // is read by name. They mix: `/views 1 559 21 watch=3.1 full=5.03` is the two that
+  // are easy to remember in order plus the two that are not.
+  const words = arg.split(/\s+/).filter(Boolean);
+  const named = {};
+  const positional = [];
+  for (const w of words) {
+    const pair = w.match(/^([a-zA-Zא-ת]+)=(-?[\d.,]+)$/);
+    if (pair) named[pair[1].toLowerCase()] = Number(pair[2].replace(/,/g, ''));
+    else positional.push(Number(String(w).replace(/,/g, '')));
+  }
+
+  const [n, pViews, pLikes, pSaved, pShares, pComments] = positional;
+  const pick = (...keys) => {
+    for (const k of keys) if (Number.isFinite(named[k])) return named[k];
+    return undefined;
+  };
+  const views = pick('views', 'צפיות') ?? pViews;
+  const likes = pick('likes', 'לייקים') ?? pLikes;
+  const saved = pick('saved', 'saves', 'שמירות') ?? pSaved;
+  const shares = pick('shares', 'שיתופים') ?? pShares;
+  const comments = pick('comments', 'תגובות') ?? pComments;
+  // The four the ranking now turns on. `watch` is the app's average watch time in
+  // seconds and `full` its "watched full video" percentage, typed as the app shows
+  // them: `watch=3.1 full=5.03`.
+  const watchSeconds = pick('watch', 'זמן');
+  const fullWatch = pick('full', 'מלא');
+  const followers = pick('followers', 'עוקבים');
+  // The video's own length comes off the published ledger rather than being typed,
+  // so the ratio cannot be computed against the wrong number after a format changes
+  // its target. Overridable for a post the ledger predates.
+  const lengthSeconds = pick('seconds', 'אורך');
+
   if (!Number.isInteger(n) || n < 1 || n > recent.length || !Number.isFinite(views)) {
-    return ctx.reply(`שימוש: /views <מספר 1-${recent.length}> <צפיות> [לייקים] [שמירות] [שיתופים] [תגובות]`);
+    return ctx.reply(
+      [
+        `שימוש: /views <מספר 1-${recent.length}> <צפיות> [לייקים] [שמירות] [שיתופים] [תגובות]`,
+        'או בשמות: /views 1 views=559 likes=21 watch=3.1 full=5.03 comments=0 followers=0',
+        '   watch = זמן צפייה ממוצע בשניות · full = אחוז שצפו עד הסוף',
+        '   אלה שני המספרים שהדירוג רץ עליהם עכשיו, לא הלייקים',
+      ].join(NL)
+    );
   }
 
   const post = recent[n - 1];
@@ -2670,6 +2732,13 @@ bot.command('views', async (ctx) => {
       ...(Number.isFinite(saved) ? { saved } : {}),
       ...(Number.isFinite(shares) ? { shares } : {}),
       ...(Number.isFinite(comments) ? { comments } : {}),
+      ...(Number.isFinite(watchSeconds) ? { watchSeconds } : {}),
+      ...(Number.isFinite(fullWatch) ? { fullWatch } : {}),
+      ...(Number.isFinite(followers) ? { followers } : {}),
+      // The length, from the ledger unless it was typed. Stored on the reading rather
+      // than looked up at report time because a format's target length changes and
+      // the ratio has to be against the length this post actually was.
+      ...(Number.isFinite(lengthSeconds ?? post.seconds) ? { seconds: lengthSeconds ?? post.seconds } : {}),
     },
     {
       // The shape, recovered from the published ledger for a post recorded before the
@@ -2685,16 +2754,30 @@ bot.command('views', async (ctx) => {
         format: post.format || post.clipShape || post.kind || null,
         hookText: post.headline || post.hook || null,
         hookCategory: post.hookCategory || null,
+        // From the ledger, so the report can group a hand-typed reading by whether the
+        // post had an open loop on it. That grouping is the whole experiment.
+        openLoopId: post.openLoopId || null,
       },
       at: post.ts ? new Date(post.ts).toISOString() : null,
     }
   );
 
   const rate = (x) => (Number.isFinite(x) && views > 0 ? `${((x / views) * 100).toFixed(1)}%` : '—');
+  const length = lengthSeconds ?? post.seconds;
   return ctx.reply(
     [
       `✅ נרשם: ${post.place || post.id}`,
       `   ${views.toLocaleString('en-US')} צפיות`,
+      // WATCH TIME FIRST, because it is what decides whether there are more views
+      // tomorrow. The goal is printed beside it: a reading that does not say what
+      // good looks like is a number the reader compares to nothing.
+      Number.isFinite(watchSeconds) && Number.isFinite(length)
+        ? `   זמן צפייה: ${watchSeconds}ש׳ מתוך ${length}ש׳ = ${((watchSeconds / length) * 100).toFixed(0)}% (היעד 60%)`
+        : Number.isFinite(watchSeconds)
+          ? `   זמן צפייה: ${watchSeconds}ש׳ (אין אורך בלוג, אפשר seconds=)`
+          : null,
+      Number.isFinite(fullWatch) ? `   צפייה מלאה: ${fullWatch}% (היעד 30%)` : null,
+      Number.isFinite(followers) ? `   עוקבים חדשים: ${followers}` : null,
       Number.isFinite(likes) ? `   לייקים: ${likes} (${rate(likes)} מהצפיות)` : null,
       Number.isFinite(saved) ? `   שמירות: ${saved} (${rate(saved)} מהצפיות)` : null,
       Number.isFinite(shares) ? `   שיתופים: ${shares} (${rate(shares)} מהצפיות)` : null,

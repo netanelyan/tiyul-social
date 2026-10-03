@@ -1110,6 +1110,10 @@ export function recordPublished({
   // publishedFacts in bot.js.
   format = null,
   hookCategory = null,
+  // The video's own length and which open loop it opened on, for the watch ratio and
+  // for the grouping that answers whether the loop held anybody. See publishedFacts.
+  seconds = null,
+  openLoopId = null,
   pexelsId = null,
   pexelsIds = [],
   angle = null,
@@ -1178,6 +1182,8 @@ export function recordPublished({
       place,
       format,
       hookCategory,
+      seconds,
+      openLoopId,
       // Which stock video this was, for clips. The field the /clip dedupe was
       // already reading — `recentPublished().map(p => p.pexelsId)` — on rows
       // that had never carried it, so the set of "already used" ids handed to

@@ -8784,6 +8784,50 @@ group('delivery - a promise the post does not keep costs the like, not the view'
 }
 
 /* -------------------------------------------------------------------------- */
+group('every module loads - the check node --check cannot make');
+
+{
+  // WHY THIS EXISTS, AND IT IS A REAL BUG IT WOULD HAVE CAUGHT.
+  //
+  // A CSS comment inside a template literal contained backticks, which closed the
+  // literal and broke the module. `node --check src/video/retention.js` passed it,
+  // because that parses the file as a SCRIPT and every file here is ESM, and the
+  // failure only appeared when something imported it. Three modules were broken for
+  // the length of one commit and the syntax checker said they were fine.
+  //
+  // Importing each one also catches the two faults a parser cannot see at all: a
+  // named import that does not exist in the module it comes from, and a dependency
+  // cycle that is used during evaluation rather than inside a function.
+  //
+  // SRC ONLY, AND bot.js IS DELIBERATELY NOT IN IT. Importing bot.js STARTS THE BOT:
+  // it launches Telegraf against the real token, and a second poller on one token
+  // knocks the live instance off its long poll until pm2 restarts it. That is not a
+  // hypothetical - it was done once while checking whether a module parsed, and the
+  // production process restarted. Nothing under src/ has a side effect at import.
+  const { readdirSync, statSync } = await import('node:fs');
+  const { join, relative } = await import('node:path');
+
+  const walk = (dir) =>
+    readdirSync(dir).flatMap((name) => {
+      const at = join(dir, name);
+      return statSync(at).isDirectory() ? walk(at) : at.endsWith('.js') ? [at] : [];
+    });
+
+  const root = new URL('../src', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+  const files = walk(root).sort();
+  let bad = 0;
+  for (const file of files) {
+    try {
+      await import(`file:///${file.replace(/\\/g, '/')}`);
+    } catch (e) {
+      bad += 1;
+      ok(`${relative(root, file)} loads`, false, e.message.slice(0, 120));
+    }
+  }
+  ok(`all ${files.length} modules under src/ load`, bad === 0, `${bad} failed`);
+}
+
+/* -------------------------------------------------------------------------- */
 console.log(`\n${'─'.repeat(56)}`);
 if (fail) {
   console.log(`${pass} passed, ${fail} FAILED\n`);
