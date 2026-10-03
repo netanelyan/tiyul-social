@@ -8405,6 +8405,35 @@ group('the hidden gems reel - twelve seconds, and the hook has to be deliverable
 }
 
 {
+  // THE GENERIC CLIP CARD, which three multi-shot shapes used to fall through and
+  // which printed four false warnings at them.
+  const { clipApprovalMessage, audioLine } = await import('../src/video/clip.js');
+  const reel = {
+    kind: 'clip',
+    hook: '4 יעדים שאנשים לא חושבים עליהם מספיק',
+    hookNote: 'hidden gems: overlooked/notenough',
+    place: 'איסלנד · גאורגיה',
+    tiktokCaption: 'כל אלה במרחק טיסה: איסלנד · גאורגיה',
+    clip: { shape: 'hidden_gems_video', seconds: 12.6, width: 1080, height: 1920, places: ['איסלנד', 'גאורגיה', 'לאוטרברונן, שווייץ'], audio: false },
+  };
+  const card = clipApprovalMessage(reel);
+  ok('the card names the shape in Hebrew', /ג׳מים/.test(card), card.split('\n')[0]);
+  ok('and the places in play order', /1\. איסלנד/.test(card));
+  ok('and claims nothing it does not know', !/undefined/.test(card), card);
+  ok('and never says the footage was not judged', !/לא נשפט/.test(card));
+  ok('and never says the text was not measured', !/לא נמדד/.test(card));
+  ok('the postcard reel gets the same card', /גלויות/.test(clipApprovalMessage({ ...reel, clip: { ...reel.clip, shape: 'postcard' } })));
+  ok('and a held clip still gets its own', /Pexels/.test(clipApprovalMessage({ ...reel, clip: { ...reel.clip, shape: 'held' } })));
+
+  // The audio line takes two shapes of the same field, because the three stock shapes
+  // record the whole track entry and the reels record whether there is one at all.
+  eq('no bed says so', audioLine({ clip: { audio: false } }), '🎵 הסאונד נבחר באפליקציה');
+  ok('a named track prints its name', /bed-02/.test(audioLine({ clip: { audio: true, track: 'bed-02.mp3' } })));
+  ok('and a track entry prints its licence', /CC0/.test(audioLine({ clip: { audio: { title: 'x', credit: 'y', licence: 'CC0' } } })));
+  ok('and neither ever prints undefined', !/undefined/.test(audioLine({ clip: { audio: true } })));
+}
+
+{
   const { gemsCaption } = await import('../src/hashtags.js');
   const cand = { clip: { places: ['לאוטרברונן, שווייץ', 'מטאורה, יוון', 'אגם בלד, סלובניה'] } };
   const caption = gemsCaption(cand, { rand: () => 0 });

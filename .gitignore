@@ -14,6 +14,16 @@ data/
 # these are written straight into the Caddy web root instead (CARD_OUTPUT_DIR).
 out/
 
+# The example reels and slideshows from `npm run gems-lab`, which is where the
+# brief asks for them. Thirteen megabytes per twelve-second reel, and every one
+# of them is reproducible by running the lab again - the manifest and readme it
+# writes alongside them say exactly what was built and what each hook scored.
+#
+# The lab also writes its ffmpeg inputs here and deletes them as it goes, so a
+# `git add` during a run fails on a file that no longer exists. That is a second
+# reason, and it is the one that found the first.
+output/
+
 # Pre-change backups taken on the VPS. `.env.*` above already catches the env
 # copies wherever they sit, but a store.json backup is the TikTok and Instagram
 # token pair under a name `data/` does not match — the one file here that would
