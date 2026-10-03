@@ -8272,30 +8272,37 @@ const { pickDestination } = await import('../src/plan/write.js');
 }
 
 /* -------------------------------------------------------------------------- */
-group('the hidden gems reel - twelve seconds, and the hook has to be deliverable');
+group('the hidden gems reel - the length is the format, and the hook has to deliver');
 
 {
   const { fitHolds, sortShots } = await import('../src/video/hiddenGems.js');
   const cfg = postConfig().gems;
 
-  // THE LENGTH IS THE FORMAT. The reference post is 12 seconds and the brief's window
-  // is 10 to 15, so every shot count the reel can be built at has to land inside it.
+  // THE LENGTH IS THE FORMAT, AND EVERY ASSERTION HERE READS THE TARGET RATHER THAN
+  // NAMING A NUMBER. Three of these tests hardcoded "about twelve seconds" and all
+  // three failed the day the target moved to 7-9 for retention. A test that restates
+  // a config value tests the config file, and it fails for the one reason that is
+  // never a bug: somebody changed their mind on purpose.
   for (const n of [3, 4, 5]) {
     const fit = fitHolds(n, cfg);
     ok(
-      `${n} shots land inside the ${cfg.targetSeconds.min} to ${cfg.targetSeconds.max} second target`,
+      `${n} offered lands inside the ${cfg.targetSeconds.min} to ${cfg.targetSeconds.max} second target`,
       fit.seconds >= cfg.targetSeconds.min && fit.seconds <= cfg.targetSeconds.max,
       `${fit.seconds}s`
     );
-    ok(`${n} shots hold within the configured range`,
+    ok(`${n} offered holds within the configured range`,
       fit.holds.every((h) => h >= cfg.holdSeconds.min && h <= cfg.holdSeconds.max), fit.holds.join(','));
-    eq(`${n} shots means ${n} holds`, fit.holds.length, n);
+    ok(`${n} offered is never MORE than ${n} shots`, fit.holds.length <= n, String(fit.holds.length));
+    ok(`${n} offered keeps at least the ${cfg.shots.min} shot floor`, fit.holds.length >= Math.min(n, cfg.shots.min),
+      String(fit.holds.length));
   }
 
-  // Three shots is the reference's own shape, and the hold it solves for puts the
-  // reel within half a second of the post that got 6.1%.
-  const three = fitHolds(3, cfg);
-  ok('a three shot reel is about twelve seconds', three.seconds >= 11 && three.seconds <= 13.5, `${three.seconds}s`);
+  // THE SHOT COUNT FOLLOWS FROM THE LENGTH rather than being configured beside it,
+  // which is the thing that changed. At a 7 to 9 second target four places do not
+  // fit, so a morning that placed five clips still makes a three shot reel and the
+  // brief's "3 clips of about 2 to 3 seconds" is an outcome rather than a setting.
+  const five = fitHolds(5, cfg);
+  ok('a five clip morning is cut to fit the target', five.dropped > 0 && five.holds.length < 5, JSON.stringify(five));
 
   // A configuration that cannot fit drops a shot rather than running long, because
   // the ceiling is the brief's and a viewer leaves a long one.
@@ -8774,6 +8781,238 @@ group('delivery - a promise the post does not keep costs the like, not the view'
   ok('and the camera roll', reelable('roll'));
   ok('a map post may not', !reelable('map'));
   ok('the cover is held longer than the rest', cfg.coverSeconds > cfg.holdSeconds);
+}
+
+/* -------------------------------------------------------------------------- */
+group('retention - 3.1 seconds of 12 is where the hook used to disappear');
+
+{
+  const { retentionPlan, validateRetentionPlan, orderForOpenLoop, shotMeasure, loopDistance, ordinalHe } =
+    await import('../src/video/retention.js');
+  const { pickOpenLoop } = await import('../src/hooks/gems.js');
+  const cfg = postConfig().gems;
+  const r = cfg.retention;
+
+  const shots = [
+    { labelHe: 'לאוטרברונן, שווייץ', vision: { destination: 9 }, rank: 9 },
+    { labelHe: 'אושגולי, גאורגיה', vision: { destination: 7 }, rank: 8.5 },
+    { labelHe: 'מטאורה, יוון', vision: { destination: 8 }, rank: 7 },
+  ];
+  const plan = retentionPlan({ shots, hookHe: '3 יעדים', openLoopHe: 'תחכו לאחרון', questionHe: '1, 2 או 3? 👇' });
+
+  // THE FIVE NUMBERS THE ANALYTICS ASKED FOR, each one a moment on the timeline.
+  ok('the first cut lands before the drop-off', plan.firstCutAt <= r.maxFirstCutSeconds, `${plan.firstCutAt}s`);
+  ok('the hook is the only message for three to four seconds',
+    plan.hookFullUntil >= r.hookFullSeconds - 0.01, `${plan.hookFullUntil}s`);
+  ok('the whole reel fits the target',
+    plan.seconds >= cfg.targetSeconds.min && plan.seconds <= cfg.targetSeconds.max, `${plan.seconds}s`);
+  ok('the hook is still on screen at the end, as a header',
+    plan.cards[plan.cards.length - 1].headerHe === '3 יעדים');
+  ok('every place card carries a counter', plan.cards.filter((c) => !c.big).every((c) => /^\d+\/3$/.test(c.counterHe)));
+  ok('the question is on the last card and nowhere else',
+    plan.cards.filter((c) => c.questionHe).length === 1 && plan.cards[plan.cards.length - 1].questionHe);
+
+  // THE FIRST PLACE'S NAME IS READABLE AFTER THE HOOK SHRINKS, which is the constraint
+  // that makes the first shot longer than the others. Without it the label gets eight
+  // tenths of a second, which is the same defect as no label.
+  const firstLabel = plan.cards.find((c) => c.labelHe);
+  ok('the first label gets its minimum on screen',
+    firstLabel.to - firstLabel.from >= r.labelMinSeconds - 0.01, `${(firstLabel.to - firstLabel.from).toFixed(2)}s`);
+  ok('which is why the first shot is held longest', plan.holds[0] >= plan.holds[1], plan.holds.join(','));
+
+  // AND THE CARDS NEVER OVERLAP, because two of them on screen at once is two
+  // messages, which is the thing the owner's own rule is about.
+  const sorted = [...plan.cards].sort((a, b) => a.from - b.from);
+  ok('no two cards are on screen together',
+    sorted.every((c, i) => i === 0 || c.from >= sorted[i - 1].to - 0.001), JSON.stringify(sorted.map((c) => [c.from, c.to])));
+
+  // THE GATE. Every one of the brief's refusal reasons, checked on a plan that has it.
+  ok('a good plan passes', validateRetentionPlan(plan, { openLoop: { orderBy: 'surprise', needsSite: true, he: 'x' }, lastShot: { labelHe: 'א, ב', measure: 1 } }).ok);
+  const noLoop = retentionPlan({ shots, hookHe: '3 יעדים', openLoopHe: null, questionHe: 'q' });
+  ok('a hook with no open loop is refused',
+    validateRetentionPlan(noLoop).problems.some((p) => /open loop/.test(p)));
+  const noQuestion = retentionPlan({ shots, hookHe: '3 יעדים', openLoopHe: 'x', questionHe: null });
+  ok('no question on the last shot is refused',
+    validateRetentionPlan(noQuestion).problems.some((p) => /question/.test(p)));
+  const slow = retentionPlan({
+    shots,
+    hookHe: 'h',
+    openLoopHe: 'x',
+    questionHe: 'q',
+    cfg: { ...cfg, retention: { ...r, firstCutSeconds: 3.5 } },
+  });
+  ok('a first cut after the drop-off is refused',
+    validateRetentionPlan(slow, { cfg: { ...cfg, retention: { ...r, firstCutSeconds: 3.5 } } }).problems.some((p) => /first cut/.test(p)),
+    JSON.stringify(validateRetentionPlan(slow, { cfg: { ...cfg, retention: { ...r, firstCutSeconds: 3.5 } } }).problems));
+  const promised = validateRetentionPlan(plan, {
+    openLoop: { orderBy: 'surprise', needsSite: true, he: 'האחרון הכי מפתיע' },
+    lastShot: { labelHe: 'יוון', measure: null },
+  });
+  ok('a promise about a place with no name is refused', !promised.ok, JSON.stringify(promised.problems));
+  ok('and the refusal quotes the promise', promised.problems.some((p) => /מפתיע/.test(p)));
+
+  // THE ORDER. Strongest first and the payoff last, which are two measures and
+  // therefore not in conflict.
+  const bySurprise = orderForOpenLoop(shots, { openLoop: { orderBy: 'surprise' }, strongestFirst: true });
+  eq('the strongest shot opens', bySurprise.ordered[0].labelHe, 'לאוטרברונן, שווייץ');
+  eq('and the one place not in the pinned list closes', bySurprise.last.labelHe, 'אושגולי, גאורגיה');
+  const byBeauty = orderForOpenLoop(shots, { openLoop: { orderBy: 'beauty' }, strongestFirst: true });
+  eq('a beauty loop closes on the highest destination score', byBeauty.last.labelHe, 'לאוטרברונן, שווייץ');
+  ok('and then something else opens', byBeauty.ordered[0].labelHe !== 'לאוטרברונן, שווייץ', byBeauty.ordered[0].labelHe);
+
+  eq('a bare country cannot be measured for surprise', shotMeasure({ labelHe: 'יוון' }, 'surprise'), null);
+  ok('and can be for beauty', shotMeasure({ labelHe: 'יוון', vision: { destination: 8 } }, 'beauty') === 8);
+
+  // THE MEASURES ARE CHECKED AGAINST THE RECORD THE PIPELINE ACTUALLY BUILDS, not
+  // against a hand-made one. Both beauty loops were dead code in production for a
+  // commit because sortShots built its shot without the judge's verdict on it, and
+  // every test here passed: the fixtures carried a vision object and the real data did
+  // not. A test that invents its own input is right about the function and can be
+  // wrong about everything else.
+  {
+    const { sortShots } = await import('../src/video/hiddenGems.js');
+    const judged = [
+      { id: '1', src: 'a', duration: 20, rank: 9, vision: { place: 'Switzerland', site: 'Lauterbrunnen', destination: 9 } },
+      { id: '2', src: 'b', duration: 20, rank: 7, vision: { place: 'Georgia', site: 'Ushguli', siteHe: 'אושגולי', destination: 8 } },
+      { id: '3', src: 'c', duration: 20, rank: 8, vision: { place: 'Greece', site: 'Meteora', destination: 7 } },
+    ];
+    const real = sortShots(judged, { want: 5, floor: 3 }).placed;
+    ok('a shot off the real path can be measured for beauty',
+      real.every((s) => shotMeasure(s, 'beauty') != null), JSON.stringify(real.map((s) => s.vision?.destination)));
+    ok('and for surprise', real.every((s) => shotMeasure(s, 'surprise') != null));
+    ok('and carries the rank the opening order needs', real.every((s) => Number.isFinite(s.rank)));
+  }
+
+  // WHICH LOOPS ARE OFFERED IS A QUESTION ABOUT THE SHOTS, not about the words.
+  const offered = new Set();
+  for (let i = 0; i < 12; i++) {
+    const o = pickOpenLoop({ shots, rand: () => i / 12 });
+    if (o) offered.add(o.id);
+  }
+  ok('a reel of named sites is offered a surprise loop', [...offered].some((id) => /surprise|noone|lastsurprise/.test(id)), [...offered].join(','));
+  ok('and never the price loop, which nothing can source', !offered.has('lastcheapest'), [...offered].join(','));
+  const flat = [
+    { labelHe: 'יוון', vision: { destination: 8 }, rank: 8 },
+    { labelHe: 'איטליה', vision: { destination: 8 }, rank: 8 },
+  ];
+  const flatOffered = new Set();
+  for (let i = 0; i < 12; i++) {
+    const o = pickOpenLoop({ shots: flat, rand: () => i / 12 });
+    if (o) flatOffered.add(o.id);
+  }
+  ok('a reel nothing can order gets only the loop that claims nothing',
+    [...flatOffered].every((id) => id === 'waitend'), [...flatOffered].join(','));
+
+  eq('the ordinal agrees with the shot count', ordinalHe(3), 'השלישי');
+  eq('and falls back to "the last" past the table', ordinalHe(9), 'האחרון');
+
+  // THE LOOP MEASURE. Identical frames are a perfect loop, opposites are not.
+  const black = { r: 0, g: 0, b: 0, grid: Array(64).fill(0) };
+  const white = { r: 255, g: 255, b: 255, grid: Array(64).fill(255) };
+  eq('a frame against itself is a perfect loop', loopDistance(black, black), 0);
+  ok('and against its opposite is the worst', loopDistance(black, white) > 0.9, String(loopDistance(black, white)));
+  eq('an unmeasurable frame has no distance', loopDistance(null, white), null);
+
+  // THE OLD TIMELINE IS STILL REACHABLE, which is the rollback.
+  const off = retentionPlan({
+    shots,
+    hookHe: 'h',
+    openLoopHe: 'x',
+    questionHe: 'q',
+    cfg: { ...cfg, retention: { ...r, on: false } },
+  });
+  eq('retention off puts the hook back on its own three second shot', off.hookSeconds, cfg.hookSeconds);
+  ok('and draws one line per shot with nothing persistent',
+    off.cards.every((c) => !c.headerHe && !c.counterHe && !c.questionHe));
+  ok('and the gate passes anything when it is off', validateRetentionPlan(off, { cfg: { ...cfg, retention: { ...r, on: false } } }).ok);
+}
+
+{
+  // THE SCORE GAINED A TERM, and it has to move the ranking without rewriting it.
+  const gems = await import('../src/hooks/gems.js');
+  const vars = { n: 3, placeList: ['לאוטרברונן, שווייץ'] };
+  const t = gems.templatesFor('hidden_gems_video').find((x) => x.id === 'notenough');
+  const bare = gems.scoreHook('3 יעדים שאנשים לא חושבים עליהם מספיק', { template: t, vars, maxWeight: 5 });
+  const looped = gems.scoreHook('3 יעדים שאנשים לא חושבים עליהם מספיק תחכו לאחרון', { template: t, vars, maxWeight: 5 });
+  ok('a counted line gets partial credit for implying more', bare.stay > 0 && bare.stay < 1, String(bare.stay));
+  eq('an open loop gets all of it', looped.stay, 1);
+  ok('and it moves the total', looped.total > bare.total, `${bare.total.toFixed(3)} -> ${looped.total.toFixed(3)}`);
+  ok('but not by more than its weight', (looped.total - bare.total) / bare.total < 0.5, String((looped.total - bare.total) / bare.total));
+}
+
+{
+  // THE METRICS THE RANKING NOW TURNS ON.
+  const { rates } = await import('../src/metrics/store.js');
+  const { rankWatch, hookReport } = await import('../src/metrics/report.js');
+
+  // The post this whole change is about, as the owner read it off the app.
+  const measured = rates({ views: 559, likes: 21, comments: 0, shares: 1, saved: 1, followers: 0, watchSeconds: 3.1, seconds: 12, fullWatch: 5.03 });
+  ok('the watch ratio is the watch time over the length', Math.abs(measured.watchRatio - 3.1 / 12) < 1e-9, String(measured.watchRatio));
+  ok('full watches come in as a percentage and store as a fraction', Math.abs(measured.fullWatchRate - 0.0503) < 1e-9);
+  eq('followers are a count rather than a rate', measured.followers, 0);
+  eq('a post with no watch time has no ratio', rates({ views: 100, likes: 4 }).watchRatio, null);
+  eq('and no length means no ratio either', rates({ views: 100, watchSeconds: 3 }).watchRatio, null);
+
+  // THE SAME POST WOULD RANK ABOVE A BETTER-LIKED ONE ON THE OLD TABLE AND BELOW IT
+  // ON THIS ONE, which is the whole argument for the change.
+  const now = new Date().toISOString();
+  const rows = [
+    { id: 'old', at: now, shape: { format: 'hidden_gems_video', openLoopId: null }, media: { tiktok: '1' },
+      stats: { tiktok: { views: 559, likes: 21, watchSeconds: 3.1, seconds: 12, fullWatch: 5.03, by: 'hand' } } },
+    { id: 'new', at: now, shape: { format: 'hidden_gems_video', openLoopId: 'lastsurprise' }, media: { tiktok: '2' },
+      stats: { tiktok: { views: 400, likes: 14, watchSeconds: 5.4, seconds: 8.6, fullWatch: 34, by: 'hand' } } },
+  ];
+  const byLoop = rankWatch(rows.map((r) => ({ ...r, best: rates(r.stats.tiktok) })), 'openLoopId');
+  eq('the open loop ranks first on watch time', byLoop[0].key, 'lastsurprise');
+  const report = hookReport({ days: 14, rows });
+  ok('the report leads with watch time', /זמן צפייה/.test(report.split('\n')[0]), report.split('\n')[0]);
+  ok('it groups by open loop', /lastsurprise/.test(report));
+  ok('it states the goal', /60%/.test(report) && /30%/.test(report));
+  ok('and it still prints the like table underneath', /לייקים\/צפיות/.test(report));
+}
+
+/* -------------------------------------------------------------------------- */
+group('every module loads - the check node --check cannot make');
+
+{
+  // WHY THIS EXISTS, AND IT IS A REAL BUG IT WOULD HAVE CAUGHT.
+  //
+  // A CSS comment inside a template literal contained backticks, which closed the
+  // literal and broke the module. `node --check src/video/retention.js` passed it,
+  // because that parses the file as a SCRIPT and every file here is ESM, and the
+  // failure only appeared when something imported it. Three modules were broken for
+  // the length of one commit and the syntax checker said they were fine.
+  //
+  // Importing each one also catches the two faults a parser cannot see at all: a
+  // named import that does not exist in the module it comes from, and a dependency
+  // cycle that is used during evaluation rather than inside a function.
+  //
+  // SRC ONLY, AND bot.js IS DELIBERATELY NOT IN IT. Importing bot.js STARTS THE BOT:
+  // it launches Telegraf against the real token, and a second poller on one token
+  // knocks the live instance off its long poll until pm2 restarts it. That is not a
+  // hypothetical - it was done once while checking whether a module parsed, and the
+  // production process restarted. Nothing under src/ has a side effect at import.
+  const { readdirSync, statSync } = await import('node:fs');
+  const { join, relative } = await import('node:path');
+
+  const walk = (dir) =>
+    readdirSync(dir).flatMap((name) => {
+      const at = join(dir, name);
+      return statSync(at).isDirectory() ? walk(at) : at.endsWith('.js') ? [at] : [];
+    });
+
+  const root = new URL('../src', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+  const files = walk(root).sort();
+  let bad = 0;
+  for (const file of files) {
+    try {
+      await import(`file:///${file.replace(/\\/g, '/')}`);
+    } catch (e) {
+      bad += 1;
+      ok(`${relative(root, file)} loads`, false, e.message.slice(0, 120));
+    }
+  }
+  ok(`all ${files.length} modules under src/ load`, bad === 0, `${bad} failed`);
 }
 
 /* -------------------------------------------------------------------------- */

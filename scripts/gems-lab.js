@@ -130,6 +130,23 @@ for (let i = 0; i < reels; i++) {
       looped: cand.clip.looped,
       audio: cand.clip.audio,
       hook: cand.hook,
+      // EVERYTHING THE RETENTION CHANGE ADDED, because the brief asks the examples to
+      // show the hook, the open-loop line, the clip order, the timings, the counter
+      // and the end question. All six are the things somebody has to check by eye
+      // before deciding whether the format now holds a viewer.
+      hookLine: cand.clip.hookLine,
+      openLoop: cand.clip.openLoop,
+      openLoopId: cand.clip.openLoopId,
+      orderBy: cand.clip.orderBy,
+      payoff: cand.clip.payoffHe,
+      payoffMeasure: cand.clip.payoffMeasure,
+      questionHe: cand.clip.questionHe,
+      counter: cand.clip.counter,
+      firstCutAt: cand.clip.firstCutAt,
+      hookFullUntil: cand.clip.hookFullUntil,
+      holds: cand.clip.holds,
+      loopDistance: cand.clip.loopDistance,
+      refusedPlans: cand.clip.refusedPlans,
       hookCategory: cand.clip.hookCategory,
       hookTemplate: cand.clip.hookTemplate,
       hookWritten: cand.hookWritten,
@@ -252,11 +269,35 @@ for (const e of examples) {
       '',
       `Hook: **${e.hookCategory}/${e.hookTemplate}**, scored ${e.hookScore?.total?.toFixed(3)} ` +
         `(specific ${e.hookScore?.specificity?.toFixed(2)}, curious ${e.hookScore?.curiosity?.toFixed(2)}, ` +
-        `honest ${e.hookScore?.honesty?.toFixed(2)})${e.hookWritten ? ', written by the model' : ', filled from a template'}`,
+        `honest ${e.hookScore?.honesty?.toFixed(2)}, reason to stay ${e.hookScore?.stay?.toFixed(2)})` +
+        `${e.hookWritten ? ', written by the model' : ', filled from a template'}`,
       '',
-      'Shots:',
-      ...e.clips.map((c, i) => `${i + 1}. ${c}`),
+      ...(e.openLoop
+        ? [
+            `Open loop: **${e.openLoop}** (${e.openLoopId}), which orders the reel by \`${e.orderBy}\` so that`,
+            `**${e.payoff}** goes last${e.payoffMeasure != null ? ` at ${e.orderBy} ${e.payoffMeasure}` : ''}.`,
+            '',
+          ]
+        : ['No open loop on this one.', '']),
+      'Timeline:',
       '',
+      '| | shot | held | on screen |',
+      '|---|---|---|---|',
+      `| hook | the unplaced clip | ${e.firstCutAt}s | the hook at full size until ${e.hookFullUntil}s |`,
+      ...e.clips.map(
+        (c, i) =>
+          `| ${i + 1}/${e.clips.length} | ${c} | ${e.holds?.[i] ?? '?'}s | header, counter${
+            i === e.clips.length - 1 && e.questionHe ? `, and the question` : ''
+          } |`
+      ),
+      '',
+      `First cut at **${e.firstCutAt}s**, total **${e.seconds}s**` +
+        `${e.loopDistance != null ? `, loop distance ${e.loopDistance}${e.looped === 'match' ? ' (matched)' : ' (left as it was)'}` : ''}.`,
+      '',
+      ...(e.questionHe ? [`End question, on the last shot and at the end of the caption: **${e.questionHe}**`, ''] : []),
+      ...((e.refusedPlans || []).length
+        ? ['Plans refused before this one:', ...e.refusedPlans.map((p) => `- ${p}`), '']
+        : []),
       'Runners up:',
       ...(e.hookConsidered || []).slice(1).map((c) => `- ${c.total.toFixed(3)} ${c.text}`),
       ...((e.hookRejected || []).length ? ['', 'Refused:', ...e.hookRejected.map((r) => `- ${r.text} (${r.why})`)] : []),

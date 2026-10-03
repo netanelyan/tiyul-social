@@ -2,14 +2,22 @@ import { rmSync } from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { ffmpegPath, clipOutputDir, download, measureClip, pickWindow } from './overlay.js';
-import { renderPostcardPng } from './postcard.js';
 import { postConfig } from '../postConfig.js';
+import { solveHolds } from './fit.js';
 import { pickTrack, trackOffset } from './tracks.js';
 import { findClips } from './pexels.js';
 import { clipPlaceLabel, gemsCaption } from '../hashtags.js';
 import { targetsForKind } from '../publish/targets.js';
 import { assertNoUrl } from '../format.js';
-import { writeGemHook } from '../hooks/gems.js';
+import { writeGemHook, pickOpenLoop, fill } from '../hooks/gems.js';
+import {
+  retentionPlan,
+  validateRetentionPlan,
+  orderForOpenLoop,
+  renderRetentionCard,
+  frameSignature,
+  loopDistance,
+} from './retention.js';
 import { placesNamedSince, gemHookHistory } from '../store.js';
 
 // THE HIDDEN GEMS REEL: twelve seconds, a curiosity hook, three to five real shots.
@@ -67,34 +75,7 @@ import { placesNamedSince, gemHookHistory } from '../store.js';
  * an ffmpeg `-t` and a float with sixteen digits in it is a filter graph nobody can
  * read in a log.
  */
-export function fitHolds(count, cfg = postConfig().gems) {
-  const hook = cfg.hookSeconds;
-  const { min: lo, max: hi } = cfg.holdSeconds;
-  const target = cfg.targetSeconds;
-  const mid = (target.min + target.max) / 2;
-
-  let n = Math.max(1, count);
-  let dropped = 0;
-  let hold = 0;
-
-  for (;;) {
-    hold = Math.min(hi, Math.max(lo, (mid - hook) / n));
-    const total = hook + n * hold;
-    // Over the ceiling even at the floor hold: this many shots cannot be shown in
-    // this many seconds, so one of them does not get shown.
-    if (total > target.max && n > 1 && hook + n * lo > target.max) {
-      n -= 1;
-      dropped += 1;
-      continue;
-    }
-    if (total > target.max) hold = (target.max - hook) / n;
-    break;
-  }
-
-  const round = (x) => Math.round(x * 10) / 10;
-  const holds = Array.from({ length: n }, () => round(hold));
-  return { holds, seconds: round(hook + holds.reduce((a, b) => a + b, 0)), dropped };
-}
+export const fitHolds = (count, cfg = postConfig().gems, opts = {}) => solveHolds(count, cfg, opts);
 
 /**
  * One reel from already-judged clips.
@@ -104,29 +85,49 @@ export function fitHolds(count, cfg = postConfig().gems) {
  */
 export async function buildHiddenGemsClip(
   shots,
-  { hookHe, hookClip = null, id = 'gems', outDir = clipOutputDir(), track = null, cfg = null } = {}
+  {
+    hookHe,
+    openLoopHe = null,
+    questionHe = null,
+    plan = null,
+    hookClip = null,
+    id = 'gems',
+    outDir = clipOutputDir(),
+    track = null,
+    cfg = null,
+  } = {}
 ) {
   const gems = cfg || postConfig().gems;
+  const r = gems.retention;
   const places = (shots || []).filter((s) => s?.src && s?.labelHe).slice(0, gems.shots.max);
   if (places.length < gems.shots.min) {
     throw new Error(`a hidden gems reel needs ${gems.shots.min} placed clips (got ${places.length})`);
   }
 
-  const fit = fitHolds(places.length, gems);
-  const kept = places.slice(0, fit.holds.length);
+  // The plan is handed in by planGemsReel, which has already checked it. Recomputed
+  // here only for the callers that build a reel directly, which is the labs and the
+  // tests: the timeline is a pure function of the shots and the config, so computing
+  // it twice cannot disagree with itself.
+  const shaped =
+    plan ||
+    retentionPlan({ shots: places, hookHe, openLoopHe, questionHe, cfg: gems });
+  const kept = shaped.shots;
 
   // THE TIMELINE. The hook's own shot, then a shot per place, then optionally the
   // opening shot again for a fraction of a second.
   //
-  // THE LOOP IS A CUT BACK, NOT A CROSS FADE, and that is a deliberate limit. An
-  // xfade would mean a second filter chain inside a graph that is proven and that
-  // every other shape here shares; a tail of the opening shot concatenated like any
-  // other segment reaches the same end, which is that the last frame a viewer sees
-  // is the first frame they saw. On a loop that reads as deliberate.
+  // THE HOOK SHOT IS STILL ITS OWN SHOT and still carries no label, which is the
+  // owner's rule from e64f71c. What changed is its LENGTH: 1.6 seconds instead of 3,
+  // so the first cut lands before the three second drop-off rather than on it, and
+  // the hook TEXT outlives it - full size until 3.2s, then a header for the rest.
+  // See retentionPlan.
   const timeline = [];
-  if (hookClip?.src) timeline.push({ ...hookClip, labelHe: null, hook: true, hold: gems.hookSeconds });
-  for (const [i, place] of kept.entries()) timeline.push({ ...place, hold: fit.holds[i] });
-  if (gems.loop && gems.loopSeconds > 0 && hookClip?.src) {
+  if (hookClip?.src) timeline.push({ ...hookClip, labelHe: null, hook: true, hold: shaped.hookSeconds });
+  for (const [i, place] of kept.entries()) timeline.push({ ...place, hold: shaped.holds[i] });
+  // `retention.loop: cut` is the old tail. `match` spends no screen time and is the
+  // default; see the window selection below.
+  const wantsTail = r.on ? r.loop === 'cut' : gems.loop;
+  if (wantsTail && gems.loopSeconds > 0 && hookClip?.src) {
     timeline.push({ ...hookClip, labelHe: null, hook: false, tail: true, hold: gems.loopSeconds });
   }
 
@@ -156,6 +157,48 @@ export async function buildHiddenGemsClip(
       clock += shot.hold;
     }
 
+    // THE SEAMLESS LOOP, CHOSEN RATHER THAN CROSS FADED.
+    //
+    // A rewatch starts on the first frame of the reel, so the cut a viewer sees on the
+    // second lap is the LAST frame against the FIRST. `match` shifts the closing
+    // window of the last shot to whichever candidate second looks most like the
+    // opening frame - matching colour and the coarse layout of light, which is what
+    // the brief asks for and what the eye reads as continuity.
+    //
+    // IT SPENDS NO SCREEN TIME, which is the whole reason it is the default over the
+    // cut-back tail. The closing frame now has a question on it that has to be read,
+    // and 0.4 seconds of a 8.6 second reel spent replaying the opening is 5% of the
+    // post plus the frame the question needed.
+    //
+    // A match that is not close enough is simply not applied: a jarring cut dressed up
+    // as a loop is worse than an honest one. See loopMaxDistance.
+    let loopMatch = null;
+    if (r.on && r.loop === 'match' && files.length > 1) {
+      const open = await frameSignature(files[0], starts[0]).catch(() => null);
+      const lastIdx = files.length - 1;
+      if (open) {
+        const span = timeline[lastIdx].hold;
+        // Three candidate closing seconds inside the shot's own window, which is all
+        // the range there is: the window was already chosen by pickWindow for being
+        // the part worth showing, so this nudges rather than relocates.
+        const options = [0, 0.4, 0.8, 1.2]
+          .map((d) => starts[lastIdx] + d)
+          .filter((s) => s + span <= starts[lastIdx] + span + 1.4);
+        let best = null;
+        for (const s of options) {
+          const sig = await frameSignature(files[lastIdx], s + span - 0.1).catch(() => null);
+          const d = loopDistance(open, sig);
+          if (d != null && (!best || d < best.d)) best = { start: s, d };
+        }
+        if (best && best.d <= r.loopMaxDistance) {
+          starts[lastIdx] = best.start;
+          loopMatch = { distance: Number(best.d.toFixed(3)), applied: true };
+        } else if (best) {
+          loopMatch = { distance: Number(best.d.toFixed(3)), applied: false };
+        }
+      }
+    }
+
     // The type, measured against the frames it actually lands on, exactly as the
     // postcard does: a label over a bright sky gets less help than one over a
     // forest, and an unmeasured clip gets the help because not knowing is the risky
@@ -165,14 +208,38 @@ export async function buildHiddenGemsClip(
       spots.push(await measureClip(local, { startAt: starts[i], seconds: timeline[i].hold }).catch(() => null));
     }
 
-    for (const [i, shot] of timeline.entries()) {
-      const text = shot.hook ? hookHe : shot.labelHe;
-      // The loop tail carries nothing. It is the opening frame coming back, and a
-      // line on it would be a fifth message in the last half second.
-      if (!text) continue;
-      const png = path.join(outDir, `clip-${id}-txt-${i}.png`);
-      await renderPostcardPng({ text, hook: Boolean(shot.hook), width: w, height: h, file: png, spot: spots[i] });
-      pngs.push({ file: png, from: at[i], to: at[i] + shot.hold });
+    if (r.on) {
+      // ONE PNG PER TEXT STATE, which is what lets four elements share a frame for the
+      // price of one overlay. A card holds everything on screen at that moment, so the
+      // gradient that lifts it is sized against the frames the whole block lands on
+      // rather than against one line's worth of them.
+      //
+      // Each card is measured against the shot it OVERLAPS. The hook card spans the
+      // hook shot and the opening of the first place, and is measured against the hook
+      // shot, which is where it spends most of its life and the only frame a viewer is
+      // guaranteed to see it on.
+      for (const [i, card] of shaped.cards.entries()) {
+        const over = timeline.findIndex((_, k) => at[k] <= card.from + 0.01 && card.from < at[k] + timeline[k].hold);
+        const png = path.join(outDir, `clip-${id}-card-${i}.png`);
+        await renderRetentionCard({ card, width: w, height: h, file: png, spot: spots[over] ?? spots[0] });
+        pngs.push({ file: png, from: card.from, to: card.to });
+      }
+    } else {
+      // THE OLD OVERLAY, one line per shot and nothing persistent, reachable by
+      // `retention.on: false`. This is what the 3.1 second average was measured on.
+      for (const [i, shot] of timeline.entries()) {
+        const text = shot.hook ? hookHe : shot.labelHe;
+        if (!text) continue;
+        const png = path.join(outDir, `clip-${id}-txt-${i}.png`);
+        await renderRetentionCard({
+          card: { id: `legacy${i}`, legacyLineHe: text, big: Boolean(shot.hook) },
+          width: w,
+          height: h,
+          file: png,
+          spot: spots[i],
+        });
+        pngs.push({ file: png, from: at[i], to: at[i] + shot.hold });
+      }
     }
 
     // SOUND. `app` is the current behaviour and the default: the file goes out
@@ -238,9 +305,19 @@ export async function buildHiddenGemsClip(
       file,
       seconds,
       shots: kept.length,
-      dropped: fit.dropped,
-      holdSeconds: fit.holds[0] ?? null,
-      looped: Boolean(gems.loop && gems.loopSeconds > 0 && hookClip?.src),
+      dropped: shaped.dropped,
+      holdSeconds: shaped.holds[0] ?? null,
+      holds: shaped.holds,
+      firstCutAt: shaped.firstCutAt,
+      hookFullUntil: shaped.hookFullUntil,
+      // What the approval card prints and what the metrics row records: a reel that
+      // kept its promises visibly is the thing being tested.
+      counter: shaped.counted ? `1..${shaped.holds.length}/${shaped.holds.length}` : null,
+      // `cut` is the old tail, `match` is a window chosen to look like the opening,
+      // and a match too far apart to be seamless is reported as not applied rather
+      // than silently counted as a loop.
+      looped: wantsTail ? 'cut' : loopMatch?.applied ? 'match' : null,
+      loopDistance: loopMatch?.distance ?? null,
       audio: Boolean(bed),
       track: chosen?.name || null,
     };
@@ -315,7 +392,23 @@ export function sortShots(clips, { seenPlaces = new Map(), want = 5, floor = 3, 
       continue;
     }
     places.add(key);
-    const shot = { src: c.src, duration: c.duration, labelHe, id: c.id, credit: c.credit, page: c.page, rank: c.rank ?? null };
+    // `vision` AND `rank` COME THROUGH, which they did not and which made two of the
+    // open loops dead code in production. The judge's verdict is what both ordering
+    // measures read: `beauty` is its raw destination score and `strongestFirst` is
+    // `rank`. Stripped here, every beauty loop was unmeasurable on every real reel and
+    // was therefore never offered, while the hand-made shots in the tests carried the
+    // field and passed. The shot record is small and the judge's answer is the reason
+    // any of these clips is on the reel at all.
+    const shot = {
+      src: c.src,
+      duration: c.duration,
+      labelHe,
+      id: c.id,
+      credit: c.credit,
+      page: c.page,
+      rank: c.rank ?? null,
+      vision: c.vision || null,
+    };
     // `seenPlaces` may be a Map of label -> when, or a Set with no timestamps. A Set
     // means every entry is equally old, which ranks them all at 0 and is the right
     // reading: without a time the only honest order is the order they arrived in.
@@ -390,6 +483,86 @@ export function sortShots(clips, { seenPlaces = new Map(), want = 5, floor = 3, 
 }
 
 /**
+ * The hook, the open loop, the order of the shots, the question and the timeline.
+ *
+ * ONE FUNCTION BECAUSE THE FIVE DECISIONS ARE ONE DECISION. The open loop determines
+ * the order, the order determines which shot is last, the last shot is what the loop
+ * promised, and the hook's count has to match however many shots survived. Drawn
+ * separately they would each be right about something and the post would be wrong.
+ *
+ * ORDER OF OPERATIONS, and each step depends on the one above it:
+ *
+ *   1. the open loop, from the loops whose measure these shots can actually support
+ *   2. the order, so the shot that wins that measure goes last and the strongest of
+ *      the rest opens
+ *   3. the hook, written knowing how many shots there are
+ *   4. the question, drawn once for the screen and the caption both
+ *   5. the timeline, and then the gate over all of it
+ *
+ * No I/O. Returns everything the builder needs plus the check, so a refusal costs a
+ * hook call and nothing else.
+ */
+export async function planGemsReel(
+  candidates,
+  { gems = null, write = true, rand = Math.random, avoid = [], avoidLoops = [], hookText = null } = {}
+) {
+  const cfg = gems || postConfig().gems;
+  const r = cfg.retention;
+
+  const openLoop = r.on && r.openLoop ? pickOpenLoop({ shots: candidates, rand, avoid: avoidLoops }) : null;
+  const { ordered, last } = r.on
+    ? orderForOpenLoop(candidates, { openLoop, strongestFirst: r.strongestFirst })
+    : { ordered: candidates, last: candidates[candidates.length - 1] };
+
+  // `hookText` IS THE POSTCARD REEL'S DOOR IN. That format picks its line from a pool
+  // of three counted sentences rather than generating one, and everything else about
+  // the two formats is now identical - so it hands its line in here and gets the open
+  // loop, the ordering, the timeline and the gate for free. The alternative was a
+  // second copy of this function, and the note at the top of this file already says
+  // what a second copy of the renderer would have cost.
+  const hook = hookText
+    ? { text: hookText, from: 'pool', category: null, templateId: null, score: null, considered: [], rejected: [] }
+    : await writeGemHook({
+        format: 'hidden_gems_video',
+        deliverable: ordered.length,
+        write,
+        rand,
+        avoid,
+        // THE OPEN LOOP IS SCORED WITH THE HOOK RATHER THAN AFTER IT. A line and its
+        // second line are one sentence as far as a viewer is concerned, and the
+        // "reason to stay" term is about the pair: scoring the first line alone would
+        // rank every candidate identically on the one axis this change exists to add.
+        openLoopHe: openLoop?.he || null,
+        vars: { n: ordered.length, placeList: ordered.map((s) => s.labelHe) },
+      });
+  if (!hook.text) return { error: `no usable hook: ${hook.error || 'every candidate was rejected'}` };
+
+  // ONE QUESTION, FOR THE SCREEN AND THE CAPTION. Drawn here and handed to both, so
+  // the post asks one thing once. Two draws would burn one question onto the last
+  // frame and print a different one underneath it, which reads as two people.
+  const questions = cfg.caption.questions;
+  const questionHe = r.on && r.question && questions.length
+    ? fill(questions[Math.floor(rand() * questions.length)], {
+        // "1, 2 או 3?" is the easiest comment anybody will ever leave, and the counter
+        // on screen has already taught them the numbering.
+        choices: ordered.map((_, i) => i + 1).join(', ').replace(/, (\d+)$/, ' או $1'),
+        n: ordered.length,
+      })
+    : null;
+
+  const plan = retentionPlan({
+    shots: ordered,
+    hookHe: hook.text,
+    openLoopHe: openLoop?.he || null,
+    questionHe,
+    cfg,
+  });
+
+  const check = validateRetentionPlan(plan, { cfg, openLoop, lastShot: plan.shots[plan.shots.length - 1] });
+  return { hook, openLoop, questionHe, plan, shots: plan.shots, last, check };
+}
+
+/**
  * One hidden gems reel, as an approvable candidate.
  *
  * Same shape of return value as every other clip here, which is what makes this an
@@ -443,37 +616,68 @@ export async function buildHiddenGemsCandidate({
     );
   }
 
-  // The hook is written AFTER the shots are chosen, because the count in it is a
-  // promise about them. Written before, it would be a number the reel then has to
+  // HOW MANY SHOTS THE LENGTH ALLOWS, before the hook is written, because the count
+  // is a promise about them. Written first, it would be a number the reel then has to
   // match, which is the wrong way round and is how a hook comes to over-promise.
-  const fit = fitHolds(placed.length, gems);
-  const shots = placed.slice(0, fit.holds.length);
-  const hook = await writeGemHook({
-    format: 'hidden_gems_video',
-    deliverable: shots.length,
-    write,
-    rand,
-    // Never the line the last reel opened on. `avoid` is handed in rather than read
-    // inside the generator, for the same reason buildPost hands its history in: a lab
-    // run must be able to ignore the account's memory and must not write to it.
-    avoid: avoid == null ? gemHookHistory().slice(0, postConfig().gems.hooks.memory) : avoid,
-    vars: {
-      n: shots.length,
-      placeList: shots.map((s) => s.labelHe),
-    },
-  });
+  const r = gems.retention;
+  const fit = fitHolds(placed.length, gems, r.on ? { hookSeconds: r.firstCutSeconds } : {});
+  const trimmed = placed.slice(0, fit.holds.length);
 
-  if (!hook.text) throw new Error(`no usable hook: ${hook.error || 'every candidate was rejected'}`);
+  // THE WHOLE REEL, PLANNED AND CHECKED BEFORE ANYTHING IS ENCODED, and rebuilt when
+  // the check fails. `retries` is one by default: a second pass redraws the open loop
+  // and with it the ordering, which is what a failed promise check actually needs,
+  // and a third would be three vision passes for one post.
+  let attempt = null;
+  const refused = [];
+  for (let tries = 0; tries <= r.retries; tries++) {
+    const next = await planGemsReel(trimmed, {
+      gems,
+      write,
+      rand,
+      avoid: avoid == null ? gemHookHistory().slice(0, postConfig().gems.hooks.memory) : avoid,
+      // The second attempt refuses the open loop the first one used, so a retry is a
+      // different promise rather than the same one failing twice.
+      avoidLoops: refused.map((x) => x.openLoop?.id).filter(Boolean),
+    });
+    if (next.error) throw new Error(next.error);
+    if (next.check.ok) {
+      attempt = next;
+      break;
+    }
+    refused.push(next);
+    console.log(`gems: plan refused (${tries + 1}/${r.retries + 1}) - ${next.check.problems.join('; ')}`);
+  }
 
+  if (!attempt) {
+    const last = refused[refused.length - 1];
+    throw new Error(`the reel failed the retention check: ${last?.check.problems.join('; ') || 'unknown'}`);
+  }
+
+  const { hook, openLoop, questionHe, plan, shots } = attempt;
   const hookClip = spare[0] || shots[0] || null;
   const id = `hg${Math.abs(shots.reduce((a, p) => (a * 31 + Number(p.id)) | 0, 7)).toString(16).slice(0, 10)}`;
-  const built = await buildHiddenGemsClip(shots, { hookHe: hook.text, hookClip, id, outDir, cfg: gems });
+  const built = await buildHiddenGemsClip(shots, {
+    hookHe: hook.text,
+    openLoopHe: openLoop?.he || null,
+    questionHe,
+    plan,
+    hookClip,
+    id,
+    outDir,
+    cfg: gems,
+  });
 
   const cand = {
     kind: 'clip',
     id,
-    hook: hook.text,
-    headline: hook.text,
+    // THE HOOK IS THE TWO LINES TOGETHER, wherever a reader sees it. The open loop is
+    // not a decoration on the hook, it is the half that earns the second half of the
+    // video, so the approval card, the published ledger and the metrics row all carry
+    // the pair. `hookLine` keeps the first line alone for the one reader that wants
+    // it, which is the hook memory: the shape is what must not repeat, not the suffix.
+    hook: [hook.text, openLoop?.he].filter(Boolean).join(' · '),
+    hookLine: hook.text,
+    headline: [hook.text, openLoop?.he].filter(Boolean).join(' · '),
     hookWritten: hook.from === 'written',
     hookNote: `hidden gems: ${hook.category || 'uncategorised'}${hook.templateId ? `/${hook.templateId}` : ''}, scored ${hook.score ? hook.score.total.toFixed(2) : '?'} of ${hook.considered.length + hook.rejected.length} candidates`,
     sourceName: `Pexels · ${[...new Set(shots.map((p) => p.credit).filter(Boolean))].join(', ') || 'unknown'}`,
@@ -489,18 +693,39 @@ export async function buildHiddenGemsCandidate({
     clip: {
       shape: 'hidden_gems_video',
       format: 'hidden_gems_video',
+      hookLine: hook.text,
       file: built.file,
       audio: built.audio,
       track: built.track,
       seconds: built.seconds,
       holdSeconds: built.holdSeconds,
+      holds: built.holds,
       looped: built.looped,
+      loopDistance: built.loopDistance,
       dropped: built.dropped,
       follow: null,
       followAt: null,
       width: postConfig().clips.video.width,
       height: postConfig().clips.video.height,
       places: shots.map((p) => p.labelHe),
+      // EVERYTHING THE RETENTION CHANGE ADDED, recorded on the candidate so the
+      // approval card can show it and the metrics row can group by it. These are the
+      // fields the next read of the analytics will be about.
+      openLoop: openLoop?.he || null,
+      openLoopId: openLoop?.id || null,
+      orderBy: openLoop?.orderBy || null,
+      questionHe,
+      counter: built.counter,
+      firstCutAt: built.firstCutAt,
+      hookFullUntil: built.hookFullUntil,
+      // Which shot pays the promise off, and what it scored on the measure. The
+      // approval card prints it, because "the last one is the most surprising" is a
+      // claim the owner should be able to check in one line.
+      payoffHe: attempt.last?.labelHe || null,
+      payoffMeasure: attempt.last?.measure ?? null,
+      // The refusals, if the first plan did not pass. Logged on the candidate as well
+      // as to the console: the console scrolls and the card is what gets read.
+      refusedPlans: refused.map((x) => x.check.problems.join('; ')),
       // WHAT THE HOOK WAS AND WHAT IT BEAT, carried onto the candidate so the
       // metrics row can group by category and the approval card can show the
       // alternatives. A hook nobody can see the runners up of is a hook nobody can
@@ -537,13 +762,41 @@ export async function buildHiddenGemsCandidate({
 export function hiddenGemsApprovalMessage(cand) {
   const c = cand.clip;
   const lines = [
-    `💎 ג׳מים · ${c.seconds} שניות · ${c.places.length} מקומות${c.looped ? ' · לופ' : ''}`,
+    `💎 ג׳מים · ${c.seconds} שניות · ${c.places.length} מקומות${c.looped ? ` · לופ ${c.looped}` : ''}`,
     '',
-    cand.hook,
+    c.openLoop ? `${c.hookLine || cand.hook}` : cand.hook,
+    // THE OPEN LOOP ON ITS OWN LINE, because it is the half of the hook this change
+    // exists for and the owner is being asked to judge whether the last shot pays it
+    // off. A card that printed the two lines as one sentence would hide the question.
+    c.openLoop ? `   ↳ ${c.openLoop}` : null,
     `   ${c.hookCategory || '?'}${c.hookTemplate ? `/${c.hookTemplate}` : ''}${c.hookScore ? ` · ${c.hookScore.total.toFixed(2)}` : ''}${cand.hookWritten ? ' · נכתב' : ''}`,
     '',
-    c.places.map((n, i) => `${i + 1}. ${n}`).join('\n'),
+    // The counter is on the card as well as on the video, numbered the same way, so
+    // the shot list reads as what a viewer sees rather than as an internal ordering.
+    c.places
+      .map((n, i) => `${c.counter ? `${i + 1}/${c.places.length}` : `${i + 1}.`} ${n}${i === c.places.length - 1 && c.openLoop ? '  ← הבטחה' : ''}`)
+      .join('\n'),
   ];
+
+  // THE RETENTION FACTS, which are the numbers this format is now judged on. Printed
+  // as one line because they are one claim: the viewer is given a reason to stay
+  // before three seconds and something to do at the end.
+  if (c.firstCutAt != null) {
+    lines.push(
+      '',
+      `⏱️ חיתוך ראשון ${c.firstCutAt}ש׳ · פתיח גדול עד ${c.hookFullUntil}ש׳ ואז כותרת · ${c.holds ? c.holds.join('+') : '?'}`
+    );
+  }
+  if (c.questionHe) lines.push(`💬 בסוף ובכיתוב: ${c.questionHe}`);
+  if (c.orderBy) {
+    lines.push(
+      `🎯 ${c.openLoop} → ${c.payoffHe || '?'}${c.payoffMeasure != null ? ` (${c.orderBy} ${c.payoffMeasure})` : ''}`
+    );
+  }
+  if (c.loopDistance != null) {
+    lines.push(`🔁 מרחק לופ ${c.loopDistance}${c.looped === 'match' ? ' · הותאם' : ' · לא נסגר, הושאר כמו שהוא'}`);
+  }
+  for (const why of c.refusedPlans || []) lines.push(`↺ תוכנית נדחתה: ${why}`);
 
   const others = (c.hookConsidered || []).slice(1, 4);
   if (others.length) {

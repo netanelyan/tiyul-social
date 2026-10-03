@@ -1049,6 +1049,29 @@ function gems(raw) {
     }))
     .filter((c) => c.templates.length);
 
+  // THE OPEN LOOP: the second line of a hook, whose whole job is to be unresolved.
+  //
+  // `orderBy` is the measure the reel is ordered on so the claim comes true, and a
+  // template with one is only offered when that measure can actually be computed for
+  // the shots in hand. `needsSite` is the stricter version of the same honesty: a
+  // claim about "the last place" needs the last place to HAVE a name, not just a
+  // country. See orderForOpenLoop and validateRetentionPlan in src/video/retention.js.
+  const openLoops = (Array.isArray(h.openLoops) ? h.openLoops : [])
+    .filter((o) => o && String(o.he || '').trim())
+    .map((o) => {
+      const he = String(o.he).trim();
+      if (URL_LIKE.test(he)) throw new Error(`post-config.json: gems.hooks.openLoops.${o.id} contains a URL`);
+      if (/[—–]/.test(he)) throw new Error(`post-config.json: gems.hooks.openLoops.${o.id} contains an em or en dash`);
+      return {
+        id: String(o.id || '').trim() || he.slice(0, 12),
+        he,
+        weight: Math.max(0, num(o.weight, 1)),
+        orderBy: ['surprise', 'beauty', 'price'].includes(o.orderBy) ? o.orderBy : null,
+        needsSite: o.needsSite !== false,
+        desc: String(o.desc || ''),
+      };
+    });
+
   const on = h.on !== false;
   if (on && !categories.length) {
     throw new Error(
@@ -1064,15 +1087,58 @@ function gems(raw) {
 
   const hold = {
     min: Math.max(0.5, num(raw.holdSeconds?.min, 2)),
-    max: Math.max(0.5, num(raw.holdSeconds?.max, 4)),
+    max: Math.max(0.5, num(raw.holdSeconds?.max, 3)),
   };
   hold.max = Math.max(hold.min, hold.max);
 
+  // SEVEN TO NINE SECONDS, DOWN FROM TEN TO FIFTEEN, and the reason is a ratio rather
+  // than a length. One reel averaged 3.1 seconds of watch time against about 12, which
+  // is 26%, with 5% watching it through. The numerator is hard to move and the
+  // denominator is ours: the same 3.1 seconds against 8 is 39%, and the shots that
+  // were being skipped are the ones that no longer exist.
   const target = {
-    min: Math.max(1, num(raw.targetSeconds?.min, 10)),
-    max: Math.max(1, num(raw.targetSeconds?.max, 15)),
+    min: Math.max(1, num(raw.targetSeconds?.min, 7)),
+    max: Math.max(1, num(raw.targetSeconds?.max, 9)),
   };
   target.max = Math.max(target.min, target.max);
+
+  // WHAT KEEPS A VIEWER PAST THREE SECONDS. See the note at the top of
+  // src/video/retention.js for the analytics every default here comes from.
+  const ret = raw.retention || {};
+  const retention = {
+    on: ret.on !== false,
+    // The counter, "2/3", and the hook kept as a header. Separable because they are
+    // two different claims on the frame and an owner who wants one may not want both.
+    counter: ret.counter !== false,
+    headerOn: ret.headerOn !== false,
+    question: ret.question !== false,
+    openLoop: ret.openLoop !== false,
+    strongestFirst: ret.strongestFirst !== false,
+    // THE FIRST CUT, which is the whole diagnosis in one number. The old hook shot ran
+    // to exactly three seconds and the average view ended at 3.1.
+    firstCutSeconds: Math.max(0.5, num(ret.firstCutSeconds, 1.6)),
+    maxFirstCutSeconds: Math.max(0.5, num(ret.maxFirstCutSeconds, 2.5)),
+    // How long the hook stays at full size before it shrinks into the header. The
+    // brief's three to four seconds; it is not how long the hook is READABLE, which
+    // is the whole video now, it is how long it is the only thing being said.
+    hookFullSeconds: Math.max(0.5, num(ret.hookFullSeconds, 3.2)),
+    // How long a place name needs on screen after the hook shrinks. The first shot is
+    // lengthened to guarantee it; see retentionPlan.
+    labelMinSeconds: Math.max(0.3, num(ret.labelMinSeconds, 1.2)),
+    // `match` picks the opening and closing windows to look alike, `cut` returns to
+    // the opening shot for a fraction of a second, `off` does neither. Match by
+    // default because it costs no screen time: the closing frame has to carry the
+    // question, and a cut back to the start would spend that frame on a repeat.
+    loop: ['match', 'cut', 'off'].includes(ret.loop) ? ret.loop : 'match',
+    // Above this the two frames are too unalike to call it a loop, and the reel is
+    // built without one rather than with a jarring one. 0..1, see loopDistance.
+    loopMaxDistance: Math.max(0, Math.min(1, num(ret.loopMaxDistance, 0.22))),
+    // How many times a plan that fails the quality gate is rebuilt before the format
+    // gives up for this run. One retry: the second attempt re-draws the hook and the
+    // open loop, which is what a timing failure usually needs, and a third would be
+    // three vision passes for one post.
+    retries: Math.max(0, count(ret.retries, 1)),
+  };
 
   return {
     shots,
@@ -1090,7 +1156,20 @@ function gems(raw) {
     // that has gone stale. The error names how many places were skipped for this rule
     // so the two can be told apart, and this is what to lower when it is this.
     placeMemoryDays: Math.max(0, count(raw.placeMemoryDays, 14)),
-    strongestLast: raw.strongestLast !== false,
+    // ENDING ON THE BEST SHOT, WHICH IS NOW OFF BY DEFAULT AND IS NOT A CONTRADICTION.
+    //
+    // It was true that the last frame of a reel is what a viewer is looking at while
+    // they decide to watch again. It is also true that 95% of them never got there:
+    // the average view ended at 3.1 seconds of 12. A frame nobody reaches cannot earn
+    // a rewatch, and the first frame is the one every single viewer sees.
+    //
+    // So the ordering question moved into retention.strongestFirst, which puts the
+    // highest-ranked shot at the opening and reserves the LAST slot for whichever
+    // shot pays off the hook's open loop. That is a better version of the same idea:
+    // the reel still ends on a shot chosen on purpose, and now it ends on the one the
+    // hook promised. Setting this true again restores the plain reversal.
+    strongestLast: raw.strongestLast === true,
+    retention,
     loop: raw.loop === true,
     loopSeconds: Math.max(0, num(raw.loopSeconds, 0.4)),
     // `app` is the current behaviour: the file goes out silent and the owner picks
@@ -1117,6 +1196,13 @@ function gems(raw) {
       minWords: Math.max(1, count(h.minWords, 3)),
       banned: list(h.banned),
       categories,
+      openLoops,
+      // HOW MUCH "a reason to stay" IS WORTH IN THE SCORE, beside specificity and
+      // curiosity. A quarter: enough that an open loop outranks a line without one,
+      // not enough to float a line that promises nothing specific. The 3.8% like rate
+      // says the old hooks were good lines; the 26% watch ratio says they finished
+      // the sentence. See scoreHook.
+      stayWeight: Math.max(0, Math.min(1, num(h.stayWeight, 0.25))),
     },
   };
 }

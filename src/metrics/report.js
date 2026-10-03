@@ -206,14 +206,57 @@ export function weeklyReport({ days = 7, rows = null, now = Date.now() } = {}) {
  */
 export function hookReport({ days = 14, rows = null, now = Date.now() } = {}) {
   const entries = window(days, { rows, now });
-  const lines = [`🪝 ${days} ימים · ${posts(entries.length)} · דירוג לפי לייקים לצפייה`];
+  const watched = entries.filter((e) => e.best.watchRatio != null);
+  const lines = [
+    `🪝 ${days} ימים · ${posts(entries.length)} · דירוג לפי זמן צפייה`,
+  ];
 
   const measured = entries.filter((e) => e.best.likeRate != null);
-  if (!measured.length) {
-    lines.push('', 'אין מספרים עם לייקים בחלון הזה.', 'אפשר להזין ביד: /views <מספר> <צפיות> <לייקים>');
+  if (!measured.length && !watched.length) {
+    lines.push('', 'אין מספרים בחלון הזה.', 'אפשר להזין ביד: /views <מספר> watch=3.1 full=5 likes=21');
     return lines.join('\n');
   }
-  lines.push(`   ${measured.length} עם לייקים · ${entries.length - measured.length} בלי`);
+  lines.push(`   ${watched.length} עם זמן צפייה · ${measured.length} עם לייקים`);
+
+  // THE RANKING THAT MATTERS FIRST, AND IT IS NOT LIKES.
+  //
+  // The post that started all of this had the second best like rate this account has
+  // recorded, 3.8%, and TikTok stopped distributing it by hour three. What it also had
+  // was a 26% watch ratio and 5% completion. Watch time is the input to distribution;
+  // likes are an output of having been distributed, which is why a table led by likes
+  // can show a healthy number on a post that the feed has already given up on.
+  //
+  // So watch ratio leads, completion sits beside it, and the like rate keeps its own
+  // table below. Three measures, printed together, because the whole lesson of the
+  // last two changes here is that one number at a time picks the wrong winner.
+  if (watched.length) {
+    for (const [field, titleHe] of [
+      ['format', '🎬 לפי פורמט'],
+      ['openLoopId', '🪤 לפי לולאה פתוחה'],
+      ['hookCategory', '🗂️ לפי קטגוריית פתיח'],
+    ]) {
+      const ranked = rankWatch(watched, field);
+      if (!ranked.length) continue;
+      lines.push('');
+      lines.push(`${titleHe} (זמן צפייה · צפייה מלאה · אורך)`);
+      for (const r of ranked) {
+        lines.push(
+          `   ${String(r.key).slice(0, 18).padEnd(18)} ${pct(r.watchRatio)} · ${pct(r.fullWatchRate)} · ${r.seconds ? `${r.seconds.toFixed(1)}ש׳` : '-'}  (${posts(r.posts)}${r.thin ? ', מעט מדי' : ''})`
+        );
+      }
+    }
+
+    // THE GOAL, STATED AND MEASURED, because the brief set one: average watch above
+    // 60% of the length and full watches above 30%. A report that ranks without
+    // saying what good looks like leaves the reader comparing a column to itself.
+    const best = rankWatch(watched, 'format')[0];
+    if (best) {
+      lines.push(
+        '',
+        `🎯 היעד: 60% זמן צפייה, 30% צפייה מלאה. הכי טוב עכשיו: ${best.key} ב-${pct(best.watchRatio)} ו-${pct(best.fullWatchRate)}`
+      );
+    }
+  }
 
   for (const [field, titleHe] of [
     ['format', '🎬 לפי פורמט'],
@@ -237,6 +280,19 @@ export function hookReport({ days = 14, rows = null, now = Date.now() } = {}) {
   // formats. One row per post because a hook text is close to unique per post.
   const byLikes = [...measured].sort((a, b) => b.best.likeRate - a.best.likeRate);
   const name = (r) => r.shape?.hookText || r.shape?.hook || r.shape?.where || r.id;
+
+  // THE HOOKS THEMSELVES, BY WATCH TIME, which is the half a grouping cannot give
+  // you: a category tells you which shape to write more of and the line tells you
+  // which line did it. Led by watch ratio when there is one, because a hook's job is
+  // to be the reason somebody is still there at second eight.
+  if (watched.length) {
+    const byWatch = [...watched].sort((a, b) => b.best.watchRatio - a.best.watchRatio);
+    lines.push('', '🏅 הפתיחים שהחזיקו');
+    for (const r of byWatch.slice(0, 5)) {
+      lines.push(`   ${pct(r.best.watchRatio)} · ${pct(r.best.fullWatchRate)} מלא · ${name(r)}`);
+    }
+  }
+
   lines.push('', '🏅 הפתיחים שעבדו');
   for (const r of byLikes.slice(0, 5)) {
     lines.push(`   ${pct(r.best.likeRate)} · ${num(r.best.views)} צפיות · ${name(r)}`);
@@ -270,6 +326,44 @@ export function hookReport({ days = 14, rows = null, now = Date.now() } = {}) {
  * likes and dividing by summed views lets the one post that reached two thousand
  * people decide the row, and that is the post least like the others.
  */
+/**
+ * Group by one shape field and rank on WATCH RATIO, with completion beside it.
+ *
+ * Mean of the per-post ratios, for the reason rankBy gives: summing watch seconds and
+ * dividing by summed lengths lets the one post that reached two thousand people decide
+ * the row, and that is the post least like the others.
+ *
+ * Completion is reported rather than ranked on, and the two are kept together on
+ * purpose. They can disagree: a reel that holds everybody for four seconds of eight
+ * and loses them has a 50% ratio and 0% completion, and one that half the viewers
+ * watch twice has a ratio over 100%. Both facts are about the same post and a reader
+ * who sees one of them draws the wrong conclusion about which second to fix.
+ */
+export function rankWatch(entries, field, { min = 2 } = {}) {
+  const groups = new Map();
+  for (const row of entries) {
+    const key = row.shape?.[field];
+    if (!key) continue;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+  const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+  return [...groups.entries()]
+    .map(([key, rows]) => {
+      const ratios = rows.map((r) => r.best.watchRatio).filter((n) => n != null);
+      return {
+        key,
+        posts: rows.length,
+        watchRatio: mean(ratios),
+        fullWatchRate: mean(rows.map((r) => r.best.fullWatchRate).filter((n) => n != null)),
+        seconds: mean(rows.map((r) => r.best.seconds).filter((n) => n != null)),
+        views: mean(rows.map((r) => r.best.views).filter((n) => n != null)),
+        thin: ratios.length < min,
+      };
+    })
+    .sort((a, b) => (b.watchRatio ?? -1) - (a.watchRatio ?? -1));
+}
+
 export function rankLikes(entries, field, { min = 2 } = {}) {
   const groups = new Map();
   for (const row of entries) {

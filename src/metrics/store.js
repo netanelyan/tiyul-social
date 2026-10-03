@@ -152,7 +152,24 @@ export const __reset = () => {
  * has no rate, and calling it zero would rank it below a post that genuinely failed.
  */
 export function rates(stats) {
-  const empty = { saveRate: null, shareRate: null, likeRate: null, commentRate: null, views: null, likes: null };
+  const empty = {
+    saveRate: null,
+    shareRate: null,
+    likeRate: null,
+    commentRate: null,
+    views: null,
+    likes: null,
+    // THE FOUR THE RANKING ACTUALLY TURNS ON NOW, and the reason is one post: 559
+    // views, 21 likes, and TikTok stopped distributing it by hour three. The like
+    // rate was 3.8%, which is this account's second best. What it also was: 3.1
+    // seconds of watch time against twelve, and 5% completion. Likes did not save
+    // it and were never going to, because watch time is the input.
+    watchSeconds: null,
+    seconds: null,
+    watchRatio: null,
+    fullWatchRate: null,
+    followers: null,
+  };
   if (!stats) return empty;
   const views = Number(stats.views ?? stats.reach);
   if (!Number.isFinite(views) || views <= 0) return empty;
@@ -177,5 +194,29 @@ export function rates(stats) {
     commentRate: rate(stats.comments),
     views,
     likes,
+
+    // WATCH TIME, AND THE RATIO THAT MAKES IT COMPARABLE.
+    //
+    // `watchSeconds` is what the app calls average watch time and `seconds` is how
+    // long the video is - recorded on the row at publish time from the candidate, so
+    // nobody has to type it and so the ratio cannot be computed against the wrong
+    // length after a format changes its target.
+    //
+    // THE RATIO IS THE POINT RATHER THAN EITHER NUMBER. 3.1 seconds is good on an
+    // eight second reel and poor on a twelve second one, and the whole retention
+    // change moved the denominator as well as trying to move the numerator. Ranking
+    // on raw watch seconds would have said the twelve second version was better.
+    watchSeconds: Number.isFinite(Number(stats.watchSeconds)) ? Number(stats.watchSeconds) : null,
+    seconds: Number.isFinite(Number(stats.seconds)) ? Number(stats.seconds) : null,
+    watchRatio:
+      Number.isFinite(Number(stats.watchSeconds)) && Number(stats.seconds) > 0
+        ? Number(stats.watchSeconds) / Number(stats.seconds)
+        : null,
+    // Already a percentage in the app, so it is stored as the fraction and printed
+    // as a percentage like every other rate here. 5.03 typed in means 0.0503.
+    fullWatchRate: Number.isFinite(Number(stats.fullWatch)) ? Number(stats.fullWatch) / 100 : null,
+    // Not a rate. Followers from one post is a count, usually 0 or 1, and dividing it
+    // by views produces a number with four leading zeros that tells nobody anything.
+    followers: Number.isFinite(Number(stats.followers)) ? Number(stats.followers) : null,
   };
 }

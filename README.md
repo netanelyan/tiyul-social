@@ -162,12 +162,46 @@ as `{transport, food, activities}` on 21 pages and as a `[low, high]` pair on 20
 had never once carried a price, and nothing noticed, because a missing fact just makes
 a slide shorter.
 
+### Then the watch time came back, and the hook was the problem
+
+The reel shipped and one of them was measured: 559 views, 21 likes at 3.8%, **0
+comments**, an average watch time of **3.1 seconds out of twelve**, and **5% watched it
+through**. Distribution climbed for two hours and stopped by hour three.
+
+3.1 seconds is not a coincidence and it is not the footage. `hookSeconds` was 3, so at
+exactly three seconds the hook text vanished and the first shot cut away: the line had
+been read, the promise was closed, and nothing on screen said more was coming. TikTok
+measured a 26% watch ratio, 5% completion, and stopped pushing it.
+
+**The like rate was the account's second best and it did not help.** Watch time is the
+input to distribution; likes are an output of having been distributed. A table led by
+likes shows a healthy number on a post the feed has already given up on, which is
+exactly what happened.
+
+So every reel now:
+
+- **cuts at 1.6 seconds**, before the drop rather than on it
+- **keeps the hook**, full size until 3.2s and then as a small header for the rest
+- **counts**: `1/3`, `2/3`, `3/3`, so something on screen always says more is coming
+- **opens a loop** the end pays off, `תחכו לאחרון` over an order that makes it true
+- **runs 7 to 9 seconds**, because completion is a ratio and the denominator is ours
+- **asks a question on the last shot** and in the caption, the same words, because 0
+  comments is a number you can change on purpose
+- **loops**: the closing window is matched to the opening frame on colour and a coarse
+  brightness grid, so a rewatch starts without a seam
+
+A quality gate refuses a reel that is missing any of it and logs why, and
+`/report hooks` now ranks on watch ratio and completion with the like table underneath.
+All of it is `gems.retention` in `post-config.json`; `on: false` restores the old
+timeline exactly. The reasoning for each number is in `docs/hidden-gems-plan.md`.
+
 ### The hidden gems reel
 
-Twelve seconds, 9:16, and the shape the table above asked for: a curiosity hook on
-screen from the first frame for three seconds, then three to five real moving shots
-with nothing on them but the place name in Hebrew. `src/video/hiddenGems.js`, built on
-the postcard reel's encode path rather than beside it.
+Eight to nine seconds, 9:16: a curiosity hook and its open loop on screen from the
+first frame, a cut at 1.6 seconds, then three real moving shots with nothing on them
+but the place name in Hebrew, a counter, and a question at the end.
+`src/video/hiddenGems.js`, built on the postcard reel's encode path rather than beside
+it, and the postcard reel now shares its timeline in the other direction.
 
 Two things make it different from the reel it is a refinement of. The holds are
 **solved for** rather than fixed, so three shots and five shots both land inside the 10
@@ -183,9 +217,13 @@ declares which formats can DELIVER it, so a reel of place labels is offered the 
 shapes and never "the mistake every Israeli makes in Georgia", because nothing in a run
 of stock footage is a mistake.
 
-`/gems` builds one. `/formats` prints the mix. `/report hooks` ranks hooks and formats
-by likes per view with the views beside them, and the weekly `/report` still leads on
-saves, because the two measure different things and the account needs both.
+`/gems` builds one. `/formats` prints the mix. `/report hooks` ranks hooks, formats and
+open loops by watch ratio and completion, with likes per view underneath, and the weekly
+`/report` still leads on saves. Three measures printed together, because the lesson of
+every change here so far is that one number at a time picks the wrong winner.
+
+`/views 1 559 21 watch=3.1 full=5.03` types a post's numbers in. The video's own length
+comes off the published ledger, so the watch ratio needs no denominator typed.
 
 ### The five post types
 
