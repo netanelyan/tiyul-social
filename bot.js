@@ -18,7 +18,14 @@ import { publishTelegram, publishTelegramDeck, sendForApproval } from './src/pub
 import { proposeIdeas, titleForRequest, reviseIdea, freeformIdea, freeformFromIdea } from './src/deck/ideas.js';
 import { pickAngle } from './src/angles.js';
 import { postConfig } from './src/postConfig.js';
-import { notePublished as noteMetricsPublished, collect as collectMetrics, describeCollection, weeklyReport } from './src/metrics/index.js';
+import { pickFormat, rotationOn, slotsPerDay, mixShares } from './src/formats/rotation.js';
+import {
+  notePublished as noteMetricsPublished,
+  collect as collectMetrics,
+  describeCollection,
+  weeklyReport,
+  hookReport,
+} from './src/metrics/index.js';
 import { clipPublicUrl } from './src/publish/imageHosts.js';
 import { buildDeck } from './src/deck/build.js';
 import { toDeckCandidate, deckTopic } from './src/deck/candidate.js';
@@ -848,9 +855,23 @@ const publishedFacts = (cand) => ({
   sourceId: cand.sourceId,
   topic: cand.deck ? deckTopic(cand.deck) : null,
   headline: cand.headline || null,
+  // WHICH FORMAT, and which hook category, for the rows that have one.
+  //
+  // Recorded here as well as in the metrics store because the two are read at
+  // different moments and only one of them survives a restart with the numbers
+  // attached. `/views` reads this ledger to offer the last twelve posts and types a
+  // view count against one of them, and until now the shape it could attach was a
+  // place and a topic - so a number typed in by hand could not be grouped by format
+  // at all, which is the one grouping the owner's own comparison needs.
+  format: cand.clip?.format || cand.clip?.shape || cand.deck?.type || cand.kind || null,
+  hookCategory: cand.clip?.hookCategory || null,
   // Where the post was about. A deck names its region; a card names it on the
   // trip, which is the field verify.js already insists every card have.
-  place: (cand.deck ? cand.deck.where : cand.trip?.where) || null,
+  //
+  // A clip has neither and names its own: a gems reel's `place` is the labels it
+  // burned onto the shots, which is what the geographic quota should be measuring
+  // for a post about four places.
+  place: (cand.deck ? cand.deck.where : cand.trip?.where) || cand.place || null,
   // Which stock video a clip was built from, so the row can answer "have we
   // used this footage". It was read back by /clip long before anything wrote
   // it — see the note in store.recordPublished.
@@ -1093,18 +1114,39 @@ async function publishNext(item = null) {
       // publish it twice.
       try {
         const mediaId = done[target]?.mediaId || done[target]?.publishId || done[target]?.id || null;
-        if (mediaId && (cand.kind === 'post' || cand.kind === 'deck' || cand.kind === 'plan')) {
+        // CLIPS ARE RECORDED NOW TOO, and their absence was the gap that made the
+        // owner's own comparison impossible to make from inside this program.
+        //
+        // The three kinds below were recorded because the weekly report groups by
+        // post type, look and hook shape, all of which are slideshow fields. So
+        // every video this account published went out with no metrics row, and the
+        // numbers that started this change - a 6.1% like rate on a twelve second
+        // reel against 0.5% on a slideshow - had to be read off the app by hand and
+        // typed into a message. The format is now the first thing the row carries.
+        if (mediaId && (cand.kind === 'post' || cand.kind === 'deck' || cand.kind === 'plan' || cand.kind === 'clip')) {
           noteMetricsPublished(cand.id, {
             platform: target,
             mediaId,
             shape: {
               kind: cand.kind,
-              type: cand.deck?.type || cand.kind,
+              // WHICH FORMAT, as the rotation names it. One field that answers "was
+              // this a gems reel or a slideshow" without the reader having to know
+              // that a `clip` with `shape: postcard` is a video and a `post` with
+              // `type: verdict` is not.
+              format: cand.clip?.format || cand.clip?.shape || cand.deck?.type || cand.kind,
+              type: cand.deck?.type || cand.clip?.shape || cand.kind,
               look: cand.deck?.look || cand.deck?.style || null,
               hook: cand.deck?.hook || null,
+              // THE HOOK AS TEXT, AND ITS CATEGORY. `hook` above is the id of a
+              // template, which is the right thing to group a slideshow by and says
+              // nothing about a reel whose line was generated. The text is what the
+              // owner actually compares, and the category is what a ranking can
+              // group by. See src/hooks/gems.js.
+              hookText: cand.clip?.format ? cand.hook || null : cand.deck?.titleHe || cand.hook || null,
+              hookCategory: cand.clip?.hookCategory || null,
               frame: cand.deck?.frame || null,
               caption: cand.captionShape || null,
-              where: cand.deck?.where || null,
+              where: cand.deck?.where || cand.place || null,
             },
           });
         }
@@ -1523,6 +1565,60 @@ bot.command('pending', (ctx) => {
       .filter(Boolean)
       .join('\n')
   );
+});
+
+/**
+ * `/reel <n>`: the same staged slideshow, as one vertical video.
+ *
+ * ON A POST THAT IS ALREADY BUILT, which is the whole appeal: the slides are drawn,
+ * measured and sitting on disk, so this costs one ffmpeg pass and no API calls. It
+ * answers a question nobody can answer by arguing, which is whether this account's
+ * slideshows do better when the app is handed an mp4.
+ *
+ * It does NOT replace the carousel and it does not change what will publish. The file
+ * is produced and its path is reported, for the owner to post by hand alongside or
+ * instead. See the note at the top of src/video/slideReel.js for why it is not simply
+ * switched on, and posts.video in post-config.json for how to.
+ */
+bot.command('reel', async (ctx) => {
+  const arg = (ctx.message.text || '').replace(/^\/reel(@\S+)?\s*/, '').trim();
+  const rows = store.stagingItems();
+  const n = Number(arg.match(/\d+/)?.[0]);
+
+  const reelable = rows
+    .map(({ cand }, i) => ({ cand, i }))
+    .filter(({ cand }) => (cand?.deck?.tiktok || []).some((s) => s?.file));
+
+  if (!reelable.length) return ctx.reply('אין פוסט ממתין עם שקופיות שאפשר לקודד לסרטון.');
+  if (!Number.isInteger(n) || n < 1 || n > rows.length) {
+    return ctx.reply(
+      [
+        'שימוש: /reel <מספר מתוך /pending>',
+        '',
+        ...reelable.map(({ cand, i }) => `${i + 1}. ${cand.deck.tiktok.length} שקופיות · ${cand.headline}`),
+      ].join(NL)
+    );
+  }
+
+  const cand = rows[n - 1]?.cand;
+  const files = (cand?.deck?.tiktok || []).map((s) => s.file).filter(Boolean);
+  if (!files.length) return ctx.reply(`לפוסט ${n} אין שקופיות מקודדות על הדיסק.`);
+
+  await ctx.reply(`⏳ מקודד ${files.length} שקופיות לסרטון...`);
+  detach('סרטון משקופיות', async () => {
+    const { buildSlideReel } = await import('./src/video/slideReel.js');
+    const built = await buildSlideReel(files, { id: `pr${cand.id}` });
+    await notify.send(
+      bot.telegram,
+      ctx.chat.id,
+      [
+        `🎞️ ${built.seconds} שניות · ${built.slides} שקופיות${built.dropped ? ` · ${built.dropped} ירדו בגלל אורך` : ''}`,
+        built.file,
+        '',
+        'הקרוסלה לא השתנתה. זה קובץ נוסף, להעלאה ביד, כדי להשוות.',
+      ].join(NL)
+    ).catch(() => {});
+  }, ctx.chat.id);
 });
 
 /**
@@ -2149,6 +2245,35 @@ bot.command('postcard', async (ctx) => {
 });
 
 /**
+ * A hidden gems reel, now.
+ *
+ * NO DESTINATION ARGUMENT, for the same reason /postcard has none: the places are
+ * whatever the vision judge could name out of the day's footage, and asking for a
+ * destination would be asking for a claim the judge might not support.
+ *
+ * `/gems nohook` builds with the template hooks only and skips the model call. Useful
+ * when iterating on the shape rather than on the words, and it is also exactly what
+ * the format does on a box with no ANTHROPIC_API_KEY, so it is worth being able to
+ * see on a box that has one.
+ */
+bot.command('gems', async (ctx) => {
+  const arg = (ctx.message.text || '').replace(/^\/gems(@\S+)?\s*/, '').trim();
+  const write = !/nohook|ללא\s*פתיח/i.test(arg);
+  const { buildHiddenGemsCandidate, hiddenGemsApprovalMessage } = await import('./src/video/hiddenGems.js');
+
+  await ctx.reply('⏳ בונה ג׳מים...');
+  detach('ג׳מים', () =>
+    forKind('clip', async () => {
+      const cand = await buildHiddenGemsCandidate({ seen: clipFootageSeen(), write });
+      spendClipFootage([cand]);
+      store.notePlacesNamed(cand.clip.places);
+      await stage(cand);
+      await notify.send(bot.telegram, ctx.chat.id, hiddenGemsApprovalMessage(cand)).catch(() => {});
+    })
+  );
+});
+
+/**
  * A narrated guide video, now.
  *
  * `/guide` draws the next destination from the rotation; `/guide פראג` names one.
@@ -2528,9 +2653,9 @@ bot.command('views', async (ctx) => {
   }
 
   const nums = arg.split(/\s+/).map((x) => Number(String(x).replace(/,/g, '')));
-  const [n, views, likes, saved, shares] = nums;
+  const [n, views, likes, saved, shares, comments] = nums;
   if (!Number.isInteger(n) || n < 1 || n > recent.length || !Number.isFinite(views)) {
-    return ctx.reply(`שימוש: /views <מספר 1-${recent.length}> <צפיות> [לייקים] [שמירות] [שיתופים]`);
+    return ctx.reply(`שימוש: /views <מספר 1-${recent.length}> <צפיות> [לייקים] [שמירות] [שיתופים] [תגובות]`);
   }
 
   const post = recent[n - 1];
@@ -2543,12 +2668,23 @@ bot.command('views', async (ctx) => {
       ...(Number.isFinite(likes) ? { likes } : {}),
       ...(Number.isFinite(saved) ? { saved } : {}),
       ...(Number.isFinite(shares) ? { shares } : {}),
+      ...(Number.isFinite(comments) ? { comments } : {}),
     },
     {
       // The shape, recovered from the published ledger for a post recorded before the
       // metrics hook existed. Without it the row has numbers and nothing to group them
       // by, which is a row the report cannot use.
-      shape: { where: post.place || null, type: post.topic || null },
+      //
+      // THE FORMAT AND THE HOOK TOO, where the ledger kept them. A typed-in number is
+      // the only evidence this account has about TikTok, and until now it arrived with
+      // a place and a topic attached, which /report hooks cannot group by at all.
+      shape: {
+        where: post.place || null,
+        type: post.topic || null,
+        format: post.format || post.clipShape || post.kind || null,
+        hookText: post.headline || post.hook || null,
+        hookCategory: post.hookCategory || null,
+      },
       at: post.ts ? new Date(post.ts).toISOString() : null,
     }
   );
@@ -2558,10 +2694,13 @@ bot.command('views', async (ctx) => {
     [
       `✅ נרשם: ${post.place || post.id}`,
       `   ${views.toLocaleString('en-US')} צפיות`,
+      Number.isFinite(likes) ? `   לייקים: ${likes} (${rate(likes)} מהצפיות)` : null,
       Number.isFinite(saved) ? `   שמירות: ${saved} (${rate(saved)} מהצפיות)` : null,
       Number.isFinite(shares) ? `   שיתופים: ${shares} (${rate(shares)} מהצפיות)` : null,
+      Number.isFinite(comments) ? `   תגובות: ${comments}` : null,
       '',
       'הדירוג ב-/report מעדיף עכשיו את המספרים מטיקטוק.',
+      Number.isFinite(likes) ? '/report hooks מדרג פתיחים ופורמטים לפי לייקים לצפייה.' : null,
     ]
       .filter(Boolean)
       .join(NL)
@@ -2577,6 +2716,19 @@ bot.command('report', async (ctx) => {
     const got = await collectMetrics().catch((e) => ({ error: e.message }));
     if (got.error) await ctx.reply(`⚠️ ${got.error}`);
     else await ctx.reply(`📥 ${describeCollection(got)}`);
+  }
+
+  // `/report hooks` IS A DIFFERENT QUESTION, NOT A DIFFERENT WINDOW.
+  //
+  // The weekly table ranks on saves and shares per view and refuses to lead with
+  // likes, for the reason written at the top of src/metrics/report.js. This ranks on
+  // likes per view and prints views beside them, because that is the comparison the
+  // owner's own numbers are, and because the two rankings disagreeing is the finding
+  // rather than a problem. Fourteen days by default: a like rate needs more posts
+  // under it than a save rate does, since most of the account's posts have single
+  // digit like counts and a week of them is noise.
+  if (/hooks?|פתיח/i.test(arg)) {
+    return ctx.reply(hookReport({ days: Math.max(1, Math.min(90, Number(arg.match(/\d+/)?.[0]) || 14)) }));
   }
 
   await ctx.reply(weeklyReport({ days }));
@@ -2922,6 +3074,41 @@ let postcardsToday = 0;
 let postcardDay = null;
 let lastPostcardAt = 0;
 
+/**
+ * How many hidden gems reels a day, when the format rotation is OFF.
+ *
+ * Zero by default, and that is not the format being paused. With the rotation on,
+ * which is the shipped configuration, this counter is not consulted at all and the
+ * reel is half the output; see formats.mix in post-config.json. It exists so that
+ * turning the rotation off does not silently remove the format, which is the one
+ * thing the rollback must not do: `formats.rotation.on: false` plus GEMS_PER_DAY=1
+ * is the old independent-counters world with the new format in it.
+ */
+const GEMS_PER_DAY = Math.max(0, Number(process.env.GEMS_PER_DAY ?? '0'));
+let gemsToday = 0;
+let gemsDay = null;
+let lastGemsAt = 0;
+
+/**
+ * One hidden gems reel, staged for approval.
+ *
+ * The places are whatever the vision judge could name AND no post has named in the
+ * last fortnight. See src/video/hiddenGems.js.
+ */
+const suggestGems = billed('clip', async function suggestGemsJob(chatId = staging) {
+  const { buildHiddenGemsCandidate, hiddenGemsApprovalMessage } = await import('./src/video/hiddenGems.js');
+  const cand = await buildHiddenGemsCandidate({ seen: clipFootageSeen() });
+  spendClipFootage([cand]);
+  // WHICH PLACES THIS POST NAMED, so the next fortnight's reels do not name them
+  // again. Recorded when BUILT rather than when published, like the footage ledger
+  // and for the same reason: a rejected reel still used up the place, and offering
+  // the same valley again tomorrow is the repeat this is here to stop.
+  store.notePlacesNamed(cand.clip.places);
+  await stage(cand);
+  await notify.send(bot.telegram, chatId, hiddenGemsApprovalMessage(cand)).catch(() => {});
+  return cand;
+});
+
 /** One postcard reel, staged for approval. Its places are whatever the judge could name. */
 const suggestPostcard = billed('clip', async function suggestPostcardJob(chatId = staging) {
   const { buildPostcardCandidate, postcardApprovalMessage } = await import('./src/video/postcard.js');
@@ -3007,6 +3194,41 @@ let lastClipSuggestAt = 0;
 
 /** How many clips are already staged and waiting for a decision. */
 const clipsWaiting = () => store.stagingItems().filter(({ cand }) => cand?.kind === 'clip').length;
+
+// --- the format rotation's own slot counter ---------------------------------
+//
+// One counter instead of four, and the number it counts up to is those four added
+// together. See the note in tick() and slotsPerDay in src/formats/rotation.js.
+let slotsToday = 0;
+let slotDay = null;
+let lastSlotAt = 0;
+
+/**
+ * Build one format by id.
+ *
+ * THE ONE PLACE THAT MAPS A CONFIGURED NAME TO A FUNCTION. Every id here is a string
+ * in post-config.json, so an unknown one is a typo in a file somebody edited rather
+ * than a bug, and it is reported as such instead of failing silently: a format that
+ * never builds would otherwise look exactly like a format with an unlucky week.
+ */
+function buildFormat(id) {
+  switch (id) {
+    case 'hidden_gems_video':
+      return suggestGems();
+    case 'postcard':
+      return suggestPostcard();
+    case 'guide':
+      return suggestGuide();
+    case 'clip':
+      return suggestClip();
+    case 'post':
+      return suggestPost(null, {});
+    default:
+      return Promise.reject(
+        new Error(`formats.mix names "${id}", which nothing builds - known: hidden_gems_video, postcard, guide, clip, post`)
+      );
+  }
+}
 
 /**
  * One clip, built and staged.
@@ -3333,6 +3555,35 @@ bot.command('health', (ctx) => {
   ctx.reply(notify.healthReport(rows, extra));
 });
 
+/**
+ * What the rotation builds and in what proportion.
+ *
+ * ITS OWN COMMAND BECAUSE THE WEIGHTS ARE RELATIVE AND THE SHARE IS NOT OBVIOUS.
+ * Somebody who edits one weight in post-config.json has changed every share, and the
+ * only honest way to see what they did is to have the program print it. The run
+ * history is printed with it, because "never three in a row" is a rule about the
+ * recent past and this is the recent past.
+ */
+bot.command('formats', (ctx) => {
+  const { rotation } = postConfig().formats;
+  const shares = mixShares();
+  const recent = store.formatHistory().slice(0, 8);
+  const lines = [
+    rotation.on
+      ? `🎛️ הסבב פעיל · ${slotsPerDay()} פוסטים ביום · לא יותר מ-${rotation.maxRun} מאותו פורמט ברצף`
+      : '🎛️ הסבב כבוי - כל פורמט רץ על המונה היומי שלו',
+    '',
+  ];
+  for (const s of shares) {
+    lines.push(`${s.he.padEnd(10)} ${(s.share * 100).toFixed(0).padStart(3)}%  ${s.id}`);
+  }
+  const off = postConfig().formats.mix.filter((f) => f.weight === 0);
+  if (off.length) lines.push('', `כבויים: ${off.map((f) => f.id).join(', ')}`);
+  lines.push('', recent.length ? `אחרונים: ${recent.join(' · ')}` : 'עוד לא נבנה כלום בסבב הזה');
+  if (!rotation.on) lines.push('', 'להפעלה: formats.rotation.on ב-post-config.json');
+  return ctx.reply(lines.join('\n'));
+});
+
 bot.command('help', (ctx) =>
   ctx.reply(
     [
@@ -3355,6 +3606,9 @@ bot.command('help', (ctx) =>
       '/mix - תמהיל הנושאים שפורסמו',
       '/report - דירוג הפורמטים לפי שמירות ושיתופים ביחס לצפיות, לא לפי לייקים',
       '/report 30 - חלון ארוך יותר · /report fetch - מושך מספרים לפני',
+      '/report hooks - דירוג פתיחים ופורמטים לפי לייקים לצפייה, עם הצפיות לידם',
+      '   שני הדירוגים נכונים ומודדים דברים שונים: שמירות אומרות אם הפוסט כלי,',
+      '   לייקים לצפייה אומרים אם הוא קיים את ההבטחה שבזכותה הוא הוצג',
       '/views - מה פורסם לאחרונה, ממוספר, עם המספרים שכבר נרשמו',
       '/views 1 1919 9 1 0 - צפיות, לייקים, שמירות, שיתופים לפוסט מספר 1',
       '   טיקטוק לא נותן את המספרים האלה ב-API, אז הם נרשמים ביד. הדירוג מעדיף אותם',
@@ -3398,6 +3652,13 @@ bot.command('help', (ctx) =>
       '/clip 3 - שלושה בבת אחת',
       '/clip cuts · /clip montage · /clip held - לבחור צורה במקום לחכות לתורה',
       '   (גם בעברית: /clip חתוך · /clip רצף · /clip בודד)',
+      '',
+      '/gems - ג׳מים: 12 שניות, פתיח של סקרנות, 3-5 שוטים עם שם מקום על כל אחד',
+      '/gems nohook - בלי קריאה למודל, רק התבניות מהקונפיג',
+      '   הפתיח נבחר מתוך 10 מועמדים, מדורגים לפי ספציפיות, סקרנות ויושר',
+      '   מקום שהוזכר בפוסט בשבועיים האחרונים לא חוזר',
+      '/formats - התמהיל: מה הסבב בונה ובאיזה יחס, ומה היה לאחרונה',
+      '/reel <מספר> - מקודד פוסט ממתין לסרטון אנכי אחד, בלי לשנות את הקרוסלה',
       '/clear_pending',
       '',
       '',
@@ -3556,6 +3817,61 @@ function tick() {
     suggestDeck().catch((e) => console.error('deck suggestion failed:', e.message));
   }
 
+  // THE FORMAT ROTATION, WHICH OWNS THE NEXT FOUR BLOCKS WHEN IT IS ON.
+  //
+  // One slot, filled by whichever format the weights in post-config.json draw. The
+  // four independent counters below are what it replaces, and they are still here and
+  // still correct: `formats.rotation.on: false` and the account goes back to two
+  // posts, one postcard, one guide and no clips a day, decided by nobody.
+  //
+  // THE NUMBER OF SLOTS IS THOSE COUNTERS ADDED UP, not a new setting. The brief that
+  // asked for this mix also said not to change posting times or frequency, and the
+  // easiest way to break the second half while doing the first is to invent a second
+  // place that decides how much goes out. See slotsPerDay in src/formats/rotation.js.
+  //
+  // A FORMAT WHOSE QUEUE IS FULL DOES NOT CONSUME THE SLOT. The backlog caps are the
+  // ones each kind already had, and the slot is left for the next tick rather than
+  // spent on a format that cannot be staged: three reels standing unapproved is a
+  // queue somebody has stopped reading, which is exactly what CLIP_BACKLOG_MAX means.
+  if (rotationOn()) {
+    if (slotDay !== day) {
+      slotDay = day;
+      slotsToday = 0;
+    }
+    const slots = slotsPerDay();
+    if (inHours && slots > 0 && slotsToday < slots && Date.now() - lastSlotAt >= gatherIntervalMs) {
+      const format = pickFormat();
+      const room =
+        !format ? false : format.kind === 'post' ? postsWaiting() < POST_BACKLOG_MAX : clipsWaiting() < CLIP_BACKLOG_MAX;
+      if (format && room) {
+        lastSlotAt = Date.now();
+        slotsToday += 1;
+        // Recorded at CHOICE rather than at success, which is what the run limit
+        // needs: a build that failed still means the rotation chose that format, and
+        // a history that only recorded successes would offer the same format again
+        // immediately after it failed twice.
+        store.noteFormat(format.id);
+        buildFormat(format.id).catch((e) => {
+          console.error(`${format.id} suggestion failed:`, e.message);
+          // THE SLOT IS GIVEN BACK, AND THIS IS A REAL CHANGE FROM THE COUNTERS.
+          //
+          // Each per-kind counter incremented before its build and never rolled back,
+          // so a postcard reel that could not be built cost the day its postcard.
+          // That was survivable when the four counters were independent and each was
+          // one post; under the rotation the gems reel is half the slots and it is
+          // the format that fails most, because it needs three places a vision judge
+          // will commit to and some mornings the footage does not have them.
+          //
+          // `lastSlotAt` is NOT rolled back with it, so the retry waits a full drip
+          // interval rather than running straight into the same empty search. That
+          // keeps the pace identical to today's and makes a transient failure cost
+          // nothing instead of costing a post.
+          slotsToday = Math.max(0, slotsToday - 1);
+        });
+      }
+    }
+  }
+
   // THE FIVE POST TYPES, on the same rhythm as everything else.
   //
   // This is the account's main output now, so it is the one with the highest daily
@@ -3572,6 +3888,7 @@ function tick() {
     postsToday = 0;
   }
   if (
+    !rotationOn() &&
     inHours &&
     POSTS_PER_DAY > 0 &&
     postsToday < POSTS_PER_DAY &&
@@ -3583,6 +3900,25 @@ function tick() {
     suggestPost(null, {}).catch((e) => console.error('post suggestion failed:', e.message));
   }
 
+  // Hidden gems reels, on their own counter, which is zero unless the rotation is
+  // off. See GEMS_PER_DAY for why the counter exists at all.
+  if (gemsDay !== day) {
+    gemsDay = day;
+    gemsToday = 0;
+  }
+  if (
+    !rotationOn() &&
+    inHours &&
+    GEMS_PER_DAY > 0 &&
+    gemsToday < GEMS_PER_DAY &&
+    clipsWaiting() < CLIP_BACKLOG_MAX &&
+    Date.now() - lastGemsAt >= gatherIntervalMs
+  ) {
+    lastGemsAt = Date.now();
+    gemsToday += 1;
+    suggestGems().catch((e) => console.error('gems suggestion failed:', e.message));
+  }
+
   // Clips, same hours and same spacing. Built rather than proposed — see the
   // note at CLIPS_PER_DAY — so the guard counts what is already staged and
   // waiting rather than unanswered proposals.
@@ -3591,6 +3927,7 @@ function tick() {
     clipsToday = 0;
   }
   if (
+    !rotationOn() &&
     inHours &&
     CLIPS_PER_DAY > 0 &&
     clipsToday < CLIPS_PER_DAY &&
@@ -3614,6 +3951,7 @@ function tick() {
     postcardsToday = 0;
   }
   if (
+    !rotationOn() &&
     inHours &&
     POSTCARDS_PER_DAY > 0 &&
     postcardsToday < POSTCARDS_PER_DAY &&
@@ -3633,6 +3971,7 @@ function tick() {
     guidesToday = 0;
   }
   if (
+    !rotationOn() &&
     inHours &&
     GUIDES_PER_DAY > 0 &&
     guidesToday < GUIDES_PER_DAY &&

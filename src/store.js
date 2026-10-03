@@ -41,6 +41,10 @@ const CLIP_SHAPES_KEPT = 12;
 // dimensions at once, and enough that the weekly report has a window to group by.
 // Not a log: the numbers themselves live in the metrics store.
 const POST_SHAPES_KEPT = 24;
+// Which format each of the last few posts was. The rotation reads `maxRun` of
+// these, two by default; the rest is there for the same reason the clip shapes
+// are, which is the morning somebody asks why the feed feels samey.
+const FORMATS_KEPT = 12;
 
 const empty = {
   seen: {},
@@ -100,6 +104,12 @@ const empty = {
   // rejected post was still produced, and replacing it with another post of the
   // same shape is the run of identical posts the rotation exists to prevent.
   postShapes: [],
+  // Hebrew place label -> when a post last named it. The 14 day rule, which is
+  // about the PLACE rather than about the footage. See notePlacesNamed.
+  placesNamed: {},
+  // Which format each of the last few posts was, most recent first. Read by the
+  // format rotation to refuse a third of the same thing in a row.
+  formats: [],
   // Instagram media id -> what that post was about, for the auto-reply.
   //
   // WITHOUT THIS THE WEBHOOK CANNOT ANSWER ANYTHING. A comment arrives naming
@@ -220,6 +230,24 @@ function pruneIgReplies(s) {
         delete s[key][id];
         changed = true;
       }
+    }
+  }
+  return changed;
+}
+
+// A fortnight plus a margin. The rule the brief states is 14 days, and a ledger
+// pruned at exactly 14 would drop an entry the same hour the rule stops caring
+// about it, so a reel built one minute early could name a place a reel built one
+// minute later could not. 21 keeps a week of slack and costs nothing.
+const PLACES_NAMED_TTL_MS = 21 * 86_400_000;
+
+function prunePlacesNamed(s) {
+  const cutoff = Date.now() - PLACES_NAMED_TTL_MS;
+  let changed = false;
+  for (const [label, ts] of Object.entries(s.placesNamed || {})) {
+    if (Number(ts) < cutoff) {
+      delete s.placesNamed[label];
+      changed = true;
     }
   }
   return changed;
@@ -510,6 +538,55 @@ export function markClipUsed(pexelsId) {
   if (!pexelsId) return;
   state.clipsUsed[String(pexelsId)] = Date.now();
   pruneClipsUsed(state);
+  save();
+}
+
+// --- which PLACES a post has named lately -----------------------------------
+//
+// A SECOND LEDGER BESIDE `clipsUsed`, AND THE DIFFERENCE IS THE SUBJECT.
+//
+// `clipsUsed` is about the FOOTAGE: this Pexels video has been published, do not
+// publish it again. It cannot answer the question the brief asks, which is about
+// the PLACE: a reel that names Lauterbrunnen must not go out a week after another
+// reel named Lauterbrunnen, and the two would be different files from different
+// queries with different ids.
+//
+// Keyed on the printed Hebrew label, which is the only form of the place both the
+// label and the hook use, and the form `clipPlaceLabel` already guarantees is
+// consistent. Timestamps rather than a ring, because the rule is "in the last 14
+// days" rather than "in the last N posts": a quiet fortnight should forget, and a
+// busy one should not.
+export function notePlacesNamed(labels, { at = Date.now() } = {}) {
+  const list = (Array.isArray(labels) ? labels : [labels]).map((s) => String(s || '').trim()).filter(Boolean);
+  if (!list.length) return;
+  if (!state.placesNamed || typeof state.placesNamed !== 'object') state.placesNamed = {};
+  for (const label of list) state.placesNamed[label] = at;
+  prunePlacesNamed(state);
+  save();
+}
+
+/** The labels named within the window, as a Set, newest first is irrelevant here. */
+export function placesNamedSince(days = 14, { now = Date.now() } = {}) {
+  const cutoff = now - Math.max(0, days) * 86_400_000;
+  const out = new Set();
+  for (const [label, ts] of Object.entries(state.placesNamed || {})) {
+    if (Number(ts) >= cutoff) out.add(label);
+  }
+  return out;
+}
+
+// --- which FORMAT the last few posts were -----------------------------------
+//
+// The run history the format rotation reads. A list rather than one field for the
+// reason noteClipShape gives: "not the same as last time" needs one entry and "not
+// three times in a row" needs two, and a single field cannot answer the second.
+export const formatHistory = () => (state.formats || []).slice();
+
+/** Record one. Called when the format is CHOSEN, so a failed build still counts. */
+export function noteFormat(id) {
+  const s = String(id || '').trim();
+  if (!s) return;
+  state.formats = [s, ...(state.formats || [])].slice(0, FORMATS_KEPT);
   save();
 }
 
@@ -990,6 +1067,12 @@ export function recordPublished({
   topic = null,
   headline = null,
   place = null,
+  // Which format this was, and which hook category, for the rows that have one.
+  // Read back by /views so a hand-typed view count can be grouped by format, which
+  // is the one grouping the account's own evidence is expressed in. See
+  // publishedFacts in bot.js.
+  format = null,
+  hookCategory = null,
   pexelsId = null,
   pexelsIds = [],
   angle = null,
@@ -1056,6 +1139,8 @@ export function recordPublished({
       // the world became a run of one city.
       headline,
       place,
+      format,
+      hookCategory,
       // Which stock video this was, for clips. The field the /clip dedupe was
       // already reading — `recentPublished().map(p => p.pexelsId)` — on rows
       // that had never carried it, so the set of "already used" ids handed to

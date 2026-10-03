@@ -3,7 +3,7 @@ import * as ttMetrics from './tiktok.js';
 import * as metricsStore from './store.js';
 
 export { metricsStore };
-export { weeklyReport, rankBy, window as reportWindow } from './report.js';
+export { weeklyReport, rankBy, window as reportWindow, hookReport, rankLikes } from './report.js';
 export { notePublished, rates, allRows } from './store.js';
 
 // The nightly pass: ask both platforms what the recent posts did.

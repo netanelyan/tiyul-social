@@ -6458,10 +6458,30 @@ group('what a place is allowed to say about itself');
   // NOT the same as "this place has no drawbacks" - which is why canBuild refuses on it
   // rather than publishing one side of an argument.
   const { canBuild } = await import('../src/posts/types.js');
-  const page = { places: [], itinerary: [] };
+  // THE PAGE CARRIES TWO PRACTICAL FACTS, and it has to now: a verdict post needs a
+  // cued drawback AND enough concrete detail to pay off a cover that promises the
+  // practical answer. See posts.deliver in post-config.json. The page used to be
+  // `{ places: [], itinerary: [] }`, which is a page no destination has.
+  const page = {
+    places: [],
+    itinerary: [],
+    bestSeason: 'אפריל עד יוני',
+    practical: { flights: 'טיסה ישירה מתל אביב, כשלוש שעות.' },
+  };
   ok('so a verdict post cannot be built from it', !canBuild('verdict', page, { verdict: u }).ok);
   ok('and it says why', canBuild('verdict', page, { verdict: u }).why.includes('drawbacks'));
   ok('while a cued one can', canBuild('verdict', page, { verdict: v }).ok);
+
+  // AND THE SECOND GATE, ON ITS OWN. A page with a real drawbacks clause and nothing
+  // concrete on it is the 0.5%-like post: a cover that promises the practical answer
+  // over slides that quote an opinion and stop.
+  const bare = { places: [], itinerary: [] };
+  const thin = canBuild('verdict', bare, { verdict: v });
+  ok('a page with a cued verdict and no concrete facts is refused', !thin.ok);
+  ok('and the refusal names what it counted', /concrete fact/.test(thin.why || ''), thin.why);
+  const { pageSpecifics } = await import('../src/posts/deliver.js');
+  eq('the bare page carries nothing countable', pageSpecifics(bare).length, 0);
+  ok('the furnished one carries two kinds', pageSpecifics(page).length >= 2, pageSpecifics(page).join(','));
 }
 
 /* -------------------------------------------------------------------------- */
@@ -8249,6 +8269,395 @@ const { pickDestination } = await import('../src/plan/write.js');
   ok('a picker with nothing excluded returns something', Boolean(all));
   const avoided = pickDestination([all.he]);
   ok('and excludes what it was told to avoid', !avoided || avoided.he !== all.he, `${all.he} -> ${avoided?.he}`);
+}
+
+/* -------------------------------------------------------------------------- */
+group('the hidden gems reel - twelve seconds, and the hook has to be deliverable');
+
+{
+  const { fitHolds, sortShots } = await import('../src/video/hiddenGems.js');
+  const cfg = postConfig().gems;
+
+  // THE LENGTH IS THE FORMAT. The reference post is 12 seconds and the brief's window
+  // is 10 to 15, so every shot count the reel can be built at has to land inside it.
+  for (const n of [3, 4, 5]) {
+    const fit = fitHolds(n, cfg);
+    ok(
+      `${n} shots land inside the ${cfg.targetSeconds.min} to ${cfg.targetSeconds.max} second target`,
+      fit.seconds >= cfg.targetSeconds.min && fit.seconds <= cfg.targetSeconds.max,
+      `${fit.seconds}s`
+    );
+    ok(`${n} shots hold within the configured range`,
+      fit.holds.every((h) => h >= cfg.holdSeconds.min && h <= cfg.holdSeconds.max), fit.holds.join(','));
+    eq(`${n} shots means ${n} holds`, fit.holds.length, n);
+  }
+
+  // Three shots is the reference's own shape, and the hold it solves for puts the
+  // reel within half a second of the post that got 6.1%.
+  const three = fitHolds(3, cfg);
+  ok('a three shot reel is about twelve seconds', three.seconds >= 11 && three.seconds <= 13.5, `${three.seconds}s`);
+
+  // A configuration that cannot fit drops a shot rather than running long, because
+  // the ceiling is the brief's and a viewer leaves a long one.
+  const tight = fitHolds(5, { ...cfg, hookSeconds: 5, targetSeconds: { min: 8, max: 12 }, holdSeconds: { min: 2, max: 4 } });
+  ok('a reel that cannot fit drops a shot', tight.dropped > 0, JSON.stringify(tight));
+  ok('and stays under the ceiling', tight.seconds <= 12, `${tight.seconds}s`);
+
+  // THE SHOT FILTER. Three different reasons a clip cannot carry a place name, and
+  // they must not collapse into one: no confident place, the same place twice, and
+  // the brief's fortnight rule.
+  const clips = [
+    { id: '1', src: 'a', duration: 20, vision: { place: 'Switzerland', site: 'Lauterbrunnen' } },
+    { id: '2', src: 'b', duration: 20, vision: { place: 'Greece', site: 'Meteora' } },
+    { id: '3', src: 'c', duration: 20, vision: { place: 'Switzerland', site: 'Lauterbrunnen' } },
+    { id: '4', src: 'd', duration: 20, vision: {} },
+    { id: '5', src: 'e', duration: 20, vision: { place: 'Iceland', site: 'Skogafoss' } },
+  ];
+  const sorted = sortShots(clips, { seenPlaces: new Set(['סקוגאפוס, איסלנד']), want: 5 });
+  const labels = sorted.placed.map((p) => p.labelHe);
+  eq('one shot per place', labels.length, 2);
+  ok('the second angle on one valley is not a second place', !labels.filter((l) => /לאוטרברונן/.test(l))[1]);
+  ok('a place named this fortnight is skipped', !labels.some((l) => /סקוגאפוס/.test(l)), labels.join(' · '));
+  ok('and the skip says so', sorted.skipped.some((s) => /fortnight/.test(s)), sorted.skipped.join('; '));
+  ok('an unplaceable clip becomes a spare', sorted.spare.some((c) => c.id === '4'));
+  ok('the strongest shot is last', labels[labels.length - 1] === 'לאוטרברונן, שווייץ', labels.join(' · '));
+  const ordered = sortShots(clips, { want: 5, strongestLast: false }).placed.map((p) => p.labelHe);
+  ok('and the order is reversible', ordered[0] === 'לאוטרברונן, שווייץ', ordered.join(' · '));
+}
+
+{
+  const gems = await import('../src/hooks/gems.js');
+  const cfg = postConfig().gems.hooks;
+  const vars = { n: 3, placeList: ['לאוטרברונן, שווייץ', 'מטאורה, יוון', 'אגם בלד, סלובניה'], alt: 'סנטוריני' };
+
+  // THE CATEGORY GATE IS THE HONESTY MECHANISM. A reel of place labels cannot deliver
+  // a mistake or an insider claim, so those categories are not offered to it at all.
+  const forReel = gems.templatesFor('hidden_gems_video').map((t) => t.category);
+  ok('the reel is offered the counted shapes', forReel.includes('overlooked'));
+  ok('and the comparison', forReel.includes('comparison'));
+  ok('and never the mistake shape', !forReel.includes('mistake'), forReel.join(','));
+  ok('and never the insider shape', !forReel.includes('insider'), forReel.join(','));
+  const forVerdict = gems.templatesFor('verdict').map((t) => t.category);
+  ok('the verdict post IS offered the mistake shape', forVerdict.includes('mistake'));
+  ok('because its drawbacks are quoted off the page', forVerdict.includes('insider'));
+
+  // A template whose variable this post cannot answer is skipped, never printed.
+  const noAlt = gems.templateCandidates({ format: 'hidden_gems_video', vars: { n: 3, placeList: vars.placeList } });
+  ok('a template needing an alternative is withheld without one',
+    !noAlt.some((c) => /\{alt\}/.test(c.text) || c.template.id === 'insteadof'), noAlt.map((c) => c.template.id).join(','));
+  ok('and nothing ships with a brace in it', !noAlt.some((c) => /[{}]/.test(c.text)));
+
+  // THE DELIVERY GATE. A counted hook on a post with a different number of things is
+  // the failure the account's own 0.5% like rate is.
+  const guard = { maxWords: cfg.maxWords, minWords: cfg.minWords, banned: cfg.banned, deliverable: 3 };
+  ok('a hook promising five on a three shot reel is refused',
+    /promises 5/.test(gems.rejectHook('5 יעדים שאנשים לא חושבים עליהם מספיק', guard) || ''));
+  eq('and the same line promising three is fine',
+    gems.rejectHook('3 יעדים שאנשים לא חושבים עליהם מספיק', guard), null);
+  ok('a banned word is refused', /banned/.test(gems.rejectHook('3 יעדים מטורף שלא מכירים', guard) || ''));
+  // AND ITS INFLECTIONS. Hebrew writes five letters differently at the end of a word,
+  // so "מטורף" and "מטורפים" share no substring and a plain match catches only the
+  // singular - which is not how anybody would write it.
+  ok('and so is the plural of it', /banned/.test(gems.rejectHook('3 יעדים מטורפים שלא מכירים', guard) || ''));
+  ok('a line that stops mid phrase is refused', gems.rejectHook('הטעות שכל ישראלי עושה ב', guard) != null);
+  ok('an unfilled slot is refused', /unfilled/.test(gems.rejectHook('במקום {alt}, תטוסו לכאן', guard) || ''));
+  ok('an em dash is refused', /dash/.test(gems.rejectHook('3 יעדים — ששווים את הטיסה', { ...guard, maxWords: 9 }) || ''));
+  ok('a claim of having been there is refused',
+    /been there/.test(gems.rejectHook('3 יעדים שהייתי בהם בשנה האחרונה', guard) || ''));
+
+  // THE THREE GUARDS THAT HAD TO BE NARROWED, each of which had rejected a line the
+  // owner wrote himself. These are regression tests for exactly that.
+  eq('an owner-written counted noun phrase is not a label',
+    gems.rejectHook('3 מקומות לטיול הבא שלכם', guard), null);
+  eq('the brief\'s own comparison line survives address',
+    gems.rejectHook('במקום סנטוריני, תטוסו לכאן', { ...guard, deliverable: null }), null);
+  eq('and a published post\'s own hook survives the pronoun',
+    gems.rejectHook('לפני שאתם מזמינים לסנטוריני, שתי דקות', { ...guard, deliverable: null }), null);
+
+  // THE SCORE. Honesty is a multiplier, so an unsourceable line cannot win on style.
+  const templates = new Map(gems.templatesFor('hidden_gems_video').map((t) => [t.id, t]));
+  const best = gems.scoreHook('3 יעדים שאנשים לא חושבים עליהם מספיק', { template: templates.get('notenough'), vars, maxWeight: 5 });
+  const worst = gems.scoreHook('3 מקומות באירופה שכמעט אף ישראלי לא מכיר', { template: templates.get('noisraeli'), vars, maxWeight: 5 });
+  ok('the account\'s best line scores highest', best.total > worst.total, `${best.total.toFixed(3)} vs ${worst.total.toFixed(3)}`);
+  ok('the unsourceable one is demoted rather than deleted', worst.total > 0 && worst.total < best.total / 2, worst.total.toFixed(3));
+  ok('a counted line reads as specific', best.specificity > 0, JSON.stringify(best.why));
+  ok('and as curious', best.curiosity > 0.5, String(best.curiosity));
+  const zero = gems.scoreHook('3 יעדים ששווים את הטיסה', { template: { ...templates.get('worthflight'), honesty: 0 }, maxWeight: 5 });
+  eq('honesty zero is a score of zero however it reads', zero.total, 0);
+
+  // AND THE WHOLE CALL, with the model half switched off so it is deterministic.
+  const got = await gems.writeGemHook({ format: 'hidden_gems_video', vars, deliverable: 3, write: false });
+  eq('the chosen hook is the line that worked', got.text, '3 יעדים שאנשים לא חושבים עליהם מספיק');
+  eq('and it is attributed', got.category, 'overlooked');
+  ok('the runners up are kept', got.considered.length >= 3, String(got.considered.length));
+  ok('and every one of them is deliverable', got.considered.every((c) => !/^\s*[0-9]/.test(c.text) || c.text.startsWith('3')));
+  ok('nothing is ever returned with a brace', !/[{}]/.test(got.text));
+
+  // The price comparison gate: a cost claim needs two published figures in one
+  // currency, because converting would invent the rate.
+  const cheap = { dailyCost: { currency: 'EUR', mid: { food: 30, transport: 10 } } };
+  const dear = { dailyCost: { currency: 'EUR', mid: { food: 80, transport: 20 } } };
+  const other = { dailyCost: { currency: 'JPY', mid: { food: 3000 } } };
+  ok('cheaper is cheaper when both pages say so in one currency', gems.cheaperThan(cheap, dear));
+  ok('and not when the figures are close', !gems.cheaperThan(dear, { dailyCost: { currency: 'EUR', mid: { food: 85, transport: 20 } } }));
+  ok('and never across currencies', !gems.cheaperThan(cheap, other));
+  ok('and never without a figure', !gems.cheaperThan({}, dear));
+}
+
+{
+  // THE GENERIC CLIP CARD, which three multi-shot shapes used to fall through and
+  // which printed four false warnings at them.
+  const { clipApprovalMessage, audioLine } = await import('../src/video/clip.js');
+  const reel = {
+    kind: 'clip',
+    hook: '4 יעדים שאנשים לא חושבים עליהם מספיק',
+    hookNote: 'hidden gems: overlooked/notenough',
+    place: 'איסלנד · גאורגיה',
+    tiktokCaption: 'כל אלה במרחק טיסה: איסלנד · גאורגיה',
+    clip: { shape: 'hidden_gems_video', seconds: 12.6, width: 1080, height: 1920, places: ['איסלנד', 'גאורגיה', 'לאוטרברונן, שווייץ'], audio: false },
+  };
+  const card = clipApprovalMessage(reel);
+  ok('the card names the shape in Hebrew', /ג׳מים/.test(card), card.split('\n')[0]);
+  ok('and the places in play order', /1\. איסלנד/.test(card));
+  ok('and claims nothing it does not know', !/undefined/.test(card), card);
+  ok('and never says the footage was not judged', !/לא נשפט/.test(card));
+  ok('and never says the text was not measured', !/לא נמדד/.test(card));
+  ok('the postcard reel gets the same card', /גלויות/.test(clipApprovalMessage({ ...reel, clip: { ...reel.clip, shape: 'postcard' } })));
+  ok('and a held clip still gets its own', /Pexels/.test(clipApprovalMessage({ ...reel, clip: { ...reel.clip, shape: 'held' } })));
+
+  // The audio line takes two shapes of the same field, because the three stock shapes
+  // record the whole track entry and the reels record whether there is one at all.
+  eq('no bed says so', audioLine({ clip: { audio: false } }), '🎵 הסאונד נבחר באפליקציה');
+  ok('a named track prints its name', /bed-02/.test(audioLine({ clip: { audio: true, track: 'bed-02.mp3' } })));
+  ok('and a track entry prints its licence', /CC0/.test(audioLine({ clip: { audio: { title: 'x', credit: 'y', licence: 'CC0' } } })));
+  ok('and neither ever prints undefined', !/undefined/.test(audioLine({ clip: { audio: true } })));
+}
+
+{
+  const { gemsCaption } = await import('../src/hashtags.js');
+  const cand = { clip: { places: ['לאוטרברונן, שווייץ', 'מטאורה, יוון', 'אגם בלד, סלובניה'] } };
+  const caption = gemsCaption(cand, { rand: () => 0 });
+  const brand = postConfig().hashtags.brand;
+  ok('the caption leads with a line about this post', caption.split('\n')[0].length > 0);
+  ok('it names the places', /לאוטרברונן/.test(caption), caption);
+  ok('it asks something a comment answers', /\?/.test(caption), caption);
+  ok('the brand tag is on it', caption.includes(brand), caption);
+  ok('and it is the first tag', caption.indexOf(brand) < (caption.indexOf('#טיול') + 1 || Infinity));
+  const tags = caption.split(/\s+/).filter((w) => w.startsWith('#'));
+  ok('two to four tags, not five', tags.length >= 2 && tags.length <= 4, tags.join(' '));
+  ok('no pin, because every place is already on screen', !caption.includes('📍'), caption);
+  ok('and no URL', !URL_LIKE.test(caption), caption);
+}
+
+/* -------------------------------------------------------------------------- */
+group('the format rotation - half the output, and never three in a row');
+
+{
+  const { pickFormat, mixShares, slotsPerDay } = await import('../src/formats/rotation.js');
+
+  // THE MIX IS WHAT THE OWNER ASKED FOR. Read off the config rather than hardcoded
+  // here, so editing the file is not a test failure, but the SHAPE is asserted: the
+  // reel leads, and the slideshows keep a real share.
+  const shares = Object.fromEntries(mixShares().map((s) => [s.id, s.share]));
+  ok('the gems reel is the lead format', shares.hidden_gems_video >= 0.4, String(shares.hidden_gems_video));
+  ok('the slideshows keep a quarter', shares.post >= 0.2, String(shares.post));
+  ok('and the video formats together are most of it',
+    1 - shares.post >= 0.6, String(1 - shares.post));
+
+  // The slot count is the four counters added up, NOT a new setting, which is how the
+  // mix changes without the frequency changing.
+  eq('four slots a day, from the four existing counters', slotsPerDay({}), 4);
+  eq('and it follows the env rather than the config',
+    slotsPerDay({ POSTS_PER_DAY: '3', POSTCARDS_PER_DAY: '0', GUIDES_PER_DAY: '0', CLIPS_PER_DAY: '1' }), 4);
+
+  // NEVER THREE IN A ROW. The one rule the weights cannot express: at weight 50 a
+  // fair draw produces a run of three one time in four.
+  let history = ['hidden_gems_video', 'hidden_gems_video'];
+  for (let i = 0; i < 40; i++) {
+    const f = pickFormat({ history, rand: () => 0.01 });
+    ok(i === 0 ? 'after two of the same format a third is refused' : `  and again at draw ${i}`, f.id !== 'hidden_gems_video', f.id);
+    if (i === 0) break;
+  }
+  ok('a run of two is allowed', pickFormat({ history: ['hidden_gems_video'], rand: () => 0.01 }).id === 'hidden_gems_video');
+
+  // The realized share, simulated, which is lower than the weight BECAUSE of the run
+  // limit. Written into the config comment so nobody reads 50 and measures 43.
+  const tally = {};
+  let hist = [];
+  let longest = 0;
+  let run = 0;
+  let last = null;
+  for (let i = 0; i < 4000; i++) {
+    const f = pickFormat({ history: hist });
+    tally[f.id] = (tally[f.id] || 0) + 1;
+    run = f.id === last ? run + 1 : 1;
+    last = f.id;
+    longest = Math.max(longest, run);
+    hist = [f.id, ...hist].slice(0, 12);
+  }
+  eq('no format ever runs three deep', longest, 2);
+  const realized = tally.hidden_gems_video / 4000;
+  ok('the reel still comes out as about half', realized > 0.38 && realized < 0.5, realized.toFixed(3));
+  ok('and every live format comes up', Object.keys(tally).length === mixShares().length, Object.keys(tally).join(','));
+
+  // A named format bypasses the rotation, like /make does one level down.
+  eq('a named format is honoured', pickFormat({ only: 'post' }).id, 'post');
+  throws('and an unknown one is refused', () => pickFormat({ only: 'nope' }));
+}
+
+{
+  // THE PER TYPE MEMORY, which is what lets a slideshow type actually lead. The global
+  // memory of 2 is a 33% ceiling on share whatever the weight says.
+  const { typesToAvoid, nextShape } = await import('../src/posts/types.js');
+  const types = postConfig().posts.types;
+  const verdict = types.find((t) => t.id === 'verdict');
+  eq('the verdict type opts out of the memory', verdict.memory, 0);
+
+  const history = [{ type: 'verdict' }, { type: 'verdict' }];
+  const avoid = typesToAvoid(types, 2, history);
+  ok('so it is not excluded after being used twice', !avoid.includes('verdict'), avoid.join(','));
+  const after = typesToAvoid(types, 2, [{ type: 'plan' }, { type: 'list' }]);
+  ok('while a type that declares nothing still is', after.includes('plan') && after.includes('list'), after.join(','));
+
+  // And the realized share, which is the point of the whole mechanism.
+  let hist = [];
+  const tally = {};
+  for (let i = 0; i < 2000; i++) {
+    const s = nextShape({ history: hist });
+    tally[s.type] = (tally[s.type] || 0) + 1;
+    hist = [{ type: s.type, look: s.look, frame: s.frame, caption: s.caption }, ...hist].slice(0, 24);
+  }
+  const share = tally.verdict / 2000;
+  ok('the lead slideshow type exceeds the 33% the global memory would cap it at', share > 0.5, share.toFixed(3));
+  ok('and every other type still appears', types.every((t) => tally[t.id] > 0), JSON.stringify(tally));
+}
+
+/* -------------------------------------------------------------------------- */
+group('delivery - a promise the post does not keep costs the like, not the view');
+
+{
+  const { costLine } = await import('../src/posts/verdict.js');
+  const { bookingLine, bookingLines, notesSource } = await import('../src/posts/source.js');
+  const { specificsIn, promisedBy, assertDelivers, pageSpecifics } = await import('../src/posts/deliver.js');
+
+  // THE PRICE LINE, WHICH RETURNED NULL FOR EVERY DESTINATION IN THE CATALOGUE. Both
+  // shapes the site actually publishes, neither of which is a number.
+  const split = costLine({ dailyCost: { currency: 'CZK', mid: { transport: 191, food: 1055, activities: 381 } } });
+  ok('the split shape is summed', /1,627/.test(split || ''), split);
+  ok('and says what it does not cover', /בלי לינה/.test(split || ''), split);
+  const range = costLine({ dailyCost: { currency: 'EUR', midRange: [20, 80] } });
+  ok('the range shape stays a range', /20 עד 80/.test(range || ''), range);
+  ok('the currency is in Hebrew', /יורו/.test(range || ''), range);
+  eq('a page with no cost gets no line', costLine({}), null);
+  eq('and neither does one with a currency and no figure', costLine({ dailyCost: { currency: 'EUR' } }), null);
+  ok('no Latin currency code reaches a Hebrew slide for the common ones',
+    !/[A-Z]{3}/.test(costLine({ dailyCost: { currency: 'JPY', mid: { food: 9877 } } }) || ''),
+    costLine({ dailyCost: { currency: 'JPY', mid: { food: 9877 } } }));
+  // An unknown currency falls back to its code rather than losing the price.
+  ok('and an unlisted currency still prints',
+    /XYZ/.test(costLine({ dailyCost: { currency: 'XYZ', mid: { food: 10 } } }) || ''));
+
+  // THE BOOKING FACT. Verbatim off the page's own day notes, which is where this
+  // catalogue keeps the one thing a "before you book" cover is actually for.
+  const city = {
+    itinerary: [
+      { day: 1, notes: 'להתחיל מוקדם בכיכר העיר העתיקה. הרובע היהודי דורש כרטיס משולב לבתי הכנסת.' },
+      { day: 2, notes: 'כרטיסים לסגרדה פמיליה נמכרים לפי שעת כניסה וכדאי להזמין מראש.' },
+    ],
+  };
+  const booked = bookingLine(city);
+  ok('a booking fact is found', Boolean(booked), booked);
+  ok('and it is verbatim off the page', notesSource(city).includes(booked), booked);
+  ok('the plan-for-the-day sentence is not mistaken for one', !/להתחיל מוקדם/.test(booked), booked);
+  eq('two can be had when the page has two', bookingLines(city, { want: 2 }).length, 2);
+  eq('a page with no notes has none', bookingLine({ itinerary: [] }), null);
+
+  // WHAT THE COVER PROMISED, read off the hook rather than guessed.
+  ok('a counted cover is read as counted', promisedBy('3 יעדים ששווים את הטיסה').counted === 3);
+  ok('the before-you-book cover promises the practical answer', promisedBy('לפני שאתם מזמינים לפראג, שתי דקות').specifics);
+  ok('and so does the score cover', promisedBy('נתנו לפראג 4.7. וזה למה').specifics);
+  ok('a scenic cover promises nothing measurable', !promisedBy('המקומות הכי יפים בפראג').specifics);
+
+  // AND THE GATE ITSELF.
+  const thin = {
+    titleHe: 'לפני שאתם מזמינים לפראג, שתי דקות',
+    slides: [{ titleHe: 'לפני שאתם מזמינים לפראג, שתי דקות' }, { lines: [{ text: 'העיר העתיקה עמוסה מאוד' }] }],
+  };
+  eq('a practical promise with nothing behind it carries nothing', specificsIn(thin).length, 0);
+  throws('and is refused', () => assertDelivers(thin, { where: 'verdict/פראג' }), 'undelivered_promise');
+  const full = {
+    titleHe: 'לפני שאתם מזמינים לפראג, שתי דקות',
+    slides: [
+      { titleHe: 'לפני שאתם מזמינים לפראג, שתי דקות' },
+      { lines: [{ text: 'יום טיפוסי: כ-1,627 קורונה צ׳כית לאדם, בלי לינה' }] },
+      { lines: [{ text: 'העונה הטובה: אפריל עד יוני' }] },
+      { lines: [{ text: 'הרובע היהודי דורש כרטיס משולב' }] },
+    ],
+  };
+  const audit = assertDelivers(full, { where: 'verdict/פראג' });
+  ok('a post that answers the question passes', audit.ok);
+  ok('and the audit says what it carried', audit.carries.length >= 3, audit.carries.join(','));
+  ok('a scenic cover is never asked for specifics',
+    assertDelivers({ titleHe: 'המקומות הכי יפים בפראג', slides: [{ titleHe: 'המקומות הכי יפים בפראג' }] }).ok);
+
+  // A counted cover against the items the post actually has.
+  throws('a cover promising twenty items over nine is refused', () => assertDelivers({
+    titleHe: '20 דברים לעשות בפראג',
+    slides: [{ titleHe: '20 דברים לעשות בפראג' }, ...Array.from({ length: 9 }, (_, i) => ({ number: `${i + 1}.`, titleHe: 'מקום' }))],
+  }), 'overpromised_count');
+
+  // THE FREE PREDICTOR must never be stricter than the gate it predicts, or it
+  // deletes destinations that would have built fine.
+  eq('a bare page predicts nothing', pageSpecifics({ places: [], itinerary: [] }).length, 0);
+  const furnished = {
+    bestSeason: 'אפריל עד יוני',
+    practical: { flights: 'טיסה ישירה מתל אביב, כשלוש שעות.' },
+    dailyCost: { currency: 'EUR', midRange: [20, 80] },
+    editorialRating: { score: 4.5, verdict: 'עיר יפה. חסרונות: עמוס בקיץ.' },
+  };
+  ok('and a furnished one predicts at least the floor',
+    pageSpecifics(furnished).length >= postConfig().posts.deliver.minSpecifics, pageSpecifics(furnished).join(','));
+}
+
+{
+  // THE LIKE RATE, added to the ratios rather than replacing them.
+  const { rates } = await import('../src/metrics/store.js');
+  const { rankLikes, hookReport } = await import('../src/metrics/report.js');
+
+  const r = rates({ views: 197, likes: 12, saved: 3, shares: 1 });
+  ok('likes per view is computed', Math.abs(r.likeRate - 12 / 197) < 1e-9, String(r.likeRate));
+  ok('and the save rate is untouched', Math.abs(r.saveRate - 3 / 197) < 1e-9, String(r.saveRate));
+  eq('a post with no views has no like rate', rates({ likes: 5 }).likeRate, null);
+  eq('and no rate at all', rates(null).views, null);
+
+  // The account's own four posts, which is the table the whole change is built on.
+  const rows = [
+    { id: 'a', at: new Date().toISOString(), shape: { format: 'hidden_gems_video', hookCategory: 'overlooked', hookText: '3 יעדים שאנשים לא חושבים עליהם מספיק' }, media: { tiktok: '1' }, stats: { tiktok: { views: 197, likes: 12, by: 'hand' } } },
+    { id: 'b', at: new Date().toISOString(), shape: { format: 'post', type: 'verdict', hookCategory: 'mistake', hookText: 'לפני שאתם מזמינים לסנטוריני, שתי דקות' }, media: { tiktok: '2' }, stats: { tiktok: { views: 1993, likes: 9, by: 'hand' } } },
+    { id: 'c', at: new Date().toISOString(), shape: { format: 'post', type: 'verdict', hookText: 'נתנו לטוקיו 4.8, וזה למה' }, media: { tiktok: '3' }, stats: { tiktok: { views: 711, likes: 9, by: 'hand' } } },
+  ];
+  const ranked = rankLikes(rows.map((row) => ({ ...row, best: rates(row.stats.tiktok) })), 'format');
+  eq('the reel ranks first on likes per view', ranked[0].key, 'hidden_gems_video');
+  ok('and the slideshow last', ranked[ranked.length - 1].key === 'post', JSON.stringify(ranked.map((x) => x.key)));
+
+  const report = hookReport({ days: 14, rows });
+  ok('the report ranks by format', /hidden_gems_video/.test(report));
+  ok('and by hook category', /overlooked/.test(report));
+  ok('and names the hooks themselves', /לא חושבים עליהם מספיק/.test(report));
+  ok('and prints the views beside the rate, because the two disagree', /1,993/.test(report), report.slice(0, 200));
+  ok('and says the weekly report still leads on saves', /שמירות/.test(report));
+  ok('an empty window says how to type numbers in', /views/.test(hookReport({ days: 14, rows: [] })));
+}
+
+{
+  // THE SLIDE REEL is off by default and the types it may run on are declared.
+  const { reelable } = await import('../src/video/slideReel.js');
+  const cfg = postConfig().posts.video;
+  ok('the video variant is off until somebody turns it on', cfg.on === false);
+  ok('the list format may be one', reelable('list'));
+  ok('and the camera roll', reelable('roll'));
+  ok('a map post may not', !reelable('map'));
+  ok('the cover is held longer than the rest', cfg.coverSeconds > cfg.holdSeconds);
 }
 
 /* -------------------------------------------------------------------------- */

@@ -1,4 +1,14 @@
-import { verdictOf, practicalOf, listPlaces, placeLine, firstClause, seasonLine, ratingBadge } from './source.js';
+import {
+  verdictOf,
+  practicalOf,
+  listPlaces,
+  placeLine,
+  firstClause,
+  seasonLine,
+  ratingBadge,
+  bookingLines,
+  notesSource,
+} from './source.js';
 import { line, fill, bestClause, openClause, isKosherLine, assertKosherIsANote } from './voice.js';
 
 // TYPE D: THE HONEST VERDICT. "{dest}: שווה או לא?"
@@ -80,11 +90,23 @@ export function buildVerdictPost(city, { hook, dest, questionHe = null } = {}) {
   // nothing else can say what they say. The pros are the wider one. So the narrow pool
   // draws first, and the pros slide takes what is left, which is the direction that
   // always leaves both slides with something.
+  // ORDER CHANGED, AND THE REASON IS THAT ONLY FOUR OF THESE REACH THE SLIDE.
+  //
+  // `forWhom` takes the first four, so the order here is not a preference, it is
+  // which facts get published. It used to be the order a trip is decided in: how you
+  // get there, how you move once there, when to go, what it costs. That put the two
+  // facts a viewer cannot find anywhere else, the price and the season, behind the
+  // one they could guess, and on a page with all five the cost never appeared at all.
+  //
+  // The brief's priority list is the new order: the price, when to go, then how you
+  // get there and how you move. The cost was also returning null for every page in
+  // the catalogue until costLine was fixed, so this is the first time the ordering
+  // has had any effect.
   const practicalFacts = [
+    [costLine(city), 'who.cost', null],
+    [seasonLine(practical), 'who.season', null],
     [firstClause(practical.flightsHe), 'who.flight', practical.flightsHe],
     [firstClause(practical.aroundHe), 'who.around', practical.aroundHe],
-    [seasonLine(practical), 'who.season', null],
-    [costLine(city), 'who.cost', null],
   ]
     .map(([text, where, source]) => [openClause(text), where, source])
     .filter(([text]) => text && !spent.has(text));
@@ -178,6 +200,33 @@ export function buildVerdictPost(city, { hook, dest, questionHe = null } = {}) {
       titleHe: line(i === 0 ? 'ומה פחות' : 'ועוד משהו', { where: `cons${i}.title` }),
       lines: chunk.map((c, j) => ({ text: quote(c, `cons[${i}][${j}]`) })),
       image: best[2]?.image || best[0]?.image || null,
+    });
+  }
+
+  // WHAT TO BOOK, OR TIME, BEFORE GOING.
+  //
+  // THE SLIDE THAT PAYS OFF THE COVER. This type's leading hook is "לפני שאתם
+  // מזמינים ל{dest}, שתי דקות" and it is the highest-reach post this account has
+  // published, at 1993 views and nine likes. The slides answered a different
+  // question: they said what is wrong with the place, which is worth knowing and is
+  // not what somebody about to book is two minutes from needing.
+  //
+  // The page knew the answer all along. 44 of the 61 destination pages carry a
+  // booking or queue fact in their itinerary notes - Sagrada Familia sold by entry
+  // hour, Sainte Chapelle booked ahead almost always, Anne Frank's house slot-only -
+  // and this quotes one or two of them verbatim. See bookingLine in ./source.js.
+  //
+  // Placed after the drawbacks and before "who is this for", which is where it falls
+  // in the order somebody actually needs it: what is wrong with it, what to do about
+  // it, then whether it suits you.
+  const booking = bookingLines(city, { want: 2 }).filter((b) => !spent.has(b));
+  booking.forEach((b) => spent.add(b));
+  if (booking.length) {
+    slides.push({
+      look: 'sheet',
+      titleHe: line('מה להזמין מראש', { where: 'booking.title' }),
+      lines: booking.map((b, i) => ({ text: line(b, { where: `booking[${i}]`, quote: notesSource(city) }) })),
+      image: best[3]?.image || best[0]?.image || null,
     });
   }
 
@@ -310,18 +359,128 @@ export function coverPromise(consCount, practical) {
   return n === 1 ? 'דבר אחד שכדאי לדעת לפני' : `${n} דברים שכדאי לדעת לפני`;
 }
 
+// The currencies this catalogue actually publishes, in Hebrew.
+//
+// A HEBREW SLIDE IS HEBREW ALL THE WAY THROUGH, which is the rule clipSiteName
+// argues for at length: one Latin word in the middle of a Hebrew line reads as a
+// machine filling a field. "כ-1,630 CZK לאדם" is that word. A currency missing from
+// this table falls back to its code, which is better than no price at all.
+const CURRENCY_HE = {
+  EUR: 'יורו',
+  USD: 'דולר',
+  GBP: 'ליש״ט',
+  ILS: 'שקלים',
+  JPY: 'יין',
+  THB: 'באט',
+  CZK: 'קורונה צ׳כית',
+  PLN: 'זלוטי',
+  HUF: 'פורינט',
+  GEL: 'לארי',
+  AED: 'דירהם',
+  SEK: 'קרונה שוודית',
+  VND: 'דונג',
+  IDR: 'רופיה',
+  SGD: 'דולר סינגפורי',
+  MAD: 'דירהם מרוקאי',
+  ARS: 'פסו ארגנטינאי',
+  BRL: 'ריאל',
+  SCR: 'רופי',
+  TRY: 'לירה טורקית',
+  NOK: 'קרונה נורווגית',
+  DKK: 'קרונה דנית',
+  CHF: 'פרנק',
+  MXN: 'פסו מקסיקני',
+  ZAR: 'ראנד',
+  KRW: 'וון',
+  NPR: 'רופי נפאלי',
+  JOD: 'דינר',
+  AMD: 'דראם',
+  KZT: 'טנגה',
+  AZN: 'מאנאט',
+  RON: 'ליי',
+  BGN: 'לב',
+  HRK: 'קונה',
+  TZS: 'שילינג',
+  PEN: 'סול',
+  MKD: 'דינר מקדוני',
+  EGP: 'לירה מצרית',
+  ISK: 'קרונה איסלנדית',
+};
+
 /**
  * What a day there costs, from the page's own daily figure.
  *
- * IN THE LOCAL CURRENCY, AND SAYING SO. The site publishes `dailyCost` with a currency
- * and a source; converting it to shekels would need an exchange rate nobody published,
- * which is the invented number src/plan/site.js exists to refuse. So it prints what the
- * page prints and names the currency, and the reader does the sum they were going to do
- * anyway.
+ * THIS FUNCTION RETURNED NULL FOR EVERY DESTINATION IN THE CATALOGUE, and that is
+ * the whole reason it is being rewritten rather than tuned.
+ *
+ * It read `Number(c.mid ?? c.midRange ?? c.budget)`, and the site publishes neither
+ * of those as a number. Of the 61 pages, 21 carry `mid` as an object split by line
+ * item, `{transport, food, activities}`; 20 carry `midRange` as a `[low, high]`
+ * pair; 20 publish no cost at all. `Number({...})` and `Number([20, 80])` are both
+ * NaN, so the price line was silently absent from every verdict post ever built, on
+ * the type whose hook promises the practical answer.
+ *
+ * Nobody could see it because the "who is this for" slide has four other facts to
+ * fall back on and a missing one just makes the slide shorter.
+ *
+ * BOTH SHAPES NOW, AND THEY PRINT DIFFERENTLY, because they mean different things. A
+ * split by line item is a figure somebody added up, so it prints as one number; a
+ * low-to-high pair is a RANGE the source published as a range, and flattening it to
+ * its midpoint would state a precision the page does not claim.
+ *
+ * STILL IN THE LOCAL CURRENCY. The brief that asked for this asked for prices in
+ * shekels, and no page in the catalogue publishes one: converting would need an
+ * exchange rate nobody published, which is the invented number src/plan/site.js
+ * exists to refuse. So it prints what the page prints, names the currency in Hebrew,
+ * and the reader does the sum they were going to do anyway.
  */
 export function costLine(city) {
+  const cost = dailyCostOf(city);
+  if (!cost) return null;
+  const he = CURRENCY_HE[cost.currency] || cost.currency;
+  const n = (x) => Math.round(x).toLocaleString('en-US');
+
+  // The split shape says what it covers rather than implying a total: lodging is not
+  // among the line items on any page in the catalogue.
+  if (cost.shape === 'split') return `יום טיפוסי: כ-${n(cost.amount)} ${he} לאדם, בלי לינה`;
+  if (cost.shape === 'range') return `יום טיפוסי: ${n(cost.low)} עד ${n(cost.high)} ${he} לאדם`;
+  return `יום טיפוסי: כ-${n(cost.amount)} ${he} לאדם`;
+}
+
+/**
+ * What a day costs on this page, as a number, whichever way the page says it.
+ *
+ * ONE PARSER, BECAUSE THERE ARE THREE SHAPES AND TWO READERS. The slide line needs
+ * the figure formatted and the hook's price comparison needs it compared; both got
+ * it wrong independently, in the same way, by calling Number() on a thing that is
+ * not a number. See the note above costLine.
+ *
+ * `amount` is the single figure to compare on: the sum of the line items on a split
+ * page, and the midpoint of a published range. A midpoint may be PRINTED nowhere -
+ * the range prints as a range, because flattening it would claim a precision the
+ * source does not - but it is the right thing to rank two destinations by.
+ */
+export function dailyCostOf(city) {
   const c = city?.dailyCost || city?.dailyBudget;
-  const mid = Number(c?.mid ?? c?.midRange ?? c?.budget);
-  if (!c?.currency || !Number.isFinite(mid) || mid <= 0) return null;
-  return `יום טיפוסי: כ-${Math.round(mid).toLocaleString('en-US')} ${c.currency} לאדם`;
+  const currency = String(c?.currency || '').toUpperCase();
+  if (!currency) return null;
+  const raw = c.mid ?? c.midRange ?? c.budget;
+
+  if (raw && !Array.isArray(raw) && typeof raw === 'object') {
+    const parts = Object.values(raw).map(Number).filter((x) => Number.isFinite(x) && x > 0);
+    if (!parts.length) return null;
+    return { currency, shape: 'split', amount: parts.reduce((a, b) => a + b, 0) };
+  }
+
+  if (Array.isArray(raw)) {
+    const [lo, hi] = raw.map(Number);
+    if (Number.isFinite(lo) && Number.isFinite(hi) && lo > 0 && hi > lo) {
+      return { currency, shape: 'range', low: lo, high: hi, amount: (lo + hi) / 2 };
+    }
+    if (Number.isFinite(lo) && lo > 0) return { currency, shape: 'one', amount: lo };
+    return null;
+  }
+
+  const one = Number(raw);
+  return Number.isFinite(one) && one > 0 ? { currency, shape: 'one', amount: one } : null;
 }

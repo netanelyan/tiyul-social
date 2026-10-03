@@ -1,5 +1,6 @@
 import { postConfig } from '../postConfig.js';
 import { postShapeHistory } from '../store.js';
+import { pageSpecifics } from './deliver.js';
 
 // The menu, and the rotation that keeps it from becoming a template.
 //
@@ -70,7 +71,37 @@ export function pickType({ only = null, history = null, rand = Math.random } = {
     if (!found) throw new Error(`unknown post type "${only}" - have: ${types.map((t) => t.id).join(', ')}`);
     return found;
   }
-  return drawWeighted(types, { avoid: lastOf(history, 'type', typeMemory), rand });
+  return drawWeighted(types, { avoid: typesToAvoid(types, typeMemory, history), rand });
+}
+
+/**
+ * Which types are excluded for being recent, each by its own depth.
+ *
+ * ONE DEPTH PER TYPE, AND THE REASON IS THAT THE GLOBAL ONE IS A CEILING ON SHARE.
+ *
+ * `typeMemory` 2 excludes whatever the last two posts were, so a type that was just
+ * used cannot return for two draws - which caps it at one post in three HOWEVER it
+ * is weighted. That is the right rule for six types sharing an account and the wrong
+ * one for a lead format: raising a type's weight from 2 to 20 moved its share from
+ * 13% to 33% and no further, and the owner's instruction was "most of the content".
+ *
+ * So a type may declare `memory: 0` and never be excluded. The mechanism is still
+ * the memory rather than a special case: `memory: 1` is "not twice in a row", which
+ * is a 50% ceiling, and a type that declares nothing behaves exactly as before.
+ *
+ * Read ONCE from the store. The earlier version called lastOf per type, which reads
+ * the history per call, and a history that changed between two of those reads would
+ * produce an exclusion list describing two different pasts.
+ */
+export function typesToAvoid(types, typeMemory, history = null) {
+  const seen = recentShapes(history);
+  const out = [];
+  for (const t of types || []) {
+    const depth = t?.memory == null ? typeMemory : t.memory;
+    if (!(depth > 0)) continue;
+    if (lastOf(seen, 'type', depth).includes(t.id)) out.push(t.id);
+  }
+  return out;
 }
 
 /**
@@ -172,6 +203,18 @@ export function canBuild(type, city, { verdict = null } = {}) {
     }
     if (need === 'coords8' && places.filter((p) => p.lat && p.lng).length < 8) {
       return { ok: false, why: `only ${places.filter((p) => p.lat && p.lng).length} places with coordinates` };
+    }
+    // CAN THIS PAGE BACK A PRACTICAL PROMISE? Asked here, where it is free, rather
+    // than after the photograph pass where the finished slides are checked by
+    // assertDelivers. Both exist on purpose: this one saves the spend, and that one
+    // catches a post whose facts were dropped between here and the render. See the
+    // note above pageSpecifics.
+    if (need === 'specifics') {
+      const floor = postConfig().posts.deliver.minSpecifics;
+      const got = pageSpecifics(city);
+      if (postConfig().posts.deliver.on && got.length < floor) {
+        return { ok: false, why: `the page carries ${got.length} kind(s) of concrete fact (${got.join(', ') || 'none'}), needs ${floor}` };
+      }
     }
     if (need === 'cons') {
       // The drawbacks are the whole post. `cued` false means the verdict does not

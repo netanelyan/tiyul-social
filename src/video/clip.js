@@ -975,6 +975,18 @@ export function followFrameLine(cand) {
 export function audioLine(cand) {
   const a = cand.clip?.audio;
   if (!a) return '🎵 הסאונד נבחר באפליקציה';
+  // TWO SHAPES OF THE SAME FIELD, and the boolean one is not a mistake to fix at the
+  // writer's end. The three shapes here record the whole track entry, because the
+  // card has to be able to state the licence of anything it mixed in. The postcard
+  // and gems reels record whether there IS a bed, because for them the answer is
+  // almost always no and the file is finished in the app.
+  //
+  // Printed as what it is rather than as `undefined · undefined · undefined`, which
+  // is what this line produced for a reel that did carry a track.
+  if (a === true) {
+    const name = cand.clip?.track;
+    return name ? `🎵 ${name}` : '🎵 מוזיקה מעורבת בקובץ';
+  }
   return `🎵 ${a.title} · ${a.credit} · ${a.licence}${a.offset ? ` · מ-${a.offset}ש׳` : ''}`;
 }
 
@@ -1055,6 +1067,19 @@ export function clipApprovalMessage(cand) {
   const c = cand.clip || {};
   if (c.shape === 'cuts') return cutApprovalMessage(cand);
   if (c.shape === 'montage') return montageApprovalMessage(cand);
+  // A SHAPE THIS FUNCTION HAS NO CARD FOR SAYS SO, rather than falling through.
+  //
+  // Three shapes reach here that the card below was never written for: the postcard
+  // reel, the narrated guide and the hidden gems reel. All three are several shots
+  // from several places, so none of them has the single `vision`, `spot`, `query` or
+  // `pexelsId` the held card prints - and the card does print them, as `Pexels
+  // undefined`, `⚠️ לא נשפט`, `⚠️ לא נמדד` and `🔗 undefined`.
+  //
+  // Those warnings are the loudest thing on the message and every one of them is
+  // false: the clips WERE judged, which is the only reason the places could be
+  // named. Each of these formats sends its own card from bot.js immediately after
+  // staging, so what is needed here is the short version and nothing invented.
+  if (c.shape && c.shape !== 'held') return multiShotApprovalMessage(cand);
   // What the judge thought, in the two lines it takes to say it.
   //
   // This was the one thing the card did not carry, and its absence cost a
@@ -1106,6 +1131,39 @@ export function clipApprovalMessage(cand) {
     '',
     `🔗 ${c.page}`,
   ].join('\n');
+}
+
+/**
+ * The short card for a multi-shot format that brings its own detail.
+ *
+ * ONE SHAPE NAME, THE LENGTH, THE PLACES AND THE DESCRIPTION, and deliberately not a
+ * judgement line: every one of these formats establishes its places THROUGH the
+ * vision judge, so "was it judged" is answered by the fact that the places have
+ * names. Nothing here is per-shot, because the format's own card is the next message
+ * in the chat and that is where the per-shot view belongs.
+ *
+ * `places` covers the gems reel, `postcardPlaces` the postcard one, and a format with
+ * neither prints the candidate's own `place` string, which every kind sets.
+ */
+export function multiShotApprovalMessage(cand) {
+  const c = cand.clip || {};
+  const names = c.places || c.postcardPlaces || (cand.place ? String(cand.place).split(' · ') : []);
+  const shapeHe = { postcard: 'גלויות', hidden_gems_video: 'ג׳מים', narrated: 'מדריך' }[c.shape] || c.shape;
+  return [
+    `🎬 ${shapeHe} · ${c.seconds}ש׳ · ${names.length ? `${names.length} מקומות · ` : ''}${c.width}x${c.height}`,
+    '',
+    `✍️ הפתיחה: ${cand.hook}`,
+    cand.hookWritten ? '   (נכתבה לסרטון הזה)' : `   ${cand.hookNote || 'מתבנית'}`,
+    '',
+    names.length ? names.map((n, i) => `   ${i + 1}. ${n}`).join('\n') : null,
+    names.length ? '' : null,
+    audioLine(cand),
+    '',
+    `🏷️ ${cand.tiktokCaption || '(אין תיאור)'}`,
+    c.page || cand.sourceUrl ? `\n🔗 ${c.page || cand.sourceUrl}` : null,
+  ]
+    .filter((l) => l !== null)
+    .join('\n');
 }
 
 /**

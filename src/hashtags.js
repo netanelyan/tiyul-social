@@ -347,6 +347,59 @@ export function clipCaption(cand, opts) {
 }
 
 /**
+ * The description for a hidden gems reel.
+ *
+ * SHORTER THAN clipCaption, AND THE DIFFERENCE IS WHAT THE VIDEO ALREADY SAID.
+ *
+ * That one opens on a pin, because a held clip's burned line is a thought rather
+ * than a location and the description is the only place the viewer learns where the
+ * footage is. This reel names every place on screen, in Hebrew, one per shot. A pin
+ * under it would be the fourth time somebody is told, and the brief's shape for this
+ * format is one short line plus a question.
+ *
+ * NO CLOSING ASK AND NO FOLLOW LINE, which is the other difference and the one worth
+ * arguing. Every other format here closes by asking for something. This one does not,
+ * because a 12 second reel lives on the second lap: the thing after the question
+ * should be the tags, and the frame a viewer is on when they decide to watch again
+ * should be footage rather than a request. The ask is not lost, it is the question.
+ *
+ * `#TiyulPlus` leads the tags because it is the handle rather than a word, and it is
+ * the only tag on a post that does anything for the account rather than for the post.
+ */
+export function gemsCaption(cand, { rand = Math.random } = {}) {
+  const cfg = postConfig().gems.caption;
+  const places = cand?.clip?.places || [];
+  // JOINED WITH A MIDDLE DOT, NOT A COMMA, because each label already contains one.
+  // "לאוטרברונן, שווייץ" plus "מטאורה, יוון" joined with ", " reads as four places,
+  // which is exactly the ambiguity a counted hook above it cannot afford. The dot is
+  // the separator this project already uses for a list of places on one line.
+  const joined = places.join(' · ');
+
+  // A line whose variable cannot be filled is skipped rather than printed with a
+  // gap in it, the same rule the hook templates follow.
+  const usable = cfg.lines.filter((l) => !l.includes('{places}') || joined);
+  const line = usable.length ? fillPlaces(usable[Math.floor(rand() * usable.length)], joined) : joined || null;
+  const question = cfg.questions.length ? cfg.questions[Math.floor(rand() * cfg.questions.length)] : null;
+
+  const brand = postConfig().hashtags.brand;
+  const taken = new Set(brand ? [brand] : []);
+  const dest = clipDestinationTag(cand);
+  if (dest) taken.add(dest);
+  const rest = draw(
+    [...postConfig().hashtags.niche, ...postConfig().hashtags.broad],
+    Math.max(0, cfg.tagCount - (dest ? 1 : 0)),
+    taken,
+    rand
+  );
+  const tags = [brand, dest, ...rest].filter(Boolean).join(' ');
+
+  const parts = [line, question].filter(Boolean);
+  return parts.length ? `${parts.join('\n\n')}\n\n${tags}` : tags;
+}
+
+const fillPlaces = (line, places) => String(line || '').replace(/\{places\}/g, places);
+
+/**
  * A plan's country, as a hashtag.
  *
  * The third source for the same slot, and the simplest of the three: a deck
