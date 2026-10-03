@@ -134,16 +134,16 @@ export async function findClips({ limit = 12, seen = new Set(), pages = null, ti
   if (!configured()) throw new Error('PEXELS_API_KEY is not set');
 
   const cfg = postConfig().clips.search;
-  // HOW DEEP INTO EACH SEARCH TO GO, AND IT IS A CONFIG VALUE NOW BECAUSE THE POOL
-  // RAN DRY. Two pages of 24 across 26 queries is about 1,250 raw results, and after
-  // the portrait, height and duration gates, after 81 clips already spent, and after
-  // the judge's destination floor of 7, a live morning was offering NINE candidates
-  // and placing one or two of them. A reel needs three, so both reel formats failed
-  // on most runs and the day's slots went to whatever else could build.
+  // HOW DEEP INTO EACH SEARCH TO GO. A config value now, and the reason it is worth
+  // knowing is that raising it was the wrong fix and the measurement said so within
+  // a minute: four pages returned FEWER candidates than two, because 44 queries times
+  // 4 pages is 176 requests and Pexels rate limits. See the note beside `pages` in
+  // src/postConfig.js.
   //
-  // `seen` is what makes this a ratchet rather than a plateau: a spent clip is
-  // excluded for two years, so the usable part of a fixed pool only ever shrinks.
-  // Going deeper is the cheap half of the answer and more queries is the other half.
+  // THE RAW POOL WAS NEVER THE PROBLEM. Two pages across the query list returns 1,504
+  // candidates past the portrait, height and duration gates with the 81 spent clips
+  // already excluded. What was starving the reel formats is further down: the queue
+  // is sorted by TITLE score and only `visionMaxCandidates` of it is ever judged.
   const depth = pages ?? cfg.pages;
   const out = new Map();
   const errors = [];

@@ -415,12 +415,20 @@ function clips(raw) {
       // decides whether a clip is used, this one becomes a factual claim.
       placeMinConfidence: num(s.placeMinConfidence, 7),
       visionMaxCandidates: Math.max(1, Math.round(num(s.visionMaxCandidates, 24))),
-      // HOW MANY PAGES OF EACH SEARCH TO READ. Four, up from the two that were
-      // hardcoded, because the pool ran dry: see the note in findClips. Each page is
-      // 24 results and costs one request, so this is the cheapest lever here - no
-      // vision calls, no editorial judgement, just reading further down a list the
-      // account was already searching.
-      pages: Math.max(1, Math.round(num(s.pages, 4))),
+      // HOW MANY PAGES OF EACH SEARCH TO READ, and it stays at TWO after being
+      // measured at four.
+      //
+      // Four was tried on the live box the moment it shipped, and the measurement
+      // came back backwards: two pages returned 1,504 candidates and four returned
+      // 498. More pages cannot find fewer clips, so that is Pexels rate limiting -
+      // 44 queries times 4 pages is 176 requests in one build, and findClips breaks
+      // out of a query's page loop on the first error.
+      //
+      // Which also settles the arithmetic nobody had done: 176 requests per build
+      // times four builds a day is 21,000 a month, against a free tier that does not
+      // carry it. Two pages across 44 queries is 88, and the pool it returns is 1,504
+      // candidates before any gate - the drought was never a shortage of raw results.
+      pages: Math.max(1, Math.round(num(s.pages, 2))),
       // How tall a frame the judge is sent, which is the largest single number
       // in this pipeline's bill. Measured rather than chosen: the 1200px poster
       // Pexels hands back is 1,008 image tokens and 640 is 287, across the cap
