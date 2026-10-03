@@ -137,7 +137,7 @@ time like every other kind (they never were), `rates()` also returns `likeRate` 
 `commentRate`, and `/report hooks` ranks hooks and formats by like rate with the views
 printed beside them.
 
-### 2.6 Three things that turned out to be broken
+### 2.6 Four things that turned out to be broken
 
 Found while building the above, each with its own commit message:
 
@@ -153,6 +153,15 @@ Found while building the above, each with its own commit message:
 3. **The same `Number(mid)` bug in the hook generator's price gate**, which would have
    refused every price comparison that was actually true. Both now go through one parser,
    `dailyCostOf`.
+4. **The dedupe key was the country, so eight Dolomites shots counted as one place.**
+   `postcard.js` keys its one-shot-per-place rule on `vision.place`, which its comment
+   calls a city and which is the country the judge named. Measured on one live search:
+   17 clips passed the destination gate, 14 could be labelled, and keyed by country that
+   is three places, exactly the minimum. Five consecutive dry runs failed at `only 1 of
+   20 could be placed` while sitting on a pool of fourteen labelled clips. Keyed on the
+   label it is six. Fixed in the gems reel and **deliberately left alone in the postcard
+   reel**, which is the control the comparison depends on, so it is worth a one-line
+   change there whenever the owner is happy to break the comparison.
 
 ### 2.7 What the dry run produces, and what it found
 
