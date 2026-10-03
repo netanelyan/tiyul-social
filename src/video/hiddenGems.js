@@ -67,8 +67,8 @@ import { placesNamedSince, gemHookHistory } from '../store.js';
  * an ffmpeg `-t` and a float with sixteen digits in it is a filter graph nobody can
  * read in a log.
  */
-export function fitHolds(count, cfg = postConfig().gems) {
-  const hook = cfg.hookSeconds;
+export function fitHolds(count, cfg = postConfig().gems, { hookSeconds = null, firstBonus = 0 } = {}) {
+  const hook = hookSeconds == null ? cfg.hookSeconds : hookSeconds;
   const { min: lo, max: hi } = cfg.holdSeconds;
   const target = cfg.targetSeconds;
   const mid = (target.min + target.max) / 2;
@@ -93,6 +93,14 @@ export function fitHolds(count, cfg = postConfig().gems) {
 
   const round = (x) => Math.round(x * 10) / 10;
   const holds = Array.from({ length: n }, () => round(hold));
+
+  // THE FIRST SHOT MAY NEED LONGER THAN THE REST, and the caller is the only thing
+  // that knows why. The retention timeline withholds the first place's NAME until the
+  // hook shrinks to a header, which leaves its label a sliver of its own shot unless
+  // that shot is lengthened by the difference. Passed in rather than computed here
+  // because this function is about fitting a length and that is about reading a word.
+  if (firstBonus > 0 && holds.length) holds[0] = round(Math.max(holds[0], firstBonus));
+
   return { holds, seconds: round(hook + holds.reduce((a, b) => a + b, 0)), dropped };
 }
 
