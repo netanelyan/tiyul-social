@@ -147,6 +147,55 @@ overlay to what they were, leaving the shorter length; `targetSeconds` back to 1
 returns that too; `git revert` of this branch leaves a working bot, because nothing was
 removed and every old path is still reachable.
 
+### 0.6 The dry run
+
+`npm run gems-lab -- --reels 5 --posts 0 --out output/examples/retention` built five,
+all of them:
+
+| | |
+|---|---|
+| length | 8.6s, inside the 7 to 9 target |
+| first cut | 1.6s, against a 2.5s ceiling |
+| holds | 2.8 + 2.1 + 2.1, the first longest so its label is readable after the shrink |
+| loop | matched on all five, distances 0.102 to 0.211 against a 0.22 ceiling |
+| question | on the last shot and at the end of the caption, same words |
+
+The five hooks, each with the open loop the shots could support:
+
+```
+3 יעדים שאנשים לא חושבים עליהם מספיק · האחרון כמעט לא מוכר   (lastnoone, surprise)
+3 מקומות לטיול הקרוב שלכם · השלישי הכי מפתיע                  (nthsurprise, surprise)
+3 יעדים ששווים את הטיסה · תחכו לאחרון                         (lastsurprise, surprise)
+3 יעדים שאנשים לא חושבים עליהם מספיק · תחכו עד הסוף           (waitend, no claim)
+3 מקומות לרשימה הבאה שלכם · תחכו עד הסוף                      (waitend, no claim)
+```
+
+Two of the five fell back to `תחכו עד הסוף`, and that is the gate working rather than
+failing: on those mornings every placed shot scored the same on every measure, so no
+comparative claim could be ordered and the only honest loop left is the one that
+promises an end and nothing about which item wins.
+
+### 0.7 What is still unknown
+
+**Whether it works.** Everything above is an argument from one post's analytics, and
+the goal the brief set, 60% watch ratio and 30% completion, is a target rather than a
+result. The measurement is the point of `/views ... watch= full=` and of `/report
+hooks`: five or six reels under the new timeline, read off the app, will say whether
+the hook staying on screen is what mattered or whether it was the length, and
+`openLoopId` is on the metrics row so the loops can be compared against each other.
+
+Two specific things to watch:
+
+- **The counter is a promise of its own.** `1/3` tells a viewer exactly how much is
+  left, which is the intent, and it also tells them when it is nearly over. If
+  completion rises and rewatches do not, that is the place to look.
+- **The `surprise` measure is a proxy and a weak one.** Not being in the owner's pinned
+  `clips.sites` list is the closest thing to "unfamiliar" the data holds, and it rated
+  the Dolomites as more surprising than Cinque Torri, which is the wrong way round for
+  a reader who knows the region. The strongest claims are the rarest by weight, and the
+  default loop makes no comparative claim at all, which is why this is a limitation
+  rather than a published falsehood.
+
 ---
 
 # The original build

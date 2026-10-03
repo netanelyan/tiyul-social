@@ -273,11 +273,18 @@ for (const e of examples) {
         `${e.hookWritten ? ', written by the model' : ', filled from a template'}`,
       '',
       ...(e.openLoop
-        ? [
-            `Open loop: **${e.openLoop}** (${e.openLoopId}), which orders the reel by \`${e.orderBy}\` so that`,
-            `**${e.payoff}** goes last${e.payoffMeasure != null ? ` at ${e.orderBy} ${e.payoffMeasure}` : ''}.`,
-            '',
-          ]
+        ? e.orderBy
+          ? [
+              `Open loop: **${e.openLoop}** (${e.openLoopId}), which orders the reel by \`${e.orderBy}\` so that`,
+              `**${e.payoff}** goes last${e.payoffMeasure != null ? ` at ${e.orderBy} ${e.payoffMeasure}` : ''}.`,
+              '',
+            ]
+          : [
+              `Open loop: **${e.openLoop}** (${e.openLoopId}), the one that makes no comparative claim.`,
+              `It is offered when nothing can order these shots - every one of them scored the same on`,
+              `every measure - so the reel promises only that there is an end, which the counter says too.`,
+              '',
+            ]
         : ['No open loop on this one.', '']),
       'Timeline:',
       '',
