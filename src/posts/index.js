@@ -4,7 +4,7 @@ import { captionFollow } from '../hashtags.js';
 import { targetsForKind } from '../publish/targets.js';
 import { overrideActive, overrideNotes } from '../override.js';
 import { cardOutputDir } from '../render/index.js';
-import { renderPost } from '../render/post.js';
+import { renderPost, fitsInstagram, IG_MAX } from '../render/post.js';
 import { notePostShape } from '../store.js';
 import { loadCity, verdictOf, firstClause } from './source.js';
 import { nextShape, canBuild, platformsFor } from './types.js';
@@ -305,7 +305,19 @@ export async function buildPost({
   // routed. The intersection is what actually gets rendered, and an empty one is a real
   // error rather than a silently empty post.
   const allowed = platformsFor(shape.type);
-  const sizes = sizesFor(targets).filter((s) => allowed.includes(s));
+  let sizes = sizesFor(targets).filter((s) => allowed.includes(s));
+
+  // ONE POST TOO LONG FOR A CAROUSEL LOSES ITS INSTAGRAM HALF, NOT BOTH HALVES.
+  //
+  // `platformsFor` settles the types that never fit. A verdict usually does, at seven
+  // to ten slides, and is eleven the day its page has more to quote - which fitTo only
+  // discovered mid-render, by throwing, and the TikTok copy that fitted perfectly was
+  // lost with it. It happened to the rotation's most heavily weighted type. Asked here
+  // instead, and said on the approval card rather than discovered in the log.
+  if (sizes.includes('instagram') && sizes.length > 1 && !fitsInstagram(post.slides)) {
+    sizes = sizes.filter((s) => s !== 'instagram');
+    post.instagramSkipped = `${post.slides.length} שקופיות, וקרוסלה באינסטגרם לוקחת ${IG_MAX}`;
+  }
   if (!sizes.length) {
     throw new Error(
       `a ${shape.type} post goes to ${allowed.join(' and ')}, and this build was routed to ${targets.join(' and ') || 'nowhere'}`
@@ -357,7 +369,16 @@ export async function buildPost({
     shape,
     city,
     rendered,
-    cand: toCandidate(post, { rendered, captions, targets, follow }),
+    // Only the destinations a set was drawn for. A list post, or a verdict that
+    // overflowed above, was still stamped with Instagram, and that stamp is what the
+    // publisher followed: with no Instagram slides it fell through to the single
+    // image path and would have posted the first TikTok slide as a photograph.
+    cand: toCandidate(post, {
+      rendered,
+      captions,
+      targets: targets.filter((t) => t !== 'instagram' || sizes.includes('instagram')),
+      follow,
+    }),
   };
 }
 

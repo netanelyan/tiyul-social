@@ -648,9 +648,9 @@ export function initRequest({ isClip, draft, title, description, privacy, videoU
   // reason a clip is a draft in the first place. So the caption this pipeline
   // wrote reaches the owner instead of the API, and the note below is what says
   // so on the publish message rather than leaving them to notice an empty
-  // caption box. The description is already sent as its own paste-ready message
-  // for the Instagram copy (see notify.descriptionToPaste), so the text is in
-  // the chat; what was missing was anything saying TikTok needs it too.
+  // caption box. bot.js sends the description as its own paste-ready message
+  // after every clip draft (see notify.descriptionToPaste), so the text is in
+  // the chat beside the note.
   if (isClip && draft) {
     return {
       path: '/v2/post/publish/inbox/video/init/',

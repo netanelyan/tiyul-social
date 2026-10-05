@@ -100,6 +100,26 @@ export const forgetTracks = () => {
 export const audioConfigured = () => tracks().length > 0;
 
 /**
+ * What a reel with no sound in the file means, for the approval card.
+ *
+ * Two different facts depending on where it is going, which is why it takes the
+ * destinations. TikTok gets an inbox draft and the sound is picked in the app,
+ * which is the plan rather than a fault. Instagram publishes the file as it is
+ * and a reel's audio cannot be changed afterwards, so the card says the reel
+ * will be silent while that can still be refused.
+ *
+ * One function for every reel format, so the five cards cannot disagree about it.
+ */
+export function silentSoundLine(targets = []) {
+  if (targets.includes('instagram')) {
+    return targets.includes('tiktok')
+      ? '🔇 ללא סאונד: באינסטגרם הרילס יעלה שקט, בטיקטוק בוחרים סאונד באפליקציה'
+      : '🔇 ללא סאונד: באינסטגרם הרילס יעלה שקט';
+  }
+  return '🎵 הסאונד נבחר באפליקציה';
+}
+
+/**
  * One track, avoiding the ones just used.
  *
  * `used` is the set of track names already spent, most often the other clips of

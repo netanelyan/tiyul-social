@@ -410,6 +410,50 @@ export function gemsCaption(cand, { rand = Math.random } = {}) {
 const fillPlaces = (line, places) => String(line || '').replace(/\{places\}/g, places);
 
 /**
+ * The description for a "before you book" reel.
+ *
+ * guideCaption's shape with the question replaced, and the replacement is the one
+ * thing this account's own numbers said about captions: open questions ("3 ימים
+ * מספיקים?", "שווה את הטיסה?", "מי היה שם?") got no replies on any post. This one
+ * can be answered in one word, about a decision the reel just informed, so the
+ * cheapest comment anybody can leave is also an honest one.
+ */
+export function beforeCaption({ dest = null, siteSlug = null, follow } = {}, opts = {}) {
+  const he = dest?.he || null;
+  const parts = [
+    he ? `📍 ${he}${dest.country && dest.country !== he ? `, ${dest.country}` : ''}` : null,
+    he ? `אחרי זה, הייתם מזמינים ל${he}? כן או לא 👇` : null,
+    captionCta({ ...opts, siteSlug, destHe: he }),
+    followLine(follow, opts),
+  ].filter(Boolean);
+  const tags = planHashtags({ dest }, opts).join(' ');
+  return parts.length ? `${parts.join('\n\n')}\n\n${tags}` : tags;
+}
+
+/**
+ * The description for a narrated guide.
+ *
+ * clipCaption's shape, a pin, a question, the ask, the reason to follow and the
+ * tags, with the place taken from the destination rather than from the vision
+ * judge. A guide is built from one of the site's pages, so it knows its
+ * destination the way a plan does and has no frame for the judge to read.
+ *
+ * The ask is the bio wording, never the comment one, because the same text is
+ * pasted into TikTok, where a comment cannot become a link.
+ */
+export function guideCaption({ dest = null, siteSlug = null, follow } = {}, opts = {}) {
+  const he = dest?.he || null;
+  const parts = [
+    he ? `📍 ${he}${dest.country && dest.country !== he ? `, ${dest.country}` : ''}` : null,
+    captionQuestion(opts),
+    captionCta({ ...opts, siteSlug, destHe: he }),
+    followLine(follow, opts),
+  ].filter(Boolean);
+  const tags = planHashtags({ dest }, opts).join(' ');
+  return parts.length ? `${parts.join('\n\n')}\n\n${tags}` : tags;
+}
+
+/**
  * A plan's country, as a hashtag.
  *
  * The third source for the same slot, and the simplest of the three: a deck

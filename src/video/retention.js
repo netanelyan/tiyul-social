@@ -417,6 +417,13 @@ export function retentionCardHtml({ card, width, height, spot = null }) {
   const counter = Math.round(width * 0.036);
   const label = Math.round(width * 0.042);
   const ask = Math.round(width * 0.038);
+  // THE FACT, for the reel whose shots each carry a sentence rather than a place name
+  // (src/video/before.js). Bigger than a label because it IS the content, and in the
+  // middle band rather than the lower one: a fact runs to two or three lines, and at
+  // 66% it would collide with the ask on the last shot. The kicker above it is the
+  // two-word title that makes the line scannable before it is read.
+  const fact = Math.round(width * 0.052);
+  const kicker = Math.round(width * 0.034);
 
   // How much help the footage needs, on the postcard's own curve. Deliberately
   // generous because a moving background changes under every word, and an unmeasured
@@ -426,6 +433,14 @@ export function retentionCardHtml({ card, width, height, spot = null }) {
 
   const shadow = (px) => `text-shadow: 0 2px 6px rgba(0,0,0,.55), 0 0 ${Math.round(px * 0.7)}px rgba(0,0,0,.4);`;
   const el = (cls, text, style) => (text ? `<div class="${cls}" style="${style}">${escapeHtml(text)}</div>` : '');
+  // Each word kept whole. A browser may break a line at a hyphen, and the page writes
+  // its ranges with one, so "ספטמבר-נובמבר" came out as "ספטמבר-" on one line and
+  // "נובמבר" on the next: a month range read as two unrelated words.
+  const unbroken = (text) =>
+    escapeHtml(text)
+      .split(/(\s+)/)
+      .map((w) => (/^\s*$/.test(w) ? w : `<span style="white-space:nowrap">${w}</span>`))
+      .join('');
 
   return `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><style>
 @font-face { font-family: 'Assistant'; src: url(${assistantDataUri()}) format('truetype'); font-weight: 200 800; font-display: block; }
@@ -459,6 +474,15 @@ ${a ? `.liftLow { position:absolute; inset-inline:0; bottom:0; height:${Math.rou
 .counter { top:${Math.round(height * 0.16 + header * 1.25 * 2 + header * 0.35)}px; font-weight:800;
            font-size:${counter}px; letter-spacing:.02em; ${shadow(counter)} }
 .label { top:${Math.round(height * 0.66)}px; font-weight:700; font-size:${label}px; line-height:1.25; ${shadow(label)} }
+/* The fact band, centred on the frame's middle third. Always lifted, unlike the other
+   bands: a sentence of fifty characters over moving footage is read word by word, and
+   a background that changes under one word is enough to lose it. */
+.liftMid { position:absolute; inset-inline:0; top:${Math.round(height * 0.3)}px; height:${Math.round(height * 0.3)}px;
+           background:linear-gradient(180deg, rgba(6,8,12,0) 0%, rgba(6,8,12,${Math.max(a, 0.3).toFixed(2)}) 28%,
+           rgba(6,8,12,${Math.max(a, 0.3).toFixed(2)}) 72%, rgba(6,8,12,0) 100%); }
+.mid { top:${Math.round(height * 0.37)}px; }
+.kicker { font-weight:700; font-size:${kicker}px; line-height:1.25; opacity:.9; margin-bottom:${Math.round(kicker * 0.35)}px; ${shadow(kicker)} }
+.fact { font-weight:800; font-size:${fact}px; line-height:1.24; ${shadow(fact)} }
 .ask { top:${Math.round(height * 0.74)}px; font-weight:800; font-size:${ask}px; line-height:1.25; ${shadow(ask)} }
 </style></head><body>
 ${a && (card.big || card.headerHe || card.counterHe || card.legacyLineHe) ? '<div class="lift"></div>' : ''}
@@ -469,6 +493,7 @@ ${el('block loop', card.big ? card.openLoopHe : null, '')}
 ${el('block header', card.headerHe, '')}
 ${el('block counter', card.counterHe, '')}
 ${el('block label', card.labelHe, '')}
+${card.factHe ? `<div class="liftMid"></div><div class="block mid">${el('kicker', card.kickerHe, '')}<div class="fact">${unbroken(card.factHe)}</div></div>` : ''}
 ${el('block ask', card.questionHe, '')}
 </body></html>`;
 }

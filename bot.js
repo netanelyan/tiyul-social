@@ -1289,6 +1289,11 @@ async function publishNext(item = null) {
       // make and the message says so with the mp4's own URL on it rather than
       // listing TikTok alone and reading as finished. See targets.js.
       const manual = manualForKind(cand.kind);
+      // A video in TikTok's inbox arrived WITHOUT its description: that endpoint
+      // takes none (see initRequest in src/publish/tiktok.js), so the caption is
+      // pasted in the app, where the sound is picked. This used to ride on the
+      // Instagram hand-off's paste message, and it has to outlive it.
+      const paste = manual.length > 0 || (cand.kind === 'clip' && drafted.includes('tiktok'));
       await notify.send(
         bot.telegram,
         staging,
@@ -1299,21 +1304,22 @@ async function publishNext(item = null) {
           drafted,
           manual,
           manualUrl: manual.length ? clipPublicUrl(cand) : null,
+          paste,
         })
       );
 
       // And then the description, alone, in a message of its own.
       //
-      // Only when there is something to post by hand. Telegram's copy takes a
+      // Only when there is something to finish by hand. Telegram's copy takes a
       // whole message, so this one holds the caption and nothing else: a label
       // or an emoji in front of it is a character that has to be deleted in the
-      // Instagram composer every time, and the time it is not deleted is a post
-      // that goes out with a glyph in front of its first line.
+      // composer every time, and the time it is not deleted is a post that goes
+      // out with a glyph in front of its first line.
       //
       // Second rather than first, because the line above is what says whether
       // anything needs doing at all, and it is the one that should be readable
       // at a glance in a chat full of them.
-      if (manual.length) {
+      if (paste) {
         const paste = notify.descriptionToPaste(cand);
         if (paste) await notify.send(bot.telegram, staging, paste);
       }
@@ -2292,6 +2298,19 @@ bot.command('gems', async (ctx) => {
 });
 
 /**
+ * A "before you book" reel, now. `/before` picks the destination; `/before רומא` names one.
+ *
+ * The format the account's own numbers asked for: the Santorini hook that reached four
+ * times the average, paid off with a fact from the page on every cut. See
+ * src/video/before.js.
+ */
+bot.command('before', async (ctx) => {
+  const asked = (ctx.message.text || '').replace(/^\/before(@\S+)?\s*/, '').trim() || null;
+  await ctx.reply(`⏳ בונה לפני שמזמינים${asked ? ` · ${asked}` : ''}...`);
+  detach('לפני שמזמינים', () => runOverridden('/before', () => suggestBefore(asked, ctx.chat.id)), ctx.chat.id);
+});
+
+/**
  * A narrated guide video, now.
  *
  * `/guide` draws the next destination from the rotation; `/guide פראג` names one.
@@ -3198,6 +3217,49 @@ const suggestGems = billed('clip', async function suggestGemsJob(chatId = stagin
   return cand;
 });
 
+/**
+ * One "before you book" reel, staged for approval. See src/video/before.js.
+ *
+ * `asked` names the destination; without it the rotation's own pick. A destination
+ * whose page gives too few facts, or whose footage the judge would not place, is
+ * passed over for the next one: the first costs one page load, the second a search,
+ * and three tries is enough to say the day had nothing rather than to keep paying.
+ */
+const suggestBefore = billed('clip', async function suggestBeforeJob(asked = null, chatId = staging) {
+  const { buildBeforeCandidate, beforeApprovalMessage } = await import('./src/video/before.js');
+  const { resolveDestination, pickDestination } = await import('./src/plan/write.js');
+
+  const recent = [...store.recentPublished().slice(0, 12).map((p) => p.place), ...store.recentSuggested()];
+  const found = asked ? await resolveDestination(asked, { recent }) : null;
+  if (asked && !found) {
+    await notify.send(bot.telegram, chatId, `❌ לא הצלחתי להבין איזה יעד זה: ${asked}`).catch(() => {});
+    return null;
+  }
+
+  const tried = [];
+  const why = [];
+  for (let i = 0; i < (found ? 1 : 3); i++) {
+    const dest = found?.dest || pickDestination([...recent, ...tried]);
+    if (!dest?.siteSlug) {
+      why.push(`${dest?.he || '?'}: no page on the site`);
+      if (dest?.he) tried.push(dest.he);
+      continue;
+    }
+    tried.push(dest.he);
+    try {
+      const cand = await buildBeforeCandidate(dest, { seen: clipFootageSeen() });
+      spendClipFootage([cand]);
+      store.noteSuggestedPlace(dest.he);
+      await stage(cand);
+      await notify.send(bot.telegram, chatId, beforeApprovalMessage(cand)).catch(() => {});
+      return cand;
+    } catch (e) {
+      why.push(`${dest.he}: ${e.message}`);
+    }
+  }
+  throw new Error(`no destination could be built - ${why.join('; ')}`);
+});
+
 /** One postcard reel, staged for approval. Its places are whatever the judge could name. */
 const suggestPostcard = billed('clip', async function suggestPostcardJob(chatId = staging) {
   const { buildPostcardCandidate, postcardApprovalMessage } = await import('./src/video/postcard.js');
@@ -3306,6 +3368,8 @@ function buildFormat(id) {
       return suggestGems();
     case 'postcard':
       return suggestPostcard();
+    case 'before_video':
+      return suggestBefore();
     case 'guide':
       return suggestGuide();
     case 'clip':
@@ -3314,7 +3378,7 @@ function buildFormat(id) {
       return suggestPost(null, {});
     default:
       return Promise.reject(
-        new Error(`formats.mix names "${id}", which nothing builds - known: hidden_gems_video, postcard, guide, clip, post`)
+        new Error(`formats.mix names "${id}", which nothing builds - known: hidden_gems_video, postcard, before_video, guide, clip, post`)
       );
   }
 }
@@ -3749,6 +3813,9 @@ bot.command('help', (ctx) =>
       '/gems nohook - בלי קריאה למודל, רק התבניות מהקונפיג',
       '   הפתיח נבחר מתוך 10 מועמדים, מדורגים לפי ספציפיות, סקרנות ויושר',
       '   מקום שהוזכר בפוסט בשבועיים האחרונים לא חוזר',
+      '/before - לפני שמזמינים: רילס על יעד אחד, עובדה מהעמוד על כל שוט',
+      '/before רומא - ליעד מסוים',
+      '   מחיר ליום, מתי לטוס, מה להזמין מראש ומה פחות טוב, 11-16 שניות',
       '/formats - התמהיל: מה הסבב בונה ובאיזה יחס, ומה היה לאחרונה',
       '/reel <מספר> - מקודד פוסט ממתין לסרטון אנכי אחד, בלי לשנות את הקרוסלה',
       '/clear_pending',
@@ -4495,18 +4562,29 @@ async function main() {
   // Where the sound comes from.
   //
   // Only a warning when the config ASKS for a bed and there is nothing to play.
-  // With the bed off, which is the default, a silent render is the intended
-  // workflow: nothing publishes a reel, so the sound is chosen by hand in each
-  // app and a warning against the plan is noise. See clips.audio in
-  // post-config.json for what would bring the bed back.
-  if (CLIPS_PER_DAY > 0) {
+  // With the bed off, which is the default, every reel is rendered silent and
+  // the sound is chosen by hand in each app. If Instagram is ever made a clip
+  // target, the reel there publishes as it is, and the line below and each
+  // approval card say so. See clips.audio in post-config.json.
+  //
+  // Gated on whether reels are BUILT, not on CLIPS_PER_DAY alone. That counter
+  // is the legacy path and sits at 0 on the box while the rotation builds reels
+  // all day, so both checks below stayed silent on the one install they were for.
+  const { postConfig: bootConfig } = await import('./src/postConfig.js');
+  const { formats } = bootConfig();
+  const reelsBuilt =
+    CLIPS_PER_DAY > 0 || Boolean(formats.rotation?.on && formats.mix.some((f) => f.kind === 'clip' && f.weight > 0));
+  if (reelsBuilt) {
     const { tracks, audioDir } = await import('./src/video/tracks.js');
-    const { postConfig } = await import('./src/postConfig.js');
-    const wantsAudio = postConfig().clips.audio.on;
+    const wantsAudio = bootConfig().clips.audio.on;
     try {
       const found = tracks();
       if (!wantsAudio) {
-        console.log('   audio: no bed mixed in - the sound is chosen by hand in each app');
+        console.log(
+          targetsForKind('clip').includes('instagram')
+            ? '   audio: no bed mixed in - Instagram reels publish silent, TikTok drafts get a sound in the app'
+            : '   audio: no bed mixed in - the sound is chosen by hand in each app'
+        );
       } else if (found.length) {
         console.log(`   audio: ${found.length} track(s) declared in ${audioDir()}`);
       } else {
@@ -4522,7 +4600,7 @@ async function main() {
     }
   }
 
-  if (CLIPS_PER_DAY > 0) {
+  if (reelsBuilt) {
     const { ffmpegReady } = await import('./src/video/overlay.js');
     const ff = await ffmpegReady();
     if (ff.ok) {

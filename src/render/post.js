@@ -38,6 +38,20 @@ export const postSlideStem = (id, size, index) => `post-${id}-${size}-${String(i
 /** Instagram publishes at most ten images in a carousel, and rejects the eleventh. */
 export const IG_MAX = 10;
 
+// The cover, the slides, and the one closing slide every post carries.
+const IG_BUDGET = IG_MAX - 1;
+
+/**
+ * Whether fitTo can make these slides an Instagram carousel, asked without throwing.
+ *
+ * For the one post of a type that USUALLY fits and this time does not: a verdict is
+ * seven to ten slides, and the day a page has more to quote it is eleven. Which slides
+ * a post has is only known once it is built, so this is asked by the builder before it
+ * renders, and the answer narrows that one post to TikTok instead of losing it on both.
+ */
+export const fitsInstagram = (slides = []) =>
+  slides.length <= IG_BUDGET || slides.filter((s) => !s.optional).length <= IG_BUDGET;
+
 /**
  * The slides that fit the platform, and what it costs to make them fit.
  *
@@ -65,12 +79,10 @@ export const IG_MAX = 10;
  */
 export function fitTo(slides, size, type = null) {
   if (size !== 'instagram') return slides;
-  // The cover, the slides, and the one closing slide every post carries.
-  const budget = IG_MAX - 1;
-  if (slides.length <= budget) return slides;
+  if (slides.length <= IG_BUDGET) return slides;
 
   const trimmed = slides.filter((s) => !s.optional);
-  if (trimmed.length <= budget) return trimmed;
+  if (trimmed.length <= IG_BUDGET) return trimmed;
 
   throw new Error(
     `a ${type || 'post'} is ${slides.length} slides and an Instagram carousel takes ${IG_MAX} - ` +

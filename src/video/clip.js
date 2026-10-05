@@ -6,7 +6,7 @@ import { burnClip, burnCuts, burnMontage, download, clipOutputDir, ffmpegReady }
 import { clipHook, postConfig } from '../postConfig.js';
 import { writeHook, hasApiKey, namesOtherCountry, trailsOff } from './hooks.js';
 import { pickCuts, cutLabel, cutsReason, writeCutsHook, beatCountMismatch, pickMontage, montageReason } from './cuts.js';
-import { pickTrack, audioConfigured } from './tracks.js';
+import { pickTrack, audioConfigured, silentSoundLine } from './tracks.js';
 import { assertNoUrl } from '../format.js';
 import { clipCaption, captionFollow, clipPlaceLabel } from '../hashtags.js';
 import { targetsForKind } from '../publish/targets.js';
@@ -939,12 +939,11 @@ export async function buildClips({ count = 5, seen = new Set(), outDir = clipOut
  * unless you happen to have the volume up, and which one you are looking at
  * changes what you have to do next.
  *
- * NO TRACK IS THE NORMAL CASE AND NOT A WARNING. It said "⚠️ אין פסקול - יעלה
- * אילם לרילס", which was true while a clip published to Instagram unattended:
- * a reel's audio is fixed at upload, so a silent file meant a permanently
- * silent post. Nothing publishes a reel now (see targets.js), so the file
- * being silent is the plan rather than a fault, and a warning against the
- * intended workflow is noise that teaches you to skim the card.
+ * NO TRACK MEANS SOMETHING DIFFERENT PER DESTINATION. Where the sound is picked
+ * in the app, which is TikTok's draft and the Instagram copy you post yourself,
+ * a silent file is the plan. Where this program publishes the reel, the file's
+ * silence is the post's silence for good. silentSoundLine in ./tracks.js says
+ * which, from the candidate's own destinations, for every reel format.
  */
 /**
  * The closing line, for an approval card.
@@ -974,7 +973,7 @@ export function followFrameLine(cand) {
 
 export function audioLine(cand) {
   const a = cand.clip?.audio;
-  if (!a) return '🎵 הסאונד נבחר באפליקציה';
+  if (!a) return silentSoundLine(cand.publishTargets || []);
   // TWO SHAPES OF THE SAME FIELD, and the boolean one is not a mistake to fix at the
   // writer's end. The three shapes here record the whole track entry, because the
   // card has to be able to state the licence of anything it mixed in. The postcard
@@ -1148,7 +1147,7 @@ export function clipApprovalMessage(cand) {
 export function multiShotApprovalMessage(cand) {
   const c = cand.clip || {};
   const names = c.places || c.postcardPlaces || (cand.place ? String(cand.place).split(' · ') : []);
-  const shapeHe = { postcard: 'גלויות', hidden_gems_video: 'ג׳מים', narrated: 'מדריך' }[c.shape] || c.shape;
+  const shapeHe = { postcard: 'גלויות', hidden_gems_video: 'ג׳מים', narrated: 'מדריך', before: 'לפני שמזמינים' }[c.shape] || c.shape;
   return [
     `🎬 ${shapeHe} · ${c.seconds}ש׳ · ${names.length ? `${names.length} מקומות · ` : ''}${c.width}x${c.height}`,
     '',

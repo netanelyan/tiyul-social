@@ -225,6 +225,57 @@ every change here so far is that one number at a time picks the wrong winner.
 `/views 1 559 21 watch=3.1 full=5.03` types a post's numbers in. The video's own length
 comes off the published ledger, so the watch ratio needs no denominator typed.
 
+### The before-you-book reel
+
+The TikTok page as a whole, read off the app on 5 Oct 2026:
+
+| | posts | average views | likes per view |
+|---|---:|---:|---:|
+| carousels | 14 | 605 | 1.4% |
+| reels | 10 | 286 | 2.8% |
+| לפני שאתם מזמינים לסנטוריני, שתי דקות | carousel | **2,051** | 0.4% |
+| the three counted reels, 1 to 4 Oct | reels | 476 to 615 | **3.3%** |
+
+**The reach and the likes came from different posts.** The Santorini hook names a
+place people are deciding on and promises the decision, and reached four times the
+average; its slides did not pay that off. The counted reels are a pleasure to watch and
+earned the likes; "3 places nobody thinks about" is a mood rather than a decision, and
+reached half as far. Nothing had done both.
+
+`src/video/before.js` is the post that does: the Santorini hook, word for word, over
+moving footage of that destination, then a cut every few seconds with one fact from the
+site's own page on it.
+
+```
+0.0s  לפני שאתם מזמינים לרומא          over the strongest shot of Rome
+      4 דברים ששווה לדעת
+1.6s  first cut
+3.2s  the hook shrinks to a header, the counter starts
+      1/4  כמה זה עולה     יום טיפוסי: כ-141 יורו לאדם, בלי לינה
+      2/4  מתי לטוס        מרץ-מאי, ספטמבר-נובמבר (הקיץ חם ועמוס)
+      3/4  מה להזמין מראש  כרטיס משולב לקולוסיאום ולפורום
+      4/4  מה פחות טוב     הקיץ לוהט וצפוף מאוד
+end   שמרו לפני שמזמינים 🔖
+```
+
+- **Every fact is the page's.** The cost and the season are fields; the booking note and
+  the drawback are verbatim quotes, checked by `line` in `src/posts/voice.js`. Nothing
+  here needs a stock clip to stand behind it, which is why this is not the advice format
+  BRIEF.md parked.
+- **The footage is the place the hook names.** The library is searched by the page's own
+  name and landmark, and a clip the judge places in another country is dropped. A page
+  that covers two places ("Santorini & Mykonos") is searched by the first name only, and
+  a booking note about the other place is not used.
+- **Each fact is held for as long as it takes to read**, 2 to 3.6 seconds by length, so a
+  reel runs 11 to 16.5 seconds. Past that the beat before the drawback goes.
+- **It ends on a save prompt**, because a reel that is a tool gets saved, and the caption
+  asks a yes-or-no question, because open questions got no replies on any post.
+- Kosher is never a beat, by the owner's rule: on this reel every beat is a whole screen.
+
+51 of the 61 destinations with a page give at least three facts. `/before` builds one,
+`/before רומא` names the place, `npm run before-lab -- rome paris` builds them locally
+without touching the store, and `before_video` is in `formats.mix` at weight 30.
+
 ### The five post types
 
 Each is built from a tiyulplus.com destination page, so every fact on it is ours
@@ -1042,6 +1093,34 @@ to take by hand, and the mp4 is rendered and hosted already. It is recorded with
 every destination false, which is the honest row (this program published it
 nowhere), and what the record buys is that the footage is spent and the clip is
 never offered again.
+
+### Why the Instagram reels are still yours to post
+
+On 5 Oct 2026 the account's own numbers came off the Graph API: 6 followers, 88
+posts, one of them a reel. Every photograph and carousel reached 1 to 9 accounts;
+the reel reached 85. A reel is the one format Instagram shows to people who do not
+already follow the account, so automatic reel publishing was built that day, and
+then set aside the same day by the owner's choice: with no licensed track declared
+every reel would have gone up silent, and a reel's audio cannot be changed after
+posting. The owner posts them by hand with a sound picked in the app. Switching it
+back is two lines in `src/publish/targets.js`, written out beside the clip entry.
+
+What stayed from that work:
+
+- **Every reel format has a description to paste.** The postcard reel and the
+  narrated guide never had one, because TikTok's inbox takes none, so their hand-off
+  arrived with nothing under it. TikTok's video drafts arrive without a description
+  too, and the paste message now says so rather than riding on the hand-off alone.
+- **Instagram's numbers are read for the first time.** `src/metrics/instagram.js`
+  chose its host from `IG_AUTH_MODE`, defaulting to Facebook, while the publisher
+  reads `IG_AUTH`, defaulting to Instagram. Every nightly pass since it shipped had
+  failed with "Cannot parse access token". It now uses the publisher's own host and
+  token, and asks a feed post for the followers it brought.
+- **A slideshow with no Instagram set no longer reaches Instagram.** A list post is
+  drawn for TikTok alone and was still stamped with both, so its Instagram half would
+  have posted the first 9:16 slide as a photograph. Two were in the live queue.
+- **A verdict too long for a carousel keeps its TikTok half.** Eleven slides used to
+  fail the whole build; now that one post skips Instagram and the card says why.
 
 ### The music bed, and why it is off
 

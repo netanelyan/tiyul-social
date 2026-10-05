@@ -35,7 +35,11 @@ export async function collect({ days = 30, limit = 40 } = {}) {
     const rows = metricsStore.rowsToRefresh('instagram', { days }).slice(0, limit);
     out.instagram.asked = rows.length;
     for (const row of rows) {
-      const stats = await igMetrics.statsFor(row.media.instagram);
+      // A clip is a reel on Instagram, and a reel is asked different questions.
+      const stats = await igMetrics.statsFor(row.media.instagram, {
+        reel: row.shape?.kind === 'clip',
+        seconds: row.shape?.seconds ?? null,
+      });
       if (!stats) continue;
       metricsStore.noteStats(row.id, 'instagram', stats);
       out.instagram.got++;

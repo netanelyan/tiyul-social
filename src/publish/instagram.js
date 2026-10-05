@@ -494,6 +494,21 @@ export async function publishInstagram(cand) {
   // A deck arrives here with its Instagram-sized slides already rendered, and
   // takes the carousel path. Everything else is one image, as before.
   const deckImages = cand.deck?.urls?.instagram || [];
+
+  // A SLIDESHOW WITH NO INSTAGRAM SET IS NOT A SINGLE IMAGE.
+  //
+  // A list post is twenty slides and is drawn for TikTok alone, but it was still
+  // stamped with both destinations, so its Instagram half reached the line below
+  // and would have published the first TikTok slide, at 9:16, as a photograph.
+  // Two of them were sitting in the queue owing Instagram when this was written.
+  // `config` is the step that drops the destination for this one post without
+  // counting against Instagram's health; see the catch in bot.js.
+  if (['deck', 'plan', 'post'].includes(cand.kind) && deckImages.length < 2) {
+    throw new InstagramError('this slideshow has no Instagram set - its type is drawn for TikTok only', {
+      step: 'config',
+    });
+  }
+
   if (deckImages.length > 1) {
     if (deckImages.some((u) => !u?.startsWith('https://'))) {
       throw new InstagramError('every slide URL must be https', { step: 'config' });

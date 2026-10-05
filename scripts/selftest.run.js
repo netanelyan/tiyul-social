@@ -2111,6 +2111,21 @@ group('a publish that reports failure on a post that is live');
       publishInstagram(clip).catch((e) => e)
     );
     ok('a clip with no public URL is refused, not attempted', noHost instanceof Error);
+
+    // A SLIDESHOW WITH NO INSTAGRAM SET. A list post is drawn for TikTok alone
+    // and was still stamped with Instagram, so it reached the single image path
+    // and would have posted its first 9:16 slide as a photograph. Two were in the
+    // live queue when this was written.
+    params = null;
+    const tiktokOnly = await publishInstagram({
+      kind: 'post',
+      deck: { urls: { tiktok: ['https://x/c/s1.jpg', 'https://x/c/s2.jpg'], instagram: [] } },
+      card: { url: 'https://x/c/s1.jpg' },
+      instagramCaption: 'x',
+    }).catch((e) => e);
+    ok('a slideshow with no Instagram set is refused', tiktokOnly instanceof Error);
+    eq('as a card-level problem, so Instagram keeps its health', tiktokOnly?.step, 'config');
+    eq('and nothing was sent to Instagram', params, null);
   }
 
   globalThis.fetch = realFetch;
@@ -4261,17 +4276,10 @@ group('clip candidate - the fields the publish path reads');
 
   // A clip is PUBLISHED to TikTok alone, and belongs on Instagram anyway.
   //
-  // Both halves matter and they are separate assertions on purpose.
-  //
-  // The editorial rule is unchanged: a clip should reach Instagram, because
-  // every other Instagram post this account makes is a photograph or a carousel
-  // and those are the formats with the least reach to non-followers. What
-  // changed is that this program cannot deliver it. The owner picks the sound
-  // in each app by hand; TikTok supports that through MEDIA_UPLOAD, and
-  // Instagram's Content Publishing API has no draft state, no scheduling and no
-  // hand-off, so its only options are "publish now" or "do not call". A reel's
-  // audio cannot be changed after posting, so publishing now means publishing
-  // silent for ever.
+  // Both halves matter and they are separate assertions on purpose. A reel's
+  // audio cannot be changed after posting and the owner picks the sound in the
+  // app, so the Instagram copy is a hand-off. Automatic publishing was built on
+  // 5 Oct 2026 and set aside the same day by the owner's choice; see targets.js.
   const { manualForKind } = await import('../src/publish/targets.js');
   eq('a clip publishes to TikTok alone', allowedForKind('clip').join(','), 'tiktok');
   eq('and Instagram is still where it belongs, by hand', manualForKind('clip').join(','), 'instagram');
@@ -4290,6 +4298,52 @@ group('clip candidate - the fields the publish path reads');
   ok('the rule does not depend on configuration', allowedForKind('clip').length === 1);
   ok('targetsForKind is a subset of what is allowed',
     targetsForKind('clip').every((t) => allowedForKind('clip').includes(t)));
+}
+
+/* -------------------------------------------------------------------------- */
+group('a reel: its sound line, and a caption for every format');
+
+{
+  const { silentSoundLine } = await import('../src/video/tracks.js');
+  const { hasLongDash } = await import('../src/dashes.js');
+  const { audioLine } = await import('../src/video/clip.js');
+
+  // A silent file is two different facts. On TikTok the sound is picked in the
+  // app; on Instagram the reel publishes as it is and stays that way, so the
+  // card has to say so while the reel can still be refused.
+  ok('to Instagram, the card says the reel goes up silent',
+    silentSoundLine(['instagram', 'tiktok']).includes('באינסטגרם הרילס יעלה שקט'));
+  ok('and that TikTok still gets its sound in the app',
+    silentSoundLine(['instagram', 'tiktok']).includes('בטיקטוק'));
+  ok('to Instagram alone, TikTok is not mentioned', !silentSoundLine(['instagram']).includes('טיקטוק'));
+  eq('to TikTok alone, it is the old line', silentSoundLine(['tiktok']), '🎵 הסאונד נבחר באפליקציה');
+  ok('every stock clip card reads the same line',
+    audioLine({ publishTargets: ['instagram', 'tiktok'], clip: { audio: null } }).includes('יעלה שקט'));
+  ok('and a card with a track still names the track',
+    audioLine({ publishTargets: ['instagram'], clip: { audio: true, track: 'calm.mp3' } }).includes('calm.mp3'));
+  ok('no line carries a long dash', [silentSoundLine(['instagram', 'tiktok']), silentSoundLine(['instagram'])].every((s) => !hasLongDash(s)));
+}
+
+{
+  // The postcard and the guide never had a description, because TikTok's inbox
+  // takes none. Instagram publishes the caption a container is created with, so
+  // both formats needed one before they could go there.
+  const { guideCaption, gemsCaption } = await import('../src/hashtags.js');
+  const { hasLongDash } = await import('../src/dashes.js');
+  const dest = { he: 'פראג', country: 'צ׳כיה' };
+  const guide = guideCaption({ dest, siteSlug: 'prague', follow: 'עוד יעד מחר' }, { rand: () => 0 });
+  ok('a guide caption opens on the place', guide.startsWith('📍 פראג, צ׳כיה'), guide.split('\n')[0]);
+  ok('it carries the reason to follow', guide.includes('עוד יעד מחר'));
+  ok('and the destination as a tag', guide.includes('#פראג'));
+  ok('and no address', !URL_LIKE.test(guide));
+  ok('and no long dash', !hasLongDash(guide));
+
+  const postcard = gemsCaption(
+    { kind: 'clip', clip: { places: ['מטאורה, יוון', 'לאוטרברונן, שווייץ'], questionHe: 'לאן קודם? 👇' } },
+    { rand: () => 0 }
+  );
+  ok('a postcard caption names its places', postcard.includes('מטאורה, יוון · לאוטרברונן, שווייץ'));
+  ok('and asks the question on its last shot', postcard.includes('לאן קודם? 👇'));
 }
 
 /* -------------------------------------------------------------------------- */
@@ -8619,8 +8673,15 @@ group('the format rotation - half the output, and never three in a row');
     hist = [f.id, ...hist].slice(0, 12);
   }
   eq('no format ever runs three deep', longest, 2);
+  // It was "about half" until 5 Oct 2026, when the before-you-book reel joined the mix at
+  // weight 30 and took its share from every format rather than from one. What still
+  // holds is that the gems reel is the biggest single format and that video is most of
+  // the output, which is the instruction the half was a number for.
   const realized = tally.hidden_gems_video / 4000;
-  ok('the reel still comes out as about half', realized > 0.38 && realized < 0.5, realized.toFixed(3));
+  ok('the gems reel is still the biggest single format',
+    Object.entries(tally).every(([id, n]) => id === 'hidden_gems_video' || n < tally.hidden_gems_video), realized.toFixed(3));
+  const video = mixShares().filter((s) => s.kind === 'clip').reduce((n, s) => n + (tally[s.id] || 0), 0) / 4000;
+  ok('and video is still most of the output', video > 0.7, video.toFixed(3));
   ok('and every live format comes up', Object.keys(tally).length === mixShares().length, Object.keys(tally).join(','));
 
   // A named format bypasses the rotation, like /make does one level down.
@@ -9001,6 +9062,199 @@ group('the judging budget is spread across queries, not spent inside one');
   eq('the best clip overall still leads', queue[0].id, 'greece0');
   eq('one query in is a no-op, which is what the montage shape passes', interleaveByQuery(ranked.filter((c) => c.query === 'italy')).length, 10);
   eq('and an empty pool stays empty', interleaveByQuery([]).length, 0);
+}
+
+/* -------------------------------------------------------------------------- */
+group('Instagram numbers - read with the publisher\'s token, and a reel says how long it held');
+
+{
+  // EVERY NIGHTLY PASS FAILED, from the day it shipped. This file chose its host
+  // from IG_AUTH_MODE defaulting to `facebook` while the publisher reads IG_AUTH
+  // defaulting to `instagram`; with neither set the token went to the wrong host and
+  // Meta answered "Cannot parse access token". The log on the box: Instagram 0 of 10.
+  const { statsFor } = await import('../src/metrics/instagram.js');
+  const { rates } = await import('../src/metrics/store.js');
+  const realFetch = globalThis.fetch;
+  const asked = [];
+  globalThis.fetch = async (url) => {
+    const u = new URL(String(url));
+    asked.push(u);
+    const names = (u.searchParams.get('metric') || '').split(',');
+    const value = { views: 99, reach: 85, saved: 0, shares: 1, likes: 2, comments: 0, ig_reels_avg_watch_time: 2813, follows: 1 };
+    return { ok: true, json: async () => ({ data: names.map((name) => ({ name, values: [{ value: value[name] }] })) }) };
+  };
+  try {
+    const reel = await withEnv({ IG_AUTH: undefined, IG_ACCESS_TOKEN: 'IGAAtest', IG_USER_ID: '1' }, () =>
+      statsFor('media-1', { reel: true, seconds: 8.6 })
+    );
+    eq('it asks the host the publisher uses', asked[0]?.host, 'graph.instagram.com');
+    eq('with the publisher\'s token', asked[0]?.searchParams.get('access_token'), 'IGAAtest');
+    ok('a reel is asked for its watch time', asked[0]?.searchParams.get('metric').includes('ig_reels_avg_watch_time'));
+    ok('and not for follows, which Meta refuses on a reel', !asked[0]?.searchParams.get('metric').includes('follows'));
+    eq('milliseconds become the seconds /views writes', reel?.watchSeconds, 2.8);
+    eq('with the video\'s own length beside them', reel?.seconds, 8.6);
+    const r = rates(reel);
+    ok('so the watch ratio comes out of the same function', Math.abs(r.watchRatio - 2.8 / 8.6) < 1e-9, String(r.watchRatio));
+
+    asked.length = 0;
+    const feed = await withEnv({ IG_AUTH: undefined, IG_ACCESS_TOKEN: 'IGAAtest', IG_USER_ID: '1' }, () =>
+      statsFor('media-2', { reel: false })
+    );
+    ok('a feed post is asked for the followers it brought', asked[0]?.searchParams.get('metric').includes('follows'));
+    eq('and they land where /views puts them', feed?.followers, 1);
+    eq('a feed post has no watch time', feed?.watchSeconds, undefined);
+
+    asked.length = 0;
+    await withEnv({ IG_AUTH: 'facebook', IG_ACCESS_TOKEN: 'EAAtest', IG_USER_ID: '1' }, () => statsFor('media-3'));
+    eq('the Facebook Login path still goes to the Facebook host', asked[0]?.host, 'graph.facebook.com');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+}
+
+{
+  // ONE VERDICT TOO LONG FOR A CAROUSEL took its TikTok copy down with it: fitTo
+  // threw mid-render and the whole build failed. Asked before rendering now.
+  const { fitsInstagram, IG_MAX } = await import('../src/render/post.js');
+  const slides = (n, optional = 0) =>
+    Array.from({ length: n }, (_, i) => ({ n: i, optional: i >= n - optional }));
+  eq('Instagram takes ten, one of them the closing slide', IG_MAX, 10);
+  ok('nine slides fit', fitsInstagram(slides(9)));
+  ok('eleven do not', !fitsInstagram(slides(11)));
+  ok('eleven with two optional ones do, because fitTo drops those', fitsInstagram(slides(11, 2)));
+}
+
+{
+  // A TikTok VIDEO DRAFT ARRIVES WITHOUT ITS DESCRIPTION. The paste message used to
+  // ride on the Instagram hand-off, which is gone, so the publish line now says the
+  // caption is coming whenever the caller is about to send one.
+  const { published } = await import('../src/notify.js');
+  const draft = published({ headline: 'x', succeeded: ['tiktok'], drafted: ['tiktok'], paste: true });
+  ok('a clip draft points at the description below it', draft.includes('👇'));
+  ok('without claiming a hand-off', !draft.includes('ידנית'));
+  ok('a draft with nothing to paste does not', !published({ headline: 'x', succeeded: ['tiktok'], drafted: ['tiktok'] }).includes('👇'));
+}
+
+/* -------------------------------------------------------------------------- */
+group('before you book - the reach of the Santorini hook, paid off a fact per cut');
+
+{
+  const {
+    beforeBeats, beforePlan, seasonFact, footageQueries, isoForEnglish, isoForHebrew,
+    findBeforeFootage, beforeHook, readSeconds, ASK_HE,
+  } = await import('../src/video/before.js');
+  const { retentionCardHtml } = await import('../src/video/retention.js');
+  const { beforeCaption } = await import('../src/hashtags.js');
+  const { hasLongDash } = await import('../src/dashes.js');
+
+  // A page the way the site publishes one, with a kosher drawback to prove it is never
+  // a beat and a booking note to prove the "before you book" beat finds it.
+  const verdict =
+    'עיר-מוזיאון פתוחה עם קולוסיאום. אבל כמעט אין תשתית כשרות מחוץ לגטו. הקיץ לוהט וצפוף מאוד.';
+  const city = {
+    editorialRating: { score: 4.7, verdict },
+    tagline: 'העיר הנצחית',
+    bestSeason: 'מרץ-מאי, ספטמבר-נובמבר (הקיץ חם ועמוס)',
+    dailyCost: { currency: 'EUR', mid: { food: 60, transport: 20, activities: 61 } },
+    practical: { flights: 'טיסות ישירות מנתב"ג - כ-3.5 שעות.' },
+    itinerary: [{ notes: 'בוקר בקולוסיאום. למוזיאוני הוותיקן חובה להזמין כרטיס לשעה מראש.' }],
+  };
+  const beats = beforeBeats(city);
+  eq('four beats from a full page', beats.length, 4);
+  eq('the number opens', beats[0].kickerHe, 'כמה זה עולה');
+  ok('and it is the page\'s own figure', beats[0].factHe.includes('141'));
+  eq('the drawback closes', beats[beats.length - 1].kickerHe, 'מה פחות טוב');
+  ok('quoted from the verdict', verdict.includes(beats[beats.length - 1].factHe));
+  ok('the booking note is a beat', beats.some((b) => b.kickerHe === 'מה להזמין מראש' && b.factHe.includes('ותיקן')));
+  ok('kashrut is never a whole beat', !beats.some((b) => /כשר/.test(b.factHe)));
+  ok('no beat carries a long dash', beats.every((b) => !hasLongDash(b.factHe)));
+
+  // A two-place page's booking note may be about the other place. Santorini's gave
+  // Mykonos town under a hook naming Santorini.
+  const islands = { ...city, nameLocal: 'Santorini & Mykonos', itinerary: [{ notes: 'חורה סגורה לרכבים ומסתובבים בה ברגל. למוזיאון בסנטוריני כדאי להזמין כרטיס מראש.' }] };
+  const islandBeats = beforeBeats(islands, { destHe: 'סנטוריני' });
+  ok('on a two-place page, a note about the other place is not a beat', !islandBeats.some((b) => b.factHe.includes('חורה')));
+  ok('and one that names the destination is', islandBeats.some((b) => b.factHe.includes('סנטוריני')));
+
+  // When a page's season runs on into caveats, the answer is the part before them, and
+  // a cut that would leave a bracket open falls back to before the bracket.
+  eq('a season with caveats is cut at its dash',
+    seasonFact('יוני-ספטמבר (עונת החוף) - אביב וסתיו ירוקים ונעימים לטבע; חורף מתון וגשום'), 'יוני-ספטמבר (עונת החוף)');
+  eq('and never inside a bracket',
+    seasonFact('נובמבר-אפריל (עונה יבשה, ים רגוע - הזמן לטיולי איים) - מאי-אוקטובר מונסון וגשם'), 'נובמבר-אפריל');
+
+  // THE TIMELINE. Each fact gets the time it takes to read; the first waits for the
+  // hook to shrink; the last carries the save prompt as well.
+  const shots = [1, 2, 3, 4].map((i) => ({ src: `s${i}`, id: String(i) }));
+  const plan = beforePlan({ beats, shots, hookHe: 'לפני שאתם מזמינים לרומא', openLoopHe: '4 דברים ששווה לדעת', askHe: ASK_HE });
+  eq('the first cut is where the gems reel cuts', plan.firstCutAt, postConfig().gems.retention.firstCutSeconds);
+  ok('a longer fact is held longer', readSeconds('א'.repeat(45)) > readSeconds('א'.repeat(20)));
+  ok('the first beat is held longer by the hook\'s shrink',
+    plan.holds[0] > readSeconds(plan.beats[0].factHe));
+  ok('it stays inside sixteen and a half seconds', plan.seconds <= 16.5, String(plan.seconds));
+  const beatCards = plan.cards.filter((c) => c.factHe);
+  eq('one card per beat', beatCards.length, plan.beats.length);
+  eq('every one counted', beatCards.map((c) => c.counterHe).join(' '), plan.beats.map((_, i) => `${i + 1}/${plan.beats.length}`).join(' '));
+  ok('the hook is never on screen with a fact', plan.cards.filter((c) => c.big).every((c) => !c.factHe));
+  ok('no fact appears before the hook has shrunk', beatCards.every((c) => c.from >= plan.hookFullUntil));
+  ok('the save prompt is on the last beat only',
+    beatCards.slice(0, -1).every((c) => !c.questionHe) && beatCards[beatCards.length - 1].questionHe === ASK_HE);
+  ok('every shot carries its fact, which the encoder filters on', plan.shots.every((s) => s.labelHe));
+
+  // Four long facts would run past the ceiling. The one before the drawback goes, and
+  // the reel never drops below three, because the counter is the format.
+  const long = Array.from({ length: 4 }, (_, i) => ({ id: `x${i}`, kickerHe: 'k', factHe: `${'א'.repeat(55)}${i}` }));
+  const trimmed = beforePlan({ beats: long, shots, hookHe: 'h', askHe: ASK_HE });
+  eq('too long, one beat goes', trimmed.beats.length, 3);
+  eq('and it was not the last one', trimmed.beats[2].factHe, long[3].factHe);
+
+  // The hook states the count that survived.
+  ok('the second line counts the beats', beforeHook('רומא', 3, { rand: () => 0 }).loopHe.startsWith('3 '));
+  eq('and the proven hook leads', beforeHook('רומא', 3, { rand: () => 0 }).hookHe, 'לפני שאתם מזמינים לרומא');
+
+  // FOOTAGE OF THE PLACE THE HOOK NAMES. A two-place page is searched by its first name
+  // alone, because the first build ran a Santorini hook over Mykonos beaches.
+  eq('a two-place page searches the first place only',
+    footageQueries({ nameLocal: 'Santorini & Mykonos (Cyclades)', iconicLandmark: { nameLocal: 'Windmills of Mykonos' } }, { en: 'Santorini' }).join('|'),
+    'Santorini');
+  eq('a one-place page searches its landmark too',
+    footageQueries({ nameLocal: 'Rome / Roma', iconicLandmark: { nameLocal: 'Colosseum' } }, { en: 'Rome' }).join('|'),
+    'Rome|Colosseum');
+  eq('the judge\'s United Kingdom is GB, not the reserved UK', isoForEnglish('United Kingdom'), 'GB');
+  eq('and its Czech Republic is Czechia', isoForEnglish('Czech Republic'), 'CZ');
+  eq('a site country outside the flags table still resolves', isoForHebrew('ארה״ב'), 'US');
+  const judged = {
+    clips: [
+      { id: 'a', vision: { place: 'Italy' } },
+      { id: 'b', vision: { place: 'Portugal' } },
+      { id: 'c', vision: { place: '' } },
+      { id: 'd', vision: { place: 'Italy' } },
+    ],
+  };
+  const footage = await findBeforeFootage({ nameLocal: 'Rome' }, { en: 'Rome', country: 'איטליה' }, { find: async () => judged });
+  eq('only clips the judge placed in the country survive', footage.clips.map((c) => c.id).join(''), 'ad');
+
+  // The fact slot on the card: in the middle band, lifted, and a hyphenated range kept
+  // on one line.
+  const html = retentionCardHtml({
+    card: { id: 'b2', headerHe: 'h', counterHe: '2/4', kickerHe: 'מתי לטוס', factHe: 'מרץ-מאי, ספטמבר-נובמבר', big: false },
+    width: 1080,
+    height: 1920,
+  });
+  ok('the fact is drawn', html.includes('class="fact"') && html.includes('מתי לטוס'));
+  ok('every word of it kept whole', html.includes('<span style="white-space:nowrap">ספטמבר-נובמבר</span>'));
+  ok('and lifted off the footage', html.includes('class="liftMid"'));
+  ok('a card with no fact draws no fact band',
+    !retentionCardHtml({ card: { id: 'p', labelHe: 'x', big: false }, width: 1080, height: 1920 }).includes('class="liftMid"'));
+
+  // The caption asks something answerable in one word, because open questions got no
+  // replies on any post this account made.
+  const caption = beforeCaption({ dest: { he: 'רומא', country: 'איטליה' }, siteSlug: 'rome', follow: 'עוד יעד מחר' }, { rand: () => 0 });
+  ok('the caption asks yes or no', caption.includes('כן או לא'));
+  ok('it points at the page in the bio', caption.includes('בביו'));
+  ok('and carries no address', !URL_LIKE.test(caption));
+  ok('and no long dash', !hasLongDash(caption));
+  ok('the rotation knows the format', postConfig().formats.mix.some((f) => f.id === 'before_video' && f.kind === 'clip'));
 }
 
 /* -------------------------------------------------------------------------- */

@@ -39,38 +39,29 @@ const ALLOWED_BY_KIND = {
   // Same words, same photographs, two designs. Instagram first, because it is
   // the one that has worked for months.
   deck: ['instagram', 'tiktok'],
-  // A clip belongs on both platforms, and only ONE of them can be reached from
-  // here. See MANUAL_BY_KIND below for the other.
+  // A clip is PUBLISHED to TikTok and HANDED to the owner for Instagram.
   //
-  // The editorial rule did not change and is worth restating, because the list
-  // above no longer shows it: a clip should reach Instagram. Every Instagram
-  // post this account makes is otherwise a photograph or a carousel, the two
-  // formats with the least reach to people who do not already follow it, while
-  // the one format built for the surface where non-follower reach lives goes
-  // only to the other app. The rule at the top of this file, that posting the
-  // same seconds twice makes every account a copy of the others, is about one
-  // FEED looking duplicated; a viewer on Instagram cannot see the TikTok copy.
+  // Instagram's Content Publishing API has no draft state: a container is
+  // published or it expires after 24 hours, so the only two things this code can
+  // do to Instagram are publish a reel now or not call it, and a reel's audio
+  // cannot be changed after posting. The owner chooses the sound in each app by
+  // hand, so the Instagram copy is a hand-off (MANUAL_BY_KIND below): the
+  // notification carries the mp4's URL and the description follows it, ready to
+  // paste.
   //
-  // WHAT CHANGED IS THE DELIVERY, AND IT CHANGED BECAUSE OF SOUND.
+  // DECIDED TWICE ON 5 OCT 2026, and both halves are worth keeping. The account's
+  // own numbers, read off the Graph API that day: 6 followers, 88 posts, one of
+  // them a reel; every photograph and carousel reached 1 to 9 accounts and the
+  // reel reached 85. A reel is the one format Instagram offers to people who do
+  // not already follow the account, so the owner asked for videos on Instagram,
+  // and automatic publishing was built (`clip: ['instagram', 'tiktok']`, with the
+  // approval card saying when a reel would go up silent). With no licensed track
+  // declared, every one would have gone up silent, and the owner chose to post the
+  // Instagram reels by hand with a sound picked in the app instead.
   //
-  // The owner chooses the track in each app, by hand, which is the one part of
-  // a post this pipeline was never going to do better. TikTok supports that:
-  // `post_mode: MEDIA_UPLOAD` hands the video to the account's inbox and the
-  // creator finishes it, so TikTok stays a publish target and `tiktokDraft`
-  // describes what kind of publish it is.
-  //
-  // INSTAGRAM HAS NO EQUIVALENT AND THIS IS NOT AN OVERSIGHT AT OUR END. Its
-  // Content Publishing API creates a container and then publishes it; there is
-  // no draft state, no scheduling, and no hand-off to the app. An unpublished
-  // container is not a draft in any sense the owner would recognise, it is a
-  // server-side staging object that never appears in the Instagram app and
-  // EXPIRES AFTER 24 HOURS. So the only two things this code can do to
-  // Instagram are publish a reel immediately or not call it at all, and
-  // publishing immediately means publishing whatever audio the file happens to
-  // carry, for ever, because a reel's audio cannot be changed after posting.
-  //
-  // So it does not call it. The Instagram copy is a hand-off, and the publisher
-  // being honest that it cannot make it is better than it making a silent one.
+  // So the reels reach Instagram through the owner, and the number that says
+  // whether they do is the reel count on the profile. To publish them from here
+  // instead: `clip: ['instagram', 'tiktok']` and an empty MANUAL_BY_KIND.
   clip: ['tiktok'],
   // An AI-written itinerary, drawn as slides. Both places, like a deck, and for
   // a reason the deck's note does not cover: this is the one kind whose content

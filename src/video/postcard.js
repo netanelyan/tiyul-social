@@ -5,11 +5,12 @@ import { ffmpegPath, clipOutputDir, download, measureClip, pickWindow } from './
 import { getBrowser } from '../render/index.js';
 import { assistantDataUri, escapeHtml } from '../render/theme.js';
 import { postConfig } from '../postConfig.js';
-import { pickTrack } from './tracks.js';
+import { pickTrack, silentSoundLine } from './tracks.js';
 import { findClips } from './pexels.js';
-import { clipPlaceLabel } from '../hashtags.js';
+import { clipPlaceLabel, gemsCaption } from '../hashtags.js';
 import { targetsForKind } from '../publish/targets.js';
 import { captionFollow } from '../hashtags.js';
+import { assertNoUrl } from '../format.js';
 import { planGemsReel, buildHiddenGemsClip } from './hiddenGems.js';
 
 // THE COUNTED POSTCARD REEL: a hook, then four places, each one a moving shot.
@@ -381,7 +382,7 @@ export async function buildPostcardCandidate({ outDir = clipOutputDir(), shots =
     built = await buildPostcardClip(placed, { hookHe, hookClip, id, outDir });
   }
 
-  return {
+  const cand = {
     kind: 'clip',
     id,
     hook: [hookHe, openLoop?.he].filter(Boolean).join(' · '),
@@ -428,6 +429,21 @@ export async function buildPostcardCandidate({ outDir = clipOutputDir(), shots =
       pexelsIds: [...new Set([...ordered.map((p) => p.id), hookClip?.id].filter(Boolean).map(String))],
     },
   };
+
+  // THE DESCRIPTION, WHICH THIS FORMAT NEVER HAD.
+  //
+  // Nothing needed one while a reel went only to TikTok's inbox, where the upload
+  // carries no description and the owner writes it in the app. Instagram publishes
+  // whatever caption the container was created with, so without this a postcard
+  // reel would have gone out with an empty one. The gems writer, because the two
+  // formats carry the same fields under the same names (`places`, `questionHe`)
+  // and differ only in where the hook came from.
+  const caption = assertNoUrl(gemsCaption(cand), 'the postcard description');
+  cand.caption = caption;
+  cand.tiktokCaption = caption;
+  cand.instagramCaption = caption;
+  cand.channelCaption = caption;
+  return cand;
 }
 
 /** The approval card for a postcard reel. */
@@ -452,5 +468,6 @@ export function postcardApprovalMessage(cand) {
     lines.push('', `⏱️ חיתוך ראשון ${c.firstCutAt}ש׳ · פתיח גדול עד ${c.hookFullUntil}ש׳ ואז כותרת`);
   }
   if (c.questionHe) lines.push(`💬 בסוף ובכיתוב: ${c.questionHe}`);
+  if (!c.audio) lines.push('', silentSoundLine(cand.publishTargets || []));
   return lines.join('\n');
 }

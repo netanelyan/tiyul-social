@@ -2852,6 +2852,13 @@
         "desc": "The longer reel the gems format is a refinement of: 4 second holds, 17 to 19 seconds. Kept at a real weight rather than retired, because it is the control - the gems reel differs from it in length and hook only, so a week of both is the only way to know which half of the change did the work."
       },
       {
+        "id": "before_video",
+        "he": "לפני שמזמינים",
+        "kind": "clip",
+        "weight": 30,
+        "desc": "ADDED 5 Oct 2026 from the TikTok numbers. The Santorini 'before you book' hook reached 2,051 views, 4x the page average, at 0.4% likes; the counted reels reached about 600 at 3.3%. Nothing had done both. This reel opens on that hook over moving footage of the destination and puts one fact from the site's own page on every cut: the daily cost, when to go, what to book ahead, and the honest drawback, quoted. 11 to 16 seconds, a counter, and a save prompt at the end. See src/video/before.js. Weight 30 is a test; the first week of /report hooks decides it."
+      },
+      {
         "id": "guide",
         "he": "מדריכים",
         "kind": "clip",

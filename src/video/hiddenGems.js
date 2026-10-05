@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { ffmpegPath, clipOutputDir, download, measureClip, pickWindow } from './overlay.js';
 import { postConfig } from '../postConfig.js';
 import { solveHolds } from './fit.js';
-import { pickTrack, trackOffset } from './tracks.js';
+import { pickTrack, trackOffset, silentSoundLine } from './tracks.js';
 import { findClips } from './pexels.js';
 import { clipPlaceLabel, gemsCaption } from '../hashtags.js';
 import { targetsForKind } from '../publish/targets.js';
@@ -814,7 +814,7 @@ export function hiddenGemsApprovalMessage(cand) {
     for (const r of reused) lines.push(`   ${r.split(' was named')[0]}`);
   }
 
-  if (!c.audio) lines.push('', 'ללא סאונד, לבחירה באפליקציה');
+  if (!c.audio) lines.push('', silentSoundLine(cand.publishTargets || []));
 
   return lines.filter((x) => x != null).join('\n');
 }

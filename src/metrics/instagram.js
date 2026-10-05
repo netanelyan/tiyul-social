@@ -1,4 +1,4 @@
-import * as store from '../store.js';
+import { graphHost, currentToken } from '../publish/instagram.js';
 
 // What a post actually did on Instagram.
 //
@@ -16,14 +16,22 @@ import * as store from '../store.js';
 // WHAT THE TOKEN WE HOLD CAN ACTUALLY ANSWER. Instagram's media insights are available
 // on the account's own media with the token the publisher already uses - no new scope,
 // no new app review. `saved`, `shares`, `reach` and `views` are all supported on a
-// CAROUSEL_ALBUM, which is what every post here is.
+// CAROUSEL_ALBUM and on a REEL, which between them is every post here.
 
 const VERSION = process.env.GRAPH_API_VERSION || 'v21.0';
-const authMode = () => (process.env.IG_AUTH_MODE || 'facebook').toLowerCase();
-const HOST = () => (authMode() === 'facebook' ? 'https://graph.facebook.com' : 'https://graph.instagram.com');
+
+// THE PUBLISHER'S HOST AND TOKEN, NOT A SECOND COPY OF THE RULE.
+//
+// This file used to decide the host itself, from IG_AUTH_MODE defaulting to
+// `facebook`, while the publisher reads IG_AUTH defaulting to `instagram`. Two names
+// and two defaults for one setting: on the box neither is set, so the publisher used
+// graph.instagram.com and this asked graph.facebook.com with an Instagram Login
+// token, which Meta answers with "Cannot parse access token" (code 190). Every
+// nightly pass from the day it shipped recorded Instagram 0 of N. Importing the
+// publisher's own answer is what stops the two drifting apart again.
 
 /**
- * The metrics asked for, and why these four.
+ * The metrics asked for, and why these.
  *
  * `views` replaced `impressions` for media created after July 2024 and the old name now
  * errors on new media, so it is the one asked for. `reach` is people rather than plays.
@@ -35,6 +43,20 @@ const HOST = () => (authMode() === 'facebook' ? 'https://graph.facebook.com' : '
  */
 export const METRICS = ['views', 'reach', 'saved', 'shares', 'likes', 'comments'];
 
+/**
+ * The extras, which differ by what the media IS, and asking a reel for a feed-only
+ * metric fails the whole request rather than that one number.
+ *
+ * A reel: `ig_reels_avg_watch_time`, in milliseconds. Watch time is what the ranking
+ * turns on since the 3.1 second reel (see rates() in ./store.js), and on Instagram it is
+ * the one number nobody has to read off the app and type in.
+ *
+ * Everything else: `follows`, the followers a post brought. The account exists to get
+ * them, and a reel does not report it (Meta refuses `follows` on REELS media).
+ */
+export const REEL_METRICS = [...METRICS, 'ig_reels_avg_watch_time'];
+export const FEED_METRICS = [...METRICS, 'follows'];
+
 export class MetricsError extends Error {
   constructor(message, { step, mediaId } = {}) {
     super(message);
@@ -45,13 +67,13 @@ export class MetricsError extends Error {
 }
 
 /** Whether this can run at all. The same token the publisher uses. */
-export const configured = () => Boolean(store.getIgToken()?.token && process.env.IG_USER_ID);
+export const configured = () => Boolean(currentToken() && process.env.IG_USER_ID);
 
 async function graph(path, params, { timeoutMs = 20_000 } = {}) {
-  const token = store.getIgToken()?.token;
+  const token = currentToken();
   if (!token) throw new MetricsError('no Instagram token', { step: 'auth' });
   const qs = new URLSearchParams({ ...params, access_token: token });
-  const res = await fetch(`${HOST()}/${VERSION}/${path}?${qs}`, {
+  const res = await fetch(`${graphHost()}/${VERSION}/${path}?${qs}`, {
     headers: { accept: 'application/json' },
     signal: AbortSignal.timeout(timeoutMs),
   });
@@ -129,9 +151,9 @@ export async function insightsFor(mediaId, { metrics = METRICS } = {}) {
  * nightly job that ran too soon should come back tomorrow rather than record zeros.
  * A zero recorded is indistinguishable from a post nobody saw.
  */
-export async function statsFor(mediaId) {
+export async function statsFor(mediaId, { reel = false, seconds = null } = {}) {
   try {
-    const got = await insightsFor(mediaId);
+    const got = await insightsFor(mediaId, { metrics: reel ? REEL_METRICS : FEED_METRICS });
     if (!Object.keys(got).filter((k) => !k.startsWith('_')).length) return null;
     return {
       views: got.views ?? null,
@@ -140,6 +162,14 @@ export async function statsFor(mediaId) {
       shares: got.shares ?? null,
       likes: got.likes ?? null,
       comments: got.comments ?? null,
+      // Under the names the /views command already writes, so rates() turns them into
+      // the watch ratio and the follower count with no second code path. `seconds` is
+      // the video's own length off the metrics row, the denominator of that ratio.
+      ...(reel && got.ig_reels_avg_watch_time != null
+        ? { watchSeconds: Math.round(got.ig_reels_avg_watch_time / 100) / 10 }
+        : {}),
+      ...(reel && Number(seconds) > 0 ? { seconds: Number(seconds) } : {}),
+      ...(got.follows != null ? { followers: got.follows } : {}),
       unsupported: got._unsupported || [],
     };
   } catch (e) {

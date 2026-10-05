@@ -8,7 +8,8 @@ import { postConfig } from '../postConfig.js';
 import { speak, speechReady, estimateTimings, subtitleLines } from './speech.js';
 import { planLegibility } from '../render/legibility.js';
 import { targetsForKind } from '../publish/targets.js';
-import { captionFollow } from '../hashtags.js';
+import { captionFollow, guideCaption } from '../hashtags.js';
+import { assertNoUrl } from '../format.js';
 import { verdictOf, practicalOf, firstClause, seasonLine, listPlaces, loadCity } from '../posts/source.js';
 
 // THE NARRATED GUIDE. A voice over the place, with what it is saying burned on.
@@ -318,8 +319,9 @@ export async function buildNarratedCandidate(dest, { outDir = clipOutputDir() } 
 
   const id = `nr${Math.abs([...slug].reduce((a, c) => (a * 31 + c.charCodeAt(0)) | 0, 11)).toString(16).slice(0, 10)}`;
   const built = await buildNarratedVideo(city, { dest, id, outDir });
+  const follow = captionFollow();
 
-  return {
+  const cand = {
     kind: 'clip',
     id,
     hook: `כל מה שצריך לדעת על טיול ל${dest?.he || city.name}`,
@@ -344,7 +346,7 @@ export async function buildNarratedCandidate(dest, { outDir = clipOutputDir() } 
       file: built.file,
       audio: built.narrated,
       seconds: built.seconds,
-      follow: captionFollow(),
+      follow,
       followAt: null,
       width: postConfig().clips.video.width,
       height: postConfig().clips.video.height,
@@ -353,4 +355,14 @@ export async function buildNarratedCandidate(dest, { outDir = clipOutputDir() } 
       narrated: built.narrated,
     },
   };
+
+  // A description, which a guide did not have while it went only to TikTok's
+  // inbox. Instagram publishes the caption it is given, and an empty one is a
+  // post that has to be edited after it is live.
+  const caption = assertNoUrl(guideCaption({ dest, siteSlug: slug, follow }), 'the guide description');
+  cand.caption = caption;
+  cand.tiktokCaption = caption;
+  cand.instagramCaption = caption;
+  cand.channelCaption = caption;
+  return cand;
 }

@@ -102,7 +102,7 @@ export function targetAbandoned(headline, abandoned = []) {
   return `⤫ ויתרנו: ${why} - ${headline}`;
 }
 
-export function published({ headline, succeeded, failed = [], drafted = [], manual = [], manualUrl = null }) {
+export function published({ headline, succeeded, failed = [], drafted = [], manual = [], manualUrl = null, paste = manual.length > 0 }) {
   // A destination that took a DRAFT did not publish, and must not be listed as
   // though it did. This reported per POST rather than per destination, so a
   // deck sent to both said "פורסם לאינסטגרם וטיקטוק" — half true, and false in
@@ -127,14 +127,13 @@ export function published({ headline, succeeded, failed = [], drafted = [], manu
   // The URL is the point of the line rather than decoration. The mp4 is already
   // hosted, because TikTok pulls video by URL, so the file you need is one tap
   // away and byte-exact rather than whatever a chat app decided to re-encode.
-  if (manual.length) {
-    parts.push(`📲 ${targetsHe(manual)} ידנית${manualUrl ? `: ${manualUrl}` : ''}`);
-    // Points at the message that follows, so the next thing in the chat reads
-    // as the caption rather than as another notification. Without it a bare
-    // block of Hebrew and five hashtags arriving on its own is one more thing
-    // to work out every time.
-    parts.push('👇 התיאור');
-  }
+  if (manual.length) parts.push(`📲 ${targetsHe(manual)} ידנית${manualUrl ? `: ${manualUrl}` : ''}`);
+  // Points at the message that follows, so the next thing in the chat reads as
+  // the caption rather than as another notification. Without it a bare block of
+  // Hebrew and five hashtags arriving on its own is one more thing to work out
+  // every time. `paste` is the caller saying that message is coming: a hand-off,
+  // or a TikTok video draft, whose upload carries no description.
+  if (paste) parts.push('👇 התיאור');
   for (const f of failed) parts.push(`⚠️ ${TARGET_HE[f.target] || f.target}: ${f.message}`);
   return `${parts.join(' · ')} - ${headline}`;
 }

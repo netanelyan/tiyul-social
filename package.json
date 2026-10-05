@@ -35,7 +35,8 @@
     "ig-subscribe": "node scripts/ig-subscribe.js",
     "post-lab": "node scripts/post-lab.js",
     "gems-lab": "node scripts/gems-lab.js",
-    "slide-lint": "node scripts/slide-lint.js"
+    "slide-lint": "node scripts/slide-lint.js",
+    "before-lab": "node scripts/before-lab.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",
