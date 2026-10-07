@@ -19,6 +19,8 @@ import { proposeIdeas, titleForRequest, reviseIdea, freeformIdea, freeformFromId
 import { pickAngle } from './src/angles.js';
 import { postConfig } from './src/postConfig.js';
 import { pickFormat, rotationOn, slotsPerDay, mixShares } from './src/formats/rotation.js';
+import { rememberVerdicts } from './src/video/pexels.js';
+import { verdictKey } from './src/video/vision.js';
 import {
   notePublished as noteMetricsPublished,
   collect as collectMetrics,
@@ -2118,7 +2120,7 @@ bot.command('status', async (ctx) => {
   if (DECKS_PER_DAY > 0) {
     other.push(
       `🃏 דקים: ${decksToday}/${DECKS_PER_DAY} היום`,
-      backlogLine(store.proposalSize(), DECK_BACKLOG_MAX, '/deck שולח הצעה עכשיו')
+      backlogLine(decksWaiting(), DECK_BACKLOG_MAX, '/deck שולח הצעה עכשיו')
     );
   }
   if (CLIPS_PER_DAY > 0) {
@@ -2542,14 +2544,23 @@ async function suggestPlanJob(asked, days, chatId = staging, budgetIls = null) {
  *
  * `alternatives` is the one thing the rotation cannot decide. An `instead` post needs
  * three destinations in the same region as the one it argues against, and "the same
- * region" is a judgement no field on the page answers - so when the rotation lands on
- * that type unasked, the alternatives are drawn from the catalogue's own country, and
- * when it cannot find three the type is swapped for the next one down.
+ * region" is a judgement no field on the page answers - so the alternatives are drawn
+ * from the catalogue's own country.
+ *
+ * UNASKED, THE TYPE IS DRAWN FIRST AND THE DESTINATION SECOND, and it used to be the
+ * other way round. A destination drawn from the whole catalogue was a coin toss
+ * against the type: the production log held 20 failed unasked post builds by 7 Oct
+ * 2026, 8 on a city the site has no page for and 7 on an `instead` post for a country
+ * without three other pages, and each failure cost the slot two hours. Now the destination comes from the rows that
+ * type can be built for (destinationsFor in src/posts/types.js), and a page that still
+ * cannot carry it is passed over for the next one, three tries, the way
+ * suggestBefore already did.
  */
 const suggestPost = billed('post', suggestPostJob);
 async function suggestPostJob(asked, { type = null, look = null, frame = null, days = null } = {}, chatId = staging) {
   const { buildPost } = await import('./src/posts/index.js');
   const { resolveDestination, pickDestination } = await import('./src/plan/write.js');
+  const { nextShape, destinationsFor } = await import('./src/posts/types.js');
 
   // PUBLISHED *AND* SUGGESTED. A destination proposed this morning and not yet approved
   // is not in `published`, so without the second list five formats drawing independently
@@ -2560,7 +2571,46 @@ async function suggestPostJob(asked, { type = null, look = null, frame = null, d
     await notify.send(bot.telegram, chatId, `❌ לא הצלחתי להבין איזה יעד זה: ${asked}`).catch(() => {});
     return null;
   }
-  const dest = found?.dest || pickDestination(recent);
+
+  // The alternatives for an `instead` post: the catalogue's own rows in the same
+  // country that the site actually has a page for.
+  const rows = JSON.parse(readFileSync(new URL('./destinations.json', import.meta.url), 'utf8')).destinations;
+  const build = (dest, postType) =>
+    buildPost({
+      dest,
+      type: postType,
+      look,
+      frame,
+      days,
+      alternatives: rows.filter((r) => r.country === dest.country && r.id !== dest.id && r.siteSlug).slice(0, 4),
+      defaultHe: dest.he,
+      regionHe: dest.country,
+      targets: targetsForKind('post'),
+      onProgress: (text) => console.log(`post: ${text}`),
+    }).then((r) => r.cand);
+
+  if (!found) {
+    const postType = type || nextShape().type;
+    const pool = destinationsFor(postType, rows);
+    const tried = [];
+    const why = [];
+    for (let i = 0; i < 3; i++) {
+      const dest = pickDestination([...recent, ...tried], { from: pool });
+      if (!dest || tried.includes(dest.he)) break;
+      tried.push(dest.he);
+      try {
+        const cand = await build(dest, postType);
+        await stage(cand);
+        return cand;
+      } catch (e) {
+        console.log(`post: ${postType}/${dest.he} could not be built, trying another - ${e.message}`);
+        why.push(`${dest.he}: ${e.message}`);
+      }
+    }
+    throw new Error(`no destination could carry a ${postType} post - ${why.join('; ') || 'none to draw from'}`);
+  }
+
+  const dest = found.dest;
 
   // A destination with no page on the site cannot carry any of these types - every one
   // of them is built from the page. Said rather than silently swapped: the owner asked
@@ -2571,25 +2621,7 @@ async function suggestPostJob(asked, { type = null, look = null, frame = null, d
     return null;
   }
 
-  // The alternatives for an `instead` post: the catalogue's own rows in the same
-  // country that the site actually has a page for.
-  const rows = JSON.parse(readFileSync(new URL('./destinations.json', import.meta.url), 'utf8')).destinations;
-  const alternatives = rows
-    .filter((r) => r.country === dest.country && r.id !== dest.id && r.siteSlug)
-    .slice(0, 4);
-
-  const cand = await buildPost({
-    dest,
-    type,
-    look,
-    frame,
-    days,
-    alternatives,
-    defaultHe: dest.he,
-    regionHe: dest.country,
-    targets: targetsForKind('post'),
-    onProgress: (text) => console.log(`post: ${text}`),
-  }).then((r) => r.cand);
+  const cand = await build(dest, type);
 
   await stage(cand);
   return cand;
@@ -3066,6 +3098,12 @@ const proposalButtons = (key) =>
     [Markup.button.callback('🤖 שנה בהוראה', `dr:${key}`), Markup.button.callback('❌ דחה', `dx:${key}`)],
   ]);
 
+/** The ideas whose headline is not already waiting for a tap. */
+const withoutWaiting = (ideas) => {
+  const waiting = new Set(store.proposalItems().map(({ proposal }) => proposal?.idea?.titleHe).filter(Boolean));
+  return (ideas || []).filter((i) => !waiting.has(i.titleHe));
+};
+
 /**
  * Ask for ideas and pick the one whose place the feed has least of.
  *
@@ -3086,7 +3124,9 @@ async function pickIdeaJob() {
   // the difference between a rotation and the same angle every morning.
   const angle = pickAngle(history);
 
-  const ideas = await proposeIdeas({ count: 3, recent: store.recentTitles(), angle });
+  // Told what is waiting as well as what went out, and held to it: a title already
+  // waiting for a tap is dropped here even if the model repeats it anyway.
+  const ideas = withoutWaiting(await proposeIdeas({ count: 3, recent: store.recentTitles(), pending: store.proposalTitles(), angle }));
   if (!ideas.length) return null;
 
   const fresh = ideas.filter((i) => !placeOverCap(i.where, history));
@@ -3124,6 +3164,17 @@ async function pickIdeaJob() {
 // still worth making; it is not worth making twice a day.
 const DECKS_PER_DAY = Math.max(0, Number(process.env.DECKS_PER_DAY ?? '1'));
 const DECK_BACKLOG_MAX = Math.max(1, Number(process.env.DECK_BACKLOG_MAX ?? '3'));
+
+/**
+ * The proposals the backlog cap counts: the ones from the last two days.
+ *
+ * Two days, because an idea nobody has tapped in two days has been answered. Counting
+ * every proposal ever made meant three ignored ideas held the timer shut until one of
+ * them was tapped, and from 3 Oct 2026 that is exactly what happened. See
+ * proposalsWaiting in src/store.js.
+ */
+const DECK_PROPOSAL_STALE_HOURS = Math.max(1, Number(process.env.DECK_PROPOSAL_STALE_HOURS ?? '48'));
+const decksWaiting = () => store.proposalsWaiting({ since: Date.now() - DECK_PROPOSAL_STALE_HOURS * 3_600_000 });
 let deckDay = null;
 let decksToday = 0;
 let lastDeckSuggestAt = 0;
@@ -3217,6 +3268,10 @@ const suggestGems = billed('clip', async function suggestGemsJob(chatId = stagin
   return cand;
 });
 
+/** The catalogue rows the site has a page for, which is what every page-built format needs. */
+const pagedDestinations = () =>
+  JSON.parse(readFileSync(new URL('./destinations.json', import.meta.url), 'utf8')).destinations.filter((r) => r.siteSlug);
+
 /**
  * One "before you book" reel, staged for approval. See src/video/before.js.
  *
@@ -3239,7 +3294,8 @@ const suggestBefore = billed('clip', async function suggestBeforeJob(asked = nul
   const tried = [];
   const why = [];
   for (let i = 0; i < (found ? 1 : 3); i++) {
-    const dest = found?.dest || pickDestination([...recent, ...tried]);
+    // From the rows with a page, so none of the three tries is spent on Milan.
+    const dest = found?.dest || pickDestination([...recent, ...tried], { from: pagedDestinations() });
     if (!dest?.siteSlug) {
       why.push(`${dest?.he || '?'}: no page on the site`);
       if (dest?.he) tried.push(dest.he);
@@ -3293,8 +3349,8 @@ const suggestGuide = billed('clip', async function suggestGuideJob(chatId = stag
   const { pickDestination } = await import('./src/plan/write.js');
 
   const recent = [...store.recentPublished().slice(0, 12).map((p) => p.place), ...store.recentSuggested()];
-  const dest = pickDestination(recent);
-  if (!dest?.siteSlug) return null;
+  const dest = pickDestination(recent, { from: pagedDestinations() });
+  if (!dest?.siteSlug) throw new Error('no destination with a page to narrate');
 
   const cand = await buildNarratedCandidate(dest);
   await stage(cand);
@@ -3352,7 +3408,15 @@ const clipsWaiting = () => store.stagingItems().filter(({ cand }) => cand?.kind 
 // together. See the note in tick() and slotsPerDay in src/formats/rotation.js.
 let slotsToday = 0;
 let slotDay = null;
-let lastSlotAt = 0;
+// When the next slot may be drawn. After a build STARTS it is one gather interval
+// away, as it always was; after a build FAILS it is SLOT_RETRY_MINUTES away and the
+// format that failed sits out FORMAT_BENCH_HOURS. See the note in tick().
+let nextSlotAt = 0;
+const formatFailedAt = new Map();
+const SLOT_RETRY_MS = Math.max(1, Number(process.env.SLOT_RETRY_MINUTES ?? '15')) * 60_000;
+const FORMAT_BENCH_MS = Math.max(0, Number(process.env.FORMAT_BENCH_HOURS ?? '3')) * 3_600_000;
+const benchedFormats = () =>
+  [...formatFailedAt].filter(([, at]) => Date.now() - at < FORMAT_BENCH_MS).map(([id]) => id);
 
 /**
  * Build one format by id.
@@ -3405,12 +3469,14 @@ async function suggestClipJob() {
   });
   spendClipFootage(clips);
 
+  // THROWN, NOT RETURNED. Under the rotation a job that returns has filled its slot, so
+  // a clip run that found nothing used to spend one of the day's four and offer nothing
+  // for it. A throw gives the slot back, and the caller's catch logs the same line.
   if (!clips.length) {
     const why = nowhere?.length
       ? `${considered} נבדקו, אף אחד לא עבר את סף היעד`
       : 'לא נמצאו קליפים מתאימים';
-    console.log(`clip: nothing to suggest - ${why}`);
-    return;
+    throw new Error(`nothing to suggest - ${why}`);
   }
 
   for (const clip of clips) await stage(clip);
@@ -3419,6 +3485,7 @@ async function suggestClipJob() {
       .send(bot.telegram, staging, '⚠️ שורת הקליפ נלקחה מהמאגר ולא נכתבה - בדוק את ANTHROPIC_API_KEY')
       .catch(() => {});
   }
+  return clips;
 }
 
 /**
@@ -3433,7 +3500,7 @@ async function suggestClipJob() {
  */
 const suggestDecks = billed('deck', suggestDecksJob);
 async function suggestDecksJob(n, chatId) {
-  const ideas = await proposeIdeas({ count: n, recent: store.recentTitles() });
+  const ideas = withoutWaiting(await proposeIdeas({ count: n, recent: store.recentTitles(), pending: store.proposalTitles() }));
   if (!ideas.length) return notify.send(bot.telegram, chatId, '❌ לא חזרו רעיונות');
 
   const history = store.recentPublished();
@@ -3732,6 +3799,13 @@ bot.command('formats', (ctx) => {
   }
   const off = postConfig().formats.mix.filter((f) => f.weight === 0);
   if (off.length) lines.push('', `כבויים: ${off.map((f) => f.id).join(', ')}`);
+  if (rotation.on) {
+    lines.push('', `משבצות היום: ${slotsToday}/${slotsPerDay()}`);
+    // The formats sitting out after a failed build, which is the answer to "why has
+    // it not offered a gems reel since lunch" that nothing else here gives.
+    const benched = benchedFormats();
+    if (benched.length) lines.push(`נכשלו לאחרונה ומחכים ${FORMAT_BENCH_MS / 3_600_000} שעות: ${benched.join(', ')}`);
+  }
   lines.push('', recent.length ? `אחרונים: ${recent.join(' · ')}` : 'עוד לא נבנה כלום בסבב הזה');
   if (!rotation.on) lines.push('', 'להפעלה: formats.rotation.on ב-post-config.json');
   return ctx.reply(lines.join('\n'));
@@ -3968,7 +4042,7 @@ function tick() {
     inHours &&
     DECKS_PER_DAY > 0 &&
     decksToday < DECKS_PER_DAY &&
-    store.proposalSize() < DECK_BACKLOG_MAX &&
+    decksWaiting() < DECK_BACKLOG_MAX &&
     Date.now() - lastDeckSuggestAt >= gatherIntervalMs
   ) {
     lastDeckSuggestAt = Date.now();
@@ -3998,12 +4072,12 @@ function tick() {
       slotsToday = 0;
     }
     const slots = slotsPerDay();
-    if (inHours && slots > 0 && slotsToday < slots && Date.now() - lastSlotAt >= gatherIntervalMs) {
-      const format = pickFormat();
+    if (inHours && slots > 0 && slotsToday < slots && Date.now() >= nextSlotAt) {
+      const format = pickFormat({ exclude: benchedFormats() });
       const room =
         !format ? false : format.kind === 'post' ? postsWaiting() < POST_BACKLOG_MAX : clipsWaiting() < CLIP_BACKLOG_MAX;
       if (format && room) {
-        lastSlotAt = Date.now();
+        nextSlotAt = Date.now() + gatherIntervalMs;
         slotsToday += 1;
         // Recorded at CHOICE rather than at success, which is what the run limit
         // needs: a build that failed still means the rotation chose that format, and
@@ -4020,12 +4094,23 @@ function tick() {
           // one post; under the rotation the gems reel is half the slots and it is
           // the format that fails most, because it needs three places a vision judge
           // will commit to and some mornings the footage does not have them.
-          //
-          // `lastSlotAt` is NOT rolled back with it, so the retry waits a full drip
-          // interval rather than running straight into the same empty search. That
-          // keeps the pace identical to today's and makes a transient failure cost
-          // nothing instead of costing a post.
           slotsToday = Math.max(0, slotsToday - 1);
+          // AND IT IS GIVEN BACK SOON, TO A DIFFERENT FORMAT.
+          //
+          // The retry used to wait a full gather interval, two hours, so that it would
+          // not "run straight into the same empty search". It ran into it anyway, two
+          // hours later: the draw was free to pick the format that had just failed, and
+          // the gems reel is 40% of the draw. The production log had nine gems
+          // failures, seven of them inside one stretch of twelve builds, and all nine
+          // named the same unplaceable clip. A day of 14 hours has room for seven
+          // tries, so a slot that failed twice was usually a slot lost.
+          //
+          // So the format that failed sits out FORMAT_BENCH_HOURS, and the slot is
+          // drawn again in SLOT_RETRY_MINUTES from what is left. Same number of slots,
+          // same daily total; a failure now costs a quarter of an hour instead of a
+          // post.
+          formatFailedAt.set(format.id, Date.now());
+          nextSlotAt = Date.now() + SLOT_RETRY_MS;
         });
       }
     }
@@ -4254,7 +4339,7 @@ const adminOps = {
       // being suggested" and are invisible in every other view.
       budgets: {
         cards: { today: store.stagedToday(day) - store.rejectedToday(day), perDay: dailyTarget() },
-        decks: { today: decksToday, perDay: DECKS_PER_DAY, waiting: store.proposalSize(), max: DECK_BACKLOG_MAX },
+        decks: { today: decksToday, perDay: DECKS_PER_DAY, waiting: decksWaiting(), max: DECK_BACKLOG_MAX },
         clips: { today: clipsToday, perDay: CLIPS_PER_DAY, waiting: clipsWaiting(), max: CLIP_BACKLOG_MAX },
         clipShapes: store.clipShapeHistory().slice(0, 6),
       },
@@ -4461,6 +4546,14 @@ async function main() {
   // destinations, the budgets, and any warning about them.
   logTap = createLogTap();
   console.log('starting tiyul+ ...');
+
+  // The vision judge's verdicts outlive one build, so a reel that failed this morning
+  // does not pay to look at the same 24 thumbnails again this afternoon. Installed
+  // before the first tick can reach a footage search. See rememberVerdicts.
+  rememberVerdicts({
+    get: (id) => store.clipVerdict(id, verdictKey()),
+    put: (list) => store.noteClipVerdicts(list, verdictKey()),
+  });
 
   // BEFORE Telegram, deliberately.
   //

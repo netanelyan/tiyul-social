@@ -131,7 +131,17 @@ export function interleaveByQuery(ranked) {
   return out;
 }
 
-async function search(query, page, { timeoutMs }) {
+// One search, reused for `searchCacheMinutes`. Keyed on the query and the page, and
+// only successes are kept: a 429 cached for six hours would be the rate limit's
+// answer repeated long after the limit had lifted. See searchCacheMinutes in
+// src/postConfig.js for why this exists at all.
+const searched = new Map();
+
+async function search(query, page, { timeoutMs, cacheMs = 0 }) {
+  const key = `${query}\n${page}`;
+  const hit = searched.get(key);
+  if (hit && Date.now() - hit.at < cacheMs) return hit.videos;
+
   const url = `${API}?${new URLSearchParams({
     query,
     orientation: 'portrait',
@@ -143,7 +153,43 @@ async function search(query, page, { timeoutMs }) {
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) throw new Error(`pexels videos HTTP ${res.status}`);
-  return (await res.json()).videos || [];
+  const videos = (await res.json()).videos || [];
+  if (cacheMs > 0) {
+    // The before reel searches by destination, so the keys keep arriving; anything
+    // past its window is dropped as the next one goes in rather than kept for ever.
+    for (const [k, v] of searched) if (Date.now() - v.at >= cacheMs) searched.delete(k);
+    searched.set(key, { at: Date.now(), videos });
+  }
+  return videos;
+}
+
+/**
+ * Where the judge's verdicts are remembered, installed once at boot.
+ *
+ * WHY THE GEMS REEL FAILED THE SAME WAY ALL DAY. The queue the judge reads is ordered
+ * by title score and interleaved by query, which makes it the same queue every time
+ * the same searches come back, and a reel that fails spends no footage. So every
+ * retry judged the same 24 thumbnails, paid for them again, and reached the same
+ * verdict: the production log had nine gems failures by 7 Oct 2026, and all nine
+ * named "scenic autumn drive through rocky mountains - destination 6".
+ *
+ * With a memory, a thumbnail is judged once. A clip it refused is skipped without a
+ * call, a clip it passed comes back for free, and the 24 calls of the next build go
+ * to clips nobody has looked at yet, so each retry looks further down the list
+ * instead of at the top of it again.
+ *
+ * INSTALLED RATHER THAN PASSED, unlike `seen`. Four builders reach findClips, and
+ * threading one more argument through each of them is four places to forget it. A
+ * lab or a test that never installs one judges everything fresh, which is exactly
+ * what it did before.
+ *
+ * `memory.get(id)` returns undefined for "never judged", null for "judged and
+ * refused", and the verdict otherwise. `memory.put(list)` takes every new verdict
+ * of one search at once, so the store is written once per build and not 24 times.
+ */
+let verdictMemory = null;
+export function rememberVerdicts(memory) {
+  verdictMemory = memory || null;
 }
 
 /**
@@ -157,7 +203,15 @@ async function search(query, page, { timeoutMs }) {
  * that Pexels rate-limits should not cost the other eleven, for the same reason
  * one unreachable destination does not stop the climate rotation.
  */
-export async function findClips({ limit = 12, seen = new Set(), pages = null, timeoutMs = 20_000, judge = true, queries = null } = {}) {
+export async function findClips({
+  limit = 12,
+  seen = new Set(),
+  pages = null,
+  timeoutMs = 20_000,
+  judge = true,
+  queries = null,
+  verdicts = verdictMemory,
+} = {}) {
   if (!configured()) throw new Error('PEXELS_API_KEY is not set');
 
   const cfg = postConfig().clips.search;
@@ -192,7 +246,7 @@ export async function findClips({ limit = 12, seen = new Set(), pages = null, ti
     for (let page = 1; page <= depth; page++) {
       let videos;
       try {
-        videos = await search(query, page, { timeoutMs });
+        videos = await search(query, page, { timeoutMs, cacheMs: cfg.searchCacheMinutes * 60_000 });
       } catch (e) {
         errors.push(`${query}: ${e.message}`);
         break;
@@ -270,16 +324,33 @@ export async function findClips({ limit = 12, seen = new Set(), pages = null, ti
 
   const judged = [];
   const nowhere = [];
+  const learned = [];
   let calls = 0;
+  let recalled = 0;
   for (const c of queue) {
     if (judged.length >= limit || calls >= cfg.visionMaxCandidates) break;
-    calls++;
-    // The query and the title go WITH the picture. Without them the judge is
-    // being asked to recognise a place unaided and names one on about a
-    // fifteenth of candidates; with them it is confirming a lead against the
-    // frame, which is the question a thumbnail can actually answer. See the note
-    // on judgeThumb — the cuts format is built entirely out of these names.
-    const vision = await judgeThumb(c.poster, { query: c.query, title: c.title });
+    // Judged on an earlier build: refused clips are passed over and passed clips
+    // come back, neither of them paid for twice. See rememberVerdicts.
+    const known = verdicts ? verdicts.get(c.id) : undefined;
+    if (known === null) {
+      recalled++;
+      continue;
+    }
+    let vision = known;
+    if (known === undefined) {
+      calls++;
+      // The query and the title go WITH the picture. Without them the judge is
+      // being asked to recognise a place unaided and names one on about a
+      // fifteenth of candidates; with them it is confirming a lead against the
+      // frame, which is the question a thumbnail can actually answer. See the note
+      // on judgeThumb: the cuts format is built entirely out of these names.
+      vision = await judgeThumb(c.poster, { query: c.query, title: c.title });
+      // Null is "not judged" (no key, a timeout), which is not a verdict and is
+      // not remembered as one.
+      if (vision) learned.push({ id: c.id, vision, ok: rankVision(vision, cfg) !== null });
+    } else {
+      recalled++;
+    }
     const rank = rankVision(vision, cfg);
     if (rank === null) {
       // Recorded rather than dropped silently. "destination 2" is the single
@@ -299,6 +370,17 @@ export async function findClips({ limit = 12, seen = new Set(), pages = null, ti
     judged.push({ ...c, vision, rank });
   }
 
+  // Remembered BEFORE the caller decides anything, because the caller's most likely
+  // decision on a thin morning is to throw, and a throw is exactly the build whose
+  // verdicts the next one needs.
+  if (verdicts && learned.length) {
+    try {
+      verdicts.put(learned);
+    } catch (e) {
+      console.error(`pexels: could not remember ${learned.length} verdict(s) - ${e.message}`);
+    }
+  }
+
   judged.sort((a, b) => b.rank - a.rank);
-  return { clips: judged, total: queue.length, vetoed, errors, judged: calls, nowhere };
+  return { clips: judged, total: queue.length, vetoed, errors, judged: calls, recalled, nowhere };
 }

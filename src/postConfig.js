@@ -429,6 +429,13 @@ function clips(raw) {
       // carry it. Two pages across 44 queries is 88, and the pool it returns is 1,504
       // candidates before any gate - the drought was never a shortage of raw results.
       pages: Math.max(1, Math.round(num(s.pages, 2))),
+      // HOW LONG ONE SEARCH IS REUSED, in minutes, and the arithmetic above is why it
+      // exists. A failed reel used to wait two hours before the next format was
+      // drawn; it now waits fifteen minutes (SLOT_RETRY_MINUTES in bot.js), and two
+      // reel builds inside one hour without this are 176 requests against a limit of
+      // 200. Stock search results for "santorini greece" do not move in six hours,
+      // so every reel built inside the window shares one set of 88. Zero turns it off.
+      searchCacheMinutes: Math.max(0, num(s.searchCacheMinutes, 360)),
       // How tall a frame the judge is sent, which is the largest single number
       // in this pipeline's bill. Measured rather than chosen: the 1200px poster
       // Pexels hands back is 1,008 image tokens and 640 is 287, across the cap

@@ -174,6 +174,31 @@ export function nextShape({ type = null, look = null, frame = null, caption = nu
 }
 
 /**
+ * The catalogue rows a post of this type can be built for, before anything is fetched.
+ *
+ * ASKED BEFORE THE DESTINATION IS DRAWN, NOT DISCOVERED AFTER. The unasked post drew
+ * from all 102 rows of destinations.json, 41 of which have no page on the site, so
+ * Milan, Naples and Catania came up and every page-built type failed on them with
+ * "the site has no page". On the production log that was 8 of the 20 failed builds,
+ * and an `instead` post for a country with fewer than three other pages was 7 more.
+ * Each one cost its rotation slot for two hours.
+ *
+ * Every type but one needs the destination's own page. `instead` is the exception
+ * and wants the opposite: a destination people default to, which is usually one the
+ * site does NOT cover, in a country where it covers at least three others. Those
+ * three are the post. The same rule bot.js applies when it gathers the alternatives,
+ * so a row this returns is one that can actually be built.
+ */
+export function destinationsFor(type, rows) {
+  const all = rows || [];
+  const paged = all.filter((r) => r?.siteSlug);
+  if (type !== 'instead') return paged;
+  const perCountry = new Map();
+  for (const r of paged) perCountry.set(r.country, (perCountry.get(r.country) || 0) + 1);
+  return all.filter((r) => (perCountry.get(r?.country) || 0) - (r?.siteSlug ? 1 : 0) >= 3);
+}
+
+/**
  * Whether a destination's page can carry a given type, and why not when it cannot.
  *
  * CHECKED BEFORE ANYTHING IS SPENT. Each type declares what it needs in

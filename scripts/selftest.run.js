@@ -9258,6 +9258,170 @@ group('before you book - the reach of the Santorini hook, paid off a fact per cu
 }
 
 /* -------------------------------------------------------------------------- */
+group('enough to approve - five things that were quietly holding suggestions back');
+
+{
+  // 1. THE CLIMATE SOURCE, which went silent on 3 Oct 2026. A city published in
+  // August had dropped out of `seen` by October and was offered again, the ranker
+  // threw it out as published, and the adapter's two places a run were spent on it.
+  const { climateQueue, climateKey } = await import('../src/sources/index.js');
+  const now = new Date('2026-10-07T09:00:00Z');
+  const dests = [
+    { id: 'larnaca', en: 'Larnaca', country: 'קפריסין' },
+    { id: 'barcelona', en: 'Barcelona', country: 'ספרד' },
+    { id: 'madrid', en: 'Madrid', country: 'ספרד' },
+    { id: 'hanoi', en: 'Hanoi', country: 'וייטנאם' },
+  ];
+  eq('the key is the one a climate item is stored under', climateKey(dests[2], now), 'climate:madrid:2025');
+  const published = new Set([climateKey(dests[0], now), climateKey(dests[1], now)]);
+  const queue = climateQueue(dests, { now, used: (k) => published.has(k) });
+  ok('a destination published past the seen window is not offered again',
+    !queue.some((d) => d.id === 'larnaca' || d.id === 'barcelona'), queue.map((d) => d.id).join(','));
+  eq('and the two never posted are', queue.length, 2);
+
+  // And the default reads both halves of the store, not only `seen`.
+  const probe = { id: 'selftest-published-city', en: 'Probe', country: 'ספרד' };
+  store.recordPublished({ id: climateKey(probe, now), pillar: 'timing', tags: [], layout: 'numbers', instagram: true });
+  ok('a published city is used even when nothing has marked it seen',
+    !climateQueue([probe], { now }).length && !store.hasSeen(climateKey(probe, now)));
+}
+
+{
+  // 2. THE DECK BACKLOG, which three unanswered ideas held shut from 3 Oct 2026.
+  const since = () => Date.now() - 48 * 3_600_000;
+  const before = store.proposalsWaiting({ since: since() });
+  const old = store.addProposal({ idea: { titleHe: 'רעיון שאף אחד לא ענה עליו', where: 'Nowhere' }, chatId: 1 });
+  store.updateProposal(old, { proposedAt: Date.now() - 3 * 86_400_000 });
+  const fresh = store.addProposal({ idea: { titleHe: 'רעיון של היום', where: 'Somewhere' }, chatId: 1 });
+  eq('an idea left unanswered for three days no longer holds the next one back', store.proposalsWaiting({ since: since() }), before + 1);
+  ok('but it is still there to be tapped', store.getProposal(old) !== null);
+  ok('and the next idea call is told about it, so it is not proposed twice',
+    store.proposalTitles().some((t) => t.includes('רעיון שאף אחד לא ענה עליו') && t.includes('(Nowhere)')));
+
+  store.updateProposal(old, { proposedAt: Date.now() - 15 * 86_400_000 });
+  const third = store.addProposal({ idea: { titleHe: 'עוד רעיון', where: 'Elsewhere' }, chatId: 1 });
+  eq('after a fortnight it is gone', store.getProposal(old), null);
+  ok('and the fresh ones are not', Boolean(store.getProposal(fresh) && store.getProposal(third)));
+  store.clearProposal(fresh);
+  store.clearProposal(third);
+}
+
+{
+  // 3. THE POST DESTINATION, which was drawn from 102 rows when 41 had no page.
+  const { destinationsFor } = await import('../src/posts/types.js');
+  const rows = JSON.parse(readFileSync(new URL('../destinations.json', import.meta.url), 'utf8')).destinations;
+  const forVerdict = destinationsFor('verdict', rows);
+  ok('a page-built type is only offered destinations with a page', forVerdict.length > 0 && forVerdict.every((r) => r.siteSlug));
+  ok('so Milan, Naples and Catania never come up for one',
+    !forVerdict.some((r) => ['Milan', 'Naples', 'Catania'].includes(r.en)));
+
+  const forInstead = destinationsFor('instead', rows);
+  const others = (r) => rows.filter((o) => o.country === r.country && o.id !== r.id && o.siteSlug).length;
+  ok('an instead post is only offered a destination with three other pages beside it',
+    forInstead.length > 0 && forInstead.every((r) => others(r) >= 3), forInstead.map((r) => r.en).join(','));
+  ok('which is where the habits the site does not cover live, Rhodes among them', forInstead.some((r) => r.en === 'Rhodes'));
+
+  const synth = [
+    { id: 'a', country: 'X', siteSlug: 'a' },
+    { id: 'b', country: 'X', siteSlug: 'b' },
+    { id: 'c', country: 'X', siteSlug: 'c' },
+    { id: 'd', country: 'X' },
+    { id: 'e', country: 'Y', siteSlug: 'e' },
+    { id: 'f', country: 'Y' },
+  ];
+  eq('instead: a page of its own does not count as one of the three', destinationsFor('instead', synth).map((r) => r.id).join(','), 'd');
+  eq('every other type: exactly the rows with a page', destinationsFor('plan', synth).map((r) => r.id).join(','), 'a,b,c,e');
+
+  // And the verdict, which is most of what that draw lands on, refused on Athens,
+  // Venice and Baku for putting their kosher drawback on a slide of its own.
+  const { splitCons } = await import('../src/posts/verdict.js');
+  const { isKosherLine } = await import('../src/posts/voice.js');
+  const K = 'הכשרות מוגבלת למסעדה אחת ולבית חב"ד';
+  const K2 = 'אין תשתית כשרות רחבה';
+  const show = (chunks) => chunks.map((c) => c.map((x) => (isKosherLine(x) ? 'K' : x)).join('+')).join(' | ');
+  ok('no slide of drawbacks is kashrut alone', [[ 'a', 'b', K ], [ 'a', 'b', K, K2 ], [ 'a', K, K2 ], [ K, 'a', 'b' ], [ 'a', 'b', 'c', K ]]
+    .every((cons) => splitCons(cons).every((chunk) => !chunk.every(isKosherLine))));
+  eq('Athens: the kosher note sits beside the first real drawback', show(splitCons(['a', 'b', K])), 'a+K | b');
+  eq('two kosher notes go one to each slide', show(splitCons(['a', 'b', K, K2])), 'a+K | b+K');
+  eq('one real drawback: one slide, and it leads', show(splitCons(['a', K, K2])), 'a+K+K');
+  eq('a split that was already fine is left alone', show(splitCons(['a', 'b', 'c', K])), 'a+b | c+K');
+  eq('and two or fewer is one slide, as before', show(splitCons(['a', 'b'])), 'a+b');
+  ok('nothing is dropped, so the count on the cover still holds',
+    splitCons(['a', 'b', K, K2]).flat().length === 4 && splitCons(['a', K, K2]).flat().length === 3);
+}
+
+{
+  // 4. THE ROTATION, where a failed format used to be free to fail again two hours on.
+  const { pickFormat, liveFormats } = await import('../src/formats/rotation.js');
+  let drawn = 0;
+  for (let i = 0; i < 300; i++) if (pickFormat({ history: [], exclude: ['hidden_gems_video'] })?.id === 'hidden_gems_video') drawn++;
+  eq('a format that just failed is not drawn while it sits out', drawn, 0);
+  eq('with every live format sitting out, the answer is to wait', pickFormat({ history: [], exclude: liveFormats().map((f) => f.id) }), null);
+  ok('and nothing excluded is the draw it always was', pickFormat({ history: [], rand: () => 0.01 })?.id === liveFormats()[0].id);
+}
+
+{
+  // 5. THE FOOTAGE JUDGE'S MEMORY. Every retry used to judge the same 24 thumbnails.
+  const key = 'selftest-judge';
+  const passed = {
+    destination: 9, pov: false, aerial: false, staged: false, personSubject: false, urban: false,
+    subject: 'a valley', place: 'Italy', placeConfidence: 9, site: 'Dolomites', siteConfidence: 9, siteHe: 'דולומיטים',
+  };
+  store.noteClipVerdicts([{ id: 'v1', vision: passed, ok: true }, { id: 'v2', vision: { ...passed, destination: 3 }, ok: false }], key);
+  eq('a passed verdict comes back whole', store.clipVerdict('v1', key)?.site, 'Dolomites');
+  eq('a refused one comes back as a refusal and nothing more', store.clipVerdict('v2', key), null);
+  eq('a clip never judged is unknown, which is different from refused', store.clipVerdict('v3', key), undefined);
+  eq('a verdict from a different judge does not count', store.clipVerdict('v1', 'another-judge'), undefined);
+  eq('and a fortnight on, none of them do', store.clipVerdict('v1', key, { now: Date.now() + 15 * 86_400_000 }), undefined);
+
+  const { verdictKey } = await import('../src/video/vision.js');
+  ok('the judge is named by a short stable key', verdictKey() === verdictKey() && verdictKey().length === 10, verdictKey());
+
+  // The same rules, inside a search. Stubbed fetch, and no model key, so the one
+  // clip nobody has judged gets a judge that cannot answer, which must not be
+  // remembered as an answer.
+  const { findClips } = await import('../src/video/pexels.js');
+  const realFetch = globalThis.fetch;
+  const env = { pexels: process.env.PEXELS_API_KEY, anthropic: process.env.ANTHROPIC_API_KEY };
+  process.env.PEXELS_API_KEY = 'selftest';
+  delete process.env.ANTHROPIC_API_KEY;
+  const video = (id, slug) => ({
+    id, width: 1080, height: 1920, duration: 10,
+    url: `https://www.pexels.com/video/${slug}-${id}/`,
+    image: `https://images.pexels.com/videos/${id}/p.jpeg?h=1200&w=630`,
+    user: { name: 'selftest' },
+    video_files: [{ file_type: 'video/mp4', width: 1080, height: 1920, link: `https://example.test/${id}.mp4` }],
+  });
+  let searches = 0;
+  globalThis.fetch = async (url) => {
+    if (!String(url).startsWith('https://api.pexels.com/videos/search')) throw new Error(`unexpected fetch ${url}`);
+    searches += 1;
+    const videos = [video(901, 'scenic-hike-through-the-dolomites'), video(902, 'scenic-road-through-hills'), video(903, 'scenic-village-on-a-lake')];
+    return new Response(JSON.stringify({ videos }), { status: 200 });
+  };
+  try {
+    const memory = new Map([['901', passed], ['902', null]]);
+    const put = [];
+    const verdicts = { get: (id) => memory.get(String(id)), put: (list) => put.push(...list) };
+    const queries = ['selftest only query'];
+    const found = await findClips({ limit: 10, queries, pages: 1, verdicts });
+    eq('a clip the judge refused before is not offered again', found.clips.some((c) => c.id === '902'), false);
+    ok('a clip it passed before comes back without a call', found.clips.some((c) => c.id === '901' && c.vision?.site === 'Dolomites'));
+    eq('the one nobody had judged is the only call made', found.judged, 1);
+    eq('and both remembered verdicts are counted as such', found.recalled, 2);
+    eq('a judge that could not answer is not remembered as having answered', put.length, 0);
+
+    await findClips({ limit: 10, queries, pages: 1, verdicts });
+    eq('the same search inside the window is not sent to Pexels twice', searches, 1);
+  } finally {
+    globalThis.fetch = realFetch;
+    if (env.pexels === undefined) delete process.env.PEXELS_API_KEY;
+    else process.env.PEXELS_API_KEY = env.pexels;
+    if (env.anthropic !== undefined) process.env.ANTHROPIC_API_KEY = env.anthropic;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
 group('every module loads - the check node --check cannot make');
 
 {

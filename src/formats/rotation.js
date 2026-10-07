@@ -46,8 +46,13 @@ export const liveFormats = () => postConfig().formats.mix.filter((f) => f.weight
  * than a third of the same format. That is not a loophole: it means the run limit is
  * a preference that yields to there being something to post, which is the right
  * order of priorities for a feed.
+ *
+ * `exclude` IS DIFFERENT, AND HAS NO FALLBACK. It is the formats that just failed to
+ * build, and a format that cannot be built is not a preference the draw may yield on:
+ * drawing it again only spends the next slot on the same failure. With everything
+ * excluded the answer is null, which the caller reads as "wait".
  */
-export function pickFormat({ only = null, history = null, rand = Math.random } = {}) {
+export function pickFormat({ only = null, history = null, exclude = [], rand = Math.random } = {}) {
   const { mix, rotation } = postConfig().formats;
   if (only) {
     const found = mix.find((f) => f.id === only);
@@ -55,7 +60,7 @@ export function pickFormat({ only = null, history = null, rand = Math.random } =
     return found;
   }
 
-  const live = mix.filter((f) => f.weight > 0);
+  const live = mix.filter((f) => f.weight > 0 && !exclude.includes(f.id));
   if (!live.length) return null;
 
   const recent = (history || formatHistory()).slice(0, rotation.maxRun);

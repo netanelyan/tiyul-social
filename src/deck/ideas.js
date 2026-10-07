@@ -646,8 +646,13 @@ export const hasApiKey = () =>
  * avoid repeating itself. `season` is passed rather than computed inside the
  * prompt, because the model has no clock and a deck about cherry blossom in
  * October is the kind of mistake that reads as automation.
+ *
+ * `pending` is what has been PROPOSED and not yet answered, which `recent` cannot
+ * see because nothing in it has gone out. Without it the same idea came back a day
+ * later: "האיים בתאילנד עם המים הכי צלולים" was proposed on 2 Oct and again on
+ * 3 Oct, and the two copies took two of the three places in the backlog.
  */
-export async function proposeIdeas({ count = 4, recent = [], angle = null, today = new Date() } = {}) {
+export async function proposeIdeas({ count = 4, recent = [], pending = [], angle = null, today = new Date() } = {}) {
   if (!hasApiKey()) throw new Error('ANTHROPIC_API_KEY is not set - idea generation is required');
 
   const month = today.toLocaleString('en-GB', { month: 'long' });
@@ -676,6 +681,9 @@ export async function proposeIdeas({ count = 4, recent = [], angle = null, today
     recent.length
       ? ['ALREADY PUBLISHED (do not repeat, and avoid the same city twice in a row):', ...recent.map((r) => `  ${r}`)].join('\n')
       : 'ALREADY PUBLISHED: nothing yet.',
+    pending.length
+      ? ['', 'ALREADY PROPOSED AND WAITING FOR AN ANSWER (do not propose these again):', ...pending.map((r) => `  ${r}`)].join('\n')
+      : null,
     // The catalogue, last, so it reads as the menu to choose from rather than
     // as background. Its absence is what left the model choosing from its own
     // prior, which for "a beautiful travel slideshow" is the postcard answer.

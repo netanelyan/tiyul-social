@@ -143,41 +143,61 @@ export async function gather({ climateLimit = 2, now = new Date() } = {}) {
   return { items, errors, perSource, skipped };
 }
 
-// Climate is a pull, not a feed, so it needs its own rotation: walk the
-// destination list and take the first few that haven't already produced a post
-// this year. Without this it would offer the same city every single day.
-async function gatherClimate(source, { limit, now }) {
-  const out = [];
-  const dests = loadDestinations();
-  const offset = Math.floor(now.getTime() / 86_400_000) % Math.max(1, dests.length);
-  // Weighted first, rotated second — the sort is stable, so the day-of-year
+/** The dedupe key a climate item for this destination carries, see fetchClimate. */
+export const climateKey = (dest, now = new Date()) => `climate:${dest.id}:${now.getUTCFullYear() - 1}`;
+
+/**
+ * Today's climate rotation, with every destination already used taken out.
+ *
+ * USED MEANS SEEN *OR* PUBLISHED. It used to mean only the first, which was fine for
+ * exactly as long as the seen window, 45 days, and then it was not.
+ *
+ * `seen` forgets after SEEN_TTL_DAYS and `publishedIds` never does, so a city
+ * published in August stopped being seen in October and came straight back to the
+ * front of this list. The ranker drops a published id, correctly, which left this
+ * adapter returning its two items every run and both of them dead on arrival. On
+ * 7 Oct 2026 that was Larnaca and Barcelona, run after run: six destinations had
+ * been published past the seen window, all six in the heaviest weight tier, and 61
+ * that had never been posted sat behind them unasked. The source that "always has
+ * something to say" had said nothing since 3 Oct, and it had published more cards
+ * than any other source, 10 of the last 36.
+ *
+ * `used` is injectable so the rule can be tested without a store.
+ */
+export function climateQueue(dests, { now = new Date(), used = (key) => store.hasSeen(key) || store.hasPublished(key) } = {}) {
+  const list = dests || [];
+  const offset = Math.floor(now.getTime() / 86_400_000) % Math.max(1, list.length);
+  // Weighted first, rotated second: the sort is stable, so the day-of-year
   // rotation survives INSIDE each weight tier and is what still stops the same
   // Greek island coming up every morning.
   //
   // What the weighting actually buys, given that a destination is capped at one
   // post per year by the dedupe key, is ORDER: the places Israelis fly to get
   // posted early in the year and the cold and long-haul ones get whatever is
-  // left. That is the bias, stated plainly — Reykjavik may not come up at all
+  // left. That is the bias, stated plainly: Reykjavik may not come up at all
   // in a busy year, and that is the intended outcome rather than a side effect.
-  const ordered = byWeight([...dests.slice(offset), ...dests.slice(0, offset)]);
+  return byWeight([...list.slice(offset), ...list.slice(0, offset)]).filter((d) => !used(climateKey(d, now)));
+}
 
-  for (const dest of ordered) {
+// Climate is a pull, not a feed, so it needs its own rotation: walk the
+// destination list and take the first few that haven't already produced a post
+// this year. Without this it would offer the same city every single day.
+async function gatherClimate(source, { limit, now }) {
+  const out = [];
+  const queue = climateQueue(loadDestinations(), { now });
+
+  for (const dest of queue) {
     if (out.length >= limit) break;
-    const year = now.getUTCFullYear() - 1;
-    if (store.hasSeen(`climate:${dest.id}:${year}`)) continue;
     try {
       out.push(await fetchClimate(source, dest, now));
     } catch (e) {
       // One unreachable destination shouldn't stop the rotation reaching the
-      // next one — the whole source only fails if every attempt fails.
+      // next one: the whole source only fails if every attempt fails.
       console.error(`   climate: ${dest.en} failed - ${e.message}`);
     }
   }
-  if (!out.length && ordered.length) {
-    // Distinguish "everything is already used up this year" (fine, quiet) from
-    // "the API is down" (an error worth reporting).
-    const allSeen = ordered.every((d) => store.hasSeen(`climate:${d.id}:${now.getUTCFullYear() - 1}`));
-    if (!allSeen) throw new Error('every climate lookup attempted failed');
-  }
+  // Distinguish "everything is already used up this year" (fine, quiet) from
+  // "the API is down" (an error worth reporting). An empty queue is the first.
+  if (!out.length && queue.length) throw new Error('every climate lookup attempted failed');
   return out;
 }

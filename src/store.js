@@ -90,6 +90,10 @@ const empty = {
   // unique verticals behind the configured queries, so spending one on a
   // rejected clip costs nothing next to being offered it twice.
   clipsUsed: {},
+  // Pexels id -> what the vision judge said about its thumbnail, for a fortnight.
+  // `{ at, key, v }` for a clip it passed and `{ at, key }` for one it refused, which
+  // is most of them and needs nothing but the fact. See clipVerdict.
+  clipVerdicts: {},
   // The shapes of the clips already built, most recent first. What makes the two
   // shapes alternate across days rather than only inside one batch — see
   // lastClipShape further down.
@@ -548,6 +552,44 @@ export function markClipUsed(pexelsId) {
   save();
 }
 
+// --- what the vision judge said ----------------------------------------------
+//
+// A THIRD LEDGER BESIDE THE FOOTAGE AND THE PLACES, and it is about the JUDGE: this
+// thumbnail has been looked at, and this is what was seen. Neither of the other two
+// can say it. `clipsUsed` only learns about a clip that became a reel, and a reel
+// that failed spends nothing, so the clips the judge refused were offered to it again
+// on every retry and refused again, for money. See rememberVerdicts in
+// src/video/pexels.js for what that cost the gems reel.
+//
+// A fortnight, because a verdict does not age but the footage behind it eventually
+// should be looked at again, and because `key` already retires every verdict the
+// moment the judge itself changes.
+const VERDICT_TTL_MS = 14 * DAY_MS;
+
+/**
+ * The remembered verdict on one clip: undefined if it was never judged by this judge
+ * (or not lately), null if it was refused, the verdict if it was passed.
+ */
+export function clipVerdict(pexelsId, key, { now = Date.now() } = {}) {
+  const e = state.clipVerdicts?.[String(pexelsId)];
+  if (!e || e.key !== key || now - (e.at || 0) >= VERDICT_TTL_MS) return undefined;
+  return e.v || null;
+}
+
+/** Remember one search's worth of verdicts, `[{ id, vision, ok }]`, in one write. */
+export function noteClipVerdicts(list, key, { now = Date.now() } = {}) {
+  if (!Array.isArray(list) || !list.length) return;
+  if (!state.clipVerdicts || typeof state.clipVerdicts !== 'object') state.clipVerdicts = {};
+  for (const { id, vision, ok } of list) {
+    if (!id) continue;
+    state.clipVerdicts[String(id)] = ok && vision ? { at: now, key, v: vision } : { at: now, key };
+  }
+  for (const [id, e] of Object.entries(state.clipVerdicts)) {
+    if (now - (e?.at || 0) >= VERDICT_TTL_MS) delete state.clipVerdicts[id];
+  }
+  save();
+}
+
 // --- which PLACES a post has named lately -----------------------------------
 //
 // A SECOND LEDGER BESIDE `clipsUsed`, AND THE DIFFERENCE IS THE SUBJECT.
@@ -950,9 +992,41 @@ export function clearStaging() {
 export function addProposal(proposal) {
   const key = Math.random().toString(36).slice(2, 9);
   state.proposals[key] = { ...proposal, proposedAt: Date.now() };
+  pruneProposals(state);
   save();
   return key;
 }
+
+// A fortnight, then the proposal goes. Its message still has buttons on it, and a tap
+// then answers "ההצעה הזו כבר לא ממתינה", which is true. Pruned here rather than at
+// load because this is the only place the collection grows.
+const PROPOSAL_TTL_MS = 14 * DAY_MS;
+function pruneProposals(s, { now = Date.now() } = {}) {
+  for (const [key, p] of Object.entries(s.proposals || {})) {
+    if ((p?.proposedAt || 0) < now - PROPOSAL_TTL_MS) delete s.proposals[key];
+  }
+}
+
+/**
+ * How many proposals are still WAITING, which is not how many are in the store.
+ *
+ * THE BACKLOG CAP COUNTS THIS, AND IT USED TO COUNT EVERYTHING. Three ideas went
+ * unanswered on 2 and 3 Oct 2026, the cap is three, and nothing could ever free a
+ * place except a tap: no deck idea arrived again until somebody answered one of
+ * those three. A ceiling that is only released by the owner is a ceiling the owner
+ * cannot see, and from the chat it looked like the bot had stopped having ideas.
+ *
+ * So an idea older than `since` has been answered, by being left. It is still in the
+ * store and its buttons still work; it just stops holding the next one back.
+ */
+export const proposalsWaiting = ({ since = 0 } = {}) =>
+  Object.values(state.proposals).filter((p) => (p?.proposedAt || 0) >= since).length;
+
+/** The headlines of every proposal still in the store, so the next idea call can avoid them. */
+export const proposalTitles = () =>
+  Object.values(state.proposals)
+    .map((p) => [p?.idea?.titleHe, p?.idea?.where && `(${p.idea.where})`].filter(Boolean).join(' '))
+    .filter(Boolean);
 export const getProposal = (key) => state.proposals[key] || null;
 export function updateProposal(key, proposal) {
   if (!state.proposals[key]) return false;

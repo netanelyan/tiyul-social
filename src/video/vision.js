@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { createHash } from 'node:crypto';
 import { record as recordUsage } from '../usage.js';
 import { postConfig } from '../postConfig.js';
 import { modelFor, outputConfig } from '../models.js';
@@ -166,6 +167,23 @@ export function visionThumb(url, height = postConfig().clips.search.visionThumbH
   const w = Number(new URL(s, 'https://x').searchParams.get('w'));
   if (!(h > 0 && w > 0) || height >= h) return s;
   return s.replace(/([?&])h=\d+/, `$1h=${height}`).replace(/([?&])w=\d+/, `$1w=${Math.round((w / h) * height)}`);
+}
+
+/**
+ * Which judge a remembered verdict came from.
+ *
+ * A verdict is only worth remembering while it is the verdict this judge would give,
+ * so the memory is keyed on everything that decides one: the model, the prompt, the
+ * schema, the frame height and the confidence floor that blanks a place name. Change
+ * any of them and every remembered verdict stops counting, which is the same as
+ * having none. See rememberVerdicts in ./pexels.js.
+ */
+export function verdictKey() {
+  const s = postConfig().clips.search;
+  return createHash('sha1')
+    .update([MODEL, EFFORT, PROMPT, JSON.stringify(SCHEMA), s.visionThumbHeight, s.placeMinConfidence].join('\n'))
+    .digest('hex')
+    .slice(0, 10);
 }
 
 /** What the stock library already says about this clip, as a block for the prompt. */

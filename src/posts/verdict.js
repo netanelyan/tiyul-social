@@ -193,7 +193,7 @@ export function buildVerdictPost(city, { hook, dest, questionHe = null } = {}) {
   // boxes is a wall of text and the format's whole claim is that these are readable.
   // Two slides of two is also two swipes, which on a post whose retention depends on
   // finishing is the right direction.
-  const conChunks = cons.length > 2 ? [cons.slice(0, 2), cons.slice(2)] : [cons];
+  const conChunks = splitCons(cons);
   for (const [i, chunk] of conChunks.entries()) {
     slides.push({
       look: 'sheet',
@@ -219,7 +219,13 @@ export function buildVerdictPost(city, { hook, dest, questionHe = null } = {}) {
   // Placed after the drawbacks and before "who is this for", which is where it falls
   // in the order somebody actually needs it: what is wrong with it, what to do about
   // it, then whether it suits you.
-  const booking = bookingLines(city, { want: 2 }).filter((b) => !spent.has(b));
+  // THE PROS RULE AGAIN: a kashrut note may follow a real one and never stand alone.
+  // Bangkok's only booking note is Shabbat dinner at the Chabad house, and Kyoto's,
+  // Baku's and Almaty's are the same kind of line, so a "what to book ahead" slide
+  // carrying only that refused all four posts at the voice gate. Without it the slide
+  // is simply absent, which is what a page with no booking note already gets.
+  const offered = bookingLines(city, { want: 2 }).filter((b) => !spent.has(b));
+  const booking = offered.some((b) => !isKosherLine(b)) ? offered : [];
   booking.forEach((b) => spent.add(b));
   if (booking.length) {
     slides.push({
@@ -317,7 +323,13 @@ export function buildVerdictPost(city, { hook, dest, questionHe = null } = {}) {
   // What goes there instead is the one thing a verdict post has and has withheld for
   // seven slides: OUR ANSWER, as the rating, with the single clearest reason under it.
   // A viewer who swiped to the end came for the verdict.
-  const bestPro = take(verdict.prosHe, { max: 90 }) || take(verdict.consHe, { max: 90 });
+  //
+  // NEVER THE KASHRUT, because under a score it reads as the reason for the score. On
+  // Kyoto every other pro had been spent by then and the reason under 4.7 came out as
+  // "בעיר גם בית חב"ד עם מטבח כשר". The question still follows it, so the gate let it
+  // through; the rule it is there for did not. No reason at all is the better answer.
+  const plain = (list) => (list || []).filter((c) => !isKosherLine(c));
+  const bestPro = take(plain(verdict.prosHe), { max: 90 }) || take(plain(verdict.consHe), { max: 90 });
   const badge = ratingBadge(city);
   slides.push({
     look: 'sheet',
@@ -338,6 +350,35 @@ export function buildVerdictPost(city, { hook, dest, questionHe = null } = {}) {
   };
 }
 
+
+/**
+ * The drawbacks in slides of at most two, and never a slide of kashrut alone.
+ *
+ * The plain split, two and then the rest, put a third drawback on a slide of its own,
+ * and on three destination pages the third is the kosher note: "הכשרות מוגבלת למסעדה
+ * אחת ולבית חב"ד" on Athens, the same shape on Venice and Baku. That is a slide whose
+ * only line is about kashrut, which assertKosherIsANote refuses, so the whole post was
+ * refused with it, for the type that is 60% of the slideshows.
+ *
+ * So when the plain split would leave a slide all kashrut, each slide leads with a
+ * real drawback and the kashrut sits beside one of them. The drawbacks are the same
+ * ones and the same number, so the count the cover promised still holds. With only
+ * one real drawback there is one slide, which is longer than the format likes and
+ * shorter than no post at all.
+ */
+export function splitCons(cons) {
+  const list = cons || [];
+  if (list.length <= 2) return [list];
+  const plainSplit = [list.slice(0, 2), list.slice(2)];
+  if (!plainSplit.some((chunk) => chunk.every(isKosherLine))) return plainSplit;
+
+  const real = list.filter((c) => !isKosherLine(c));
+  const kosher = list.filter(isKosherLine);
+  if (real.length < 2) return [[...real, ...kosher]];
+  const chunks = [[real[0]], [real[1]]];
+  [...real.slice(2), ...kosher].forEach((c, i) => chunks[i % 2].push(c));
+  return chunks;
+}
 
 /**
  * What the cover promises, in place of the answer it used to give away.
