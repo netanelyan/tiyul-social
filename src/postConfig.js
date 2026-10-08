@@ -460,6 +460,10 @@ function clips(raw) {
       // that it cannot outrank anything shot on the ground — see rankVision.
       aerialPenalty: num(s.aerialPenalty, 4),
       minHeight: num(s.minHeight, 1600),
+      // How wide the ORIGINAL must be, which is the quality gate: bigger than the 1080
+      // we render, so the file we download is a downscale rather than a phone's own
+      // processing at full size. Measured reasons in post-config.json. Zero is off.
+      minSourceWidth: Math.max(0, num(s.minSourceWidth, 1440)),
       minDuration: num(s.minDuration, 5),
       maxDuration: num(s.maxDuration, 30),
     },
@@ -1177,6 +1181,9 @@ function gems(raw) {
     // that has gone stale. The error names how many places were skipped for this rule
     // so the two can be told apart, and this is what to lower when it is this.
     placeMemoryDays: Math.max(0, count(raw.placeMemoryDays, 14)),
+    // THE SHORT WINDOW INSIDE IT, WHICH IS A REFUSAL RATHER THAN A PREFERENCE, and it
+    // applies to every reel format rather than to this one. See src/video/placeMemory.js.
+    placeHoldDays: Math.max(0, count(raw.placeHoldDays, 3)),
     // ENDING ON THE BEST SHOT, WHICH IS NOW OFF BY DEFAULT AND IS NOT A CONTRADICTION.
     //
     // It was true that the last frame of a reel is what a viewer is looking at while

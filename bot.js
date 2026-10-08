@@ -21,6 +21,7 @@ import { postConfig } from './src/postConfig.js';
 import { pickFormat, rotationOn, slotsPerDay, mixShares } from './src/formats/rotation.js';
 import { rememberVerdicts } from './src/video/pexels.js';
 import { verdictKey } from './src/video/vision.js';
+import { holdPlaces, placesOfCandidate } from './src/video/placeMemory.js';
 import {
   notePublished as noteMetricsPublished,
   collect as collectMetrics,
@@ -2225,7 +2226,24 @@ const spendClipFootage = (clips) => {
   // beside the footage because it is the same moment and the same rule: a clip
   // that was built is spent, whatever is done with it next.
   for (const c of clips) store.noteClipShape(c.clip?.shape || 'held');
+  // AND WHICH PLACES IT NAMED, so the next reels do not name them again. Recorded when
+  // BUILT rather than when published, like the footage and for the same reason: a
+  // rejected reel still used up the place, and offering the same valley again tomorrow
+  // is the repeat this is here to stop. Here rather than in each format, because it
+  // used to be in the gems reel only: Hallstatt was in four reels on 4 and 5 Oct and
+  // the memory heard about the two that were gems reels, not the cuts video or the
+  // montage. See src/video/placeMemory.js.
+  for (const c of clips) store.notePlacesNamed(placesOfCandidate(c));
 };
+
+/**
+ * What other reels named recently, in the form the postcard and clip builders take.
+ *
+ * Read here and passed in, because src/video/clip.js must not import the store: the lab
+ * scripts import clip.js, and a second process that loads the store rewrites it. The
+ * gems reel reads the same memory itself, as it always has.
+ */
+const placeMemoryNow = () => holdPlaces(store.placesNamedSince(postConfig().gems.placeMemoryDays));
 
 /**
  * `/clip` — build short vertical videos and stage them for approval.
@@ -2261,7 +2279,7 @@ bot.command('postcard', async (ctx) => {
   await ctx.reply('⏳ בונה גלויות...');
   detach('גלויות', () =>
     forKind('clip', async () => {
-      const cand = await buildPostcardCandidate({ seen: clipFootageSeen() });
+      const cand = await buildPostcardCandidate({ seen: clipFootageSeen(), places: placeMemoryNow() });
       spendClipFootage([cand]);
       await stage(cand);
       await notify.send(bot.telegram, ctx.chat.id, postcardApprovalMessage(cand)).catch(() => {});
@@ -2291,7 +2309,6 @@ bot.command('gems', async (ctx) => {
     forKind('clip', async () => {
       const cand = await buildHiddenGemsCandidate({ seen: clipFootageSeen(), write });
       spendClipFootage([cand]);
-      store.notePlacesNamed(cand.clip.places);
       store.noteGemHook(cand.clip.hookTemplate);
       await stage(cand);
       await notify.send(bot.telegram, ctx.chat.id, hiddenGemsApprovalMessage(cand)).catch(() => {});
@@ -2378,6 +2395,7 @@ bot.command('clip', async (ctx) => {
         // Named, or the next in the alternation from whatever was built last.
         shapes: shape ? Array.from({ length: count }, () => shape) : null,
         after: store.lastClipShape(),
+        places: placeMemoryNow(),
       });
       // Before they are staged, and before anything can fail. A clip that was
       // built exists — the encode happened and you are about to be shown it —
@@ -3256,13 +3274,9 @@ const suggestGems = billed('clip', async function suggestGemsJob(chatId = stagin
   // WHICH HOOK IT OPENED ON, so the next reel does not open on the same one. The
   // scorer is deterministic and ships the best line every time it is offered, which
   // over four reels is four identical openings. Recorded here beside the footage and
-  // the places, because all three are the same fact: this reel has been built.
+  // the places (both in spendClipFootage), because all three are the same fact: this
+  // reel has been built.
   store.noteGemHook(cand.clip.hookTemplate);
-  // WHICH PLACES THIS POST NAMED, so the next fortnight's reels do not name them
-  // again. Recorded when BUILT rather than when published, like the footage ledger
-  // and for the same reason: a rejected reel still used up the place, and offering
-  // the same valley again tomorrow is the repeat this is here to stop.
-  store.notePlacesNamed(cand.clip.places);
   await stage(cand);
   await notify.send(bot.telegram, chatId, hiddenGemsApprovalMessage(cand)).catch(() => {});
   return cand;
@@ -3319,7 +3333,7 @@ const suggestBefore = billed('clip', async function suggestBeforeJob(asked = nul
 /** One postcard reel, staged for approval. Its places are whatever the judge could name. */
 const suggestPostcard = billed('clip', async function suggestPostcardJob(chatId = staging) {
   const { buildPostcardCandidate, postcardApprovalMessage } = await import('./src/video/postcard.js');
-  const cand = await buildPostcardCandidate({ seen: clipFootageSeen() });
+  const cand = await buildPostcardCandidate({ seen: clipFootageSeen(), places: placeMemoryNow() });
   spendClipFootage([cand]);
   await stage(cand);
   await notify.send(bot.telegram, chatId, postcardApprovalMessage(cand)).catch(() => {});
@@ -3466,6 +3480,7 @@ async function suggestClipJob() {
     // — which made every unattended clip this account ever produced a cuts clip
     // and left the held shape reachable only by typing /clip. See nextShapes.
     after: store.lastClipShape(),
+    places: placeMemoryNow(),
   });
   spendClipFootage(clips);
 

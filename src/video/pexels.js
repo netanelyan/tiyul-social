@@ -258,6 +258,11 @@ export async function findClips({
         if (cfg.denyIds.includes(String(v.id))) continue;
         if (!(v.height > v.width)) continue;
         if (v.height < cfg.minHeight) continue;
+        // The ORIGINAL bigger than the frame, so what pickFile downloads is a
+        // downscale. A 1080 original is the phone's own processing at full size,
+        // and every shot of the soft 8 Oct postcard was one. See minSourceWidth in
+        // post-config.json.
+        if (v.width < cfg.minSourceWidth) continue;
         if (v.duration < cfg.minDuration || v.duration > cfg.maxDuration) continue;
 
         const title = titleOf(v);

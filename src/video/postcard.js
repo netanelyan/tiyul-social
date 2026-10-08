@@ -11,7 +11,8 @@ import { clipPlaceLabel, gemsCaption } from '../hashtags.js';
 import { targetsForKind } from '../publish/targets.js';
 import { captionFollow } from '../hashtags.js';
 import { assertNoUrl } from '../format.js';
-import { planGemsReel, buildHiddenGemsClip } from './hiddenGems.js';
+import { planGemsReel, buildHiddenGemsClip, fitHolds } from './hiddenGems.js';
+import { preferFresh } from './placeMemory.js';
 
 // THE COUNTED POSTCARD REEL: a hook, then four places, each one a moving shot.
 //
@@ -258,16 +259,50 @@ function run(bin, args) {
  * ONE SHOT PER PLACE. Four angles on one city is four shots of the same city, which is
  * what the Prague version was and why it "will not get numbers".
  */
-export async function buildPostcardCandidate({ outDir = clipOutputDir(), shots = 4, seen = new Set() } = {}) {
+export async function buildPostcardCandidate({ outDir = clipOutputDir(), shots = 4, seen = new Set(), places = null } = {}) {
   // findClips returns a report, not an array: { clips, vetoed, nowhere, ... }. The
   // vetoed and nowhere lists are what make a failure explainable, so they are carried
   // into the error below rather than thrown away.
   const found = await findClips({ limit: 24, seen, judge: true });
+  const gems = postConfig().gems;
+  const r = gems.retention;
+
+  // HOW MANY PLACES THE REEL CAN SHOW, ASKED BEFORE THE HOOK COUNTS THEM. The gems reel
+  // has done this since it was written ("written first, it would be a number the reel
+  // then has to match"), and this format never did. On the shared timeline four places
+  // need 9.6 seconds and three fit, so the 8 Oct postcard placed four, opened on "4
+  // יעדים שאנשים לא חושבים עליהם מספיק" with "הרביעי הכי יפה" under it, and showed
+  // three: 1/3, 2/3, 3/3. Kotor was the fourth, and it was dropped after the title had
+  // already promised it. The same call the gems reel makes, so the two cannot disagree.
+  const room = r.on ? fitHolds(shots, gems, { hookSeconds: r.firstCutSeconds }).holds.length : shots;
+  const { placed, spare, held } = pickPostcardShots(found.clips || [], { room, memory: places });
+
+  if (placed.length < 3) {
+    throw new Error(
+      `only ${placed.length} clip(s) of ${(found.clips || []).length} could be placed confidently, and a postcard reel needs 3` +
+        (held ? ` - ${held} held back, named in the last ${places.days} days` : '') +
+        (found.nowhere?.length ? ` - ${found.nowhere.slice(0, 3).join('; ')}` : '')
+    );
+  }
+
+  return finishPostcard({ placed, spare, outDir, gems });
+}
+
+/**
+ * Which clips a postcard reel shows, in order, and which are left over for the hook.
+ *
+ * Pure, so the count and the place memory can be tested without a search. `room` is
+ * how many places the timeline holds and `memory` is src/video/placeMemory.js's view
+ * of what other reels named recently, or null for none.
+ */
+export function pickPostcardShots(clips, { room = 4, memory = null } = {}) {
+  const pool = preferFresh(clips, memory);
+  const held = (clips || []).length - pool.length;
   const placed = [];
   const places = new Set();
 
   const spare = [];
-  for (const c of found.clips || []) {
+  for (const c of pool) {
     const labelHe = clipPlaceLabel({ vision: c.vision });
     const key = String(c.vision?.place || '').toLowerCase();
 
@@ -283,7 +318,7 @@ export async function buildPostcardCandidate({ outDir = clipOutputDir(), shots =
       spare.push(c);
       continue;
     }
-    if (placed.length >= shots) {
+    if (placed.length >= room) {
       spare.push(c);
       continue;
     }
@@ -303,14 +338,11 @@ export async function buildPostcardCandidate({ outDir = clipOutputDir(), shots =
       vision: c.vision || null,
     });
   }
+  return { placed, spare, held };
+}
 
-  if (placed.length < 3) {
-    throw new Error(
-      `only ${placed.length} clip(s) of ${(found.clips || []).length} could be placed confidently, and a postcard reel needs 3` +
-        (found.nowhere?.length ? ` - ${found.nowhere.slice(0, 3).join('; ')}` : '')
-    );
-  }
-
+/** Everything after the shots are chosen: the hook, the timeline, the encode and the candidate. */
+async function finishPostcard({ placed, spare, outDir, gems }) {
   const n = placed.length;
   // Counted, and naming no destination - the reel is several of them. See the note on
   // the hook in the previous version: filling a {dest} slot from the first clip produced
@@ -345,13 +377,12 @@ export async function buildPostcardCandidate({ outDir = clipOutputDir(), shots =
   // the question, the timeline and the quality gate - is the same code. A second copy
   // would be a second place for the timing to drift, which is the argument the gems
   // module already makes about the renderer.
-  const gems = postConfig().gems;
   let built;
   let plan = null;
   let openLoop = null;
   let questionHe = null;
-  // Named `ordered` and not `shots`, because this function already has a parameter
-  // called `shots` and it means how MANY to use rather than which.
+  // Named `ordered` and not `shots`, because buildPostcardCandidate already has a
+  // parameter called `shots` and it means how MANY to use rather than which.
   let ordered = placed;
 
   if (gems.retention.on) {

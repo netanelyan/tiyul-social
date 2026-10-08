@@ -19,6 +19,7 @@ import {
   loopDistance,
 } from './retention.js';
 import { placesNamedSince, gemHookHistory } from '../store.js';
+import { holdPlaces } from './placeMemory.js';
 
 // THE HIDDEN GEMS REEL: twelve seconds, a curiosity hook, three to five real shots.
 //
@@ -351,12 +352,13 @@ function run(bin, args) {
  * Everything filtered out becomes a spare, and the spares are useful rather than
  * waste: the hook's shot carries no place name, so it needs no evidence for one.
  */
-export function sortShots(clips, { seenPlaces = new Map(), want = 5, floor = 3, strongestLast = true } = {}) {
+export function sortShots(clips, { seenPlaces = new Map(), held = null, want = 5, floor = 3, strongestLast = true } = {}) {
   const fresh = [];
   const stale = [];
   const spare = [];
   const places = new Set();
   const skipped = [];
+  const sittingOut = new Set();
 
   // THE SAME PLACE TWICE IS KEYED ON THE LABEL, NOT ON THE COUNTRY, and this was the
   // single biggest thing wrong with the format.
@@ -384,6 +386,16 @@ export function sortShots(clips, { seenPlaces = new Map(), want = 5, floor = 3, 
     const country = String(c.vision?.place || '').toLowerCase();
     if (!labelHe || !country) {
       spare.push(c);
+      continue;
+    }
+    // INSIDE THE HOLD, WHICH IS THE ONE PART OF THE MEMORY THAT REFUSES. Not a shot and
+    // not a spare either: a spare can become the hook shot, and a held place under the
+    // title is still the same place on screen. Checked before the duplicate test so a
+    // second angle on it cannot slip through as a spare. `held` is placeMemory's
+    // isHeld, which also catches the same place under its bare country.
+    if (held?.(labelHe)) {
+      if (!sittingOut.has(labelHe)) skipped.push(`${labelHe} was named in the last few days and sits out`);
+      sittingOut.add(labelHe);
       continue;
     }
     const key = labelHe;
@@ -600,6 +612,8 @@ export async function buildHiddenGemsCandidate({
   const seenPlaces = placesNamedSince(days == null ? gems.placeMemoryDays : days);
   const { placed, spare, skipped } = sortShots(found.clips || [], {
     seenPlaces,
+    // The short window, which every reel format now shares. See src/video/placeMemory.js.
+    held: holdPlaces(seenPlaces, { gems }).isHeld,
     want: gems.shots.max,
     // The floor the fortnight rule may be relaxed to reach, and no further: a reel
     // that can be built from four fresh places is built from four, and the fifth is

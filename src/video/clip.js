@@ -9,6 +9,7 @@ import { pickCuts, cutLabel, cutsReason, writeCutsHook, beatCountMismatch, pickM
 import { pickTrack, audioConfigured, silentSoundLine } from './tracks.js';
 import { assertNoUrl } from '../format.js';
 import { clipCaption, captionFollow, clipPlaceLabel } from '../hashtags.js';
+import { preferFresh } from './placeMemory.js';
 import { targetsForKind } from '../publish/targets.js';
 
 // A stock clip and a Hebrew line become something you can approve.
@@ -306,7 +307,7 @@ export async function buildClip(found, { outDir = clipOutputDir(), hook = null, 
  * group agreed on is what the line may name. The fallback pool applies exactly
  * as it does for a held clip: a slightly repetitive post beats no post.
  */
-export async function buildMontageClip(found, { outDir = clipOutputDir(), used = new Set(), keepSource = false, tracksUsed = new Set() } = {}) {
+export async function buildMontageClip(found, { outDir = clipOutputDir(), used = new Set(), keepSource = false, tracksUsed = new Set(), held = null } = {}) {
   const cfg = postConfig().clips.montage;
   if (!cfg.on) throw new Error('the montage shape is off (clips.montage.on)');
 
@@ -317,6 +318,15 @@ export async function buildMontageClip(found, { outDir = clipOutputDir(), used =
   // it off the same `vision` through the same function, which is the arrangement
   // that stops them naming two different places on one post.
   const place = clipPlaceLabel({ clip: { vision } });
+
+  // A MONTAGE OF A PLACE ANOTHER REEL NAMED IN THE LAST FEW DAYS IS NOT BUILT. It is
+  // one place for eight or ten shots, so it is the biggest repeat a reel can be, and
+  // the 5 Oct one was Hallstatt two hours after a gems reel had named it and a day
+  // after a cuts video and another gems reel had. Judged on
+  // the whole group, which is why the caller hands this the unsorted search: with the
+  // held shots taken out, the rest of a Hallstatt search is still Hallstatt, only
+  // unnamed. See src/video/placeMemory.js.
+  if (place && held?.(place)) throw new Error(`${place} was named in the last few days and sits out`);
 
   // The shot the writer is shown has to be one the judge PLACED, or the line is
   // written about a frame with no country attached and the country guard below
@@ -752,7 +762,7 @@ export function clipShapeArg(arg) {
  * nextShapes. `shapes` overrides it outright, which is what `/clip cuts` and a
  * lab run use.
  */
-export async function buildClips({ count = 5, seen = new Set(), outDir = clipOutputDir(), shapes = null, after = null } = {}) {
+export async function buildClips({ count = 5, seen = new Set(), outDir = clipOutputDir(), shapes = null, after = null, places = null } = {}) {
   const ready = await ffmpegReady();
   if (!ready.ok) throw new Error(`ffmpeg is not usable (${ready.path}): ${ready.error}`);
 
@@ -818,10 +828,18 @@ export async function buildClips({ count = 5, seen = new Set(), outDir = clipOut
   // four or five off the front, and without removing them the next clip in the
   // same batch would be offered the same footage, the batch-level twin of the
   // ledger bug the store's clipPexelsIds note describes.
-  const pool = [...found];
+  //
+  // TWO VIEWS OF THE ONE SEARCH. Cuts and held read `pool`, which the place memory has
+  // already sorted: places another reel named in the last few days out, fresh places
+  // first. The montage reads `everything` and refuses a held place itself, because it
+  // names its place from the whole group. See buildMontageClip and src/video/placeMemory.js.
+  const everything = [...found];
+  const pool = preferFresh(found, places);
   const spend = (ids) => {
     const gone = new Set(ids.map(String));
-    for (let i = pool.length - 1; i >= 0; i--) if (gone.has(String(pool[i].id))) pool.splice(i, 1);
+    for (const list of [pool, everything]) {
+      for (let i = list.length - 1; i >= 0; i--) if (gone.has(String(list[i].id))) list.splice(i, 1);
+    }
   };
 
   const one = async (shape) => {
@@ -834,7 +852,7 @@ export async function buildClips({ count = 5, seen = new Set(), outDir = clipOut
     // shots, all of one place - so like a cuts clip it is handed the whole pool
     // and spends what it actually took.
     if (shape === 'montage') {
-      const clip = await buildMontageClip(pool, { outDir, used, tracksUsed });
+      const clip = await buildMontageClip(everything, { outDir, used, tracksUsed, held: places?.isHeld || null });
       spend(clip.clip.cuts.map((c) => c.pexelsId));
       return clip;
     }

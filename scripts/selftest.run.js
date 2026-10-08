@@ -4821,6 +4821,9 @@ group('clip description - a published post with an empty caption is invisible');
     'ואל גרדנה'
   );
   eq('a site the judge left in Latin is dropped', clipSiteName({ site: 'Val Gardena', siteHe: 'Val Gardena' }), null);
+  // The 8 Oct spelling of Chefchaouen, Hebrew with two Arabic letters at the end.
+  eq('so is one with any other script mixed into the Hebrew', clipSiteName({ site: 'Chefchaouen', siteHe: 'שפשאוان' }), null);
+  eq('while a geresh, a hyphen and brackets are still Hebrew', clipSiteName({ site: 'X', siteHe: 'צ׳ינקווה-טורי (צפון)' }), 'צ׳ינקווה-טורי (צפון)');
   eq('and so is one with no spelling at all', clipSiteName({ site: 'Val Gardena', siteHe: '' }), null);
   eq(
     'the pin then names the country alone rather than half in Latin',
@@ -9385,8 +9388,10 @@ group('enough to approve - five things that were quietly holding suggestions bac
   const env = { pexels: process.env.PEXELS_API_KEY, anthropic: process.env.ANTHROPIC_API_KEY };
   process.env.PEXELS_API_KEY = 'selftest';
   delete process.env.ANTHROPIC_API_KEY;
-  const video = (id, slug) => ({
-    id, width: 1080, height: 1920, duration: 10,
+  // A 4K original with the 1080 rendition pickFile downloads, which is what gets past
+  // the source-size gate in practice. 904 is a 1080 original, which it refuses.
+  const video = (id, slug, { width = 2160, height = 3840 } = {}) => ({
+    id, width, height, duration: 10,
     url: `https://www.pexels.com/video/${slug}-${id}/`,
     image: `https://images.pexels.com/videos/${id}/p.jpeg?h=1200&w=630`,
     user: { name: 'selftest' },
@@ -9396,7 +9401,12 @@ group('enough to approve - five things that were quietly holding suggestions bac
   globalThis.fetch = async (url) => {
     if (!String(url).startsWith('https://api.pexels.com/videos/search')) throw new Error(`unexpected fetch ${url}`);
     searches += 1;
-    const videos = [video(901, 'scenic-hike-through-the-dolomites'), video(902, 'scenic-road-through-hills'), video(903, 'scenic-village-on-a-lake')];
+    const videos = [
+      video(901, 'scenic-hike-through-the-dolomites'),
+      video(902, 'scenic-road-through-hills'),
+      video(903, 'scenic-village-on-a-lake'),
+      video(904, 'scenic-riverboat-journey-with-limestone-cliffs', { width: 1080, height: 1920 }),
+    ];
     return new Response(JSON.stringify({ videos }), { status: 200 });
   };
   try {
@@ -9409,6 +9419,9 @@ group('enough to approve - five things that were quietly holding suggestions bac
     ok('a clip it passed before comes back without a call', found.clips.some((c) => c.id === '901' && c.vision?.site === 'Dolomites'));
     eq('the one nobody had judged is the only call made', found.judged, 1);
     eq('and both remembered verdicts are counted as such', found.recalled, 2);
+    // Never judged either, which the count of one above already says: the gate is
+    // before the judge, so a 1080 original costs nothing to refuse.
+    eq('a clip shot at 1080 is not offered at all', found.clips.some((c) => c.id === '904'), false);
     eq('a judge that could not answer is not remembered as having answered', put.length, 0);
 
     await findClips({ limit: 10, queries, pages: 1, verdicts });
@@ -9419,6 +9432,106 @@ group('enough to approve - five things that were quietly holding suggestions bac
     else process.env.PEXELS_API_KEY = env.pexels;
     if (env.anthropic !== undefined) process.env.ANTHROPIC_API_KEY = env.anthropic;
   }
+}
+
+/* -------------------------------------------------------------------------- */
+group('one place memory for every reel, and a postcard that counts what it shows');
+
+{
+  // THE OWNER'S REPORT, 8 Oct 2026: "Each video features the same place in austria.
+  // Also, the last few vids have bad quality." Hallstatt was in four reels of five on 4
+  // and 5 Oct, and the 09:33 postcard said four places and showed three. The source
+  // gate for the quality half is tested with the stubbed search in the group above.
+  const { placeOf, placesOfCandidate, holdPlaces, isHeldBy, preferFresh } = await import('../src/video/placeMemory.js');
+  const { sortShots, fitHolds } = await import('../src/video/hiddenGems.js');
+  const { pickPostcardShots } = await import('../src/video/postcard.js');
+  const { retentionPlan } = await import('../src/video/retention.js');
+  const { buildMontageClip } = await import('../src/video/clip.js');
+
+  const day = 86_400_000;
+  const now = Date.UTC(2026, 9, 8, 6, 0);
+  const shot = (id, place, site = null, siteHe = null) => ({
+    id: String(id),
+    src: `s${id}`,
+    duration: 10,
+    vision: { place, ...(site ? { site } : {}), ...(siteHe ? { siteHe } : {}) },
+  });
+  const HALLSTATT = 'הלשטט, אוסטריה';
+  const hallstatt = shot(1, 'Austria', 'Hallstatt', 'הלשטט');
+  eq('Hallstatt is keyed the way the memory already spells it', placeOf(hallstatt), HALLSTATT);
+
+  // As the memory might stand: Hallstatt named yesterday, Meteora five days ago.
+  const gems = { ...postConfig().gems, placeHoldDays: 3, placeMemoryDays: 14 };
+  const named = new Map([[HALLSTATT, now - day], ['מטאורה, יוון', now - 5 * day]]);
+  const memory = holdPlaces(named, { now, gems });
+  ok('a place named yesterday is held', memory.isHeld(HALLSTATT));
+  ok('one named five days ago is only remembered', !memory.isHeld('מטאורה, יוון') && memory.named.has('מטאורה, יוון'));
+  eq('the hold never outlasts the memory', holdPlaces(named, { now, gems: { ...gems, placeHoldDays: 30 } }).days, 14);
+
+  // The same footage under its bare country, which is what the judge says when it is
+  // not sure of the site.
+  ok('a held site holds its bare country', isHeldBy(new Set([HALLSTATT]), 'אוסטריה'));
+  ok('a held bare country holds every site in it', isHeldBy(new Set(['אוסטריה']), HALLSTATT));
+  ok('but a held site does not hold the rest of its country', !isHeldBy(new Set([HALLSTATT]), 'וינה, אוסטריה'));
+
+  const pool = [
+    hallstatt,
+    shot(2, 'Greece', 'Meteora'),
+    shot(3, 'Switzerland', 'Lauterbrunnen'),
+    shot(4, 'Austria'),
+    shot(5, 'Iceland', 'Skogafoss'),
+    { id: '6', src: 's6', duration: 10, vision: {} },
+  ];
+  eq('held places go, fresh ones keep their rank, and the one named five days ago goes last',
+    preferFresh(pool, memory).map((c) => c.id).join(','), '3,5,6,2');
+  eq('with no memory it is the search as it came', preferFresh(pool, null).map((c) => c.id).join(','), '1,2,3,4,5,6');
+
+  // THE GEMS REEL. Two fresh places and a floor of three: the place named five days
+  // ago comes back to make the floor, and Hallstatt does not, under either label.
+  const g = sortShots(pool, { seenPlaces: named, held: memory.isHeld, want: 5, floor: 3, strongestLast: false });
+  const gl = g.placed.map((p) => p.labelHe);
+  eq('the gems reel still reaches its floor', gl.length, 3);
+  ok('without Hallstatt, under either label', !gl.some((l) => /אוסטריה/.test(l)), gl.join(' · '));
+  ok('with the place named five days ago brought back instead, and said so',
+    gl.includes('מטאורה, יוון') && g.skipped.some((s) => /מטאורה.*is back/.test(s)), g.skipped.join('; '));
+  ok('a held place is not kept as a spare for the hook shot', !g.spare.some((c) => /אוסטריה/.test(placeOf(c) || '')));
+  ok('and sitting out is on the record', g.skipped.some((s) => /sits out/.test(s)), g.skipped.join('; '));
+  const short = sortShots([hallstatt, shot(2, 'Greece', 'Meteora')], {
+    seenPlaces: new Map([[HALLSTATT, now - day]]),
+    held: memory.isHeld,
+    want: 5,
+    floor: 2,
+  });
+  eq('a reel that could only reach its floor with a held place stays short', short.placed.length, 1);
+
+  // THE POSTCARD COUNT. The shared timeline holds three places, so the fourth must be
+  // dropped before the title counts them, not after.
+  const pg = postConfig().gems;
+  const room = fitHolds(4, pg, { hookSeconds: pg.retention.firstCutSeconds }).holds.length;
+  eq('four places do not fit the reel, three do', room, 3);
+  const four = [shot(11, 'Greece', 'Meteora'), shot(12, 'Vietnam'), shot(13, 'Nepal'), shot(14, 'Indonesia')];
+  const pc = pickPostcardShots(four, { room });
+  eq('so a postcard with four places to hand shows three', pc.placed.length, 3);
+  ok('and the fourth is left over rather than promised', pc.spare.some((c) => c.id === '14'));
+  eq('and the plan keeps all three, so the title counts what the reel shows',
+    retentionPlan({ shots: pc.placed, cfg: pg }).shots.length, pc.placed.length);
+  const pcHeld = pickPostcardShots([hallstatt, ...four], { room, memory });
+  ok('the postcard leaves a held place out', !pcHeld.placed.some((p) => /אוסטריה/.test(p.labelHe)));
+  eq('and counts what it held back, for the error when it comes up short', pcHeld.held, 1);
+
+  // A MONTAGE of a held place is refused before anything is written or encoded.
+  const montage = Array.from({ length: 8 }, (_, i) => ({ ...shot(100 + i, 'Austria', 'Hallstatt', 'הלשטט'), query: 'hallstatt austria', rank: i }));
+  const refused = await buildMontageClip(montage, { held: memory.isHeld }).then(() => null, (e) => e.message);
+  ok('a montage of a held place is refused before anything is spent', /sits out/.test(refused || ''), refused);
+
+  // What every reel records, whichever format built it.
+  eq('a gems or postcard reel records the places it lists, once each',
+    placesOfCandidate({ clip: { places: [HALLSTATT, 'נפאל', HALLSTATT] } }).join(' · '), `${HALLSTATT} · נפאל`);
+  eq('a cuts video records the label on each cut',
+    placesOfCandidate({ clip: { cuts: [{ label: HALLSTATT }, { label: 'מטאורה, יוון' }] } }).length, 2);
+  eq('a held clip or a montage records the one place its pin names', placesOfCandidate({ clip: { vision: hallstatt.vision } }).join(), HALLSTATT);
+  eq('and a reel that named nothing records nothing', placesOfCandidate({ clip: {} }).length, 0);
+  eq('the shipped config only downloads originals bigger than the frame', postConfig().clips.search.minSourceWidth, 1440);
 }
 
 /* -------------------------------------------------------------------------- */

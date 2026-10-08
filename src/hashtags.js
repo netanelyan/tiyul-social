@@ -172,7 +172,11 @@ export function clipSiteName(v) {
   // mostly obliges, but a model handed "Lago di Braies" sometimes hands it
   // straight back — and an unchecked passthrough would put the Latin name back
   // in the line under a field name that claims otherwise.
-  if (!he || /[A-Za-z]/.test(he) || !/\p{Script=Hebrew}/u.test(he)) return null;
+  //
+  // ANY LETTER THAT IS NOT HEBREW, not only Latin ones. On 8 Oct the judge spelled
+  // Chefchaouen "שפשאוان", the last two letters Arabic, and a reel burns this
+  // label onto the shot. Refused, it falls back to the country, as Latin does.
+  if (!he || /[^\P{L}\p{Script=Hebrew}]/u.test(he) || !/\p{Script=Hebrew}/u.test(he)) return null;
   return he;
 }
 

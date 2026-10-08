@@ -820,6 +820,29 @@
       ],
       "minScore": 0,
       "minHeight": 1600,
+      "_minSourceWidth_comment": [
+        "THE ORIGINAL MUST BE BIGGER THAN THE FRAME WE RENDER, which is the quality",
+        "gate. A clip shot at 1440 or 4K and scaled down to 1080 is sharp. A clip",
+        "shot at 1080 arrives at 1080 with whatever the phone did to it.",
+        "",
+        "Added 8 Oct 2026, after the owner said the last few videos looked bad. Every",
+        "reel is a plain scale and crop, so the softness came in with the source. The",
+        "09:33 postcard took all four of its shots from 1080 originals, and its",
+        "Vietnam boat ride is just as smeared in Pexels' own file as in ours. Of the",
+        "18 clips the judge passed that morning, 10 were 1080 originals. Side by side",
+        "at 100%, the 4K ones (Cappadocia, Amalfi, a Greek village) were clean, and",
+        "four of the five 1080 ones looked at were soft or smeared.",
+        "",
+        "A blur score does not catch it: the smeared Vietnam frame and the clean Greek",
+        "one measured 3.27 and 3.32 on ffmpeg's blurdetect, because over-sharpened",
+        "smear still has hard edges. The size of the original does catch it.",
+        "",
+        "WHAT IT COSTS. On page one of 15 queries, 169 of 332 candidates (51%) are",
+        "bigger than 1080 wide, so the judge still has hundreds to choose from. The",
+        "thin ones: 'thailand island beach' 5 of 18, 'vietnam rice terraces' 5 of 21,",
+        "'chefchaouen morocco' 1 of 24. Zero turns the gate off."
+      ],
+      "minSourceWidth": 1440,
       "minDuration": 5,
       "maxDuration": 30,
       "_spectator_comment": [
@@ -1496,6 +1519,20 @@
       "does the opposite. 14 is the brief's figure and it is now survivable."
     ],
     "placeMemoryDays": 14,
+    "_placeHoldDays_comment": [
+      "THE SHORT WINDOW, AND THIS ONE IS A REFUSAL. A place any reel named inside",
+      "these days is not named by another one, whichever format it is and however",
+      "short the pool. The fortnight above stays a preference.",
+      "",
+      "Added 8 Oct 2026, because the fortnight rule only ever covered the gems reel.",
+      "The postcard, cuts, montage and held shapes neither wrote the memory nor read",
+      "it, and Hallstatt was in four reels of five on 4 and 5 Oct. Every reel format",
+      "now does both. See src/video/placeMemory.js.",
+      "",
+      "Raising it makes a place rarer and a reel that cannot be built likelier. At",
+      "four slots a day, three days holds about twenty names."
+    ],
+    "placeHoldDays": 3,
     "targetSeconds": {
       "min": 7,
       "max": 9
