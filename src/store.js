@@ -1057,10 +1057,17 @@ export const proposalTitles = () =>
  * proposed again.
  */
 export const waitingDeckTitles = () =>
-  [...Object.values(state.staging), ...state.queue]
-    .filter((c) => c?.kind === 'deck')
-    .map((c) => [c.headline, c.deck?.where && `(${c.deck.where})`].filter(Boolean).join(' '))
+  waitingDecks()
+    .map(({ cand: c }) => [c.headline, c.deck?.where && `(${c.deck.where})`].filter(Boolean).join(' '))
     .filter(Boolean);
+
+/** The same decks whole, each with where it waits: 'staged' or 'queued'. */
+export const waitingDecks = () => [
+  ...Object.values(state.staging)
+    .filter((c) => c?.kind === 'deck')
+    .map((cand) => ({ cand, at: 'staged' })),
+  ...state.queue.filter((c) => c?.kind === 'deck').map((cand) => ({ cand, at: 'queued' })),
+];
 export const getProposal = (key) => state.proposals[key] || null;
 export function updateProposal(key, proposal) {
   if (!state.proposals[key]) return false;
@@ -1225,6 +1232,8 @@ export function recordPublished({
   pexelsId = null,
   pexelsIds = [],
   angle = null,
+  kind = null,
+  places = null,
   telegram,
   instagram,
   tiktok,
@@ -1308,6 +1317,13 @@ export function recordPublished({
       // Held only in memory it would reset on every restart, and a bot that
       // restarts daily would keep proposing the same angle.
       angle: angle ? String(angle) : null,
+      // Which kind of candidate it was. A deck and a carousel post both carry a
+      // `deck` and so a topic, and only one of them is a deck. See publishedDecks.
+      kind: kind ? String(kind) : null,
+      // WHICH PLACES a deck carried, so the next deck can be checked against them.
+      // A cover cannot tell two decks apart when they are the same beaches under a
+      // new line. Rows before 8 Oct 2026 have none. See src/deck/echoes.js.
+      places: Array.isArray(places) && places.length ? places.map(String) : null,
       telegram: Boolean(telegram),
       instagram: Boolean(instagram),
       tiktok: Boolean(tiktok),
@@ -1386,6 +1402,35 @@ export function recentTitles({ limit = 12, history = recentPublished() } = {}) {
     .filter(Boolean)
     .slice(0, limit);
 }
+
+/**
+ * Every deck in the publish log, newest first: the whole window, not twelve rows.
+ *
+ * recentTitles is twelve posts of every kind, about three days at four a day. On
+ * 8 Oct 2026 "ההרים בגאורגיה שלא נראים אמיתיים" was being built eleven days after
+ * "הרים בגאורגיה שלא נראים אמיתיים" went out, by a model told not to repeat a deck
+ * that was not on its list.
+ *
+ * Only decks. A carousel post carries a `deck` too, so it has a topic, and listing
+ * "נתנו לטוקיו 4.8. וזה למה" as a deck not to repeat would steer the next idea away
+ * from Tokyo, which a verdict on the city says nothing against.
+ */
+export const publishedDecks = (history = recentPublished()) => history.filter(isDeckRow);
+
+// Which rows are a deck's. A row written after this change says so, and from 4 Oct
+// 2026 its format does. Before that, a deck's region was searched in English and a
+// post's place is named in Hebrew, which held for every row in the log on 8 Oct.
+function isDeckRow(p) {
+  if (!p?.topic || !p?.headline) return false;
+  if (p.kind) return p.kind === 'deck';
+  if (p.format) return p.format === 'deck';
+  return !/[֐-׿]/.test(String(p.topic).split(' · ')[0]);
+}
+
+/** The same, in words, for the idea prompt. */
+export const publishedDeckTitles = (history = recentPublished()) =>
+  publishedDecks(history).map((p) => [p.headline, p.place && `(${p.place})`].filter(Boolean).join(' '));
+
 export const publishedToday = () => {
   const start = new Date();
   start.setHours(0, 0, 0, 0);

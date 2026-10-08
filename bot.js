@@ -32,6 +32,7 @@ import {
 import { clipPublicUrl } from './src/publish/imageHosts.js';
 import { buildDeck } from './src/deck/build.js';
 import { toDeckCandidate, deckTopic, deckId } from './src/deck/candidate.js';
+import { deckEchoes, placeNames } from './src/deck/echoes.js';
 import { placeOverCap } from './src/pillars.js';
 import { canonicalKind } from './src/sources/tiyulplus.js';
 import { KINDS, isSourcedKind } from './src/sources/places.js';
@@ -897,6 +898,12 @@ const publishedFacts = (cand) => ({
   // Which Israeli angle this deck was chosen for, so the next draw can exclude
   // it. Only decks carry one today; everything else records null.
   angle: cand.deck?.idea?.angle || null,
+  // Which kind it was, because a carousel post carries a `deck` as well and the
+  // deck list must not count it. See store.publishedDecks.
+  kind: cand.kind || null,
+  // The places a deck carried, so a later deck with the same ones under a new
+  // cover is said to be what it is. See src/deck/echoes.js.
+  places: cand.kind === 'deck' ? placeNames(cand.deck?.slides) : null,
   // So the row does not claim a post that has not been made. A draft reached
   // the inbox; whether it was ever posted happens in the app, where this
   // process cannot see it.
@@ -3045,6 +3052,16 @@ const narrowedFrom = (idea) => {
   return asked && where && !asked.toLowerCase().includes(where) ? asked : null;
 };
 
+/**
+ * What this idea repeats of a deck already out or already built, said where the
+ * answer is still cheap: before the build has fetched a photograph.
+ */
+const proposalEchoes = (idea) =>
+  deckEchoes(
+    { titleHe: idea.titleHe, places: (idea.ownWords ? idea.places : idea.freeformPlaces) || [] },
+    { published: store.publishedDecks(), waiting: store.waitingDecks() }
+  ).map((line) => `🔁 ${line}`);
+
 function proposalMessage(idea) {
   // `ownWords`, not `freeform`. A deck you described in your own words is what
   // this branch is for — no category, and the request quoted back. Landscape
@@ -3055,6 +3072,7 @@ function proposalMessage(idea) {
     return [
       `💡 ${idea.titleHe}`,
       `📍 ${idea.whereEn} · חופשי · ${idea.places.length} מקומות`,
+      ...proposalEchoes(idea),
       `🗣 ביקשת "${idea.asked}"`,
       '────────────',
       ...idea.places.map((p, i) => `${i + 1}. ${p.nameHe}${p.noteHe ? ` (${p.noteHe})` : ''}`),
@@ -3067,6 +3085,7 @@ function proposalMessage(idea) {
     `💡 ${idea.titleHe}`,
     idea.angleHe,
     `📍 ${idea.where} · ${KINDS[idea.kind]?.he || idea.kind} · ${idea.want} מקומות`,
+    ...proposalEchoes(idea),
     // Shown only when the resolver moved. Typing "מסלולים אוסטריה" and being
     // offered Tyrol with no explanation reads as the bot ignoring the request,
     // when it is in fact the documented narrowing doing its job. Suppressed
@@ -3147,7 +3166,14 @@ async function pickIdeaJob() {
   // includes a deck built and still in the queue, which neither of the other two
   // lists can see.
   const ideas = withoutWaiting(
-    await proposeIdeas({ count: 3, recent: store.recentTitles(), pending: store.proposalTitles(), queued: store.waitingDeckTitles(), angle })
+    await proposeIdeas({
+      count: 3,
+      recent: store.recentTitles(),
+      decks: store.publishedDeckTitles(),
+      pending: store.proposalTitles(),
+      queued: store.waitingDeckTitles(),
+      angle,
+    })
   );
   if (!ideas.length) return null;
 
@@ -3520,7 +3546,13 @@ async function suggestClipJob() {
 const suggestDecks = billed('deck', suggestDecksJob);
 async function suggestDecksJob(n, chatId) {
   const ideas = withoutWaiting(
-    await proposeIdeas({ count: n, recent: store.recentTitles(), pending: store.proposalTitles(), queued: store.waitingDeckTitles() })
+    await proposeIdeas({
+      count: n,
+      recent: store.recentTitles(),
+      decks: store.publishedDeckTitles(),
+      pending: store.proposalTitles(),
+      queued: store.waitingDeckTitles(),
+    })
   );
   if (!ideas.length) return notify.send(bot.telegram, chatId, '❌ לא חזרו רעיונות');
 

@@ -9623,6 +9623,148 @@ group('a free-form deck is its places, and a taken id stops the build before the
 }
 
 /* -------------------------------------------------------------------------- */
+group('a deck that was made before is said to be, under any title');
+
+{
+  const { placeWords, samePlace, titleLikeness, dayMonth, placeNames, deckEchoes } = await import('../src/deck/echoes.js');
+  const { ideasPrompt } = await import('../src/deck/ideas.js');
+
+  eq('a name is folded to the letters two spellings share', placeWords('Tromsø'), 'tromso');
+  ok('Þingvellir and Thingvellir are one place', samePlace('Þingvellir', 'Thingvellir'));
+  ok('Reykjavík and Reykjavik are one place', samePlace('Reykjavík', 'Reykjavik'));
+  ok('a name held whole inside a longer one is the same place', samePlace('Livadhi Beach', 'Livadhi Beach Himare'));
+  ok('and so is a peak without its "Mount"', samePlace('Kazbek', 'Mount Kazbek'));
+  ok('two islands with one word in common are not', !samePlace('Koh Tao', 'Koh Lipe'));
+  ok('nor a name inside another word', !samePlace('Bled', 'Bledsoe Falls'));
+  ok('a name that is only a kind of place matches nothing else', !samePlace('Lake', 'Lake Bled'));
+  ok('and an empty one matches nothing', !samePlace('', 'Lake Bled'));
+
+  // The two Georgia covers of 8 Oct 2026 and 27 Sep.
+  const georgiaThen = 'הרים בגאורגיה שלא נראים אמיתיים';
+  const georgiaNow = 'ההרים בגאורגיה שלא נראים אמיתיים';
+  eq('the two Georgia covers are one line, article or not', titleLikeness(georgiaNow, georgiaThen), 1);
+  ok('the same line about Iceland is not', titleLikeness('הרים באיסלנד שלא נראים אמיתיים', georgiaThen) < 0.8);
+  ok('nor two covers about one country with different subjects', titleLikeness('המפלים הכי יפים באיסלנד', 'ההרים הכי יפים באיסלנד') < 0.8);
+  eq('a date is written the way it is read here, on Israel time', dayMonth(Date.parse('2026-09-27T22:30:00Z')), '28/9');
+
+  // The log as it was on 8 Oct: both Georgia decks, and no places on either.
+  const sep27 = Date.parse('2026-09-27T08:40:00Z');
+  const published = [
+    { ts: sep27, headline: 'הקניונים עם המים הכי צלולים בגאורגיה', topic: 'Georgia · free', place: 'Georgia' },
+    { ts: sep27, headline: georgiaThen, topic: 'Georgia (Caucasus) · free', place: 'Georgia (Caucasus)' },
+  ];
+  const rerun = {
+    titleHe: georgiaNow,
+    places: [
+      { nameEn: 'Gergeti Trinity Church', nameHe: 'גרגטי' },
+      { nameEn: 'Mount Kazbek', nameHe: 'הר קזבגי' },
+      { nameEn: 'Juta', nameHe: 'ג׳וטה' },
+      { nameEn: 'Chaukhi Massif', nameHe: 'צ׳אוחי' },
+      { nameEn: 'Ushguli', nameHe: 'אושגולי' },
+    ],
+  };
+  const georgia = deckEchoes(rerun, { published });
+  eq('the Georgia rerun is said to be one, once', georgia.length, 1);
+  ok('naming the deck it repeats and the day it went out', georgia[0]?.includes(`"${georgiaThen}"`) && georgia[0]?.includes('27/9'), georgia[0]);
+  ok('and why', georgia[0]?.includes('כמעט אותה כותרת'));
+
+  // The Albania proposal and the deck in the queue: two covers, the same beaches.
+  const queuedAlbania = {
+    kind: 'deck',
+    id: 'selftest-echo-queued',
+    headline: 'החופים באלבניה שנראים כמו האיים היווניים',
+    deck: {
+      where: 'Albanian Riviera',
+      slides: [
+        { nameEn: 'Gjipe Beach', nameHe: 'ג׳יפה' },
+        { nameEn: 'Ksamil Beach', nameHe: 'קסמיל' },
+        { nameEn: 'Dhermi Beach', nameHe: 'דרמי' },
+        { nameEn: 'Livadhi Beach Himare', nameHe: 'ליבאדי' },
+        { nameEn: 'Borsh Beach', nameHe: 'בורש' },
+      ],
+    },
+  };
+  const proposal = {
+    titleHe: 'חופים באלבניה שנראים כמו הקאריביים',
+    places: [
+      { nameEn: 'Ksamil Beach', nameHe: 'קסמיל' },
+      { nameEn: 'Gjipe Beach', nameHe: 'ג׳יפה' },
+      { nameEn: 'Dhermi Beach', nameHe: 'דרמי' },
+      { nameEn: 'Borsh Beach', nameHe: 'בורש' },
+      { nameEn: 'Livadhi Beach', nameHe: 'ליבאדי' },
+    ],
+  };
+  ok('the two Albania covers are not one line', titleLikeness(proposal.titleHe, queuedAlbania.headline) < 0.8);
+  const albania = deckEchoes(proposal, { waiting: [{ cand: queuedAlbania, at: 'queued' }] });
+  eq('but the beaches are, and that is said', albania.length, 1);
+  ok('as five of five, by their Hebrew names, in the queue',
+    albania[0]?.includes('5 מתוך 5') && albania[0]?.includes('קסמיל') && albania[0]?.includes('שכבר בתור לפרסום'), albania[0]);
+  ok('a deck waiting for its last tap is called that',
+    deckEchoes(proposal, { waiting: [{ cand: queuedAlbania, at: 'staged' }] })[0]?.includes('שממתינה לאישור'));
+
+  // Sharing something is not the same as being the same deck.
+  const oneInCommon = { ...queuedAlbania, deck: { slides: [{ nameEn: 'Ksamil Beach' }, { nameEn: 'Blue Eye' }, { nameEn: 'Butrint' }] } };
+  eq('one place in common is not a repeat', deckEchoes(proposal, { waiting: [{ cand: oneInCommon, at: 'queued' }] }).length, 0);
+  eq('and a deck about somewhere else says nothing',
+    deckEchoes({ titleHe: 'הרים באיסלנד שלא נראים אמיתיים', places: ['Kirkjufell', 'Vestrahorn'] }, { published, waiting: [{ cand: queuedAlbania, at: 'queued' }] }).length, 0);
+
+  // Rows from now on keep their places, so a new cover over old places is caught as well.
+  const withPlaces = [{ ts: sep27, headline: 'אף אחד לא מדבר על החופים האלה באלבניה', topic: 'Albanian Riviera · free', places: placeNames(queuedAlbania.deck.slides) }];
+  ok('a published row with places is checked by them', deckEchoes(proposal, { published: withPlaces })[0]?.includes('שפורסמה ב-27/9'));
+  eq('at most two lines, however much it repeats', deckEchoes(proposal, { published: [...withPlaces, ...withPlaces, ...withPlaces] }).length, 2);
+  // Both queued decks of 8 Oct had gone to the TikTok inbox at approval and were in the log too.
+  const sentToTiktok = [{ ...withPlaces[0], id: queuedAlbania.id, headline: queuedAlbania.headline }];
+  const once = deckEchoes(proposal, { published: sentToTiktok, waiting: [{ cand: queuedAlbania, at: 'queued' }] });
+  eq('a deck in the log and in the queue is one deck, said once', once.length, 1);
+  ok('as the one in the queue', once[0]?.includes('שכבר בתור לפרסום'), once[0]);
+  eq('a row keeps the English name, and the Hebrew one when there is no other',
+    placeNames([{ nameEn: 'Ksamil Beach', nameHe: 'קסמיל' }, { nameHe: 'דרמי' }, {}]).join('|'), 'Ksamil Beach|דרמי');
+
+  // The store keeps the places, and tells a deck's row from everything else in the log.
+  const out = (row) => store.recordPublished({ pillar: 'day', tags: [], instagram: true, ...row });
+  out({ id: 'selftest-echo-deck', kind: 'deck', topic: 'Albanian Riviera · free', headline: 'selftest echo deck', place: 'Albanian Riviera', places: ['Ksamil Beach', 'Gjipe Beach'] });
+  out({ id: 'selftest-echo-card', kind: 'card', headline: 'selftest echo card', place: 'Tirana' });
+  // A carousel post carries a deck too, and so a topic.
+  out({ id: 'selftest-echo-post', kind: 'post', format: 'verdict', topic: 'טוקיו · verdict', headline: 'selftest echo post', place: 'טוקיו' });
+  // And the rows from before this change, which say neither: by format from 4 Oct, by language before it.
+  out({ id: 'selftest-echo-oct6', format: 'deck', topic: 'Cyprus · free', headline: 'selftest echo oct6' });
+  out({ id: 'selftest-echo-oct7', format: 'verdict', topic: 'לרנקה · verdict', headline: 'selftest echo oct7' });
+  out({ id: 'selftest-echo-sep27', topic: 'Georgia (Caucasus) · free', headline: 'selftest echo sep27' });
+  out({ id: 'selftest-echo-sep30', topic: 'טוקיו · plan', headline: 'selftest echo sep30' });
+  const rowOf = (id) => store.recentPublished().find((p) => p.id === id);
+  eq('a published deck keeps its places', rowOf('selftest-echo-deck')?.places?.join('|'), 'Ksamil Beach|Gjipe Beach');
+  eq('and its kind', rowOf('selftest-echo-deck')?.kind, 'deck');
+  eq('a published card keeps no places', rowOf('selftest-echo-card')?.places, null);
+  const decksOut = store.publishedDecks().map((p) => p.id).filter((id) => id.startsWith('selftest-echo-')).sort();
+  eq('the deck list is the decks, and none of the posts, whichever way each row says it',
+    decksOut.join(), 'selftest-echo-deck,selftest-echo-oct6,selftest-echo-sep27');
+  ok('and the prompt is told where it was', store.publishedDeckTitles().includes('selftest echo deck (Albanian Riviera)'));
+
+  store.enqueue(queuedAlbania);
+  const staged = store.addStaging({ ...queuedAlbania, id: 'selftest-echo-staged' });
+  const waitsAt = Object.fromEntries(store.waitingDecks().map(({ cand, at }) => [cand.id, at]));
+  eq('the waiting decks say where each one waits', [waitsAt['selftest-echo-queued'], waitsAt['selftest-echo-staged']].join(), 'queued,staged');
+  store.takeStaging(staged);
+  while (store.dequeue());
+
+  // bot.js is read, never imported: importing it starts the bot.
+  const botSrc = readFileSync(new URL('../bot.js', import.meta.url), 'utf8');
+  eq('both idea calls are given every published deck', (botSrc.match(/decks: store\.publishedDeckTitles\(\)/g) || []).length, 2);
+  ok("the published row records a deck's places, and only a deck's",
+    /places: cand\.kind === 'deck' \? placeNames\(cand\.deck\?\.slides\) : null/.test(botSrc));
+  ok('and the kind of every row', /\n  kind: cand\.kind \|\| null,/.test(botSrc));
+  const message = botSrc.slice(botSrc.indexOf('function proposalMessage('));
+  eq('both kinds of proposal say what they repeat',
+    (message.slice(0, message.indexOf('\n}\n')).match(/\.\.\.proposalEchoes\(idea\)/g) || []).length, 2);
+  const candSrc = readFileSync(new URL('../src/deck/candidate.js', import.meta.url), 'utf8');
+  ok('and the built deck says it again on its card', /deckEchoes\(\{ titleHe: deck\.titleHe, places: deck\.slides \}/.test(candSrc));
+
+  const prompt = ideasPrompt({ count: 1, decks: [`${georgiaThen} (Georgia (Caucasus))`] });
+  ok('the idea prompt lists every published deck', prompt.includes('EVERY DECK PUBLISHED IN THE LAST MONTH') && prompt.includes(georgiaThen), prompt.slice(0, 200));
+  ok('and leaves the heading out when there are none', !ideasPrompt({ count: 1 }).includes('EVERY DECK PUBLISHED'));
+}
+
+/* -------------------------------------------------------------------------- */
 group('every module loads - the check node --check cannot make');
 
 {

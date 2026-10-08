@@ -657,12 +657,39 @@ export const hasApiKey = () =>
  * in the queue for Instagram long after it has fallen out of `recent`. The northern
  * lights deck of 30 Sep was still first in the queue on 8 Oct when the same idea
  * was proposed again.
+ *
+ * `decks` is every deck in the publish log, because `recent` is twelve posts of
+ * every kind and reaches back about three days. A Georgia mountains deck was being
+ * built on 8 Oct, eleven days after one went out under nearly the same title.
  */
-export async function proposeIdeas({ count = 4, recent = [], pending = [], queued = [], angle = null, today = new Date() } = {}) {
+export async function proposeIdeas({ count = 4, recent = [], pending = [], queued = [], decks = [], angle = null, today = new Date() } = {}) {
   if (!hasApiKey()) throw new Error('ANTHROPIC_API_KEY is not set - idea generation is required');
 
+  const user = ideasPrompt({ count, recent, pending, queued, decks, angle, today });
+
+  const res = await getClient().messages.create({
+    model: MODEL,
+    max_tokens: 8000,
+    output_config: outputConfig(MODEL, EFFORT, IDEAS_SCHEMA),
+    system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
+    messages: [{ role: 'user', content: user }],
+  });
+
+  recordUsage(res.usage, MODEL);
+  if (res.stop_reason === 'refusal') throw new Error('idea generation refused');
+  if (res.stop_reason === 'max_tokens') throw new Error('idea generation hit max_tokens');
+
+  const text = res.content.find((b) => b.type === 'text')?.text;
+  if (!text) throw new Error('idea generation returned no text');
+
+  const parsed = JSON.parse(text);
+  return (parsed.ideas || []).map(normaliseIdea).filter(Boolean);
+}
+
+/** The request proposeIdeas sends, on its own so it can be read without calling the model. */
+export function ideasPrompt({ count = 4, recent = [], pending = [], queued = [], decks = [], angle = null, today = new Date() } = {}) {
   const month = today.toLocaleString('en-GB', { month: 'long' });
-  const user = [
+  return [
     `TODAY: ${today.toISOString().slice(0, 10)} (${month})`,
     `PROPOSE: ${count} deck ideas, ranked best first.`,
     '',
@@ -687,6 +714,13 @@ export async function proposeIdeas({ count = 4, recent = [], pending = [], queue
     recent.length
       ? ['ALREADY PUBLISHED (do not repeat, and avoid the same city twice in a row):', ...recent.map((r) => `  ${r}`)].join('\n')
       : 'ALREADY PUBLISHED: nothing yet.',
+    decks.length
+      ? [
+          '',
+          'EVERY DECK PUBLISHED IN THE LAST MONTH (do not propose any of these subjects again, under a new title or with other places):',
+          ...decks.map((r) => `  ${r}`),
+        ].join('\n')
+      : null,
     pending.length
       ? ['', 'ALREADY PROPOSED AND WAITING FOR AN ANSWER (do not propose these again):', ...pending.map((r) => `  ${r}`)].join('\n')
       : null,
@@ -702,24 +736,6 @@ export async function proposeIdeas({ count = 4, recent = [], pending = [], queue
   ]
     .filter(Boolean)
     .join('\n');
-
-  const res = await getClient().messages.create({
-    model: MODEL,
-    max_tokens: 8000,
-    output_config: outputConfig(MODEL, EFFORT, IDEAS_SCHEMA),
-    system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
-    messages: [{ role: 'user', content: user }],
-  });
-
-  recordUsage(res.usage, MODEL);
-  if (res.stop_reason === 'refusal') throw new Error('idea generation refused');
-  if (res.stop_reason === 'max_tokens') throw new Error('idea generation hit max_tokens');
-
-  const text = res.content.find((b) => b.type === 'text')?.text;
-  if (!text) throw new Error('idea generation returned no text');
-
-  const parsed = JSON.parse(text);
-  return (parsed.ideas || []).map(normaliseIdea).filter(Boolean);
 }
 
 /**

@@ -4,8 +4,9 @@ import { deckCaption, deckTiktokCaption, captionHook } from '../format.js';
 import { captionQuestion, captionCta, captionFollow } from '../hashtags.js';
 import { targetsForKind } from '../publish/targets.js';
 import { overrideActive, overrideNotes } from '../override.js';
-import { recentPublished } from '../store.js';
+import { recentPublished, publishedDecks, waitingDecks } from '../store.js';
 import { placeOverCap } from '../pillars.js';
+import { deckEchoes } from './echoes.js';
 
 /** How many decks in a row have been about this same place and category. */
 export const deckTopic = (deck) => `${deck.where} · ${deck.category}`;
@@ -202,7 +203,14 @@ export async function toDeckCandidate(
     // a row", which is precisely when being told is useful. And folding them
     // into `overrides` filed them under "controls bypassed" when no control had
     // been bypassed at all.
-    notes: deckRepeats(deck),
+    //
+    // And what it repeats of a deck already out or built, again: the proposal said
+    // it, and this is the card you approve. The places are the slides now, not the
+    // plan, so a sourced deck can echo here when its proposal did not.
+    notes: [
+      ...deckRepeats(deck),
+      ...deckEchoes({ titleHe: deck.titleHe, places: deck.slides }, { published: publishedDecks(), waiting: waitingDecks() }),
+    ],
   };
 
   // Not the same text, and the difference is one field.
