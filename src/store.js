@@ -524,6 +524,24 @@ export function forgetAllSeen() {
  */
 export const hasPublished = (id) => Boolean(id && state.publishedIds[id]);
 
+/**
+ * Where an id is already in use, if anywhere: 'published', 'queued', 'staged',
+ * 'held', or null.
+ *
+ * hasPublished answers the first of those, and for a deck the other three matter
+ * as much. A deck's slides are written to disk under its id, so building a deck
+ * whose id belongs to one waiting in the queue writes over the slides the queue is
+ * about to publish, whether or not anything has gone out yet.
+ */
+export function idInUse(id) {
+  if (!id) return null;
+  if (hasPublished(id)) return 'published';
+  if (state.queue.some((c) => c?.id === id)) return 'queued';
+  if (Object.values(state.staging).some((c) => c?.id === id)) return 'staged';
+  if (state.held.some((h) => h?.cand?.id === id)) return 'held';
+  return null;
+}
+
 /** Deliberately allow a published item to be built again. */
 export function forgetPublished(id) {
   delete state.publishedIds[id];
@@ -1026,6 +1044,22 @@ export const proposalsWaiting = ({ since = 0 } = {}) =>
 export const proposalTitles = () =>
   Object.values(state.proposals)
     .map((p) => [p?.idea?.titleHe, p?.idea?.where && `(${p.idea.where})`].filter(Boolean).join(' '))
+    .filter(Boolean);
+
+/**
+ * The headlines of decks that were built and have not gone out everywhere yet:
+ * waiting for the final tap, or queued for the drip.
+ *
+ * Neither list the idea call already had could see them. A proposal is forgotten
+ * the moment it is built, and recentTitles holds only the last twelve things
+ * published: by 8 Oct 2026 the 30 Sep northern lights deck was further back than
+ * that, while it was still first in the queue for Instagram, and the same idea was
+ * proposed again.
+ */
+export const waitingDeckTitles = () =>
+  [...Object.values(state.staging), ...state.queue]
+    .filter((c) => c?.kind === 'deck')
+    .map((c) => [c.headline, c.deck?.where && `(${c.deck.where})`].filter(Boolean).join(' '))
     .filter(Boolean);
 export const getProposal = (key) => state.proposals[key] || null;
 export function updateProposal(key, proposal) {

@@ -31,7 +31,7 @@ import {
 } from './src/metrics/index.js';
 import { clipPublicUrl } from './src/publish/imageHosts.js';
 import { buildDeck } from './src/deck/build.js';
-import { toDeckCandidate, deckTopic } from './src/deck/candidate.js';
+import { toDeckCandidate, deckTopic, deckId } from './src/deck/candidate.js';
 import { placeOverCap } from './src/pillars.js';
 import { canonicalKind } from './src/sources/tiyulplus.js';
 import { KINDS, isSourcedKind } from './src/sources/places.js';
@@ -3143,8 +3143,12 @@ async function pickIdeaJob() {
   const angle = pickAngle(history);
 
   // Told what is waiting as well as what went out, and held to it: a title already
-  // waiting for a tap is dropped here even if the model repeats it anyway.
-  const ideas = withoutWaiting(await proposeIdeas({ count: 3, recent: store.recentTitles(), pending: store.proposalTitles(), angle }));
+  // waiting for a tap is dropped here even if the model repeats it anyway. Waiting
+  // includes a deck built and still in the queue, which neither of the other two
+  // lists can see.
+  const ideas = withoutWaiting(
+    await proposeIdeas({ count: 3, recent: store.recentTitles(), pending: store.proposalTitles(), queued: store.waitingDeckTitles(), angle })
+  );
   if (!ideas.length) return null;
 
   const fresh = ideas.filter((i) => !placeOverCap(i.where, history));
@@ -3515,7 +3519,9 @@ async function suggestClipJob() {
  */
 const suggestDecks = billed('deck', suggestDecksJob);
 async function suggestDecksJob(n, chatId) {
-  const ideas = withoutWaiting(await proposeIdeas({ count: n, recent: store.recentTitles(), pending: store.proposalTitles() }));
+  const ideas = withoutWaiting(
+    await proposeIdeas({ count: n, recent: store.recentTitles(), pending: store.proposalTitles(), queued: store.waitingDeckTitles() })
+  );
   if (!ideas.length) return notify.send(bot.telegram, chatId, '❌ לא חזרו רעיונות');
 
   const history = store.recentPublished();
@@ -3550,6 +3556,14 @@ async function proposeDeck(idea, alternatives, chatId) {
   await bot.telegram.sendMessage(chatId, proposalMessage(idea), proposalButtons(key));
   return key;
 }
+
+// What a refused build says, by where its id was found (store.idInUse).
+const DECK_TAKEN = {
+  published: 'המצגת הזו כבר פורסמה',
+  queued: 'המצגת הזו כבר בתור לפרסום',
+  staged: 'המצגת הזו כבר ממתינה לאישור',
+  held: 'המצגת הזו כבר מוחזקת (/held)',
+};
 
 /**
  * Build a proposal that was approved, and stage what comes out.
@@ -3619,12 +3633,23 @@ ${done}/${of} · ${ok ? '📷' : '✗'} ${name}`),
       );
     }
 
+    // THE ID IS CHECKED BEFORE THE RENDER, because the render is what does the damage.
+    //
+    // Slides are written to disk under the deck's id, and this check used to come
+    // after them: a deck whose id was taken wrote over the slides of the deck that
+    // had it, and only then was refused. Instagram fetches a carousel's slides when it
+    // publishes, so a deck still waiting for Instagram went out with the newer one's.
+    // The Thai beaches deck approved on 27 Sep was published on 5 Oct under its own
+    // caption and the cover of a Thai islands deck refused on 30 Sep, and the 30 Sep
+    // northern lights deck was holding the 8 Oct one's slides when it was taken out of
+    // the queue. Queued, staged and held all count as taken: their slides are on disk
+    // waiting to be published.
+    const id = deckId(built);
+    const taken = store.idInUse(id);
+    if (taken) return say(`⏭️ ${DECK_TAKEN[taken]} (${id}) - /deck שוב לרעיון אחר`);
+
     // Rendered for the chosen destination only, and staged owing just that one.
     const cand = await toDeckCandidate(built, { targets, tiktokDraft: draft });
-
-    if (store.hasPublished(cand.id)) {
-      return say(`⏭️ המצגת הזו כבר פורסמה (${cand.id}) - /deck שוב לרעיון אחר`);
-    }
 
     // The proposal message has done its job. Removing it means the deck arrives
     // as one album and one approval card, with no stale "⏳ building" line left

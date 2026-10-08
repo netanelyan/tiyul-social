@@ -651,8 +651,14 @@ export const hasApiKey = () =>
  * see because nothing in it has gone out. Without it the same idea came back a day
  * later: "האיים בתאילנד עם המים הכי צלולים" was proposed on 2 Oct and again on
  * 3 Oct, and the two copies took two of the three places in the backlog.
+ *
+ * `queued` is what was built and has not gone out everywhere yet, which neither of
+ * the other two can see: a proposal is forgotten once it is built, and a deck can sit
+ * in the queue for Instagram long after it has fallen out of `recent`. The northern
+ * lights deck of 30 Sep was still first in the queue on 8 Oct when the same idea
+ * was proposed again.
  */
-export async function proposeIdeas({ count = 4, recent = [], pending = [], angle = null, today = new Date() } = {}) {
+export async function proposeIdeas({ count = 4, recent = [], pending = [], queued = [], angle = null, today = new Date() } = {}) {
   if (!hasApiKey()) throw new Error('ANTHROPIC_API_KEY is not set - idea generation is required');
 
   const month = today.toLocaleString('en-GB', { month: 'long' });
@@ -683,6 +689,9 @@ export async function proposeIdeas({ count = 4, recent = [], pending = [], angle
       : 'ALREADY PUBLISHED: nothing yet.',
     pending.length
       ? ['', 'ALREADY PROPOSED AND WAITING FOR AN ANSWER (do not propose these again):', ...pending.map((r) => `  ${r}`)].join('\n')
+      : null,
+    queued.length
+      ? ['', 'ALREADY BUILT AND WAITING TO BE PUBLISHED (do not propose these again):', ...queued.map((r) => `  ${r}`)].join('\n')
       : null,
     // The catalogue, last, so it reads as the menu to choose from rather than
     // as background. Its absence is what left the model choosing from its own

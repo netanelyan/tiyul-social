@@ -9535,6 +9535,94 @@ group('one place memory for every reel, and a postcard that counts what it shows
 }
 
 /* -------------------------------------------------------------------------- */
+group('a free-form deck is its places, and a taken id stops the build before the render');
+
+{
+  const { createHash } = await import('node:crypto');
+  // The key every deck id was made from until now.
+  const legacyId = (deck) =>
+    createHash('sha1').update([deck.where, deck.category, ...deck.slides.map((s) => s.qid).sort()].join('|')).digest('hex').slice(0, 12);
+
+  // The northern lights decks of 30 Sep and 8 Oct 2026: one region, five free-form
+  // slides each, three places in common and two not.
+  const northern = (places) => ({
+    where: 'Northern Scandinavia and Iceland',
+    category: 'free',
+    slides: places.map(([nameEn, nameHe], i) => ({ n: i + 1, nameEn, nameHe, fields: [], bullets: [] })),
+  });
+  const sep30 = northern([['Tromsø', 'טרומסו'], ['Abisko', 'אביסקו'], ['Rovaniemi', 'רובנימי'], ['Reykjavík', 'רייקיאוויק'], ['Kiruna', 'קירונה']]);
+  const oct8 = northern([['Tromsø', 'טרומסו'], ['Abisko', 'אביסקו'], ['Lofoten', 'לופוטן'], ['Kirkjufell', 'קירקיופל'], ['Rovaniemi', 'רובנימי']]);
+  eq('the old key gave both of them the id the 30 Sep deck was queued under',
+    [legacyId(sep30), legacyId(oct8)].join(), '6bc5e4169411,6bc5e4169411');
+  ok('they are two decks now', deckId(sep30) !== deckId(oct8));
+  eq('the same places in another order, under another title, are still one deck',
+    deckId({ ...sep30, titleHe: 'כותרת אחרת', slides: [...sep30.slides].reverse() }), deckId(sep30));
+  eq('however the names are cased or padded',
+    deckId({ ...sep30, slides: sep30.slides.map((s) => ({ ...s, nameEn: ` ${s.nameEn.toUpperCase()} ` })) }), deckId(sep30));
+  const sourced = { where: 'Prague', category: 'museum', slides: [{ qid: 'Q12', nameEn: 'National Museum' }, { qid: 'Q7', nameEn: 'National Gallery' }] };
+  eq('a sourced deck keeps the id it always had', deckId(sourced), legacyId(sourced));
+  const nameless = { where: 'Nowhere', category: 'free', slides: [{ n: 1 }, { n: 2 }, { n: 3 }] };
+  eq('and so does a deck with nothing on its slides to key on', deckId(nameless), legacyId(nameless));
+
+  // Where an id is in use, which is what the build asks before it renders.
+  const deck = (id) => ({ kind: 'deck', id, headline: 'המקומות הכי טובים לראות את האורות הצפוניים', deck: { where: 'Northern Scandinavia and Iceland' } });
+  const northernWaiting = () => store.waitingDeckTitles().filter((t) => t.includes('האורות הצפוניים') && t.includes('(Northern Scandinavia and Iceland)'));
+  eq('an id nothing holds is free', store.idInUse('selftest-deck-free'), null);
+  eq('and an empty one is not held by anything', store.idInUse(''), null);
+  store.enqueue(deck('selftest-deck-queued'));
+  eq('a deck in the queue holds its id before anything has gone out', store.idInUse('selftest-deck-queued'), 'queued');
+  eq('and the next idea call is told it is waiting', northernWaiting().length, 1);
+  store.enqueue({ kind: 'card', id: 'selftest-card-queued', headline: 'כרטיס שלא שייך לרשימה' });
+  ok('a card in the queue is not a deck idea', !store.waitingDeckTitles().some((t) => t.includes('כרטיס שלא שייך')));
+  while (store.dequeue());
+  const key = store.addStaging(deck('selftest-deck-staged'));
+  eq('a deck waiting for the final tap holds its id', store.idInUse('selftest-deck-staged'), 'staged');
+  eq('and is waiting too', northernWaiting().length, 1);
+  store.takeStaging(key);
+  store.hold(deck('selftest-deck-held'), ['instagram'], 'selftest');
+  eq('a deck held after a failed publish holds its id', store.idInUse('selftest-deck-held'), 'held');
+  store.clearHeld();
+  store.recordPublished({ id: 'selftest-deck-out', pillar: 'day', tags: [], layout: 'deck', instagram: true });
+  eq('and a deck already out holds it for good', store.idInUse('selftest-deck-out'), 'published');
+
+  // The order is the fix: the slides are written under the id, so the id is checked first.
+  const botSrc = readFileSync(new URL('../bot.js', import.meta.url), 'utf8');
+  const build = botSrc.slice(botSrc.indexOf('async function buildProposalJob('));
+  const checkAt = build.indexOf('store.idInUse(id)');
+  ok('the build checks the id before it renders', checkAt !== -1 && checkAt < build.indexOf('toDeckCandidate(built'));
+  ok('and nothing checks it after the render any more', !/store\.hasPublished\(cand\.id\)/.test(botSrc));
+  ok('both idea calls are given the waiting decks', (botSrc.match(/queued: store\.waitingDeckTitles\(\)/g) || []).length === 2);
+
+  // And the idea call puts them in the prompt, in a list of their own. The model is
+  // stubbed at fetch; the stub passes everything through once the test is done,
+  // because the module keeps the client, and the client keeps the fetch it was given.
+  const { proposeIdeas } = await import('../src/deck/ideas.js');
+  const realFetch = globalThis.fetch;
+  const key0 = process.env.ANTHROPIC_API_KEY;
+  let capturing = true;
+  let sent = null;
+  globalThis.fetch = async (url, init) => {
+    if (!capturing || !String(url).includes('/v1/messages')) return realFetch(url, init);
+    sent = JSON.parse(typeof init?.body === 'string' ? init.body : '{}');
+    return new Response(JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message: 'selftest' } }), {
+      status: 400,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  process.env.ANTHROPIC_API_KEY ||= 'selftest';
+  try {
+    await proposeIdeas({ count: 1, queued: ['המקומות הכי טובים לראות את האורות הצפוניים (Northern Scandinavia and Iceland)'] }).catch(() => null);
+  } finally {
+    capturing = false;
+    globalThis.fetch = realFetch;
+    if (key0 === undefined) delete process.env.ANTHROPIC_API_KEY;
+  }
+  const prompt = JSON.stringify(sent?.messages || []);
+  ok('the idea prompt lists what is built and waiting',
+    prompt.includes('ALREADY BUILT AND WAITING TO BE PUBLISHED') && prompt.includes('האורות הצפוניים'), prompt.slice(0, 120));
+}
+
+/* -------------------------------------------------------------------------- */
 group('every module loads - the check node --check cannot make');
 
 {

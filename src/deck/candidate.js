@@ -71,10 +71,29 @@ export function deckRepeats(deck, history = recentPublished()) {
  * rather than on the title, which the model rewrites slightly every time it is
  * asked. Two decks about the same five Prague museums are the same deck even if
  * one is called "חמישה מוזיאונים" and the other "המוזיאונים של פראג".
+ *
+ * A PLACE IS ITS QID WHEN IT HAS ONE, AND ITS NAME WHEN IT DOES NOT. Only a sourced
+ * deck's places come from Wikidata. A free-form deck's places are named by the
+ * model and carry no qid, and keying them on the missing field keyed every
+ * free-form deck on its region, its category and its slide count alone. On 8 Oct
+ * 2026 a northern lights deck (Tromsø, Abisko, Lofoten, Kirkjufell, Rovaniemi)
+ * came out as 6bc5e4169411, the id of the 30 Sep one (Tromsø, Abisko, Rovaniemi,
+ * Reykjavík, Kiruna), because both were five slides of "Northern Scandinavia and
+ * Iceland". Its slides were written over the older deck's, which was still queued
+ * for Instagram, and then it was refused as already published.
+ *
+ * A slide with a qid, or with no name either, is keyed exactly as before, so no
+ * sourced deck's id has moved.
  */
 export function deckId(deck) {
-  const key = [deck.where, deck.category, ...deck.slides.map((s) => s.qid).sort()].join('|');
+  const key = [deck.where, deck.category, ...deck.slides.map(placeKey).sort()].join('|');
   return createHash('sha1').update(key).digest('hex').slice(0, 12);
+}
+
+function placeKey(slide) {
+  if (slide.qid) return slide.qid;
+  const name = String(slide.nameEn || slide.nameHe || '').trim().toLowerCase();
+  return name ? `name:${name}` : slide.qid;
 }
 
 /**
