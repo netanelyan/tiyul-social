@@ -1,5 +1,5 @@
 import * as store from '../store.js';
-import { SCOPES } from '../publish/tiktok.js';
+import { SCOPES, liveToken } from '../publish/tiktok.js';
 
 // What a post did on TikTok, and the two reasons it probably cannot be answered.
 //
@@ -67,7 +67,7 @@ export function hasListScope() {
  * line somebody can act on.
  */
 export function available() {
-  if (!store.getTikTokToken()?.token) return { ok: false, why: 'the account is not connected - npm run tiktok-token' };
+  if (!store.getTikTokToken()?.accessToken) return { ok: false, why: 'the account is not connected - npm run tiktok-token' };
   if (!hasListScope()) {
     return {
       ok: false,
@@ -80,8 +80,15 @@ export function available() {
 }
 
 async function call(path, body, { timeoutMs = 20_000 } = {}) {
-  const token = store.getTikTokToken()?.token;
-  if (!token) throw new TikTokMetricsError('not connected', { step: 'auth' });
+  // The publisher's own reader: it refreshes a token close to lapsing, and it reads
+  // the field the store actually writes. This used `.token`, which the store has
+  // never written, so every pass said "not connected".
+  let token;
+  try {
+    token = await liveToken('metrics');
+  } catch (e) {
+    throw new TikTokMetricsError(e.message, { step: 'auth' });
+  }
   const res = await fetch(`${API}${path}`, {
     method: 'POST',
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },

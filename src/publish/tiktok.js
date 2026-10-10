@@ -427,8 +427,14 @@ export function refreshTokenDaysLeft() {
   return Math.round((saved.refreshExpiresAt - Date.now()) / 86_400_000);
 }
 
-/** The access token to use right now, refreshing first if it is close to lapsing. */
-async function liveToken(step) {
+/**
+ * The access token to use right now, refreshing first if it is close to lapsing.
+ *
+ * Exported for src/metrics/tiktok.js, which read the stored token itself under the
+ * wrong field name (`token`; the store saves `accessToken`) and so reported the
+ * account as not connected on every pass. One reader, the publisher's, for both.
+ */
+export async function liveToken(step) {
   let refreshError = null;
   await refreshTikTokToken().catch((e) => {
     // A refresh failure is only fatal if the current token is also dead, and

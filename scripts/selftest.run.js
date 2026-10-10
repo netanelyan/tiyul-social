@@ -2266,6 +2266,18 @@ store.setTikTokToken({
 });
 eq('reconnecting with both clears it', missingScopes({ draft: true }).length, 0);
 
+// TikTok METRICS read the field the store writes. They read `.token`, which the
+// store has never written (it saves `accessToken`), so every metrics pass said
+// "not connected" on a box that was publishing to TikTok every day.
+{
+  const metricsTk = await import('../src/metrics/tiktok.js');
+  ok('metrics see the connected account', !/not connected/.test(metricsTk.available().why || ''), metricsTk.available().why);
+  ok('and name what is really missing, the video.list scope', /video\.list/.test(metricsTk.available().why || ''));
+  const metricsSrc = readFileSync(new URL('../src/metrics/tiktok.js', import.meta.url), 'utf8');
+  ok('metrics never read a token field the store does not write', !/getTikTokToken\(\)\?\.token\b/.test(metricsSrc));
+  ok('and fetch through the publisher\'s refreshing reader', /await liveToken\('metrics'\)/.test(metricsSrc));
+}
+
 // No token is "not connected", which is a different message reported elsewhere.
 store.clearTikTokToken();
 eq('an absent token reports no missing scopes', missingScopes({ draft: true }).length, 0);
