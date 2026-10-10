@@ -78,9 +78,12 @@ export const DEFAULT_SETTINGS = Object.freeze({
   // The site plans trips abroad; a hike in the Galilee is not a route it can build.
   skipCountries: ['ישראל'],
   destinationsPerDay: 3,
+  youtubeDestinationsPerDay: 8,
   hashtagsPerDay: 2,
   instagram: true,
-  youtube: false,
+  // On since 2026-10-10: the only fresh source of creators. Brave's TikTok and
+  // Instagram results were all older than the 45-day limit on the first real run.
+  youtube: true,
   tiktokQueries: ['מסלול ב{dest}', 'טיול ל{dest}', 'המלצות {dest}', 'כמה ימים ב{dest}', 'מישהו היה ב{dest}'],
   instagramQueries: ['טיול ל{dest}', 'המלצות {dest}'],
   hashtags: [

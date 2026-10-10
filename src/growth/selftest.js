@@ -13,7 +13,8 @@ import { cleanText, instagramPost, instagramTime, parseFollowers, stripIgCounts,
 import { todaysSearches } from './find/queries.js';
 import { scoreAgency, scoreCreator } from './find/score.js';
 import { assertAllowed, isSocial, RULES } from './http.js';
-import { campaignFor, hasUtm, tagged } from './links.js';
+import { campaignFor, hasUtm, openTarget, tagged } from './links.js';
+import { contactsIn } from './find/youtube.js';
 import { compose, linkFor } from './prepare/compose.js';
 import { checkDraft, urlsIn } from './prepare/guards.js';
 import { agencySample, prepareToday } from './prepare/index.js';
@@ -446,6 +447,48 @@ export async function growthSelftest({ ok, eq }) {
     await runDiscovery({ store, settings: S, now: NOW, deps: two, env: ENV });
     ok('a destination the post never names is refused (Corfu is not Athens)', !store.data.leads['tt:@corfu.fan']);
     ok('and one it does name is kept', store.data.leads['tt:@athens.fan']?.posts[0]?.dest?.slug === 'athens');
+  }
+
+  /* ---------------------------------------------------------- YouTube */
+
+  {
+    const c = contactsIn('Travel vlogs 🇮🇱 | Insta: https://instagram.com/noa.trips. TikTok tiktok.com/@noa_trips | business: noa@trips.co.il');
+    ok('a channel description yields its Instagram, TikTok and email', c.socials.join() === 'https://www.instagram.com/noa.trips/,https://www.tiktok.com/@noa_trips' && c.email === 'noa@trips.co.il', JSON.stringify(c));
+
+    let searches = 0;
+    const store = memStore();
+    const short = (id, channelId) => ({ id, url: `https://www.youtube.com/shorts/${id}`, title: 'טיול לאתונה ב-3 ימים', description: '', channelId, channelTitle: channelId, publishedAt: new Date(NOW - 3 * DAY).toISOString(), thumb: null });
+    const deps = fakeDeps({
+      brave: async () => [],
+      searchShorts: async () => (searches++, [short('vidA', 'chanA'), short('vidB', 'chanB')]),
+      channelStats: async () =>
+        new Map([
+          ['chanA', { subscribers: 5200, handle: 'noa.trips', socials: ['https://www.instagram.com/noa.trips/'], email: null }],
+          ['chanB', { subscribers: 120_000, handle: 'big.channel', socials: [], email: null }],
+        ]),
+    });
+    await runDiscovery({ store, settings: S, now: NOW, deps, env: { ...ENV, YOUTUBE_API_KEY: 'test' } });
+    eq('YouTube runs every Hebrew template for its destinations, plus the day\'s hashtags', searches, S.youtubeDestinationsPerDay * S.tiktokQueries.length + S.hashtagsPerDay);
+    ok('and stays inside the free 100 searches a day', searches <= 100);
+    const yt = store.data.leads['yt:@noa.trips'];
+    ok('a channel inside 1,000 to 30,000 subscribers becomes a creator, counted by YouTube itself', yt && yt.followers === 5200 && yt.followersFrom === 'youtube' && yt.posts.length === 1);
+    ok('one channel is one lead, however many searches found it', Object.keys(store.data.leads).filter((k) => k.startsWith('yt:')).length === 1);
+    ok('a channel with 120K subscribers is left out for good', !store.data.leads['yt:@big.channel'] && Boolean(store.data.seen['yt:channel:chanB']?.rejected));
+    eq('YouTube has no DMs: [העתק ופתח] opens the Instagram the channel lists', openTarget(yt, 'dm'), 'https://www.instagram.com/noa.trips/');
+    eq('or its email', openTarget({ ...yt, socials: [], email: 'noa@trips.co.il' }, 'dm'), 'mailto:noa@trips.co.il');
+    eq('or, listing neither, the channel', openTarget({ ...yt, socials: [], email: null }, 'dm'), 'https://www.youtube.com/@noa.trips');
+
+    // What "טיול לקורפו" really returned on 2026-10-10: Shorts in other languages.
+    const store2 = memStore();
+    const foreign = fakeDeps({
+      brave: async () => [],
+      searchShorts: async () => [{ ...short('vidRu', 'chanRu'), title: 'Греция, остров Корфу', description: '' }],
+      channelStats: async () => new Map(),
+    });
+    const run2 = await runDiscovery({ store: store2, settings: S, now: NOW, deps: foreign, env: { ...ENV, YOUTUBE_API_KEY: 'test' } });
+    ok('a Short with no Hebrew is dropped before it is sorted', run2.notHebrew > 0 && foreign.calls.classify === 0);
+    ok('and only the Short: its channel is not judged on one title', Boolean(store2.data.seen['yt:post:vidRu']) && !store2.data.seen['yt:channel:chanRu']);
+    ok('Settings refuse more YouTube searches than the free 100 a day', Boolean((await createOps({ store: memStore(), env: {}, clock: () => NOW, deps: { runDiscovery: async () => {}, prepareToday: async () => {} } }).post('/api/settings', { settings: { youtubeDestinationsPerDay: 30 } })).error));
   }
 
   /* ---------------------------------------------------------- publishing */

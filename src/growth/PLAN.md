@@ -306,3 +306,11 @@ Publishing (2026-10-10, after the site shipped `/api/internal/trips`):
   Instagram posts, every one older than 45 days, so 0 creators and 0 customers;
   15 agencies. Old posts are now dropped before they are sorted, so they cost
   nothing beyond the search, and the empty comment queue says why it is empty.
+
+YouTube on (2026-10-10, the owner's decision after the stale-index finding):
+- A separate key, `YOUTUBE_API_KEY`, restricted to YouTube Data API v3.
+- Five Hebrew templates times three destinations: 15 of the 100 free searches a day,
+  plus one channels.list call for subscriber counts.
+- YouTube has no direct messages, so channel descriptions are read for the public
+  Instagram, TikTok or email they list, and [העתק ופתח] opens that. A channel that
+  lists none opens its own page.

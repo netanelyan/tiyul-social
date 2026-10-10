@@ -6,10 +6,10 @@ import { blockedBy, leadFor, markSeen, personKeys, postKey } from '../rules.js';
 import { braveConfigured, braveSearch, IG_BOILERPLATE, instagramPost, instagramTime, stripIgCounts, parseEngagement, parseFollowers, tiktokPost, tiktokProfile, tiktokTime } from './brave.js';
 import { classify, classifyAgencies } from './classify.js';
 import { enrichAgency, placesConfigured, searchAgencies } from './places.js';
-import { destinations, todaysSearches } from './queries.js';
+import { destinations, fillDest, todaysSearches } from './queries.js';
 import { scoreAgency, scoreCreator, scoreCustomer } from './score.js';
 import { oembed, saveThumb } from './tiktok.js';
-import { channelStats, searchShorts, youtubeConfigured } from './youtube.js';
+import { channelStats, hebrewLetters, searchShorts, youtubeConfigured } from './youtube.js';
 
 // One discovery run: search, dedupe, sort, score, store.
 //
@@ -192,44 +192,65 @@ async function findSocial({ state, settings, plan, run, now, deps, env }) {
   await judge({ state, settings, cands: [...cands.values()], followers, run, now, deps });
 }
 
-/* ------------------------------------------------------------ YouTube (off by default) */
+/* ------------------------------------------------------------ YouTube */
 
 async function findYoutube({ state, settings, plan, run, now, deps, env }) {
   if (!youtubeConfigured(env)) {
     run.skipped.push('YouTube מופעל בהגדרות אבל אין YOUTUBE_API_KEY');
     return;
   }
-  const cands = [];
-  for (const d of plan.dests) {
+  // The same Hebrew templates as TikTok, without the "video" that only Brave
+  // needs, over more destinations than Brave searches (YouTube's searches are
+  // free, 100 a day), plus the day's hashtags, which find Hebrew Shorts
+  // wherever they were filmed. At the defaults: 8 x 5 + 2 = 42 a day.
+  const searches = [
+    ...plan.youtubeDests.flatMap((d) => settings.tiktokQueries.map((q) => ({ text: fillDest(q, d), query: q, dest: d }))),
+    ...plan.hashtags.map((tag) => ({ text: tag, hashtag: tag })),
+  ];
+  const cands = new Map();
+  for (const s of searches) {
     let items = [];
     try {
-      items = await deps.searchShorts(`טיול ל${d.he}`, { env, now });
+      items = await deps.searchShorts(s.text, { env, now, days: settings.maxPostAgeDays });
     } catch (e) {
-      run.errors.push(`YouTube: ${e.message}`);
-      break;
+      run.errors.push(`YouTube "${s.text}": ${e.message}`);
+      if (e.status === 400 || e.status === 403) break;
+      continue;
     } finally {
       record(state, 'youtube', { now });
+      run.queries++;
     }
     for (const v of items) {
       const pk = postKey('yt', v.id);
-      if (state.seen[pk] || blockedBy(state, [`yt:channel:${v.channelId}`])) continue;
-      cands.push({ pk, platform: 'youtube', id: v.id, url: v.url, channelId: v.channelId, handle: null, name: v.channelTitle, text: `${v.title}\n${v.description}`, thumbUrl: v.thumb, publishedAt: v.publishedAt, query: 'טיול ל{dest}', searched: `טיול ל${d.he}`, destHint: d.he });
+      if (cands.has(pk) || state.seen[pk] || blockedBy(state, [`yt:channel:${v.channelId}`])) continue;
+      // No Hebrew at all: dropped here, for free, and only this Short. A Hebrew
+      // creator can title one Short in English, so the channel is not judged.
+      if (hebrewLetters(`${v.title} ${v.description}`) < 3) {
+        run.notHebrew = (run.notHebrew || 0) + 1;
+        markSeen(state, [pk], { at: now, rejected: 'אין עברית בכותרת ובתיאור' });
+        continue;
+      }
+      cands.set(pk, { pk, platform: 'youtube', id: v.id, url: v.url, channelId: v.channelId, handle: null, name: v.channelTitle, text: `${v.title}\n${v.description}`, thumbUrl: v.thumb, publishedAt: v.publishedAt, query: s.query || null, hashtag: s.hashtag || null, searched: s.text, destHint: s.dest?.he || '' });
     }
   }
   const followers = new Map();
-  try {
-    const stats = await deps.channelStats(cands.map((c) => c.channelId), { env });
-    record(state, 'youtube', { now });
-    for (const c of cands) {
-      const s = stats.get(c.channelId);
-      if (s?.handle) c.handle = s.handle;
-      c.profileUrl = s?.handle ? `https://www.youtube.com/@${s.handle}` : `https://www.youtube.com/channel/${c.channelId}`;
-      if (s?.subscribers) followers.set(`yt:${String(c.handle || c.channelId).toLowerCase()}`, s.subscribers);
+  if (cands.size) {
+    try {
+      const stats = await deps.channelStats([...cands.values()].map((c) => c.channelId), { env });
+      record(state, 'youtube', { now });
+      for (const c of cands.values()) {
+        const s = stats.get(c.channelId);
+        if (s?.handle) c.handle = s.handle;
+        c.profileUrl = s?.handle ? `https://www.youtube.com/@${s.handle}` : `https://www.youtube.com/channel/${c.channelId}`;
+        c.socials = s?.socials || [];
+        c.email = s?.email || null;
+        if (s?.subscribers) followers.set(`yt:${String(c.handle || c.channelId).toLowerCase()}`, s.subscribers);
+      }
+    } catch (e) {
+      run.errors.push(`YouTube stats: ${e.message}`);
     }
-  } catch (e) {
-    run.errors.push(`YouTube stats: ${e.message}`);
   }
-  await judge({ state, settings, cands, followers, run, now, deps });
+  await judge({ state, settings, cands: [...cands.values()], followers, run, now, deps });
 }
 
 /* ------------------------------------------------------------ sorting into leads */
@@ -342,6 +363,9 @@ async function judge({ state, settings, cands, followers, run, now, deps }) {
       handle: c.handle || null,
       channelId: c.channelId || null,
       profileUrl: c.profileUrl || null,
+      // Where a YouTube creator can actually be written to: YouTube has no DMs.
+      socials: c.socials || [],
+      email: c.email || null,
       followers: Number.isFinite(fol) ? fol : null,
       followersFrom: Number.isFinite(fol) ? (c.platform === 'youtube' ? 'youtube' : 'search') : null,
       dest: dest ? { he: dest.name, slug: dest.slug } : null,

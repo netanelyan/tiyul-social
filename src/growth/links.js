@@ -90,6 +90,13 @@ export function openTarget(lead, what) {
     if (lead.email) return `mailto:${lead.email}`;
     return lead.website || lead.mapsUrl || null;
   }
+  // YouTube has no direct messages: the DM goes to the Instagram or TikTok the
+  // channel lists, or its business email, and only failing those to the channel.
+  if (lead.source === 'youtube') {
+    const social = (lead.socials || []).find((s) => /instagram\.com/.test(s)) || (lead.socials || []).find((s) => /tiktok\.com/.test(s));
+    if (social) return social;
+    if (lead.email) return `mailto:${lead.email}`;
+  }
   return lead.profileUrl || lead.posts?.[0]?.url || null;
 }
 

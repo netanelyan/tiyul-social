@@ -113,6 +113,10 @@ export function createOps({ store, env = process.env, clock = () => Date.now(), 
     if (!(s.followers.min < s.followers.max)) bad.push('מינימום עוקבים קטן מהמקסימום');
     for (const m of Object.values(s.models)) if (!/^claude-[a-z0-9.-]+$/.test(m)) bad.push(`שם מודל לא תקין: ${m}`);
     if (!s.tiktokQueries.every((q) => q.includes('{dest}'))) bad.push('כל חיפוש בטיקטוק צריך {dest}');
+    const ytPerDay = s.youtubeDestinationsPerDay * s.tiktokQueries.length + s.hashtagsPerDay;
+    if (!(Number.isInteger(s.youtubeDestinationsPerDay) && s.youtubeDestinationsPerDay >= 0 && ytPerDay <= 100)) {
+      bad.push(`יוטיוב נותן 100 חיפושים ביום, וההגדרות מבקשות ${ytPerDay}`);
+    }
     if (bad.length) throw new RuleError('bad', bad.join('. '));
     return s;
   }

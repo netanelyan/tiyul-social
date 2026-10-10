@@ -31,7 +31,7 @@ default, or on start if today's run has not happened), and whenever you press
 | `BRAVE_API_KEY` | finding TikTok and Instagram posts | brave.com/search/api, the Search plan ($5 per 1,000, with a monthly $5 credit; a card is required) |
 | `GOOGLE_MAPS_KEY` | finding agencies (Places API (New) Text Search) | Google Cloud console, enable "Places API (New)"; billing must be on, usage stays in the free 1,000 a month |
 | `GROWTH_PUBLISH_TOKEN` | publishing creator routes on tiyulplus.com | the same value as on Vercel, at least 32 characters |
-| `YOUTUBE_API_KEY` | optional, only if YouTube is on in Settings | the same Google project, enable "YouTube Data API v3" (falls back to `GOOGLE_MAPS_KEY`) |
+| `YOUTUBE_API_KEY` | finding creators on YouTube Shorts, the only fresh creator source | a separate key restricted to "YouTube Data API v3" in the same Google project (falls back to `GOOGLE_MAPS_KEY` if that key allows it) |
 | `GA4_PROPERTY_ID` | Reports: clicks per utm_campaign | GA4 Admin, Property details: the numeric id, not `G-...` |
 | `GA4_SERVICE_ACCOUNT_FILE` | the same | a service account JSON key from Google Cloud with the Google Analytics Data API enabled; add its email in GA4 Property access management as Viewer |
 

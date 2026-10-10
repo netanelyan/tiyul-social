@@ -52,7 +52,8 @@ export function todaysSearches(settings, { now = Date.now(), dests = destination
     }
   }
 
-  for (const tag of rotate(settings.hashtags, settings.hashtagsPerDay, day)) {
+  const hashtags = rotate(settings.hashtags, settings.hashtagsPerDay, day);
+  for (const tag of hashtags) {
     out.push({ platform: 'tiktok', site: 'tiktok.com', text: `${tag} video`, hashtag: tag });
     if (settings.instagram) out.push({ platform: 'instagram', site: 'instagram.com', text: tag, hashtag: tag });
   }
@@ -64,5 +65,9 @@ export function todaysSearches(settings, { now = Date.now(), dests = destination
   const city = settings.agencyCities[Math.floor(day / Math.max(1, settings.agencyQueries.length)) % Math.max(1, settings.agencyCities.length)];
   const agency = aq && city ? { text: `${aq} ${city}`, query: aq, city } : null;
 
-  return { day, dests: todayDests, brave: out, agency };
+  // YouTube searches are free (a quota of 100 a day), so it covers more of the
+  // list than Brave does, on its own rotation.
+  const youtubeDests = rotate(dests, settings.youtubeDestinationsPerDay || 0, day);
+
+  return { day, dests: todayDests, youtubeDests, hashtags, brave: out, agency };
 }

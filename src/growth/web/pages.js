@@ -561,7 +561,8 @@ ${num('maxPostAgeDays', 'גיל פוסט מקסימלי (ימים)', settings.ma
 ${lines('skipCountries', 'מדינות שלא מחפשים בהן', settings.skipCountries, 'האתר מתכנן טיולים לחו"ל, אז ישראל כאן כברירת מחדל')}
 </fieldset>
 <fieldset><legend>חיפוש</legend>
-${num('destinationsPerDay', 'יעדים ביום', settings.destinationsPerDay, 1, 'מתוך destinations.json, ברוטציה')}
+${num('destinationsPerDay', 'יעדים ביום (טיקטוק ואינסטגרם)', settings.destinationsPerDay, 1, 'מתוך destinations.json, ברוטציה')}
+${num('youtubeDestinationsPerDay', 'יעדים ביום ביוטיוב', settings.youtubeDestinationsPerDay, 1, '5 חיפושים לכל יעד, מתוך 100 חינם ביום')}
 ${num('hashtagsPerDay', 'האשטגים ביום', settings.hashtagsPerDay)}
 ${check('instagram', 'לחפש גם באינסטגרם (דרך Brave)', settings.instagram)}
 ${check('youtube', 'לחפש גם ביוטיוב (Shorts)', settings.youtube)}
