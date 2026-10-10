@@ -2283,15 +2283,15 @@
       {
         "id": "verdict",
         "he": "שווה או לא",
-        "weight": 20,
-        "memory": 0,
+        "weight": 60,
+        "memory": 1,
         "slidesMin": 5,
         "slidesMax": 8,
         "needs": [
           "cons",
           "specifics"
         ],
-        "desc": "The honest answer, and now the account's lead format. Pros, then the page's own drawbacks quoted verbatim, then who it is for, then the best three places. Refuses to build when the verdict names no drawbacks, because a one-sided verdict post is an advertisement. WEIGHT 20 AGAINST 13 FOR EVERYTHING ELSE, which is the owner's instruction off our own numbers rather than the reference study's: the two best-performing posts this account has ever published are both this type under the hooks that promise a specific practical thing, `before` (\"לפני שאתם מזמינים, שתי דקות\") and `score` (\"נתנו לזה 4.5, וזה למה\"). Nothing in the reference set predicted that, and it outranks the reference set, because it is this account's audience rather than somebody else's. `memory: 0` is the other half and without it the weight does nothing - see the note beside typeMemory. The supply holds: 55 of the 61 destination pages carry a verdict that names drawbacks, and all 55 publish a score."
+        "desc": "The honest answer, and now the account's lead format. Pros, then the page's own drawbacks quoted verbatim, then who it is for, then the best three places. Refuses to build when the verdict names no drawbacks, because a one-sided verdict post is an advertisement. WEIGHT 60 WITH MEMORY 1 (since 10 Oct 2026): never twice in a row, because the owner's daily-posting rule is that no two posts in a row use the same template and every verdict post is drawn the same way whatever look is drawn; 60 keeps it on about every other post (46% simulated, against 65% at weight 20 with memory 0, when it ran twice in a row 41% of the time). It leads on the owner's instruction off our own numbers rather than the reference study's: the two best-performing posts this account has ever published are both this type under the hooks that promise a specific practical thing, `before` (\"לפני שאתם מזמינים, שתי דקות\") and `score` (\"נתנו לזה 4.5, וזה למה\"). Nothing in the reference set predicted that, and it outranks the reference set, because it is this account's audience rather than somebody else's. The memory is the other half: at the default 2 the weight does nothing, at 1 the ceiling is half - see the note beside typeMemory. The supply holds: 55 of the 61 destination pages carry a verdict that names drawbacks, and all 55 publish a score."
       },
       {
         "id": "map",
@@ -2818,9 +2818,11 @@
       "weight of such a type does almost nothing. The draw is a weighted draw over",
       "whatever is not excluded, so the 33% ceiling binds first.",
       "",
-      "So a type may declare its own `memory`, and `memory: 0` means it is never",
-      "excluded for being recent. See pickType in src/posts/types.js. Only the",
-      "verdict type sets it, and the note beside that type says why."
+      "So a type may declare its own `memory`: `memory: 0` means it is never",
+      "excluded for being recent, `memory: 1` means not twice in a row, a ceiling of",
+      "half. See pickType in src/posts/types.js. Only the verdict type sets it, at 1",
+      "since the rule that no two posts in a row share a template, and the note",
+      "beside that type says why."
     ],
     "typeMemory": 2,
     "days": 4,

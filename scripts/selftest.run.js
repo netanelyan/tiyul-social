@@ -6642,6 +6642,28 @@ group('the rotation - a pipeline is a template machine unless it is stopped');
   ok('so the next verdict post never opens on the shape the last one used', !draws.includes(verdictHooks[0]), draws.join(','));
   const postsSrc = readFileSync(new URL('../src/posts/index.js', import.meta.url), 'utf8');
   ok('and buildPost asks hooksToAvoid, not its bare argument', /avoid: hooksToAvoid\(shape\.type, history\)/.test(postsSrc));
+
+  // NO TWO POSTS IN A ROW FROM THE SAME TEMPLATE. Verdict was weight 20 with memory
+  // 0, so it ran twice in a row 41% of the time, and every verdict post is drawn the
+  // same way whatever look is drawn. Now memory 1 and weight 60: never twice running,
+  // still on about every other post.
+  eq('an exhausted pool lets the OLDEST exclusion go first, never the newest', drawWeighted(pool, { avoid: ['b', 'a'], rand: () => 0.01 }).id, 'a');
+  let typeHist = [];
+  let verdictCount = 0;
+  let repeatCount = 0;
+  let prevType = null;
+  let typeSeed = 7;
+  const typeRand = () => ((typeSeed = (typeSeed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 3000; i++) {
+    const t = pickType({ history: typeHist, rand: typeRand }).id;
+    if (t === 'verdict') verdictCount++;
+    if (t === prevType) repeatCount++;
+    prevType = t;
+    typeHist = [{ type: t }, ...typeHist].slice(0, 10);
+  }
+  eq('no type ever runs twice in a row, verdict included', repeatCount, 0);
+  ok('and verdict still leads, on about every other post', verdictCount / 3000 > 0.4 && verdictCount / 3000 <= 0.5, `${((verdictCount / 3000) * 100).toFixed(1)}%`);
+  eq('a verdict after label-then-sheet draws label, not sheet again', pickLook('verdict', { history: [{ look: 'sheet' }, { look: 'label' }], rand: () => 0.99 }).id, 'label');
 }
 
 /* -------------------------------------------------------------------------- */
@@ -8728,11 +8750,14 @@ group('the format rotation - half the output, and never three in a row');
   const { typesToAvoid, nextShape } = await import('../src/posts/types.js');
   const types = postConfig().posts.types;
   const verdict = types.find((t) => t.id === 'verdict');
-  eq('the verdict type opts out of the memory', verdict.memory, 0);
+  // Memory 1 since 10 Oct 2026: the lead type, but never twice in a row, because no
+  // two posts in a row may share a template and every verdict post is drawn alike.
+  eq('the verdict type keeps a memory of one, not the default two', verdict.memory, 1);
 
-  const history = [{ type: 'verdict' }, { type: 'verdict' }];
-  const avoid = typesToAvoid(types, 2, history);
-  ok('so it is not excluded after being used twice', !avoid.includes('verdict'), avoid.join(','));
+  const avoid = typesToAvoid(types, 2, [{ type: 'verdict' }, { type: 'plan' }]);
+  ok('so it is excluded right after it is used', avoid.includes('verdict'), avoid.join(','));
+  const later = typesToAvoid(types, 2, [{ type: 'plan' }, { type: 'verdict' }]);
+  ok('and back one post later, where a default type would still wait', !later.includes('verdict'), later.join(','));
   const after = typesToAvoid(types, 2, [{ type: 'plan' }, { type: 'list' }]);
   ok('while a type that declares nothing still is', after.includes('plan') && after.includes('list'), after.join(','));
 
@@ -8745,7 +8770,7 @@ group('the format rotation - half the output, and never three in a row');
     hist = [{ type: s.type, look: s.look, frame: s.frame, caption: s.caption }, ...hist].slice(0, 24);
   }
   const share = tally.verdict / 2000;
-  ok('the lead slideshow type exceeds the 33% the global memory would cap it at', share > 0.5, share.toFixed(3));
+  ok('the lead slideshow type exceeds the 33% the global memory would cap it at, up to the half memory 1 allows', share > 0.4 && share <= 0.5, share.toFixed(3));
   ok('and every other type still appears', types.every((t) => tally[t.id] > 0), JSON.stringify(tally));
 }
 

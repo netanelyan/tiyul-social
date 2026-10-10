@@ -53,8 +53,16 @@ export const hooksToAvoid = (type, history = null) =>
 export function drawWeighted(pool, { avoid = [], rand = Math.random, key = (x) => x.id } = {}) {
   const live = (pool || []).filter((x) => (Number(x.weight) || 0) > 0);
   if (!live.length) return null;
-  const fresh = live.filter((x) => !avoid.includes(key(x)));
-  const from = fresh.length ? fresh : live;
+  // When everything is excluded, the OLDEST exclusions are let go first, one at a
+  // time, so the item used last is the one that stays excluded longest. `avoid` is
+  // newest first. This used to fall back to the whole pool, weighted, which could
+  // hand back the very look the last post used - with two verdict looks and a
+  // memory of three, that was most verdict draws.
+  let from = [];
+  for (let keep = avoid.length; keep >= 0 && !from.length; keep--) {
+    const recent = avoid.slice(0, keep);
+    from = live.filter((x) => !recent.includes(key(x)));
+  }
   const total = from.reduce((s, x) => s + (Number(x.weight) || 0), 0);
   let n = rand() * total;
   for (const x of from) {
@@ -116,7 +124,10 @@ export function typesToAvoid(types, typeMemory, history = null) {
     if (!(depth > 0)) continue;
     if (lastOf(seen, 'type', depth).includes(t.id)) out.push(t.id);
   }
-  return out;
+  // Newest first, like every other exclusion list, so drawWeighted's fallback lets
+  // the oldest go first rather than whichever type the config happens to list first.
+  const age = (id) => seen.findIndex((h) => h?.type === id);
+  return out.sort((a, b) => age(a) - age(b));
 }
 
 /**
