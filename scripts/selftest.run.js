@@ -9890,6 +9890,195 @@ group('every module loads - the check node --check cannot make');
 }
 
 /* -------------------------------------------------------------------------- */
+group('the daily slate - one tap a day, and nothing goes out unapproved');
+
+{
+  const plan = await import('../src/slate/plan.js');
+  const st = await import('../src/slate/state.js');
+  const { digestMessage } = await import('../src/slate/digest.js');
+  const { buildSlateDecks, openingKey } = await import('../src/slate/build.js');
+  const runner = await import('../src/slate/runner.js');
+  const z = await import('../src/publish/zernio.js');
+  const { publishTikTokRouted } = await import('../src/publish/tiktokRoute.js');
+  const { inWindow, inShabbat } = await import('../src/schedule.js');
+  const cfg = postConfig().slate;
+
+  // THE CONFIG SHIPS SAFE: the slate off, TikTok privacy private, until the owner
+  // has seen the private test and approved one public post by hand.
+  eq('the slate ships off', cfg.on, false);
+  eq('and nothing is approved without the tap', cfg.autoApprove, false);
+  eq('TikTok privacy starts private', postConfig().publish.tiktok.privacy, 'SELF_ONLY');
+
+  // SCHEDULE SPACING. Sunday 2026-10-11, Friday the 16th, Saturday the 17th.
+  const sun = plan.slotsFor('2026-10-11', cfg);
+  eq('a weekday has three TikTok slots', sun.tiktok.length, 3);
+  eq('and two on Instagram', sun.instagram.length, 2);
+  ok('every slot is inside a window and outside Shabbat', [...sun.tiktok, ...sun.instagram].every((t) => inWindow(t) && !inShabbat(t)));
+  eq('12:15 in Israel is 09:15Z in October', sun.tiktok[0].toISOString().slice(11, 16), '09:15');
+  const fri = plan.slotsFor('2026-10-16', cfg);
+  const sat = plan.slotsFor('2026-10-17', cfg);
+  ok('Friday still posts, before Shabbat', fri.tiktok.length === 3 && fri.tiktok.every((t) => !inShabbat(t)));
+  ok('Saturday still posts, after Shabbat ends', sat.tiktok.length === 3 && sat.tiktok.every((t) => !inShabbat(t)));
+  const shabbatCfg = { ...cfg, slotsByDay: {} };
+  const satPlain = plan.slotsFor('2026-10-17', shabbatCfg);
+  ok('a weekday time that falls on Shabbat is dropped and named', satPlain.tiktok.length < 3 && satPlain.dropped.some((d) => /שבת/.test(d)));
+  eq('the ramp posts two TikTok slots in week one', plan.slotsFor('2026-10-11', cfg, { rampTiktok: 2 }).tiktok.length, 2);
+  ok('spread over the day, first and last', plan.slotsFor('2026-10-11', cfg, { rampTiktok: 2 }).tiktok[1].getTime() === sun.tiktok[2].getTime());
+
+  const decks = [{ template: 'verdict' }, { template: 'list' }, { template: 'verdict' }];
+  const { items, warnings } = plan.assign(decks, sun, { gapMs: 60 * 60_000, last: { tiktok: 'list' } });
+  const ttSeq = items.map((it) => decks[it.deck].template);
+  ok('no two consecutive TikTok posts share a template', ttSeq.every((t, i) => i === 0 || t !== ttSeq[i - 1]), ttSeq.join(','));
+  ok('and the day does not open on yesterday\'s last template', ttSeq[0] !== 'list', ttSeq.join(','));
+  ok('no deck goes to Instagram within an hour of its own TikTok slot', items.filter((it) => it.instagramAt).every((it) => Math.abs(it.instagramAt - it.tiktokAt) >= 60 * 60_000));
+  eq('Instagram takes two of the three decks', items.filter((it) => it.instagramAt).length, 2);
+  eq('with no rule broken', warnings.length, 0, warnings.join('; '));
+  eq('a plan post is its own template per look', plan.templateOf({ type: 'plan', look: 'notes' }), 'plan:notes');
+
+  // NOTHING POSTS UNAPPROVED.
+  const at = (iso) => Date.parse(iso);
+  const cand = (n) => ({ id: `c${n}`, headline: `פתיח ${n}`, deck: { type: 'verdict', where: 'אתונה', urls: { tiktok: ['https://cards.example/1.jpg', 'https://cards.example/2.jpg'] } } });
+  const fresh = () =>
+    st.newSlate({
+      date: '2026-10-11',
+      items: [
+        { key: 'a', cand: cand(1), template: 'verdict', tiktokAt: sun.tiktok[0], instagramAt: sun.instagram[0] },
+        { key: 'b', cand: cand(2), template: 'list', tiktokAt: sun.tiktok[1], instagramAt: null },
+      ],
+      now: at('2026-10-11T05:00:00Z'),
+    });
+  let slate = fresh();
+  eq('an unapproved slate has nothing due, even at its slot time', st.dueItems(slate, at('2026-10-11T09:20:00Z')).length, 0);
+  st.approveAll(slate, { by: 'test' });
+  eq('approved, the first TikTok post is due at its time', st.dueItems(slate, at('2026-10-11T09:20:00Z'))[0]?.platform, 'tiktok');
+  eq('and nothing before its time', st.dueItems(slate, at('2026-10-11T09:00:00Z')).length, 0);
+  eq('one at a time even when several are due', st.dueItems(slate, at('2026-10-11T17:00:00Z')).length, 1);
+  slate = fresh();
+  st.skipItem(slate, 1);
+  st.approveAll(slate, { by: 'test' });
+  ok('a skipped post never becomes due', !st.dueItems(slate, at('2026-10-11T10:30:00Z')).some((d) => d.item.n === 1));
+  eq('a slate from another day publishes nothing', st.dueItems(slate, at('2026-10-12T09:20:00Z')).length, 0);
+  const auto = st.newSlate({ date: '2026-10-11', items: [{ key: 'a', cand: cand(1), template: 'verdict', tiktokAt: sun.tiktok[0] }], autoApprove: true });
+  ok('autoApprove is the only way past the tap', auto.approved && auto.approvedBy === 'autoApprove');
+
+  const msg = digestMessage(fresh());
+  ok('the digest says nothing goes out without approval', /שום דבר לא יוצא בלי אישור/.test(msg.text));
+  ok('and carries the one-tap button', msg.keyboard.flat().some((b) => b.callback_data === 'sa:2026-10-11'));
+  ok('and a skip per post', msg.keyboard.flat().filter((b) => /^ss:2026-10-11:\d$/.test(b.callback_data)).length === 2);
+  ok('with each post\'s time, platform and slide count', /טיקטוק 12:15/.test(msg.text) && /2 שקפים/.test(msg.text));
+  ok('once approved the button is gone', !digestMessage(st.approveAll(fresh(), { by: 'test' })).keyboard.flat().some((b) => b.callback_data?.startsWith('sa:')));
+  eq('the album is the covers', msg.media.length, 2);
+
+  // THE TWO REPEAT RULES while building.
+  const built = [];
+  const res = await buildSlateDecks({
+    count: 3,
+    pickType: () => 'verdict',
+    pickDest: (type, avoid) => [{ he: 'אתונה' }, { he: 'רומא' }, { he: 'פראג' }, { he: 'וינה' }].find((d) => !avoid.includes(d.he)) || null,
+    buildOne: async (dest) => (built.push(dest.he), { id: dest.he, headline: dest.he === 'רומא' ? 'כמה ימים צריך?' : `ככה עושים את ${dest.he}`, deck: { type: 'verdict', where: dest.he } }),
+    recentPlaces: ['אתונה'],
+    recentOpenings: ['כמה ימים צריך!'],
+  });
+  ok('a destination inside the 7-day window is never drawn', !built.includes('אתונה'));
+  ok('an opening line used in the last 14 days is refused, punctuation aside', !res.decks.some((d) => d.cand.headline === 'כמה ימים צריך?') && res.failures.some((f) => /14/.test(f)));
+  eq('and the day still fills from the rest', res.decks.length, 2);
+  eq('openings compare without punctuation', openingKey('כמה ימים, צריך?!'), openingKey('כמה ימים צריך'));
+
+  // THE CONTEXT a slate is planned in.
+  eq('week one is the ramp', runner.rampFor(cfg, [{ date: '2026-10-11' }], '2026-10-14'), 2);
+  eq('and day eight is the full set', runner.rampFor(cfg, [{ date: '2026-10-11' }], '2026-10-18'), null);
+  const satDigest = runner.digestTimeFor('2026-10-17', cfg);
+  ok('a digest that would land on Shabbat waits for its end', !inShabbat(satDigest) && satDigest.getTime() > at('2026-10-17T16:00:00Z'));
+  ok('a weekday digest is at digestAt', runner.digestTimeFor('2026-10-11', cfg).toISOString() === '2026-10-11T05:00:00.000Z');
+
+  // ZERNIO: the request it documents, and the four questions.
+  const body = z.carouselBody(
+    { headline: 'כותרת', tiktokCaption: 'תיאור #טיול', deck: { urls: { tiktok: ['https://c/1.jpg', 'https://c/2.jpg'] } } },
+    { accountId: 'acc1', privacy: 'SELF_ONLY', autoAddMusic: true }
+  );
+  ok('a photo carousel, by URL', body.mediaItems.length === 2 && body.mediaItems[0].type === 'image' && body.tiktokSettings.media_type === 'photo');
+  ok('published now, not scheduled', body.publishNow === true);
+  ok('with TikTok\'s two consent flags', body.tiktokSettings.content_preview_confirmed === true && body.tiktokSettings.express_consent_given === true);
+  ok('auto music on, privacy as asked', body.tiktokSettings.auto_add_music === true && body.tiktokSettings.privacy_level === 'SELF_ONLY');
+  ok('the caption in description, the headline as the title', body.tiktokSettings.description === 'תיאור #טיול' && body.content === 'כותרת');
+  eq('a TikTok post id comes out of its public URL', z.postIdFromUrl('https://www.tiktok.com/@tiyulplus/photo/7412345678901234567'), '7412345678901234567');
+  ok('a rate limit is a platform limit', z.isPlatformLimitZernio(new z.ZernioError('x', { status: 429 })));
+  ok('an expired authorisation is a config problem', z.isConfigProblemZernio(new z.ZernioError('x', { category: 'auth_expired' })));
+  ok('bad content is this post only', z.isCardLevelZernio(new z.ZernioError('x', { category: 'user_content' })));
+
+  // The status flow against a stand-in for Zernio's API.
+  const calls = [];
+  const fakeFetch = async (url, opts) => {
+    calls.push(`${opts.method} ${url.replace(/^https:\/\/zernio\.com\/api\/v1/, '')}`);
+    const ok200 = (j) => ({ ok: true, status: 200, json: async () => j });
+    if (opts.method === 'POST') return ok200({ post: { _id: '65f1c0a9e2b5af0012ab34cd', status: 'publishing', platforms: [{ platform: 'tiktok', status: 'processing' }] } });
+    return ok200({ post: { _id: '65f1c0a9e2b5af0012ab34cd', status: 'published', platforms: [{ platform: 'tiktok', status: 'published', platformPostUrl: null }] } });
+  };
+  const zenv = { ZERNIO_API_KEY: 'k', ZERNIO_TIKTOK_ACCOUNT_ID: 'acc1' };
+  const live = await z.publishZernioTikTok(
+    { headline: 'h', tiktokCaption: 'c', deck: { urls: { tiktok: ['https://c/1.jpg', 'https://c/2.jpg'] } } },
+    { privacy: 'SELF_ONLY', env: zenv, fetchImpl: fakeFetch, pollMs: 1 }
+  );
+  ok('it posts, then reads the status until TikTok has it', calls[0] === 'POST /posts' && calls.slice(1).every((c) => c.startsWith('GET /posts/')));
+  ok('and reports a real post, not a draft, with music', live.draft === false && live.music === true && live.zernioId === '65f1c0a9e2b5af0012ab34cd');
+  ok('a private post says its URL waits for it to go public', live.resolveLater && live.notes.some((n) => /פרטי/.test(n)));
+  let refused = null;
+  try {
+    await z.publishZernioTikTok(
+      { headline: 'h', tiktokCaption: 'c', deck: { urls: { tiktok: ['https://c/1.jpg', 'https://c/2.jpg'] } } },
+      {
+        privacy: 'SELF_ONLY',
+        env: zenv,
+        pollMs: 1,
+        fetchImpl: async (url, opts) => ({
+          ok: true,
+          status: 200,
+          json: async () => ({ post: { _id: 'x1', status: opts.method === 'POST' ? 'publishing' : 'failed', platforms: [{ platform: 'tiktok', status: opts.method === 'POST' ? 'processing' : 'failed', errorMessage: 'images rejected', errorCategory: 'user_content' }] } }),
+        }),
+      }
+    );
+  } catch (e) {
+    refused = e;
+  }
+  ok('a refusal comes back as a card-level error with TikTok\'s reason', refused && z.isCardLevelZernio(refused) && /images rejected/.test(refused.message));
+
+  // THE FALLBACK TO DRAFTS, and the caps.
+  const route = { via: 'zernio', privacy: 'SELF_ONLY', autoAddMusic: true, fallback: 'draft', dailyCap: 3 };
+  const slateCand = { id: 's1', headline: 'h', tiktokVia: 'zernio', tiktokDraft: true, deck: { urls: { tiktok: ['a', 'b'] } } };
+  let drafted = 0;
+  const viaZ = await publishTikTokRouted(slateCand, { cfg: route, deps: { zernio: async () => ({ draft: false, via: 'zernio' }), draft: async () => (drafted++, { draft: true }), usedLast24h: () => 0, cap: () => 3 } });
+  ok('a slate post goes through Zernio', viaZ.via === 'zernio' && drafted === 0);
+  const fell = await publishTikTokRouted(slateCand, { cfg: route, deps: { zernio: async () => { throw new z.ZernioError('boom', { status: 500 }); }, draft: async (c) => (drafted++, { draft: true, notes: [], tiktokDraft: c.tiktokDraft }), usedLast24h: () => 0, cap: () => 3 } });
+  ok('when Zernio fails, the same post goes to the inbox as a draft', fell.draft === true && fell.fellBack === true && drafted === 1);
+  ok('and the notice says why', fell.notes.some((n) => /Zernio נכשל/.test(n) && /boom/.test(n)));
+  let limited = null;
+  try {
+    await publishTikTokRouted(slateCand, { cfg: route, deps: { zernio: async () => { throw new z.ZernioError('slow down', { status: 429 }); }, draft: async () => (drafted++, { draft: true }), usedLast24h: () => 0, cap: () => 3 } });
+  } catch (e) {
+    limited = e;
+  }
+  ok('a limit is not a failure: the post waits, no draft is made', limited && z.isPlatformLimitZernio(limited) && drafted === 1);
+  let capped = null;
+  let zernioCalled = false;
+  try {
+    await publishTikTokRouted(slateCand, { cfg: route, deps: { zernio: async () => { zernioCalled = true; return {}; }, draft: async () => ({}), usedLast24h: () => 3, cap: () => 3 } });
+  } catch (e) {
+    capped = e;
+  }
+  ok('the daily cap stops the post before Zernio is called', capped?.code === 'zernio_daily_cap' && !zernioCalled);
+  ok('and is a platform limit, so it waits for tomorrow', z.isPlatformLimitZernio(capped));
+  const legacy = await publishTikTokRouted({ ...slateCand, tiktokVia: null }, { cfg: route, deps: { legacy: async (c) => ({ draft: Boolean(c.tiktokDraft), legacy: true }) } });
+  ok('anything not from the slate stays the inbox draft it always was', legacy.legacy && legacy.draft);
+  const off = await publishTikTokRouted(slateCand, { cfg: { ...route, via: 'draft' }, deps: { legacy: async (c) => ({ draft: Boolean(c.tiktokDraft), legacy: true }) } });
+  ok('and with Zernio switched off, a slate post is a draft too', off.legacy && off.draft);
+
+  const botSrc3 = readFileSync(new URL('../bot.js', import.meta.url), 'utf8');
+  ok('the published record says what TikTok actually got, not what was asked', /publishedFacts\(\{ \.\.\.cand, tiktokDraft: tiktokWasDraft \}\)/.test(botSrc3) && /const drafted = tiktokWasDraft &&/.test(botSrc3));
+  ok('the rotation builds no slideshows while the slate is on', /postConfig\(\)\.slate\.on \? \['post'\] : \[\]/.test(botSrc3));
+  ok('Telegram and the admin site approve through one function', (botSrc3.match(/approveSlate\(israelDate\(\), \{ by \}\)|approveSlate\(ctx\.match\[1\], \{ by: 'telegram' \}\)/g) || []).length === 2);
+}
+
+/* -------------------------------------------------------------------------- */
 group('the growth desk - it prepares, it never sends');
 
 // Its own group, its own file: the tests live in src/growth/selftest.js beside

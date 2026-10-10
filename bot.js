@@ -72,6 +72,19 @@ import {
   TIKTOK_DAILY_CAP,
 } from './src/publish/tiktok.js';
 import {
+  publishTikTokRouted,
+  describeTikTokAny,
+  isCardLevelTikTokAny,
+  isPlatformLimitTikTokAny,
+  isConfigProblemTikTokAny,
+} from './src/publish/tiktokRoute.js';
+import { getPost as getZernioPost, tiktokPart as zernioTikTokPart, zernioConfigured } from './src/publish/zernio.js';
+import { slotsFor, assign as assignSlate, israelDate } from './src/slate/plan.js';
+import { newSlate, approveAll as approveAllSlate, skipItem as skipSlateItem, dueItems as slateDue, markOutcome as markSlateOutcome, expire as expireSlate } from './src/slate/state.js';
+import { digestMessage } from './src/slate/digest.js';
+import { buildSlateDecks } from './src/slate/build.js';
+import { rampFor, lastTemplates, recentPlacesFor, recentOpeningsFor, digestTimeFor } from './src/slate/runner.js';
+import {
   publishTargets,
   targetsForKind,
   liveTargets,
@@ -1085,21 +1098,24 @@ async function publishNext(item = null) {
       }
       return res;
     },
-    tiktok: () => publishTikTok(cand, { draft: Boolean(cand.tiktokDraft) }),
+    // Through the router: a slate post goes publicly through Zernio when
+    // publish.tiktok.via says so, everything else is the inbox draft it always
+    // was, and a Zernio failure that is not a limit falls back to that draft.
+    tiktok: () => publishTikTokRouted(cand),
   };
   const errorText = {
     instagram: describeError,
-    tiktok: describeTikTokError,
+    tiktok: describeTikTokAny,
   };
   // Per destination, because only the destination's own client knows which of
   // its error codes mean "this card" rather than "this service".
   const cardLevel = {
-    tiktok: isCardLevelTikTok,
+    tiktok: isCardLevelTikTokAny,
   };
   // Same shape, different question: is this destination refusing everyone
   // right now, rather than refusing this card or being broken?
   const platformLimit = {
-    tiktok: isPlatformLimitTikTok,
+    tiktok: isPlatformLimitTikTokAny,
     // Graph throttles clear by themselves. Retried as failures they cost three
     // attempts each and then degrade Instagram, which is the wrong answer to a
     // busy afternoon.
@@ -1108,7 +1124,7 @@ async function publishNext(item = null) {
   // And a fourth: is this destination refusing everything until somebody goes
   // and fixes the connection?
   const configProblem = {
-    tiktok: isConfigProblemTikTok,
+    tiktok: isConfigProblemTikTokAny,
   };
 
   for (const target of live) {
@@ -1251,9 +1267,15 @@ async function publishNext(item = null) {
 
   const succeeded = live.filter((t) => done[t]);
 
+  // WHAT TIKTOK ACTUALLY GOT, from the publisher's own answer rather than the
+  // candidate's flag. A slate post asks for a public post through Zernio and may
+  // fall back to a draft; the row and the notice must say which happened, and the
+  // daily cap counts only real posts.
+  const tiktokWasDraft = done.tiktok ? Boolean(done.tiktok.draft) : Boolean(cand.tiktokDraft);
+
   if (succeeded.length) {
     store.recordPublished({
-      ...publishedFacts(cand),
+      ...publishedFacts({ ...cand, tiktokDraft: tiktokWasDraft }),
       telegram: Boolean(done.telegram),
       instagram: Boolean(done.instagram),
       tiktok: Boolean(done.tiktok),
@@ -1295,7 +1317,7 @@ async function publishNext(item = null) {
       // Which of the destinations took a draft rather than a post. Passed
       // through rather than decided here, so a deck that went to both is
       // reported honestly on each: Instagram published, TikTok is waiting.
-      const drafted = cand.tiktokDraft && succeeded.includes('tiktok') ? ['tiktok'] : [];
+      const drafted = tiktokWasDraft && succeeded.includes('tiktok') ? ['tiktok'] : [];
       // And where this post belongs that nothing here can put it. A clip's
       // Instagram half: the API has no draft state, so the copy is yours to
       // make and the message says so with the mp4's own URL on it rather than
@@ -1375,6 +1397,242 @@ async function publishNext(item = null) {
   }
   return succeeded.length > 0;
 }
+
+// ---------------------------------------------------------------------------
+// The daily slate
+// ---------------------------------------------------------------------------
+//
+// THE OWNER'S ONE TAP A DAY. Each morning the day's slideshows are built at once,
+// given times (src/slate/plan.js), and sent as one Telegram digest with ✅ אשר הכל
+// and a skip per post. Nothing goes out until that tap (or autoApprove in
+// post-config.json, off by default). Approved posts then publish at their times
+// through publishNext, the same path every post takes, so caps, failures, holds,
+// notices and the metrics row are all the existing ones.
+//
+// The decisions live in src/slate/ as pure functions; this is the wiring: the
+// store, Telegram, the builder and the clock. Approve and skip are single
+// functions that Telegram and the admin site both call.
+
+let slateBuilding = false;
+let slatePublishing = false;
+
+/** Today's slate for the admin page: the items without the full candidates. */
+function slateView(date = israelDate()) {
+  const slate = store.getSlate(date);
+  if (!slate) return null;
+  const { digest, ...rest } = slate;
+  return {
+    ...rest,
+    items: slate.items.map(({ cand, ...it }) => ({
+      ...it,
+      headline: cand?.headline || '',
+      where: cand?.deck?.where || '',
+      type: cand?.deck?.type || '',
+      slides: cand?.deck?.urls?.tiktok?.length || 0,
+    })),
+  };
+}
+
+/** Approve a day's slate. One implementation for Telegram and the admin site. */
+function approveSlate(date, { by = 'telegram' } = {}) {
+  const slate = store.getSlate(date);
+  if (!slate) return { ok: false, said: 'אין תוכנית לתאריך הזה' };
+  if (slate.approved) return { ok: false, said: 'התוכנית כבר מאושרת', slate };
+  approveAllSlate(slate, { by });
+  store.putSlate(slate);
+  return { ok: true, said: `אושרו ${slate.items.filter((i) => !i.skipped).length} פוסטים`, slate };
+}
+
+/** Skip one post of a day's slate, before or after the approval. */
+function skipInSlate(date, n, { by = 'telegram' } = {}) {
+  const slate = store.getSlate(date);
+  if (!slate) return { ok: false, said: 'אין תוכנית לתאריך הזה' };
+  const res = skipSlateItem(slate, n);
+  if (res.ok) {
+    slate.skippedBy = { ...(slate.skippedBy || {}), [n]: by };
+    store.putSlate(slate);
+  }
+  return { ...res, slate };
+}
+
+async function sendSlateDigest(slate) {
+  const { media, text, keyboard } = digestMessage(slate);
+  if (media.length >= 2) await bot.telegram.sendMediaGroup(staging, media).catch((e) => console.error('slate album:', e.message));
+  else if (media.length === 1) await bot.telegram.sendPhoto(staging, media[0].media, { caption: media[0].caption }).catch(() => {});
+  const msg = await bot.telegram.sendMessage(staging, text, keyboard.length ? { reply_markup: { inline_keyboard: keyboard } } : {});
+  slate.digest = { chatId: staging, messageId: msg.message_id };
+  store.putSlate(slate);
+}
+
+/** Redraw the digest after a tap or a publish, so the message is always the truth. */
+async function refreshSlateDigest(slate) {
+  if (!slate?.digest) return;
+  const { text, keyboard } = digestMessage(slate);
+  await bot.telegram
+    .editMessageText(slate.digest.chatId, slate.digest.messageId, undefined, text, { reply_markup: { inline_keyboard: keyboard } })
+    .catch(() => {});
+}
+
+/** Build, plan and send one day's slate. */
+async function buildSlateFor(date) {
+  const cfg = postConfig().slate;
+  const slates = store.allSlates();
+  const slots = slotsFor(date, cfg, { rampTiktok: rampFor(cfg, slates, date) });
+  if (!slots.tiktok.length) {
+    const empty = newSlate({ date, items: [], dropped: slots.dropped, warnings: ['אין היום שעות פרסום פנויות'] });
+    store.putSlate(empty);
+    await sendSlateDigest(empty);
+    return empty;
+  }
+
+  const { buildPost } = await import('./src/posts/index.js');
+  const { pickDestination } = await import('./src/plan/write.js');
+  const { nextShape, destinationsFor } = await import('./src/posts/types.js');
+  const rows = JSON.parse(readFileSync(new URL('./destinations.json', import.meta.url), 'utf8')).destinations;
+  const published = store.recentPublished();
+
+  const { decks, failures } = await buildSlateDecks({
+    count: slots.tiktok.length,
+    pickType: () => nextShape().type,
+    pickDest: (type, avoid) => pickDestination(avoid, { from: destinationsFor(type, rows) }),
+    buildOne: (dest, type) =>
+      buildPost({
+        dest,
+        type,
+        alternatives: rows.filter((r) => r.country === dest.country && r.id !== dest.id && r.siteSlug).slice(0, 4),
+        defaultHe: dest.he,
+        regionHe: dest.country,
+        targets: targetsForKind('post'),
+        onProgress: (text) => console.log(`slate post: ${text}`),
+      }).then((r) => r.cand),
+    recentPlaces: recentPlacesFor(published, slates, date, cfg.destinationRepeatDays, store.recentSuggested()),
+    recentOpenings: recentOpeningsFor(published, slates, date, cfg.openingRepeatDays),
+    onProgress: (t) => console.log(t),
+  });
+
+  const { items, warnings } = assignSlate(
+    decks.map((d) => ({ template: d.template })),
+    slots,
+    { gapMs: cfg.sameDeckGapMinutes * 60_000, last: lastTemplates(slates, date) }
+  );
+  const slate = newSlate({
+    date,
+    items: items.map((it) => {
+      const d = decks[it.deck];
+      return {
+        key: d.cand.id,
+        // tiktokVia marks the post for the router; tiktokDraft stays true so that
+        // with publish.tiktok.via unset the post is the same inbox draft as before.
+        cand: { ...d.cand, tiktokVia: 'zernio' },
+        template: d.template,
+        tiktokAt: it.tiktokAt,
+        instagramAt: it.instagramAt,
+      };
+    }),
+    autoApprove: cfg.autoApprove,
+    warnings: [...warnings, ...failures],
+    dropped: slots.dropped,
+  });
+  store.putSlate(slate);
+  await sendSlateDigest(slate);
+  return slate;
+}
+
+/**
+ * A TikTok post published through Zernio is recorded under Zernio's id until
+ * TikTok resolves its public URL. Swap in TikTok's own post id when it exists, so
+ * the metrics join can match it. A private post has no URL until it is public.
+ */
+async function resolveZernioPosts() {
+  if (!zernioConfigured()) return 0;
+  const { metricsStore } = await import('./src/metrics/index.js');
+  let n = 0;
+  const week = Date.now() - 7 * 86_400_000;
+  for (const row of metricsStore.allRows()) {
+    const id = row.media?.tiktok;
+    if (!/^[0-9a-f]{24}$/.test(String(id || '')) || Date.parse(row.at || 0) < week) continue;
+    try {
+      const part = zernioTikTokPart(await getZernioPost(id));
+      if (part.postId) {
+        metricsStore.notePublished(row.id, { platform: 'tiktok', mediaId: part.postId, shape: { zernioId: id, tiktokUrl: part.url } });
+        n++;
+      }
+    } catch (e) {
+      console.error(`zernio resolve ${id}: ${e.message}`);
+    }
+  }
+  return n;
+}
+
+let lastZernioResolve = 0;
+
+/** The slate's minute: expire, build at digest time, publish what is due, resolve URLs. */
+async function runSlate(now = Date.now()) {
+  const cfg = postConfig().slate;
+  if (!cfg.on) return;
+  const date = israelDate(now);
+
+  for (const s of store.allSlates()) {
+    if (s.date < date && s.items.some((it) => ['planned', 'approved'].includes(it.tiktok.status) || ['planned', 'approved'].includes(it.instagram.status))) {
+      store.putSlate(expireSlate(s, now));
+    }
+  }
+
+  const slate = store.getSlate(date);
+  if (!slate) {
+    if (!slateBuilding && now >= digestTimeFor(date, cfg).getTime()) {
+      slateBuilding = true;
+      try {
+        await buildSlateFor(date);
+      } catch (e) {
+        console.error('slate build failed:', e.message);
+        await notify.send(bot.telegram, staging, `🔴 בניית התוכנית היומית נכשלה: ${e.message}`).catch(() => {});
+      } finally {
+        slateBuilding = false;
+      }
+    }
+    return;
+  }
+
+  const [due] = slateDue(slate, now);
+  if (due && !slatePublishing) {
+    slatePublishing = true;
+    const { item, platform } = due;
+    try {
+      markSlateOutcome(slate, item.n, platform, { status: 'publishing', startedAt: new Date(now).toISOString() });
+      store.putSlate(slate);
+      const ok = await publishNext({ ...item.cand, pendingTargets: [platform] });
+      const after = store.getSlate(date);
+      markSlateOutcome(after, item.n, platform, { status: ok ? 'published' : 'failed', at: new Date().toISOString() });
+      store.putSlate(after);
+      await refreshSlateDigest(after);
+    } catch (e) {
+      console.error(`slate publish ${item.n}/${platform}:`, e.message);
+      const after = store.getSlate(date);
+      markSlateOutcome(after, item.n, platform, { status: 'failed', error: e.message });
+      store.putSlate(after);
+    } finally {
+      slatePublishing = false;
+    }
+  }
+
+  if (now - lastZernioResolve > 15 * 60_000) {
+    lastZernioResolve = now;
+    resolveZernioPosts().catch((e) => console.error('zernio resolve:', e.message));
+  }
+}
+
+bot.action(/^sa:(\d{4}-\d{2}-\d{2})$/, async (ctx) => {
+  const res = approveSlate(ctx.match[1], { by: 'telegram' });
+  await ctx.answerCbQuery(res.said);
+  if (res.slate) await refreshSlateDigest(res.slate);
+});
+
+bot.action(/^ss:(\d{4}-\d{2}-\d{2}):(\d+)$/, async (ctx) => {
+  const res = skipInSlate(ctx.match[1], Number(ctx.match[2]), { by: 'telegram' });
+  await ctx.answerCbQuery(res.said);
+  if (res.slate) await refreshSlateDigest(res.slate);
+});
 
 // ---------------------------------------------------------------------------
 // Gather runs
@@ -4087,6 +4345,10 @@ function tick() {
   const day = localDay(now);
   const hour = now.getHours();
 
+  // The daily slate has its own clock (src/slate/plan.js) and ignores RUN_HOUR:
+  // its digest goes at slate.digestAt, its posts at their slot times.
+  runSlate(now.getTime()).catch((e) => console.error('slate error:', e.message));
+
   // Gather through the day rather than once at RUN_HOUR.
   //
   // One pass a day meant a source publishing at 14:00 waited until 11:00 the
@@ -4147,7 +4409,9 @@ function tick() {
     }
     const slots = slotsPerDay();
     if (inHours && slots > 0 && slotsToday < slots && Date.now() >= nextSlotAt) {
-      const format = pickFormat({ exclude: benchedFormats() });
+      // With the daily slate on, the slideshows come from the slate, and a
+      // rotation slot that also built one would be a second post nobody planned.
+      const format = pickFormat({ exclude: [...benchedFormats(), ...(postConfig().slate.on ? ['post'] : [])] });
       const room =
         !format ? false : format.kind === 'post' ? postsWaiting() < POST_BACKLOG_MAX : clipsWaiting() < CLIP_BACKLOG_MAX;
       if (format && room) {
@@ -4367,6 +4631,7 @@ const adminOps = {
       // and the array — which happens to be harmless today and is the kind of
       // thing that stops being harmless the moment an option is added.
       pending: store.stagingItems().map((row) => stagedView(row)),
+      slate: postConfig().slate.on ? slateView() : null,
       proposals: store.proposalItems().map(({ key, proposal }) => ({
         key,
         text: proposalMessage(proposal.idea),
@@ -4424,6 +4689,28 @@ const adminOps = {
     const cand = store.getStaging(key);
     if (!cand) return { ok: false, said: 'כבר טופל' };
     return { ok: true, text: evidenceReport(cand) };
+  },
+
+  // The day's slate: the same two functions the Telegram buttons call, announced
+  // in the chat under the admin's name, and the digest redrawn either way.
+  slate() {
+    return { ok: true, slate: slateView() };
+  },
+
+  async approveSlate({ by }) {
+    const res = approveSlate(israelDate(), { by });
+    if (!res.ok) return res;
+    await refreshSlateDigest(res.slate);
+    await notify.send(bot.telegram, staging, `🌐 ${by} אישר באתר את התוכנית היומית: ${res.said}`).catch(() => {});
+    return { ok: true, said: res.said };
+  },
+
+  async skipSlate(n, { by }) {
+    const res = skipInSlate(israelDate(), n, { by });
+    if (!res.ok) return res;
+    await refreshSlateDigest(res.slate);
+    await notify.send(bot.telegram, staging, `🌐 ${by} דילג באתר: ${res.said}`).catch(() => {});
+    return { ok: true, said: res.said };
   },
 
   async approve(key, { by }) {

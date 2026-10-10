@@ -112,6 +112,10 @@ const empty = {
   // rejected post was still produced, and replacing it with another post of the
   // same shape is the run of identical posts the rotation exists to prevent.
   postShapes: [],
+  // The daily slates, by Israel date: the day's slideshows, their times and their
+  // approval. See src/slate/. Kept 21 days, long enough for the 14-day opening
+  // rule to read back through them.
+  slates: {},
   // Hebrew place label -> when a post last named it. The 14 day rule, which is
   // about the PLACE rather than about the footage. See notePlacesNamed.
   placesNamed: {},
@@ -358,6 +362,7 @@ function load() {
   // read, and an empty history simply means the first post of each kind is free to
   // be anything - which is correct rather than a gap.
   if (!Array.isArray(s.postShapes)) s.postShapes = [];
+  if (!s.slates || typeof s.slates !== 'object' || Array.isArray(s.slates)) s.slates = {};
 
   // Migration for stores written before publishedIds existed. Backfill from the
   // quota window — it is the only record of what went out, and recovering the
@@ -822,6 +827,29 @@ export const postShapeHistory = () => (state.postShapes || []).slice();
 
 /** The last one, or null on a box that has built none. */
 export const lastPostShape = () => state.postShapes?.[0] || null;
+
+// --- the daily slates -------------------------------------------------------
+
+const SLATE_DAYS_KEPT = 21;
+
+/** The slate for one Israel date (YYYY-MM-DD), or null. */
+export const getSlate = (date) => state.slates?.[date] || null;
+
+/** Every kept slate, oldest first. */
+export const allSlates = () =>
+  Object.keys(state.slates || {})
+    .sort()
+    .map((d) => state.slates[d]);
+
+/** Save a slate whole, and drop the ones older than the window. */
+export function putSlate(slate) {
+  if (!slate?.date) return;
+  const next = { ...(state.slates || {}), [slate.date]: slate };
+  const dates = Object.keys(next).sort();
+  for (const d of dates.slice(0, Math.max(0, dates.length - SLATE_DAYS_KEPT))) delete next[d];
+  state.slates = next;
+  save();
+}
 
 /**
  * Record one. Called when the post is BUILT, not when it publishes.

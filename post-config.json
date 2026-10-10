@@ -3038,5 +3038,68 @@
   "growth": {
     "on": false,
     "port": 4600
+  },
+  "_publish_comment": [
+    "HOW A TIKTOK POST LEAVES. Our own TikTok app is unaudited, so TikTok lets it",
+    "post only privately; every TikTok post so far has been a draft in the inbox.",
+    "`via: \"zernio\"` sends the daily slate's slideshows publicly through Zernio",
+    "(src/publish/zernio.js), whose app posts publicly and is free for one TikTok",
+    "and one Instagram account. Anything not from the slate stays a draft.",
+    "",
+    "`privacy` is SELF_ONLY until the owner has seen the private test and then one",
+    "public post approved by hand; it becomes PUBLIC_TO_EVERYONE after that, and not",
+    "before. An unknown value here also means SELF_ONLY, never public.",
+    "`autoAddMusic` asks TikTok to add a track to photo posts (it does not always",
+    "attach one; the publish notice says so). `fallback: \"draft\"` sends a post",
+    "Zernio refused to the inbox as a draft instead, which is today's path.",
+    "`dailyCap` is ours; TikTok's own (~15 a day) and Zernio's (15 photo posts a day)",
+    "sit above it as hard limits. TIKTOK_DAILY_CAP in .env still applies too."
+  ],
+  "publish": {
+    "tiktok": {
+      "via": "zernio",
+      "privacy": "SELF_ONLY",
+      "autoAddMusic": true,
+      "fallback": "draft",
+      "dailyCap": 3
+    }
+  },
+  "_slate_comment": [
+    "THE DAILY SLATE: the day's slideshows built at once, approved with one tap.",
+    "At `digestAt` (Israel time) the slate is built and sent to Telegram as one",
+    "message: the covers, one line per post, and ✅ אשר הכל with a skip per post.",
+    "Nothing posts without that tap; `autoApprove` (off) skips it. If `digestAt`",
+    "falls on Shabbat, the digest waits for Shabbat's end.",
+    "",
+    "`slots` are when each platform posts, inside the posting windows in `schedule`",
+    "and outside Shabbat, which src/schedule.js enforces. `slotsByDay` replaces",
+    "them on Friday (5) and Saturday (6), so both still count as posting days. The",
+    "first `rampDays` after the first slate post `rampTiktokPerDay` TikTok posts.",
+    "The same deck never posts to both platforms within `sameDeckGapMinutes`, and",
+    "no two consecutive posts on a platform share a template. No destination",
+    "repeats within `destinationRepeatDays`, no opening line within",
+    "`openingRepeatDays`.",
+    "",
+    "OFF until the owner has seen the private test post and approved one public",
+    "post by hand. While it is on, the format rotation builds no slideshows of its",
+    "own: the slate makes them, and the videos keep their own per-item approval."
+  ],
+  "slate": {
+    "on": false,
+    "autoApprove": false,
+    "digestAt": "08:00",
+    "slots": {
+      "tiktok": ["12:15", "19:15", "21:15"],
+      "instagram": ["13:15", "20:30"]
+    },
+    "slotsByDay": {
+      "5": { "tiktok": ["12:10", "12:55", "13:40"], "instagram": ["13:20"] },
+      "6": { "tiktok": ["20:10", "20:55", "21:40"], "instagram": ["21:20"] }
+    },
+    "rampDays": 7,
+    "rampTiktokPerDay": 2,
+    "sameDeckGapMinutes": 60,
+    "destinationRepeatDays": 7,
+    "openingRepeatDays": 14
   }
 }

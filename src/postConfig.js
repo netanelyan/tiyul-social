@@ -208,6 +208,12 @@ export function postConfig() {
     posts: posts(raw.posts || {}),
     igReplies: igReplies(raw.igReplies || {}),
     schedule: schedule(raw.schedule || {}),
+    // How TikTok posts leave: today's inbox drafts, or publicly through Zernio.
+    // See _publish_comment in post-config.json and src/publish/zernio.js.
+    publish: publishCfg(raw.publish || {}),
+    // The day's slideshows, planned at once, approved with one tap, posted at set
+    // times. See _slate_comment in post-config.json and src/slate/.
+    slate: slateCfg(raw.slate || {}),
     // English country name from the vision judge -> Hebrew, for the place
     // formats. Keyed on free text a model produced, which is why it is separate
     // from deck/flags.js and why a miss simply withdraws those formats.
@@ -1272,6 +1278,70 @@ function formats(raw) {
       maxRun: Math.max(1, count(raw.rotation?.maxRun, 2)),
     },
     mix,
+  };
+}
+
+const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/;
+const clockTimes = (list, fallback) => {
+  const got = (Array.isArray(list) ? list : []).map((t) => String(t).trim()).filter((t) => HHMM.test(t));
+  return (got.length ? got : fallback).slice().sort();
+};
+const intIn = (v, lo, hi, fallback) => {
+  const n = Math.round(num(v, fallback));
+  return n >= lo && n <= hi ? n : fallback;
+};
+
+export const TIKTOK_PRIVACY_LEVELS = ['PUBLIC_TO_EVERYONE', 'MUTUAL_FOLLOW_FRIENDS', 'FOLLOWER_OF_CREATOR', 'SELF_ONLY'];
+
+/**
+ * How a TikTok post leaves.
+ *
+ * `via: "zernio"` posts publicly through the service; anything else keeps today's
+ * inbox drafts. An unset or unknown privacy is SELF_ONLY, never public: a missing
+ * line in this file must not be the thing that publishes something.
+ */
+function publishCfg(raw) {
+  const t = raw.tiktok || {};
+  return {
+    tiktok: {
+      via: t.via === 'zernio' ? 'zernio' : 'draft',
+      privacy: TIKTOK_PRIVACY_LEVELS.includes(t.privacy) ? t.privacy : 'SELF_ONLY',
+      autoAddMusic: t.autoAddMusic !== false,
+      fallback: t.fallback === 'none' ? 'none' : 'draft',
+      // Our own ceiling, under TikTok's ~15 a day and Zernio's 15 photo posts a day.
+      dailyCap: intIn(t.dailyCap, 1, 15, 3),
+    },
+  };
+}
+
+/**
+ * The daily slate: which times, how many, and the one-tap approval.
+ *
+ * Times are Israel wall-clock "HH:MM". `slotsByDay` overrides them per weekday
+ * (getDay(): 5 Friday, 6 Saturday), because Shabbat takes Friday evening and
+ * Saturday until 20:00 and those days still have to count as posting days.
+ */
+function slateCfg(raw) {
+  const slots = raw.slots || {};
+  const byDay = {};
+  for (const [d, s] of Object.entries(raw.slotsByDay || {})) {
+    if (!/^[0-6]$/.test(d) || !s || typeof s !== 'object') continue;
+    byDay[d] = { tiktok: clockTimes(s.tiktok, []), instagram: clockTimes(s.instagram, []) };
+  }
+  return {
+    on: raw.on === true,
+    autoApprove: raw.autoApprove === true,
+    digestAt: HHMM.test(String(raw.digestAt || '')) ? String(raw.digestAt) : '08:00',
+    slots: {
+      tiktok: clockTimes(slots.tiktok, ['12:15', '19:15', '21:15']),
+      instagram: clockTimes(slots.instagram, ['13:15', '20:30']),
+    },
+    slotsByDay: byDay,
+    rampDays: intIn(raw.rampDays, 0, 60, 7),
+    rampTiktokPerDay: intIn(raw.rampTiktokPerDay, 1, 15, 2),
+    sameDeckGapMinutes: intIn(raw.sameDeckGapMinutes, 0, 600, 60),
+    destinationRepeatDays: intIn(raw.destinationRepeatDays, 0, 60, 7),
+    openingRepeatDays: intIn(raw.openingRepeatDays, 0, 90, 14),
   };
 }
 

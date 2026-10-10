@@ -409,6 +409,38 @@ function pendingCard(item) {
   return card;
 }
 
+// The day's slate: the same approve-all and skip as the morning digest in Telegram.
+const SLATE_STATUS = { planned: 'ממתין', approved: 'מאושר', publishing: 'מתפרסם', published: 'פורסם', failed: 'נכשל', skipped: 'דולג', expired: 'פג', none: '' };
+const hhmm = (iso) => (iso ? new Date(iso).toLocaleTimeString('he-IL', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }) : '');
+
+function slateCard(s) {
+  const rows = s.items.map((item) => {
+    const when = [
+      item.tiktokAt && `טיקטוק ${hhmm(item.tiktokAt)} (${SLATE_STATUS[item.tiktok.status] || item.tiktok.status})`,
+      item.instagramAt && `אינסטגרם ${hhmm(item.instagramAt)} (${SLATE_STATUS[item.instagram.status] || item.instagram.status})`,
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    const open = !item.skipped && ['tiktok', 'instagram'].some((p) => ['planned', 'approved'].includes(item[p].status));
+    return el('div', { className: 'head' }, [
+      el('span', { className: 'title', textContent: `${item.n}. ${item.headline} · ${item.where} · ${item.slides} שקפים` }),
+      el('span', { className: 'tag', textContent: item.skipped ? 'דולג' : when }),
+      ...(open ? [el('button', { textContent: '⏭ דלג', onclick: () => act('דילוג', () => api(`/slate/${item.n}/skip`, { method: 'POST' })) })] : []),
+    ]);
+  });
+  const approve =
+    !s.approved && s.items.some((item) => !item.skipped)
+      ? [el('button', { className: 'go', textContent: '✅ אשר הכל', onclick: () => act('אישור', () => api('/slate/approve', { method: 'POST' })) })]
+      : [];
+  const notes = [...(s.dropped || []), ...(s.warnings || [])];
+  return el('div', { className: 'card item' }, [
+    el('div', { className: 'head' }, [el('span', { className: 'title', textContent: `📅 התוכנית להיום · ${s.approved ? 'מאושרת' : 'ממתינה לאישור'}` })]),
+    ...rows,
+    ...(notes.length ? [el('pre', { textContent: notes.join('\n') })] : []),
+    ...approve,
+  ]);
+}
+
 function proposalCard(p) {
   const build = (targets, label) =>
     el('button', {
@@ -565,6 +597,8 @@ function draw() {
   setCount('#c-pending', have + building.length);
   setCount('#c-queue', state.queue.length);
   setCount('#c-held', state.held.length);
+
+  $('#slate').replaceChildren(...(state.slate ? [slateCard(state.slate)] : []));
 
   const proposals = $('#proposals');
   proposals.replaceChildren(...state.proposals.map(proposalCard));

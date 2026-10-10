@@ -275,6 +275,12 @@ export function startAdminServer(ops, {
       return fail(res, 405, 'wrong method');
     }
 
+    // The daily slate. The same approve-all and skip the Telegram digest offers.
+    if (path === '/api/slate' && req.method === 'GET' && ops.slate) return json(res, await ops.slate());
+    if (path === '/api/slate/approve' && req.method === 'POST' && ops.approveSlate) return json(res, await ops.approveSlate({ by: me }));
+    const slateSkip = /^\/api\/slate\/(\d+)\/skip$/.exec(path);
+    if (slateSkip && req.method === 'POST' && ops.skipSlate) return json(res, await ops.skipSlate(Number(slateSkip[1]), { by: me }));
+
     const proposal = /^\/api\/proposals\/([^/]+)\/(build|reject)$/.exec(path);
     if (proposal && req.method === 'POST') {
       const [, key, what] = proposal;
