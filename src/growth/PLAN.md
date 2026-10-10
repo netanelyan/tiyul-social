@@ -1,6 +1,6 @@
 # The growth desk: plan
 
-Status: proposed on 2026-10-10, waiting for the owner's approval. Nothing is built yet.
+Status: approved on 2026-10-10 with the decisions below, and built on this branch except publishing.
 Branch: `growth-desk`. Nothing merges until the owner says so.
 
 A local web app that finds travel creators, travel agencies and people planning trips,
@@ -268,3 +268,29 @@ To show real results, the demo needs these in `.env`:
 
 Without the optional ones, the demo shows exactly what each missing piece would add and what
 it needs, instead of empty columns that look like a quiet day.
+
+## 9. Decisions at approval, and what changed while building
+
+The owner's answers (2026-10-10):
+- Brave Search: yes. Instagram through Brave only, no Facebook Login for now. YouTube off.
+- Customers: 5 a day. Follow-ups count inside each column's cap.
+- A creator's DM appears only after [הגבתי]. [דלג] on a comment item skips only that
+  video; [לא רלוונטי] drops the creator for good (stored like "not interested").
+- A route goes public only when the creator is shown in the Creators column, and comes
+  down on [דלג], [לא מעוניינים] or [לא רלוונטי]. Publishing itself waits for SITE-SPEC.md.
+- Agency sample: the site's existing public itinerary pages (30 live in the sitemap).
+
+Found while building:
+- **Brave's TikTok and Instagram index is old.** Measured on 2026-10-10 with the real key:
+  of 84 TikTok videos across six Hebrew queries, none was from the last 45 days and 3
+  were from the last year; of 54 Instagram posts, none was from the last 90 days. A
+  Hebrew query with `site:tiktok.com` returns topic pages unless the word "video" is
+  added, and `freshness` removes the videos altogether. The queries now carry "video"
+  and no freshness filter, and post dates are read from the TikTok id and the Instagram
+  shortcode. The 45-day and 14-day limits are kept, which means Brave alone will rarely
+  produce a lead that passes them. See the owner's options in the hand-off.
+- The creator template's "שמתי לב שהרבה שואלים אותך על המסלול בתגובות" is wrapped in
+  `{{אם שואלים: ...}}`: the desk cannot read comments, so the sentence is kept only when
+  the caption itself shows people asking.
+- The local server checks the Host header and a per-run token on every POST, which the
+  plan described, and sends a strict Content-Security-Policy.

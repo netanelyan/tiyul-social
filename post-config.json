@@ -3025,5 +3025,16 @@
       "וייטנאם": 6,
       "צ׳כיה": 6
     }
+  },
+  "_growth_comment": [
+    "The growth desk (src/growth/, `npm run growth`): a local site that finds",
+    "creators, agencies and people planning trips and prepares the messages.",
+    "It never sends anything itself. Off by default; GROWTH_ON=1 or 0 in the",
+    "environment overrides this. The bot never imports it, and it runs only on",
+    "the owner's computer, bound to 127.0.0.1 on `port`. See src/growth/README.md."
+  ],
+  "growth": {
+    "on": false,
+    "port": 4600
   }
 }

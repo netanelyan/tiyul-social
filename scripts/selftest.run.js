@@ -9809,6 +9809,16 @@ group('every module loads - the check node --check cannot make');
 }
 
 /* -------------------------------------------------------------------------- */
+group('the growth desk - it prepares, it never sends');
+
+// Its own group, its own file: the tests live in src/growth/selftest.js beside
+// the code they hold to the brief, and run here so `npm test` covers them.
+{
+  const { growthSelftest } = await import('../src/growth/selftest.js');
+  await growthSelftest({ ok, eq });
+}
+
+/* -------------------------------------------------------------------------- */
 console.log(`\n${'─'.repeat(56)}`);
 if (fail) {
   console.log(`${pass} passed, ${fail} FAILED\n`);
