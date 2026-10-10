@@ -2276,6 +2276,20 @@ eq('reconnecting with both clears it', missingScopes({ draft: true }).length, 0)
   const metricsSrc = readFileSync(new URL('../src/metrics/tiktok.js', import.meta.url), 'utf8');
   ok('metrics never read a token field the store does not write', !/getTikTokToken\(\)\?\.token\b/.test(metricsSrc));
   ok('and fetch through the publisher\'s refreshing reader', /await liveToken\('metrics'\)/.test(metricsSrc));
+
+  // AND THE ID THEY JOIN ON. The row recorded the publish_id, which matches nothing
+  // in the account's video list; the post's own id comes back from the status
+  // endpoint as a 19-digit number that JSON.parse would round.
+  const { parseTikTokJson } = await import('../src/publish/tiktok.js');
+  const raw = '{"data":{"status":"PUBLISH_COMPLETE","publicaly_available_post_id":[7412345678901234567]},"error":{"code":"ok"}}';
+  eq('the post id survives parsing exactly', parseTikTokJson(raw).data.publicaly_available_post_id[0], '7412345678901234567');
+  ok('where a plain JSON.parse would have rounded it', String(JSON.parse(raw).data.publicaly_available_post_id[0]) !== '7412345678901234567');
+  eq('and everything else parses as before', parseTikTokJson(raw).data.status, 'PUBLISH_COMPLETE');
+  eq('a body that is not JSON is an empty object, not a throw', JSON.stringify(parseTikTokJson('<html>')), '{}');
+  const tkSrc = readFileSync(new URL('../src/publish/tiktok.js', import.meta.url), 'utf8');
+  ok('the publisher returns the post id beside the publish id', /postId: status\?\.publicaly_available_post_id\?\.\[0\]/.test(tkSrc));
+  const botSrc2 = readFileSync(new URL('../bot.js', import.meta.url), 'utf8');
+  ok('and the metrics row records it first', /const mediaId = done\[target\]\?\.postId \|\|/.test(botSrc2));
 }
 
 // No token is "not connected", which is a different message reported elsewhere.

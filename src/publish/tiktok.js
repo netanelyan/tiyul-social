@@ -265,6 +265,34 @@ export function describeError(e) {
  * TikTok answers 200 with `error.code: 'ok'` on success and 200 with a real
  * code on most failures, so the HTTP status is not the thing to branch on.
  */
+/**
+ * A TikTok API body, with the post ids kept exact.
+ *
+ * The status endpoint returns `publicaly_available_post_id` (TikTok's spelling) as
+ * an array of 19-digit NUMBERS, and JSON.parse turns a 19-digit number into the
+ * nearest double: 7412345678901234567 comes back as 7412345678901234000. An id
+ * rounded like that matches nothing, so the ids are quoted before parsing.
+ */
+export function parseTikTokJson(text) {
+  const kept = String(text || '').replace(
+    /("publicaly_available_post_id"\s*:\s*\[)([^\]]*)(\])/g,
+    (_, open, list, close) =>
+      open +
+      list
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map((s) => (s.startsWith('"') ? s : `"${s}"`))
+        .join(',') +
+      close
+  );
+  try {
+    return kept ? JSON.parse(kept) : {};
+  } catch {
+    return {};
+  }
+}
+
 async function api(path, { body = null, token, step } = {}) {
   let res;
   let json;
@@ -277,7 +305,9 @@ async function api(path, { body = null, token, step } = {}) {
       },
       body: JSON.stringify(body ?? {}),
     });
-    json = await res.json().catch(() => ({}));
+    // The raw text when there is one, so the post ids survive (see parseTikTokJson).
+    // A response object without text() (the selftest's stand-ins) parses as before.
+    json = typeof res.text === 'function' ? parseTikTokJson(await res.text().catch(() => '')) : await res.json().catch(() => ({}));
   } catch (e) {
     throw new TikTokError(`network error: ${e.message}`, { step });
   }
@@ -1154,6 +1184,12 @@ export async function publishTikTok(cand, { dryRun = false, draft = false } = {}
 
   return {
     publishId: d.publish_id,
+    // THE POST'S OWN ID, which is what the metrics join matches on. The publish_id
+    // is a handle for this upload and matches nothing in the account's video list,
+    // and it is all this recorded until now, so no TikTok row ever got numbers.
+    // TikTok returns the id only for a post that went out publicly; a draft or a
+    // private post has none, and null says so rather than guessing.
+    postId: status?.publicaly_available_post_id?.[0] ? String(status.publicaly_available_post_id[0]) : null,
     images,
     slides: images.length,
     privacy,

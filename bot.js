@@ -1128,7 +1128,9 @@ async function publishNext(item = null) {
       // post IS live at this point; throwing here would send it down the retry path and
       // publish it twice.
       try {
-        const mediaId = done[target]?.mediaId || done[target]?.publishId || done[target]?.id || null;
+        // A TikTok post's own id first: the metrics join matches the account's video
+        // list on it, and the publishId it used to record matches nothing there.
+        const mediaId = done[target]?.postId || done[target]?.mediaId || done[target]?.publishId || done[target]?.id || null;
         // CLIPS ARE RECORDED NOW TOO, and their absence was the gap that made the
         // owner's own comparison impossible to make from inside this program.
         //
