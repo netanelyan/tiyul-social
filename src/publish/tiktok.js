@@ -80,8 +80,13 @@ const AUTH_URL = 'https://www.tiktok.com/v2/auth/authorize/';
  *
  * A token granted before this changed will NOT gain the scope by refreshing.
  * Refresh renews what was granted; only a new authorization grants more.
+ *
+ * video.list SINCE 10 OCT 2026, the owner's decision, so src/metrics can read the
+ * account's views, likes and shares 72 hours after a post. It must be enabled for
+ * the app in TikTok's developer portal BEFORE `npm run tiktok-token` is run again,
+ * or the authorization asks for a scope the app does not have and fails.
  */
-export const SCOPES = ['user.info.basic', 'video.publish', 'video.upload'];
+export const SCOPES = ['user.info.basic', 'video.publish', 'video.upload', 'video.list'];
 
 /** The scope a post needs, which depends only on how it is being posted. */
 export const scopeForMode = (draft) => (draft ? 'video.upload' : 'video.publish');

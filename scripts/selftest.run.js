@@ -7053,12 +7053,12 @@ group('measuring - saves and shares, never likes');
     ok('it stops printing the blocker once numbers arrive', !text.includes('אין מספרים -'));
   }
 
-  // TIKTOK, SAID IN WORDS. The scope was never requested and cannot be gained by
-  // refreshing, and the endpoint is documented as returning videos while every post
-  // here is a photo carousel. The report has to name the blocker rather than print an
-  // empty table, which reads as a bad week.
-  ok(`${LIST_SCOPE} is not among the scopes this app asked for`, !SCOPES.includes(LIST_SCOPE), SCOPES.join(','));
-  ok('so the list scope is not held', !hasListScope());
+  // TIKTOK, SAID IN WORDS. The scope is requested since 10 Oct 2026, but a token
+  // granted before that cannot gain it by refreshing, and the endpoint is documented
+  // as returning videos while every post here is a photo carousel. The report has to
+  // name the blocker rather than print an empty table, which reads as a bad week.
+  ok(`${LIST_SCOPE} is requested at connect time now`, SCOPES.includes(LIST_SCOPE), SCOPES.join(','));
+  ok('but a token from before holds no list scope until it is reauthorised', !hasListScope());
   const gate = tiktokAvailable();
   ok('and TikTok metrics report themselves unavailable', !gate.ok);
   ok('with a reason somebody can act on', gate.why.length > 20, gate.why);
