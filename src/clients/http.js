@@ -1,6 +1,8 @@
 import { fetchText, htmlToText } from '../fetchPage.js';
 
-// The only way growth code reaches the network.
+// The only way the growth desk (src/growth/) and the trend watcher (src/trends/)
+// reach the network. Shared from src/clients/ because the bot may not import the
+// desk, and the watcher runs inside the bot.
 //
 // THE RULE THIS FILE EXISTS FOR: the desk never sends a DM, a comment, a follow
 // or a like, on any platform. Not "does not by default", not "only when asked":
@@ -8,7 +10,7 @@ import { fetchText, htmlToText } from '../fetchPage.js';
 // to give every request one door and write down, here, every place the door
 // opens onto. A platform write would need a new line in RULES with a POST
 // against a social host, and the selftest refuses any such line, and refuses
-// any `fetch(` anywhere else in src/growth/.
+// any `fetch(` anywhere else in src/growth/, src/trends/ or src/clients/.
 //
 // The Anthropic SDK makes its own requests, to api.anthropic.com only, and is
 // the one exception: it is a text model, not a platform.

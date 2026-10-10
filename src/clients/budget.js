@@ -1,4 +1,7 @@
-import { monthKey } from './rules.js';
+// The Israel month, YYYY-MM: the ledger's key. Local, so this module needs
+// nothing from the growth desk or the bot.
+const MONTH = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jerusalem', year: 'numeric', month: '2-digit' });
+export const monthKey = (t = Date.now()) => MONTH.format(new Date(t)).slice(0, 7);
 
 // The monthly ledger, and the stop.
 //

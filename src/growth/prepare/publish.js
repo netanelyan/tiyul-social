@@ -1,4 +1,4 @@
-import { deleteJson, postJson } from '../http.js';
+import { deleteJson, postJson } from '../../clients/http.js';
 import { SITE } from '../links.js';
 
 // Publishing a creator's route on tiyulplus.com, and taking it down.

@@ -1,6 +1,6 @@
 import { createSign } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { postForm, postJson } from '../http.js';
+import { postForm, postJson } from '../../clients/http.js';
 
 // Clicks per utm_campaign, from the GA4 Data API.
 //

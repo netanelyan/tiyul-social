@@ -1,4 +1,4 @@
-import { BudgetError } from './budget.js';
+import { BudgetError } from '../clients/budget.js';
 import { growthPort, mergeSettings } from './config.js';
 import { runDiscovery } from './find/index.js';
 import { checkEdit } from './prepare/compose.js';

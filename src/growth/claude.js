@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { outputConfig } from '../models.js';
-import { claudeCost, guard, record } from './budget.js';
+import { claudeCost, guard, record } from '../clients/budget.js';
 
 // Every Claude call the desk makes, through one function, so each one is
 // budget-checked before it is paid for and recorded after.

@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { getBytes, getJson } from '../http.js';
+import { getBytes } from '../../clients/http.js';
+export { oembed } from '../../clients/oembed.js';
 import { THUMB_DIR } from '../store.js';
 
 // TikTok's official oEmbed, and the thumbnails.
@@ -14,17 +15,6 @@ import { THUMB_DIR } from '../store.js';
 // so the image is downloaded when the post is found and served from disk. A
 // lead page opened next week would otherwise show a broken picture for a post
 // that is still there.
-
-export async function oembed(url) {
-  const body = await getJson(`https://www.tiktok.com/oembed?url=${encodeURIComponent(url)}`, { timeoutMs: 15_000 });
-  return {
-    title: String(body?.title || '').trim(),
-    authorName: String(body?.author_name || '').trim(),
-    handle: String(body?.author_unique_id || '').trim() || null,
-    authorUrl: body?.author_url || null,
-    thumbUrl: body?.thumbnail_url || null,
-  };
-}
 
 /** A safe file name for a post's thumbnail. */
 export const thumbName = (platform, id) => `${platform}-${String(id).replace(/[^A-Za-z0-9_-]/g, '')}.jpg`;

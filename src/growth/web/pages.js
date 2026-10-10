@@ -1,5 +1,5 @@
 import { keyStatus, TEMPLATE_LABELS, TEMPLATE_NAMES } from '../config.js';
-import { API_PRICES, monthSpend } from '../budget.js';
+import { API_PRICES, monthSpend } from '../../clients/budget.js';
 import { openTarget } from '../links.js';
 import { compose } from '../prepare/compose.js';
 import { fill } from '../prepare/templates.js';

@@ -1,4 +1,4 @@
-import { getJson } from '../http.js';
+import { getJson } from './http.js';
 import { cleanText } from './brave.js';
 
 // YouTube Data API: Hebrew travel Shorts.

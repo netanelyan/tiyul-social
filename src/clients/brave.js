@@ -1,5 +1,5 @@
-import { decodeEntities } from '../../fetchPage.js';
-import { getJson } from '../http.js';
+import { decodeEntities } from '../fetchPage.js';
+import { getJson } from './http.js';
 
 // Brave Search, restricted to one site per query.
 //

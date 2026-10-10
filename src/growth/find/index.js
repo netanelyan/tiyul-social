@@ -1,15 +1,15 @@
 import { fetchCities, siteSlugFor, SLUG_BATCH } from '../../plan/site.js';
-import { BudgetError, guard, marginal, monthSpend, record } from '../budget.js';
+import { BudgetError, guard, marginal, monthSpend, record } from '../../clients/budget.js';
 import { claudeConfigured } from '../claude.js';
 import { destinationSupported, normHe, postDestination, refreshSite } from '../prepare/site.js';
 import { blockedBy, leadFor, markSeen, personKeys, postKey } from '../rules.js';
-import { braveConfigured, braveSearch, IG_BOILERPLATE, instagramPost, instagramTime, stripIgCounts, parseEngagement, parseFollowers, tiktokPost, tiktokProfile, tiktokTime } from './brave.js';
+import { braveConfigured, braveSearch, IG_BOILERPLATE, instagramPost, instagramTime, stripIgCounts, parseEngagement, parseFollowers, tiktokPost, tiktokProfile, tiktokTime } from '../../clients/brave.js';
 import { classify, classifyAgencies } from './classify.js';
 import { enrichAgency, placesConfigured, searchAgencies } from './places.js';
 import { destinations, fillDest, todaysSearches } from './queries.js';
 import { scoreAgency, scoreCreator, scoreCustomer } from './score.js';
 import { oembed, saveThumb } from './tiktok.js';
-import { channelStats, hebrewLetters, searchShorts, youtubeConfigured } from './youtube.js';
+import { channelStats, hebrewLetters, searchShorts, youtubeConfigured } from '../../clients/youtube.js';
 
 // One discovery run: search, dedupe, sort, score, store.
 //

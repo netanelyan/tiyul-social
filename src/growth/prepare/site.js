@@ -1,5 +1,5 @@
 import { fetchCities } from '../../plan/site.js';
-import { getJson, getText } from '../http.js';
+import { getJson, getText } from '../../clients/http.js';
 import { SITE } from '../links.js';
 
 // Our own site's data: which destinations it covers, its curated itineraries,

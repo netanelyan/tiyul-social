@@ -101,11 +101,11 @@ desk.js       the store, the server, the daily timer, what each button does
 config.js     the switch, the port, default settings
 store.js      data/growth.json (never the posting store)
 rules.js      caps, warm-up, one message + one follow-up, do-not-contact, dedupe
-budget.js     the monthly ledger and the stop
-http.js       the only network door, and its allowlist
 claude.js     every Claude call, budget-checked
 links.js      every link, with utm_source / utm_medium / utm_campaign
-find/         discovery: queries, Brave, TikTok oEmbed, Places, YouTube, sorting, scoring
+find/         discovery: queries, Places, sorting, scoring, thumbnails
+../clients/   shared with the trend watcher: the network door and its allowlist,
+              Brave, YouTube, TikTok oEmbed, the monthly budget ledger
 prepare/      site data, routes, drafts, guards, templates, composing, publishing
 report/       stage counts, week over week, GA4
 web/          server-rendered pages, the server, one stylesheet, one small script

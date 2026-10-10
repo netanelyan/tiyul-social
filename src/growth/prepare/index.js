@@ -1,7 +1,7 @@
 import { siteSlugFor } from '../../plan/site.js';
-import { braveConfigured, braveSearch } from '../find/brave.js';
+import { braveConfigured, braveSearch } from '../../clients/brave.js';
 import { destinations } from '../find/queries.js';
-import { BudgetError, guard, marginal, record } from '../budget.js';
+import { BudgetError, guard, marginal, record } from '../../clients/budget.js';
 import { claudeConfigured } from '../claude.js';
 import { itineraryPath } from '../links.js';
 import { ilDate, itemDone, parseItem, pickToday } from '../rules.js';
