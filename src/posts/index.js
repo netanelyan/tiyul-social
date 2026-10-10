@@ -7,7 +7,7 @@ import { cardOutputDir } from '../render/index.js';
 import { renderPost, fitsInstagram, IG_MAX } from '../render/post.js';
 import { notePostShape } from '../store.js';
 import { loadCity, verdictOf, firstClause } from './source.js';
-import { nextShape, canBuild, platformsFor } from './types.js';
+import { nextShape, canBuild, platformsFor, hooksToAvoid } from './types.js';
 import { hookShape, fill, assertPostVoice, questionFor } from './voice.js';
 import { assertDelivers } from './deliver.js';
 import { buildSlideReel, reelable } from '../video/slideReel.js';
@@ -165,11 +165,9 @@ export async function buildPost({
     if (!check.ok) throw new Error(`a ${shape.type} post cannot be built from ${slug}: ${check.why}`);
   }
 
-  // The hook shape, excluding whatever the last post of this type used.
-  const hook = hookShape(shape.type, {
-    rand,
-    avoid: (history || []).filter((h) => h.type === shape.type).slice(0, 1).map((h) => h.hook),
-  });
+  // The hook shape, excluding whatever the last post of this type used: from the
+  // store when no history is passed, which is every production call.
+  const hook = hookShape(shape.type, { rand, avoid: hooksToAvoid(shape.type, history) });
 
   // ONE DRAW of the question and the follow reason for the whole post, handed to the
   // slides and to both captions. Two draws would give a post whose closing slide asks

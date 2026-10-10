@@ -26,6 +26,21 @@ import { pageSpecifics } from './deliver.js';
 export const recentShapes = (history = null) => (history == null ? postShapeHistory() : history);
 
 /**
+ * The hook shape the next post of this type must not reuse.
+ *
+ * Through recentShapes, like every other dimension here. The hook guard read its
+ * `history` argument directly, and production never passes one (bot.js builds
+ * posts with no history), so the guard compared against an empty list on every
+ * real post and the "never the same opening twice running" rule held only in the
+ * tests. Null now means the store's own record, as it does for type and look.
+ */
+export const hooksToAvoid = (type, history = null) =>
+  recentShapes(history)
+    .filter((h) => h.type === type && h.hook)
+    .slice(0, 1)
+    .map((h) => h.hook);
+
+/**
  * A weighted draw that refuses what the last few produced.
  *
  * `avoid` is the exclusion and it is applied BEFORE the weights, not after: a

@@ -6627,6 +6627,21 @@ group('the rotation - a pipeline is a template machine unless it is stopped');
   eq('a plan is trimmed to fit', fitTo(plan, 'instagram', 'plan').length, 6);
   ok('and it is the collages that went', fitTo(plan, 'instagram', 'plan').every((s) => !s.optional));
   eq('the ceiling is Instagram’s own', IG_MAX, 10);
+
+  // THE OPENING-LINE GUARD, ON THE PATH PRODUCTION TAKES. bot.js builds posts with
+  // no history argument, and the guard read only that argument, so it compared
+  // against nothing on every real post. Null now means the store's own record.
+  const { hooksToAvoid } = await import('../src/posts/types.js');
+  const { hookShape } = await import('../src/posts/voice.js');
+  eq('an explicit history still decides', hooksToAvoid('verdict', [{ type: 'verdict', hook: 'h1' }, { type: 'plan', hook: 'h2' }]).join(), 'h1');
+  eq('only the same type counts', hooksToAvoid('plan', [{ type: 'verdict', hook: 'h1' }]).length, 0);
+  const verdictHooks = (postConfig().posts.hooks.verdict || []).map((h) => h.id).filter(Boolean);
+  store.notePostShape({ type: 'verdict', look: 'label', hook: verdictHooks[0], frame: 'tall', caption: 'x' });
+  eq('with no history passed (production), the store answers', hooksToAvoid('verdict', null).join(), verdictHooks[0]);
+  const draws = Array.from({ length: 40 }, (_, i) => hookShape('verdict', { rand: () => (i + 0.5) / 40, avoid: hooksToAvoid('verdict', null) }).id);
+  ok('so the next verdict post never opens on the shape the last one used', !draws.includes(verdictHooks[0]), draws.join(','));
+  const postsSrc = readFileSync(new URL('../src/posts/index.js', import.meta.url), 'utf8');
+  ok('and buildPost asks hooksToAvoid, not its bare argument', /avoid: hooksToAvoid\(shape\.type, history\)/.test(postsSrc));
 }
 
 /* -------------------------------------------------------------------------- */
