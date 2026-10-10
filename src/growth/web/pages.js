@@ -155,7 +155,7 @@ function cardMessage(state, key, ctx) {
   const blocked = c.missing.length > 0 && what !== 'followup';
   const label = what === 'followup' ? 'תזכורת (פעם אחת בלבד)' : col === 'agency' ? 'הודעה לסוכנות' : 'הודעה ליוצר/ת';
   const route = lead.route
-    ? `<p class="route">${lead.route.days.length} ימים ב${esc(lead.route.cityName)}, ${lead.route.stops} מקומות${lead.route.matched.length ? `, ${lead.route.matched.length} שהזכירו ראשונים` : ''}</p>`
+    ? `<p class="route">${lead.route.days.length} ימים ב${esc(lead.route.cityName)}, ${lead.route.stops} מקומות${lead.route.matched.length ? `, ${lead.route.matched.length} שהזכירו ראשונים` : ''}${lead.trip?.status === 'published' ? ` · <a href="${attr(lead.trip.url)}" target="_blank" rel="noopener noreferrer">המסלול באתר</a>` : ''}</p>`
     : '';
   const agency =
     col === 'agency'
@@ -225,7 +225,7 @@ function runBox(state, running, env) {
   if (!keys.brave) warn.push('BRAVE_API_KEY חסר (טיקטוק ואינסטגרם)');
   if (!keys.places) warn.push('GOOGLE_MAPS_KEY חסר (סוכנויות)');
   const summary = last
-    ? `<p>הרצה אחרונה: ${when(last.at)} (${last.trigger === 'daily' ? 'יומית' : 'ידנית'}). ${last.queries} חיפושים, ${last.candidates || 0} פוסטים נבדקו. חדשים: ${last.found.creator} יוצרים, ${last.found.customer} לקוחות, ${last.found.agency} סוכנויות${last.attached ? `, ${last.attached} סרטונים חדשים ליוצרים מוכרים` : ''}.${last.stopped === 'budget' ? ' <b>נעצרה: התקציב נוצל.</b>' : ''}</p>${
+    ? `<p>הרצה אחרונה: ${when(last.at)} (${last.trigger === 'daily' ? 'יומית' : 'ידנית'}). ${last.queries} חיפושים, ${last.candidates || 0} פוסטים נבדקו. חדשים: ${last.found.creator} יוצרים, ${last.found.customer} לקוחות, ${last.found.agency} סוכנויות${last.attached ? `, ${last.attached} סרטונים חדשים ליוצרים מוכרים` : ''}.${last.tooOld ? ` ${last.tooOld} פוסטים ישנים מהמגבלה דולגו בלי לבדוק אותם.` : ''}${last.stopped === 'budget' ? ' <b>נעצרה: התקציב נוצל.</b>' : ''}</p>${
         [...(last.skipped || []), ...(last.errors || [])].length ? `<ul class="issues">${[...last.skipped, ...last.errors].slice(0, 6).map((e) => `<li>${esc(e)}</li>`).join('')}</ul>` : ''
       }`
     : '<p>עוד לא הייתה הרצה.</p>';
@@ -260,12 +260,30 @@ function emptyText(col, state, settings, now) {
     const warm = leads.filter((l) => l.type === 'creator' && l.warmedAt && !l.messagedAt && !l.closed && !dmReady(l, { now, warmupDays: settings.warmupDays })).length;
     return warm ? `${warm} יוצרים יופיעו כאן מחר, יום אחרי התגובה` : 'הודעה ליוצר/ת מופיעה כאן יום אחרי שסימנת "הגבתי"';
   }
-  if (col === 'comment') return 'אין כרגע סרטונים חדשים. "מצא לידים חדשים" מחפש עכשיו';
+  if (col === 'comment') {
+    // Say why, when the reason is known: an empty queue because every post was
+    // two years old must not look like an empty queue because nothing was found.
+    const last = state.runs[0];
+    if (last?.tooOld && !last.candidates) {
+      return `כל ${last.tooOld} הפוסטים שהחיפוש מצא היום ישנים מ-${settings.maxPostAgeDays} יום. האינדקס של Brave לטיקטוק ואינסטגרם לא עדכני, אז אין כרגע סרטונים להגיב עליהם`;
+    }
+    return 'אין כרגע סרטונים חדשים. "מצא לידים חדשים" מחפש עכשיו';
+  }
   if (col === 'agency') return 'אין סוכנויות להיום';
   return 'אין שאלות חדשות להיום';
 }
 
 /* ------------------------------------------------------------ lead */
+
+/** Where the creator's route stands on the site, in one line. */
+function tripNote(trip) {
+  if (!trip) return '';
+  if (trip.status === 'published') {
+    return `<p class="note">פורסם באתר ${when(trip.publishedAt)}: <a href="${attr(trip.url)}" target="_blank" rel="noopener noreferrer"><bdi>${esc(trip.url.replace(/^https:\/\/(www\.)?/, ''))}</bdi></a> · ${trip.stopCount || 0} מקומות${trip.indexable ? '' : ' · לא נכנס לגוגל (פחות מ-8 מקומות)'}${trip.withdrawError ? ` · <span class="warn">ההסרה נכשלה, אנסה שוב: ${esc(trip.withdrawError)}</span>` : ''}</p>`;
+  }
+  if (trip.status === 'withdrawn') return `<p class="note">המסלול הוסר מהאתר ${when(trip.withdrawnAt)}. הכתובת מחזירה 410.</p>`;
+  return `<p class="note warn">${esc(trip.reason || trip.status)}</p>`;
+}
 
 export function leadPage({ state, settings, token, now = Date.now(), lead, templates }) {
   const ctx = { templates, settings, state };
@@ -310,7 +328,7 @@ export function leadPage({ state, settings, token, now = Date.now(), lead, templ
         ? `<p>${r.days.length} ימים ב${esc(r.cityName)}, ${r.stops} מקומות מהקטלוג של האתר.${r.matched.length ? ` שמנו ראשונים: ${r.matched.map((m) => esc(m.name)).join(', ')}.` : ''}${r.unmatched.length ? ` לא נמצאו בקטלוג: ${r.unmatched.map(esc).join(', ')}.` : ''}</p>
 <ol class="days">${r.days.map((d) => `<li><b>${esc(d.title || '')}</b> ${d.names.map(esc).join(' · ')}</li>`).join('')}</ol>`
         : '<p class="small">המסלול ייבנה כשהיוצר/ת יגיעו לעמודת היוצרים (יום אחרי התגובה).</p>'
-    }${lead.trip ? `<p class="note warn">${esc(lead.trip.reason || lead.trip.status)}</p>` : ''}</section>`);
+    }${tripNote(lead.trip)}</section>`);
   }
 
   // The prepared material.

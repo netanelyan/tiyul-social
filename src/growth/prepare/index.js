@@ -62,9 +62,14 @@ async function doPrepare({ store, settings, now = Date.now(), deps = DEFAULT_DEP
         if (post?.dest) lead.dest = post.dest;
         const c = await city(lead.dest?.slug);
         if (!lead.route && c) lead.route = buildRoute(c, { places: post?.places, days: post?.days });
-        // Shown today, so this is the moment a route may go public. Until the
-        // site endpoint exists, publishRoute says so and holds it.
-        if (!lead.trip || lead.trip.status === 'waiting-for-site') lead.trip = await deps.publishRoute(lead);
+        // Shown today, so this is the moment the route goes public, and the only
+        // place in the desk that publishes. A failed attempt is retried at most
+        // once an hour, so a refusal the site will repeat is not hammered.
+        const retry = lead.trip?.status === 'failed' && now - Date.parse(lead.trip.failedAt || 0) > 3_600_000;
+        if (!lead.trip || ['waiting-for-site', 'no-route'].includes(lead.trip.status) || retry) {
+          lead.trip = await deps.publishRoute(lead, { env, now });
+          report.published = (report.published || 0) + (lead.trip.status === 'published' ? 1 : 0);
+        }
         if (!lead.drafts?.dm && canDraft && post) {
           lead.drafts = { ...lead.drafts, dm: await deps.draftCreatorLine({ state, settings, lead, post }) };
           report.drafted++;

@@ -4,7 +4,7 @@ import { runDiscovery } from './find/index.js';
 import { checkEdit } from './prepare/compose.js';
 import { draftComments, draftCreatorLine, draftCustomerReply, DraftError } from './prepare/draft.js';
 import { prepareToday } from './prepare/index.js';
-import { withdrawRoute } from './prepare/publish.js';
+import { withdrawClosed, withdrawRoute } from './prepare/publish.js';
 import { cityFor, siteContext } from './prepare/site.js';
 import { readTemplates, saveTemplate, TemplateError } from './prepare/templates.js';
 import { campaignClicks } from './report/ga4.js';
@@ -24,6 +24,7 @@ const EXPECTED = [RuleError, TemplateError, BudgetError, DraftError];
 export function createOps({ store, env = process.env, clock = () => Date.now(), deps = {} }) {
   const run = deps.runDiscovery || runDiscovery;
   const prepare = deps.prepareToday || prepareToday;
+  const withdraw = { route: deps.withdrawRoute || withdrawRoute, closed: deps.withdrawClosed || withdrawClosed };
   let running = null;
   let lastError = null;
 
@@ -63,6 +64,9 @@ export function createOps({ store, env = process.env, clock = () => Date.now(), 
   const tick = async () => {
     if (running) return;
     const now = clock();
+    // Any closed lead whose page is still up (a withdrawal the site did not
+    // answer) is taken down first: a closed lead never keeps a live route.
+    if (await withdraw.closed(store.data, { env, now })) store.save();
     const ranToday = store.data.runs.some((r) => ilDate(r.at) === ilDate(now));
     if (!ranToday && ilHour(now) >= settings().runHour) {
       start('daily');
@@ -131,7 +135,7 @@ export function createOps({ store, env = process.env, clock = () => Date.now(), 
           if (problems.length) return { error: problems.join('. ') };
         }
         const effects = applyAction(store.data, lead, body.action, body, { now: clock(), settings: settings() });
-        if (effects.withdraw && lead.trip) lead.trip = await withdrawRoute(lead);
+        if (effects.withdraw && lead.trip) lead.trip = await withdraw.route(lead, { env, now: clock() });
         store.save();
         return { ok: true };
       }

@@ -134,6 +134,14 @@ async function findSocial({ state, settings, plan, run, now, deps, env }) {
       }
       const pk = postKey(PLATFORM_KEY[q.platform], post.id);
       if (state.seen[pk] || cands.has(pk)) continue;
+      // Too old for any column, known from the id alone: dropped before it costs
+      // an oEmbed or a sorting call. Not marked seen, so raising the age limit in
+      // Settings brings these back. Brave's social index is mostly this.
+      const born = q.platform === 'tiktok' ? tiktokTime(post.id) : instagramTime(post.id);
+      if (born && ageDaysOf(born, now) > Math.max(settings.maxPostAgeDays, settings.maxCustomerAgeDays)) {
+        run.tooOld = (run.tooOld || 0) + 1;
+        continue;
+      }
       const keys = personKeys({ platform: PLATFORM_KEY[q.platform], handle: post.handle });
       if (blockedBy(state, keys)) {
         markSeen(state, [pk], { at: now, rejected: 'do-not-contact' });

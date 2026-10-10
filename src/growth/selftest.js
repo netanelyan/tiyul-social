@@ -16,7 +16,8 @@ import { assertAllowed, isSocial, RULES } from './http.js';
 import { campaignFor, hasUtm, tagged } from './links.js';
 import { compose, linkFor } from './prepare/compose.js';
 import { checkDraft, urlsIn } from './prepare/guards.js';
-import { agencySample } from './prepare/index.js';
+import { agencySample, prepareToday } from './prepare/index.js';
+import { externalIdFor, publishRoute, tripBody, withdrawClosed, withdrawRoute } from './prepare/publish.js';
 import { buildRoute } from './prepare/route.js';
 import { destinationSupported, matchPlaces, postDestination, resolveDestination } from './prepare/site.js';
 import { checkTemplate, fill, readTemplates } from './prepare/templates.js';
@@ -445,6 +446,89 @@ export async function growthSelftest({ ok, eq }) {
     await runDiscovery({ store, settings: S, now: NOW, deps: two, env: ENV });
     ok('a destination the post never names is refused (Corfu is not Athens)', !store.data.leads['tt:@corfu.fan']);
     ok('and one it does name is kept', store.data.leads['tt:@athens.fan']?.posts[0]?.dest?.slug === 'athens');
+  }
+
+  /* ---------------------------------------------------------- publishing */
+
+  {
+    const TOKEN = { GROWTH_PUBLISH_TOKEN: 'x'.repeat(40) };
+    const route = buildRoute(CITY, { places: ['גבעת ליקבטוס'], days: 2 });
+    const lead = creator(1, { route });
+    const body = tripBody(lead);
+    eq('the externalId is the lead, in the characters the endpoint accepts', body.externalId, 'growth:tt:maker1');
+    ok('the body is what the endpoint validates', /^[A-Za-z0-9:._-]{1,120}$/.test(body.externalId) && body.name.length <= 80 && body.days.length >= 1 && body.days.every((d) => d.placeIds.length >= 1 && d.placeIds.length <= 12 && new Set(d.placeIds).size === d.placeIds.length) && body.startDate === null);
+    ok('and carries catalog ids only, no names', body.days.every((d) => Object.keys(d).join() === 'citySlug,placeIds,notes'));
+
+    const sent = [];
+    const post = async (url, payload, opts) => {
+      sent.push({ url, payload, auth: opts.headers.authorization });
+      return { ok: true, tripId: 'g-1', slug: 'athens-2-ab12cd34', url: 'https://www.tiyulplus.com/trips/athens-2-ab12cd34', indexable: false, stopCount: 6, created: true };
+    };
+    const t = await publishRoute(lead, { env: TOKEN, post, now: NOW });
+    ok('a route publishes to our own endpoint with the token', sent[0]?.url === 'https://www.tiyulplus.com/api/internal/trips' && sent[0].auth === `Bearer ${'x'.repeat(40)}`);
+    ok('and the trip is stored as published with its address', t.status === 'published' && t.url.endsWith('/trips/athens-2-ab12cd34') && t.externalId === 'growth:tt:maker1');
+    const live = { ...lead, trip: t };
+    ok('the DM then carries that address, tagged', compose(live, 'dm', { templates: readTemplates(), settings: S, state: emptyState() }).text.includes('/trips/athens-2-ab12cd34?utm_source=creator&utm_medium=dm&utm_campaign=maker1'));
+
+    const refuse = async () => {
+      throw Object.assign(new Error('unknown-ids'), { status: 422, body: { unknownPlaces: ['athens/ath-gone'] } });
+    };
+    const failed = await publishRoute(lead, { env: TOKEN, post: refuse, now: NOW });
+    ok('a refusal is stored with its reason, not thrown', failed.status === 'failed' && failed.reason.includes('ath-gone'));
+    eq('without a token nothing is sent', (await publishRoute(lead, { env: {}, post: async () => { throw new Error('called'); } })).status, 'failed');
+    eq('without a route nothing is sent', (await publishRoute(creator(2), { env: TOKEN, post: async () => { throw new Error('called'); } })).status, 'no-route');
+
+    const dels = [];
+    const del = async (url) => {
+      dels.push(url);
+      return { ok: true, withdrawn: true };
+    };
+    const gone = await withdrawRoute(live, { env: TOKEN, del, now: NOW });
+    ok('withdrawing calls DELETE with the same externalId', dels[0] === 'https://www.tiyulplus.com/api/internal/trips?externalId=growth%3Att%3Amaker1' && gone.status === 'withdrawn');
+    ok('a route that was never published is not withdrawn', (await withdrawRoute({ ...lead, trip: { status: 'failed' } }, { env: TOKEN, del })) && dels.length === 1);
+    const stuck = await withdrawRoute(live, { env: TOKEN, del: async () => { throw new Error('timed out'); }, now: NOW });
+    ok('a failed withdrawal keeps the page marked live, with the error', stuck.status === 'published' && stuck.withdrawError === 'timed out');
+    const st = emptyState();
+    st.leads[lead.id] = { ...lead, closed: 'skipped', trip: stuck };
+    eq('and the timer takes it down on the next pass', await withdrawClosed(st, { env: TOKEN, del, now: NOW }), 1);
+
+    // Public only when shown: the Creators column, the day after the warm-up.
+    const store = memStore();
+    store.data.leads['tt:@maker1'] = creator(1);
+    store.data.leads['tt:@maker2'] = creator(2, { warmedAt: new Date(NOW - DAY).toISOString(), stage: 'commented', posts: [{ ...creator(2).posts[0], status: 'commented' }] });
+    let published = [];
+    const deps = {
+      cityFor: async () => CITY,
+      draftComments: async () => ['a', 'b'],
+      draftCreatorLine: async () => ({ name: '', line: 'x', problems: [] }),
+      draftCustomerReply: async () => 'r',
+      publishRoute: async (l) => {
+        published.push(l.id);
+        return { status: 'published', url: 'https://www.tiyulplus.com/trips/x', slug: 'x', externalId: externalIdFor(l), publishedAt: new Date(NOW).toISOString() };
+      },
+      brave: async () => [],
+    };
+    await prepareToday({ store, settings: S, now: NOW, deps, env: {} });
+    eq('a route goes public only for the creator shown in the Creators column', published.join(), 'tt:@maker2');
+    await prepareToday({ store, settings: S, now: NOW + 60_000, deps, env: {} });
+    eq('and once: the next pass does not publish it again', published.length, 1);
+
+    const withdrawn = [];
+    const ops = createOps({ store, env: {}, clock: () => NOW, deps: { runDiscovery: async () => {}, prepareToday: async () => {}, withdrawRoute: async (l) => (withdrawn.push(l.id), { ...l.trip, status: 'withdrawn' }) } });
+    await ops.post('/api/lead/tt:@maker2/action', { action: 'skip' });
+    ok('[דלג] takes the route down', withdrawn.join() === 'tt:@maker2' && store.data.leads['tt:@maker2'].trip.status === 'withdrawn');
+
+    const writes = RULES.filter((r) => r.method !== 'GET');
+    ok('the only writes anywhere: Google APIs, and our own trips endpoint', writes.every((r) => ['places.googleapis.com', 'oauth2.googleapis.com', 'analyticsdata.googleapis.com'].includes(r.host) || (r.host === 'www.tiyulplus.com' && r.path?.test('/api/internal/trips') && !r.path.test('/api/trips/publish'))), writes.map((r) => `${r.method} ${r.host}`).join(', '));
+  }
+
+  {
+    // Brave's social index is mostly old. Those posts cost nothing beyond the search.
+    const store = memStore();
+    const deps = fakeDeps({ brave: async (t, site) => (site === 'tiktok.com' ? [{ url: `https://www.tiktok.com/@old.one/video/${ttId(400, 31)}`, title: '', description: '', extra: [], thumb: null }] : []) });
+    const run = await runDiscovery({ store, settings: S, now: NOW, deps, env: ENV });
+    ok('a post older than every limit is skipped before it is sorted', run.tooOld > 0 && deps.calls.classify === 0);
+    ok('and is not marked seen, so a higher limit would bring it back', !store.data.seen[`tt:post:${ttId(400, 31)}`]);
   }
 
   /* ---------------------------------------------------------- budget */

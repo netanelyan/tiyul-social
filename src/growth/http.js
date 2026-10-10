@@ -38,6 +38,10 @@ export const RULES = [
   { method: 'POST', host: 'oauth2.googleapis.com', path: /^\/token$/, why: 'a GA4 access token' },
   { method: 'POST', host: 'analyticsdata.googleapis.com', path: /^\/v1beta\/properties\/\d+:runReport$/, why: 'GA4 reports' },
   { method: 'GET', host: 'www.tiyulplus.com', why: 'our own site data' },
+  // The only writes to a site of ours: publishing a creator's route on
+  // tiyulplus.com under the editor account, and taking it down again.
+  { method: 'POST', host: 'www.tiyulplus.com', path: /^\/api\/internal\/trips$/, why: 'publishing a route on our own site' },
+  { method: 'DELETE', host: 'www.tiyulplus.com', path: /^\/api\/internal\/trips$/, why: 'withdrawing that route' },
 ];
 
 export class HttpError extends Error {
@@ -92,8 +96,9 @@ async function readJson(res) {
     /* not JSON; the status says enough */
   }
   if (!res.ok) {
-    const reason = body?.error?.message || body?.message || body?.error?.detail || `HTTP ${res.status}`;
-    throw new HttpError(String(reason).slice(0, 300), { status: res.status, code: 'http' });
+    // Google nests the message; our own site answers { error: 'code', ...details }.
+    const reason = body?.error?.message || (typeof body?.error === 'string' ? body.error : null) || body?.message || body?.error?.detail || `HTTP ${res.status}`;
+    throw Object.assign(new HttpError(String(reason).slice(0, 300), { status: res.status, code: 'http' }), { body });
   }
   return body;
 }
@@ -110,6 +115,10 @@ export async function postJson(url, payload, opts = {}) {
       body: JSON.stringify(payload),
     })
   );
+}
+
+export async function deleteJson(url, opts = {}) {
+  return readJson(await send('DELETE', url, { ...opts, headers: { accept: 'application/json', ...opts.headers } }));
 }
 
 export async function postForm(url, fields, opts = {}) {

@@ -30,6 +30,7 @@ default, or on start if today's run has not happened), and whenever you press
 | `ANTHROPIC_API_KEY` | sorting posts, drafting comments and the personal line | already in `.env` |
 | `BRAVE_API_KEY` | finding TikTok and Instagram posts | brave.com/search/api, the Search plan ($5 per 1,000, with a monthly $5 credit; a card is required) |
 | `GOOGLE_MAPS_KEY` | finding agencies (Places API (New) Text Search) | Google Cloud console, enable "Places API (New)"; billing must be on, usage stays in the free 1,000 a month |
+| `GROWTH_PUBLISH_TOKEN` | publishing creator routes on tiyulplus.com | the same value as on Vercel, at least 32 characters |
 | `YOUTUBE_API_KEY` | optional, only if YouTube is on in Settings | the same Google project, enable "YouTube Data API v3" (falls back to `GOOGLE_MAPS_KEY`) |
 | `GA4_PROPERTY_ID` | Reports: clicks per utm_campaign | GA4 Admin, Property details: the numeric id, not `G-...` |
 | `GA4_SERVICE_ACCOUNT_FILE` | the same | a service account JSON key from Google Cloud with the Google Analytics Data API enabled; add its email in GA4 Property access management as Viewer |
@@ -63,13 +64,22 @@ spend is on every page's header and on Reports, and finding stops when it is rea
 [לא מעוניינים] and [לא רלוונטי] are stored against every key the person has (handle,
 phone, website, place) and checked before anything new is created.
 
-## Not built yet: publishing creator routes
+## Publishing creator routes
 
-The site has no endpoint that creates and publishes a trip from a script. Per the
-owner's instruction that is not worked around: `SITE-SPEC.md` is the spec for the
-tiyul-plus session. Until it ships, each creator's route is built and shown on the
-lead page, and the DM waits with [העתק ופתח] disabled and the reason on the card.
-When it ships, `prepare/publish.js` is the only file that changes.
+Through `POST /api/internal/trips` on tiyulplus.com (built from `SITE-SPEC.md`),
+with `GROWTH_PUBLISH_TOKEN`. Every trip belongs to the site's editor account and
+is keyed by the lead, so a re-send updates the same page.
+
+- A route goes public only when the creator appears in the Creators column, the
+  day after you mark [הגבתי]. Nothing else in the desk publishes.
+- It comes down (the page answers 410) on [דלג], [לא מעוניינים] or [לא רלוונטי].
+  If the site does not answer, the desk's timer tries again until it does.
+- A refused publish (an id the catalog dropped, a daily cap) is shown on the card
+  with the reason and retried at most once an hour.
+- The public page shows the places and the map, never the creator's name.
+
+Verified on production on 2026-10-10: two routes published, opened (200), then
+withdrawn through [דלג] (410).
 
 ## Templates
 
@@ -96,7 +106,7 @@ http.js       the only network door, and its allowlist
 claude.js     every Claude call, budget-checked
 links.js      every link, with utm_source / utm_medium / utm_campaign
 find/         discovery: queries, Brave, TikTok oEmbed, Places, YouTube, sorting, scoring
-prepare/      site data, routes, drafts, guards, templates, composing, publish (stub)
+prepare/      site data, routes, drafts, guards, templates, composing, publishing
 report/       stage counts, week over week, GA4
 web/          server-rendered pages, the server, one stylesheet, one small script
 selftest.js   the growth group in `npm test`

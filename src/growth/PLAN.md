@@ -294,3 +294,15 @@ Found while building:
   the caption itself shows people asking.
 - The local server checks the Host header and a per-run token on every POST, which the
   plan described, and sends a strict Content-Security-Policy.
+
+Publishing (2026-10-10, after the site shipped `/api/internal/trips`):
+- Built in `prepare/publish.js`: publish when the creator is shown in the Creators
+  column, withdraw on [דלג], [לא מעוניינים] and [לא רלוונטי], a timer that retries any
+  withdrawal the site did not answer, and a failed publish retried at most hourly.
+  http.js allows exactly POST and DELETE on our own `/api/internal/trips`.
+- Verified on production: two routes published (200), then withdrawn by pressing
+  [דלג] in the desk (410).
+- The first real run with the approved settings: 26 searches, 250 TikTok and
+  Instagram posts, every one older than 45 days, so 0 creators and 0 customers;
+  15 agencies. Old posts are now dropped before they are sorted, so they cost
+  nothing beyond the search, and the empty comment queue says why it is empty.
