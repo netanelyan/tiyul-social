@@ -152,16 +152,24 @@ offers. The CTA is back; the URL is still banned.
 
 ## Posting
 
-**Once a day, for at least three weeks, without long gaps.** Consistency is
-itself a ranking input, and three weeks is the shortest run that produces enough
-data to read.
+**Every day, at volume.** Since 10 October 2026 (the owner's daily-posting goal):
+TikTok 2 posts a day in the first week, then 3; Instagram 1 to 2. High-volume
+slideshow accounts win on quantity first, and consistency is itself a ranking
+input. The test is 30 days live: posted on at least 90% of days at that volume,
+one post past 2,000 views, and visits from TikTok or Instagram in GA. If no post
+passes 2,000 views in 30 days, we stop and rethink rather than add code.
 
-**When:** 12:00 to 14:00 and 19:00 to 22:00 Israel time.
+**One approval a day.** The day's slideshows arrive as one Telegram digest each
+morning, approved with one tap (src/slate/). Nothing posts without it.
+
+**When:** 12:00 to 14:00 and 19:00 to 22:00 Israel time, at the slot times in
+post-config.json `slate`.
 
 **Not** from Friday evening to Saturday evening. The audience is Israeli and
 most of it is not on the app; a post that lands in that window spends its whole
-first-hour test on nobody. `src/schedule.js` enforces both of these, so the
-filming queue never asks for something it is about to be the wrong time to post.
+first-hour test on nobody. Friday posts before it and Saturday after it, so both
+still count as posting days. `src/schedule.js` enforces both rules for the drip
+and for the slate (until October 2026 it was imported and never called).
 
 **Plan around the season.** Sukkot, Hanukkah, summer vacation, and whichever
 destinations are actually good that month.
@@ -186,9 +194,12 @@ And three rules for acting on them:
 - **A format that underperforms three times** is dropped. The two best get
   everything.
 
-TikTok's analytics are not available to this project through any API it holds,
-so this loop is read by hand, in the app, once a week. Nothing in `bot.js`
-can do it and nothing in `bot.js` claims to.
+TikTok's numbers reach this project once the account is reconnected with the
+`video.list` scope (requested since October 2026): views, likes, comments and
+shares, read 72 hours after a post by `src/metrics`. TikTok publishes no save
+count through any API, so TikTok formats are weighed on shares plus likes per
+view, saves count only on Instagram, and no TikTok save number is ever made up.
+Watch time and follows still come from the app, by hand, once a week.
 
 ---
 
