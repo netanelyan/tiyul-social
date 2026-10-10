@@ -10,7 +10,7 @@ import { runOnce, dailyTarget } from './src/pipeline.js';
 import { toCandidate, RejectedError } from './src/candidate.js';
 import { primaryAuthority, enabledSources, registry } from './src/sources/index.js';
 import { approvalMessage, decidedMessage, evidenceReport, channelCaption, publishedDescriptions } from './src/format.js';
-import { sendableNow, windowsHe } from './src/schedule.js';
+import { dripDue, drainPerDay as drainPerDayOf, windowsHe } from './src/schedule.js';
 import { renderCard, closeBrowser, cardOutputDir } from './src/render/index.js';
 import { startAdminServer, createLogTap } from './src/admin/server.js';
 import { stagedView, queuedView, heldView } from './src/admin/views.js';
@@ -4708,10 +4708,12 @@ async function main() {
     // production became exactly level with it the moment they were switched on, and
     // the one line that would have said so was not counting them.
     const perDay = dailyTarget() + POSTS_PER_DAY + DECKS_PER_DAY + CLIPS_PER_DAY;
-    const drainPerDay = Math.floor(1440 / Math.max(1, Number(POST_INTERVAL_MINUTES)));
+    // Inside the posting windows, not around the clock: the drip only publishes
+    // there now, so 1440 / interval overstated what it drains by half or more.
+    const drainPerDay = drainPerDayOf(intervalMs);
     if (perDay > drainPerDay) {
       console.log(
-        `   ⚠️ budgets produce ${perDay}/day and the drip publishes ${drainPerDay}/day - ` +
+        `   ⚠️ budgets produce ${perDay}/day and the drip publishes ${drainPerDay}/day inside the windows (${windowsHe()}) - ` +
           `the queue will grow by ${perDay - drainPerDay} a day. Lower a budget or shorten POST_INTERVAL_MINUTES.`
       );
     }
@@ -4782,9 +4784,15 @@ async function main() {
   await maybeRefreshTikTokToken();
   await probeInstagram();
 
+  // THE DRIP, ON THE CLOCK. It was a bare setInterval of POST_INTERVAL_MINUTES
+  // counted from boot, so the hour a post went out was set by the last restart
+  // and Shabbat did not exist. Now it is asked every fifteen minutes and goes
+  // only inside a posting window, outside Shabbat, and at least the interval
+  // after the last publish: the rules BRIEF.md always said src/schedule.js kept.
   setInterval(() => {
+    if (!dripDue({ lastPublishedAt: store.lastPublishedAt(), intervalMs }).ok) return;
     publishNext().catch((e) => console.error('publish error:', e.message));
-  }, intervalMs);
+  }, 15 * 60_000);
 
   setInterval(tick, 60_000);
   setInterval(

@@ -137,3 +137,49 @@ export function nextSendableAt(at = new Date()) {
   }
   return null;
 }
+
+/**
+ * Is the drip due to publish the next queued post now?
+ *
+ * The drip used to be `setInterval(publishNext, POST_INTERVAL_MINUTES)` counted
+ * from boot, so it published at whatever hour the last restart happened to set,
+ * on Shabbat as readily as on a Tuesday, while BRIEF.md said this file enforced
+ * both rules. Now it is asked every few minutes and publishes only inside a
+ * window, outside Shabbat, and at least the interval after the last publish.
+ * POST_INTERVAL_MINUTES keeps its meaning as the minimum gap.
+ *
+ * Only the timer asks. A publish someone asked for by hand (/next, /post,
+ * /retry, the admin site) is an override and says so where it already does.
+ */
+export function dripDue({ at = new Date(), lastPublishedAt = null, intervalMs }) {
+  const when = sendableNow(at);
+  if (!when.ok) return when;
+  if (lastPublishedAt && at.getTime() - lastPublishedAt < intervalMs) {
+    return { ok: false, why: `פחות מ-${Math.round(intervalMs / 60_000)} דקות מהפרסום הקודם` };
+  }
+  return { ok: true, why: null };
+}
+
+/**
+ * How many posts the drip can publish on an ordinary weekday.
+ *
+ * For the boot warning that compares production with what the drip drains. It
+ * was 1440 / interval, which assumed the drip ran around the clock; with the
+ * windows enforced, five hours of windows and a six-hour gap drain one a day,
+ * not four. Counted by walking a Tuesday in the same fifteen-minute steps the
+ * drip itself is checked in.
+ */
+export function drainPerDay(intervalMs, { step = 15 * 60_000 } = {}) {
+  // A Tuesday in Israel, from midnight: 2026-01-06 is a Tuesday, 22:00 UTC the day
+  // before is midnight in Jerusalem in winter. Only the hours matter here.
+  const start = Date.parse('2026-01-05T22:00:00Z');
+  let n = 0;
+  let last = null;
+  for (let t = start; t < start + 86_400_000; t += step) {
+    if (dripDue({ at: new Date(t), lastPublishedAt: last, intervalMs }).ok) {
+      n++;
+      last = t;
+    }
+  }
+  return n;
+}

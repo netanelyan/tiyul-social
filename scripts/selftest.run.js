@@ -7256,6 +7256,21 @@ group('posting windows - Israel time, and not on Shabbat');
   ok('there is a next opening', Boolean(next));
   ok('and it is after Shabbat ends', !inShabbat(next) && inWindow(next));
   ok('within a day and a half', next - at('2026-09-25T13:00:00Z') < 36 * 3_600_000);
+
+  // THE DRIP OBEYS ALL OF THE ABOVE NOW. It was a setInterval counted from boot
+  // that published at any hour and on Shabbat, while BRIEF.md said this module
+  // enforced both. These hold the drip to the windows, to Shabbat and to the gap.
+  const { dripDue, drainPerDay } = await import('../src/schedule.js');
+  const sixHours = 360 * 60_000;
+  ok('the drip publishes inside a window with no recent post', dripDue({ at: at('2026-09-23T10:00:00Z'), lastPublishedAt: null, intervalMs: sixHours }).ok);
+  ok('not on Shabbat, even inside the evening window', !dripDue({ at: at('2026-09-26T10:00:00Z'), lastPublishedAt: null, intervalMs: sixHours }).ok);
+  ok('not outside the windows', !dripDue({ at: at('2026-09-23T05:00:00Z'), lastPublishedAt: null, intervalMs: sixHours }).ok);
+  ok('not before the gap has passed', !dripDue({ at: at('2026-09-23T17:00:00Z'), lastPublishedAt: at('2026-09-23T13:30:00Z').getTime(), intervalMs: sixHours }).ok);
+  ok('Saturday night after Shabbat is open again', dripDue({ at: at('2026-09-26T18:15:00Z'), lastPublishedAt: null, intervalMs: sixHours }).ok);
+  eq('a six-hour gap drains two a weekday inside the windows, not four', drainPerDay(sixHours), 2);
+  const botSrc = readFileSync(new URL('../bot.js', import.meta.url), 'utf8');
+  ok('and bot.js asks dripDue before every timed publish', /if \(!dripDue\(\{ lastPublishedAt: store\.lastPublishedAt\(\), intervalMs \}\)\.ok\) return;\s*publishNext\(\)/.test(botSrc));
+  ok('instead of a bare interval counted from boot', !/setInterval\(\(\) => \{\s*publishNext\(\)\.catch[^}]*\}\s*,\s*intervalMs\)/.test(botSrc));
 }
 
 /* -------------------------------------------------------------------------- */
