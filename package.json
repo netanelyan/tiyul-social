@@ -11,6 +11,7 @@
     "start": "node bot.js",
     "growth": "node src/growth/main.js",
     "zernio-test": "node scripts/zernio-test.js",
+    "trends": "node scripts/trends-run.js",
     "test": "node scripts/selftest.js",
     "run-once": "node scripts/run-once.js",
     "dry-run": "node scripts/dry-run.js",

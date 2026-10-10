@@ -28,6 +28,7 @@ import {
   describeCollection,
   weeklyReport,
   hookReport,
+  allRows as metricsRows,
 } from './src/metrics/index.js';
 import { clipPublicUrl } from './src/publish/imageHosts.js';
 import { buildDeck } from './src/deck/build.js';
@@ -83,7 +84,11 @@ import { slotsFor, assign as assignSlate, israelDate } from './src/slate/plan.js
 import { newSlate, approveAll as approveAllSlate, skipItem as skipSlateItem, dueItems as slateDue, markOutcome as markSlateOutcome, expire as expireSlate } from './src/slate/state.js';
 import { digestMessage } from './src/slate/digest.js';
 import { buildSlateDecks } from './src/slate/build.js';
-import { rampFor, lastTemplates, recentPlacesFor, recentOpeningsFor, digestTimeFor } from './src/slate/runner.js';
+import { rampFor, lastTemplates, recentPlacesFor, recentOpeningsFor, digestTimeFor, recentFormatPicks } from './src/slate/runner.js';
+import { openTrends } from './src/trends/store.js';
+import { ensureOwnFormats, formatPicker, credit as creditFormats, judge as judgeFormats } from './src/trends/mix.js';
+import { runWatcher, watcherDue, describeRun, promoteCardsToTrials } from './src/trends/run.js';
+import { weeklyTrendsReport } from './src/trends/report.js';
 import {
   publishTargets,
   targetsForKind,
@@ -1177,6 +1182,9 @@ async function publishNext(item = null) {
               // group by. See src/hooks/gems.js.
               hookText: cand.clip?.format ? cand.hook || null : cand.deck?.titleHe || cand.hook || null,
               hookCategory: cand.clip?.hookCategory || null,
+              // The trend format a slate post was built from, so src/trends/mix.js
+              // can credit its numbers to the format. Null for everything else.
+              trendFormat: cand.deck?.trendFormat || null,
               // THE VIDEO'S OWN LENGTH AND WHAT IT DID TO HOLD A VIEWER, recorded at
               // publish time because this is the only moment both halves exist. The
               // watch RATIO is the number the ranking turns on and it needs the
@@ -1491,14 +1499,31 @@ async function buildSlateFor(date) {
   const rows = JSON.parse(readFileSync(new URL('./destinations.json', import.meta.url), 'utf8')).destinations;
   const published = store.recentPublished();
 
+  // With the trend watcher on, each slot's format comes from src/trends/mix.js:
+  // 70% proven (our own types, weighted by their numbers), 30% new formats on
+  // trial. Off, the ordinary rotation picks the type, as it always has.
+  const tcfg = postConfig().trends;
+  const trends = tcfg.on ? trendsStore() : null;
+  if (trends) {
+    ensureOwnFormats(trends.data, postConfig().posts.types, { seedTrials: tcfg.seedTrials });
+    trends.save();
+  }
+  const pickType = trends
+    ? formatPicker(trends.data, { provenShare: tcfg.provenShare, recent: recentFormatPicks(slates, date), fallback: () => nextShape().type })
+    : () => nextShape().type;
+
   const { decks, failures } = await buildSlateDecks({
     count: slots.tiktok.length,
-    pickType: () => nextShape().type,
+    pickType,
     pickDest: (type, avoid) => pickDestination(avoid, { from: destinationsFor(type, rows) }),
-    buildOne: (dest, type) =>
+    buildOne: (dest, type, format) =>
       buildPost({
         dest,
         type,
+        // A trend format's own opening shape; an own type's format keeps the
+        // type's hook pool. Either way the metrics row learns which format it was.
+        hookOverride: format?.hook || null,
+        trendFormat: format?.formatId?.startsWith('trend:') ? format.formatId : null,
         alternatives: rows.filter((r) => r.country === dest.country && r.id !== dest.id && r.siteSlug).slice(0, 4),
         defaultHe: dest.he,
         regionHe: dest.country,
@@ -1525,6 +1550,8 @@ async function buildSlateFor(date) {
         // with publish.tiktok.via unset the post is the same inbox draft as before.
         cand: { ...d.cand, tiktokVia: 'zernio' },
         template: d.template,
+        formatId: d.formatId,
+        formatKind: d.formatKind,
         tiktokAt: it.tiktokAt,
         instagramAt: it.instagramAt,
       };
@@ -1620,6 +1647,58 @@ async function runSlate(now = Date.now()) {
     lastZernioResolve = now;
     resolveZernioPosts().catch((e) => console.error('zernio resolve:', e.message));
   }
+}
+
+// ---------------------------------------------------------------------------
+// The trend watcher (src/trends/): on its days it looks for formats that work;
+// after each metrics pass it scores our own posts by format, 72 hours on.
+//
+// ONE OBJECT FOR THE WHOLE PROCESS. The watcher holds the store for minutes while
+// it reads thumbnails, and the slate and the scoring write to it meanwhile; three
+// separate copies would each save over the others. They share this one.
+
+let trendsHandle = null;
+const trendsStore = () => (trendsHandle ??= openTrends());
+let trendsRunning = false;
+
+async function runTrends(now = Date.now()) {
+  const cfg = postConfig().trends;
+  if (!cfg.on || trendsRunning) return;
+  const t = trendsStore();
+  if (!watcherDue(cfg, { now, lastRunAt: t.data.runs?.at(-1)?.at || null })) return;
+  trendsRunning = true;
+  try {
+    ensureOwnFormats(t.data, postConfig().posts.types, { seedTrials: postConfig().trends.seedTrials });
+    const run = await runWatcher(cfg, { trends: t.data, now, onProgress: (x) => console.log(x) });
+    t.save();
+    await notify.send(bot.telegram, staging, describeRun(run, t.data)).catch(() => {});
+  } catch (e) {
+    // Logged as a run, so a failure waits for the next watcher day rather than
+    // retrying every minute.
+    console.error('trends run failed:', e.message);
+    t.data.runs = [...(t.data.runs || []), { at: new Date(now).toISOString(), error: e.message }].slice(-30);
+    t.save();
+  } finally {
+    trendsRunning = false;
+  }
+}
+
+/** Score posts 72 hours old by format, drop and promote, and say what changed. */
+function scoreTrends() {
+  const cfg = postConfig().trends;
+  if (!cfg.on) return;
+  const t = trendsStore();
+  ensureOwnFormats(t.data, postConfig().posts.types, { seedTrials: postConfig().trends.seedTrials });
+  const n = creditFormats(t.data, metricsRows(), { minAgeHours: cfg.scoreAfterHours });
+  const changes = judgeFormats(t.data, { dropAfter: cfg.dropAfter, minPosts: cfg.minPosts, windowDays: cfg.windowDays, lossBelow: cfg.lossBelow, restDays: cfg.restDays });
+  const started = promoteCardsToTrials(t.data, cfg);
+  t.save();
+  if (n) console.log(`trends: ${n} results credited`);
+  const lines = [
+    ...changes.map((c) => `${{ dropped: '🗑 ירד', promoted: '✅ הוכח', returned: '↩️ חזר' }[c.change]}: ${c.id} · ${c.why}`),
+    ...started.map((id) => `🧪 נכנס לניסיון: ${id}`),
+  ];
+  if (lines.length) notify.send(bot.telegram, staging, ['📈 פורמטים', ...lines].join('\n')).catch(() => {});
 }
 
 bot.action(/^sa:(\d{4}-\d{2}-\d{2})$/, async (ctx) => {
@@ -4348,6 +4427,7 @@ function tick() {
   // The daily slate has its own clock (src/slate/plan.js) and ignores RUN_HOUR:
   // its digest goes at slate.digestAt, its posts at their slot times.
   runSlate(now.getTime()).catch((e) => console.error('slate error:', e.message));
+  runTrends(now.getTime()).catch((e) => console.error('trends error:', e.message));
 
   // Gather through the day rather than once at RUN_HOUR.
   //
@@ -5103,7 +5183,9 @@ async function main() {
   setInterval(() => {
     collectMetrics()
       .then((got) => console.log(`metrics: ${describeCollection(got)}`))
-      .catch((e) => console.error('metrics error:', e.message));
+      .catch((e) => console.error('metrics error:', e.message))
+      .then(() => scoreTrends())
+      .catch((e) => console.error('trends scoring error:', e.message));
   }, Math.max(1, Number(process.env.METRICS_EVERY_HOURS || 6)) * 3_600_000);
 
   // THE WEEKLY REPORT, on a timer rather than a weekday, because a bot that has been
@@ -5114,6 +5196,8 @@ async function main() {
     setInterval(() => {
       try {
         notify.send(bot.telegram, staging, weeklyReport({ days: 7 })).catch(() => {});
+        // The formats' own week: top three by saves, trials, drops, the best post.
+        if (postConfig().trends.on) notify.send(bot.telegram, staging, weeklyTrendsReport(trendsStore().data, metricsRows())).catch(() => {});
       } catch (e) {
         console.error('metrics report error:', e.message);
       }

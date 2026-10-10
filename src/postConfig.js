@@ -214,6 +214,9 @@ export function postConfig() {
     // The day's slideshows, planned at once, approved with one tap, posted at set
     // times. See _slate_comment in post-config.json and src/slate/.
     slate: slateCfg(raw.slate || {}),
+    // The trend watcher: where it looks, how often, what it may spend, and the
+    // proven/new split. See _trends_comment in post-config.json and src/trends/.
+    trends: trendsCfg(raw.trends || {}),
     // English country name from the vision judge -> Hebrew, for the place
     // formats. Keyed on free text a model produced, which is why it is separate
     // from deck/flags.js and why a miss simply withdraws those formats.
@@ -1342,6 +1345,39 @@ function slateCfg(raw) {
     sameDeckGapMinutes: intIn(raw.sameDeckGapMinutes, 0, 600, 60),
     destinationRepeatDays: intIn(raw.destinationRepeatDays, 0, 60, 7),
     openingRepeatDays: intIn(raw.openingRepeatDays, 0, 90, 14),
+  };
+}
+
+/**
+ * The trend watcher.
+ *
+ * Off unless `on` is true. `days` are getDay() numbers (0 Sunday). Thresholds are
+ * clamped to sane ranges rather than trusted: a typo that set provenShare to 7 must
+ * not turn every slot into a trial.
+ */
+function trendsCfg(raw) {
+  const days = (Array.isArray(raw.days) ? raw.days : []).map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6);
+  const share = num(raw.provenShare, 0.7);
+  const views = raw.minViews || {};
+  return {
+    on: raw.on === true,
+    days: days.length ? [...new Set(days)].sort() : [0, 3],
+    hour: intIn(raw.hour, 0, 23, 9),
+    budgetUsd: Math.max(0, Math.min(15, num(raw.budgetUsd, 3))),
+    perRun: intIn(raw.perRun, 1, 40, 12),
+    windowDays: intIn(raw.windowDays, 3, 90, 30),
+    fallbackWindowDays: intIn(raw.fallbackWindowDays, 30, 730, 365),
+    minViews: { he: intIn(views.he, 0, 1e9, 1000), en: intIn(views.en, 0, 1e9, 20000) },
+    provenShare: share >= 0.5 && share <= 1 ? share : 0.7,
+    dropAfter: intIn(raw.dropAfter, 2, 10, 3),
+    lossBelow: num(raw.lossBelow, 0.7) > 0 && num(raw.lossBelow, 0.7) <= 1 ? num(raw.lossBelow, 0.7) : 0.7,
+    restDays: intIn(raw.restDays, 1, 90, 14),
+    minPosts: intIn(raw.minPosts, 1, 20, 3),
+    scoreAfterHours: intIn(raw.scoreAfterHours, 24, 240, 72),
+    maxTrials: intIn(raw.maxTrials, 1, 20, 6),
+    queries: { he: list(raw.queries?.he), en: list(raw.queries?.en) },
+    tiktokQueries: list(raw.tiktokQueries),
+    seedTrials: raw.seedTrials === undefined ? ['know', 'budget'] : list2(raw.seedTrials),
   };
 }
 

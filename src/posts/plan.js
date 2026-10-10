@@ -185,6 +185,18 @@ function collageFor(day) {
 }
 
 /**
+ * The summary slide's title: "N ימים ב<יעד>", unless the cover already said
+ * exactly that, which a trend format's cover can (src/trends/). The same title
+ * twice is the echo assertNoEcho refuses, and "לסיכום" is how the reference posts
+ * open their last slide anyway.
+ */
+export function summaryTitle(days, name, coverHe = null) {
+  const bare = (x) => String(x || '').replace(/[\p{P}\p{S}\s]+/gu, '');
+  const plain = `${days} ימים ב${name}`;
+  return bare(plain) === bare(coverHe) ? 'לסיכום' : plain;
+}
+
+/**
  * The summary slide, in the planner's voice.
  *
  * TWO OR THREE LINES AND A REAL QUESTION, which is how every one of the reference
@@ -197,7 +209,7 @@ function collageFor(day) {
  * the only part this pipeline writes, and it is written as a filled format rather
  * than composed, so it cannot become a sentence a model chose.
  */
-function summarySlide(city, { days, verdict, practical, image, questionHe = null }) {
+function summarySlide(city, { days, verdict, practical, image, questionHe = null, coverHe = null }) {
   const lines = [];
 
   // The sharpest drawback first, because the decision follows from it. Shortest
@@ -228,7 +240,7 @@ function summarySlide(city, { days, verdict, practical, image, questionHe = null
 
   return {
     look: 'sheet',
-    titleHe: line(`${days} ימים ב${city.name}`, { where: 'summary.title' }),
+    titleHe: line(summaryTitle(days, city.name, coverHe), { where: 'summary.title' }),
     lines,
     image,
   };
@@ -305,6 +317,7 @@ export function buildPlanPost(city, { look = 'route', hook, dest, days = null, q
     verdict,
     practical,
     questionHe,
+    coverHe,
     image: built.at(-1)?.stops?.find((p) => p.image?.src)?.image || null,
   });
 

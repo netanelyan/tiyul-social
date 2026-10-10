@@ -1,6 +1,7 @@
 import { postConfig } from '../postConfig.js';
 import { postShapeHistory } from '../store.js';
 import { pageSpecifics } from './deliver.js';
+import { hasSplitCost } from './budget.js';
 
 // The menu, and the rotation that keeps it from becoming a template.
 //
@@ -266,6 +267,11 @@ export function canBuild(type, city, { verdict = null } = {}) {
       if (postConfig().posts.deliver.on && got.length < floor) {
         return { ok: false, why: `the page carries ${got.length} kind(s) of concrete fact (${got.join(', ') || 'none'}), needs ${floor}` };
       }
+    }
+    // The budget post's one requirement: a split daily cost with the date it was
+    // checked, which the owner made the condition for printing prices at all.
+    if (need === 'cost' && !hasSplitCost(city)) {
+      return { ok: false, why: 'the page publishes no split daily cost with a checked date' };
     }
     if (need === 'cons') {
       // The drawbacks are the whole post. `cued` false means the verdict does not

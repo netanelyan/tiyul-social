@@ -19,6 +19,8 @@ import { buildVerdictPost } from './verdict.js';
 import { buildInsteadPost } from './instead.js';
 import { buildRollPost } from './roll.js';
 import { buildMapPost } from './mapPost.js';
+import { buildKnowPost } from './know.js';
+import { buildBudgetPost } from './budget.js';
 
 // One post, from a destination, through whichever of the five types the rotation
 // chose.
@@ -140,6 +142,10 @@ export async function buildPost({
   history = null,
   onProgress = null,
   rand = Math.random,
+  // A trend format brings its own opening shape ({ id, he } with {dest} and {n}).
+  // Absent, the type's own hook pool decides.
+  hookOverride = null,
+  trendFormat = null,
 } = {}) {
   const slug = dest?.siteSlug || dest?.id;
   const shape = nextShape({ type, look, frame, caption, history, rand });
@@ -167,7 +173,7 @@ export async function buildPost({
 
   // The hook shape, excluding whatever the last post of this type used: from the
   // store when no history is passed, which is every production call.
-  const hook = hookShape(shape.type, { rand, avoid: hooksToAvoid(shape.type, history) });
+  const hook = hookOverride?.he ? hookOverride : hookShape(shape.type, { rand, avoid: hooksToAvoid(shape.type, history) });
 
   // ONE DRAW of the question and the follow reason for the whole post, handed to the
   // slides and to both captions. Two draws would give a post whose closing slide asks
@@ -243,6 +249,9 @@ export async function buildPost({
     look: shape.look,
     frame: shape.frame,
     hook: hook.id,
+    // Which trend format this post was built from, if any, so its numbers can be
+    // credited to the format 72 hours later (src/trends/mix.js).
+    trendFormat: trendFormat || null,
     where: dest?.he || city.name,
     countryHe: dest?.country || city.country || null,
     slug,
@@ -387,6 +396,10 @@ function buildFor(type, city, { look, hook, dest, days, questionHe, alts, defaul
       return buildPlanPost(city, { look, hook, dest, days, questionHe });
     case 'list':
       return buildListPost(city, { hook, dest });
+    case 'know':
+      return buildKnowPost(city, { hook, dest });
+    case 'budget':
+      return buildBudgetPost(city, { hook, dest });
     case 'verdict':
       return buildVerdictPost(city, { hook, dest, questionHe });
     case 'instead':

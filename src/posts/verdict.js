@@ -406,7 +406,7 @@ export function coverPromise(consCount, practical) {
 // argues for at length: one Latin word in the middle of a Hebrew line reads as a
 // machine filling a field. "כ-1,630 CZK לאדם" is that word. A currency missing from
 // this table falls back to its code, which is better than no price at all.
-const CURRENCY_HE = {
+export const CURRENCY_HE = {
   EUR: 'יורו',
   USD: 'דולר',
   GBP: 'ליש״ט',

@@ -22,9 +22,11 @@ export const openingKey = (s) =>
 /**
  * `count` decks. Returns { decks: [{ cand, template }], failures: [why] }.
  *
- *   pickType()            the next post type (buildPost's own rotation)
+ *   pickType(prevType)    the next post type (buildPost's own rotation), or a
+ *                         format pick { type, hook, formatId, kind } from
+ *                         src/trends/mix.js pickFormat
  *   pickDest(type, avoid) a destination row not in `avoid`, or null
- *   buildOne(dest, type)  a built candidate (buildPost)
+ *   buildOne(dest, type, pick)  a built candidate (buildPost)
  *   recentPlaces          Hebrew place names inside the destination window
  *   recentOpenings        opening lines inside the opening window
  */
@@ -34,8 +36,11 @@ export async function buildSlateDecks({ count, pickType, pickDest, buildOne, rec
   const usedPlaces = new Set(recentPlaces);
   const usedOpenings = new Set(recentOpenings.map(openingKey));
 
+  let prevType = null;
   for (let i = 0; i < count; i++) {
-    const type = pickType();
+    const pick = pickType(prevType);
+    const type = typeof pick === 'string' ? pick : pick.type;
+    const format = typeof pick === 'string' ? null : pick;
     const tried = [];
     let built = null;
     for (let t = 0; t < tries && !built; t++) {
@@ -43,7 +48,7 @@ export async function buildSlateDecks({ count, pickType, pickDest, buildOne, rec
       if (!dest) break;
       tried.push(dest.he);
       try {
-        const cand = await buildOne(dest, type);
+        const cand = await buildOne(dest, type, format);
         const opening = openingKey(cand.headline);
         if (usedOpenings.has(opening)) {
           failures.push(`${dest.he}: הפתיח "${cand.headline}" כבר היה ב-14 הימים האחרונים`);
@@ -57,10 +62,11 @@ export async function buildSlateDecks({ count, pickType, pickDest, buildOne, rec
       }
     }
     if (built) {
-      decks.push({ cand: built, template: templateOf(built.deck) });
+      decks.push({ cand: built, template: templateOf(built.deck), formatId: format?.formatId || null, formatKind: format?.kind || null });
+      prevType = type;
       onProgress(`slate: ${decks.length}/${count} ${built.deck?.type} ${built.deck?.where}`);
     } else {
-      failures.push(`פוסט ${i + 1} (${type}): לא נבנה`);
+      failures.push(`פוסט ${i + 1} (${type}${format?.formatId ? `, ${format.formatId}` : ''}): לא נבנה`);
     }
   }
   return { decks, failures };

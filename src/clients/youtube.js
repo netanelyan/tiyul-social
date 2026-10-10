@@ -88,3 +88,81 @@ export async function channelStats(ids, { env = process.env } = {}) {
   }
   return out;
 }
+
+/**
+ * The most-viewed Shorts for a query in the last `days`, for the trend watcher.
+ *
+ * Ranked by views rather than relevance, in one language: Hebrew for the
+ * audience, English because a format that works for travel slideshows works
+ * across languages. The numbers come from videoStats, never from here.
+ */
+export async function searchTop(text, { env = process.env, now = Date.now(), lang = 'he', days = 30, max = 15, order = 'viewCount' } = {}) {
+  const params = new URLSearchParams({
+    part: 'snippet',
+    q: text,
+    type: 'video',
+    videoDuration: 'short',
+    order: order === 'relevance' ? 'relevance' : 'viewCount',
+    relevanceLanguage: lang,
+    maxResults: String(Math.min(50, Math.max(1, max))),
+    publishedAfter: new Date(now - days * 86_400_000).toISOString(),
+    key: key(env),
+  });
+  if (lang === 'he') params.set('regionCode', 'IL');
+  const body = await getJson(`${BASE}/search?${params}`);
+  return (body?.items || [])
+    .filter((i) => i.id?.videoId)
+    .map((i) => ({
+      id: i.id.videoId,
+      url: `https://www.youtube.com/shorts/${i.id.videoId}`,
+      title: cleanText(i.snippet?.title),
+      description: cleanText(i.snippet?.description),
+      channelTitle: cleanText(i.snippet?.channelTitle),
+      publishedAt: i.snippet?.publishedAt || null,
+      thumb: i.snippet?.thumbnails?.high?.url || i.snippet?.thumbnails?.default?.url || null,
+    }));
+}
+
+/**
+ * videoId -> the video's own title, description, cover, upload time and numbers.
+ * For ids found some other way than search (Brave): videos.list is 1 unit per 50
+ * ids from the general quota, not from search's 100 a day.
+ */
+export async function videoDetails(ids, { env = process.env } = {}) {
+  const want = [...new Set(ids.filter(Boolean))];
+  const out = new Map();
+  for (let at = 0; at < want.length; at += 50) {
+    const params = new URLSearchParams({ part: 'snippet,statistics', id: want.slice(at, at + 50).join(','), key: key(env) });
+    const body = await getJson(`${BASE}/videos?${params}`);
+    for (const v of body?.items || []) {
+      const num = (x) => (x == null ? null : Number(x));
+      out.set(v.id, {
+        id: v.id,
+        url: `https://www.youtube.com/shorts/${v.id}`,
+        title: cleanText(v.snippet?.title),
+        description: cleanText(v.snippet?.description),
+        publishedAt: v.snippet?.publishedAt || null,
+        thumb: v.snippet?.thumbnails?.high?.url || v.snippet?.thumbnails?.default?.url || null,
+        views: num(v.statistics?.viewCount),
+        likes: num(v.statistics?.likeCount),
+        comments: num(v.statistics?.commentCount),
+      });
+    }
+  }
+  return out;
+}
+
+/** videoId -> { views, likes, comments }, as YouTube publishes them. 50 ids a unit. */
+export async function videoStats(ids, { env = process.env } = {}) {
+  const want = [...new Set(ids.filter(Boolean))];
+  const out = new Map();
+  for (let at = 0; at < want.length; at += 50) {
+    const params = new URLSearchParams({ part: 'statistics', id: want.slice(at, at + 50).join(','), key: key(env) });
+    const body = await getJson(`${BASE}/videos?${params}`);
+    for (const v of body?.items || []) {
+      const num = (x) => (x == null ? null : Number(x));
+      out.set(v.id, { views: num(v.statistics?.viewCount), likes: num(v.statistics?.likeCount), comments: num(v.statistics?.commentCount) });
+    }
+  }
+  return out;
+}

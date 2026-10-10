@@ -8340,11 +8340,16 @@ const { pickDestination } = await import('../src/plan/write.js');
 
 // EVERY POST TYPE CAN ACTUALLY BE DRAWN. A type with weight 0, or one the look table
 // has no entry for, is configured and unreachable - the rotation would never produce it
-// and nothing would say so.
+// and nothing would say so. The one sanctioned zero: a type the trend watcher's
+// format mix seeds as a trial (trends.seedTrials: know, budget), which reaches the
+// slate through src/trends/mix.js rather than through this draw.
 {
   const cfg = postConfig().posts;
+  const seeded = postConfig().trends.seedTrials;
+  const drawn = cfg.types.filter((t) => !seeded.includes(t.id));
   for (const t of cfg.types) {
-    ok(`${t.id} has a weight the rotation can draw`, Number(t.weight) > 0, String(t.weight));
+    if (seeded.includes(t.id)) ok(`${t.id} is reached through the format mix, as a seeded trial`, Number(t.weight) === 0, String(t.weight));
+    else ok(`${t.id} has a weight the rotation can draw`, Number(t.weight) > 0, String(t.weight));
     ok(
       `${t.id} has at least one look`,
       cfg.looks.some((l) => (l.types || []).includes(t.id)),
@@ -8356,7 +8361,7 @@ const { pickDestination } = await import('../src/plan/write.js');
   // And the draw really reaches all of them rather than merely being allowed to.
   const seen = new Set();
   for (let i = 0; i < 4000; i++) seen.add(pickType({ history: [] }).id);
-  for (const t of cfg.types) ok(`${t.id} comes up in the rotation`, seen.has(t.id), [...seen].join(', '));
+  for (const t of drawn) ok(`${t.id} comes up in the rotation`, seen.has(t.id), [...seen].join(', '));
 }
 
 // DIFFERENT TOPICS EACH TIME, which is a property of what the picker is TOLD rather
@@ -8797,7 +8802,7 @@ group('the format rotation - half the output, and never three in a row');
   }
   const share = tally.verdict / 2000;
   ok('the lead slideshow type exceeds the 33% the global memory would cap it at, up to the half memory 1 allows', share > 0.4 && share <= 0.5, share.toFixed(3));
-  ok('and every other type still appears', types.every((t) => tally[t.id] > 0), JSON.stringify(tally));
+  ok('and every other drawn type still appears', types.filter((t) => Number(t.weight) > 0).every((t) => tally[t.id] > 0), JSON.stringify(tally));
 }
 
 /* -------------------------------------------------------------------------- */
@@ -10086,6 +10091,19 @@ group('the growth desk - it prepares, it never sends');
 {
   const { growthSelftest } = await import('../src/growth/selftest.js');
   await growthSelftest({ ok, eq });
+}
+
+/* -------------------------------------------------------------------------- */
+group('the trend watcher - the format, never the content, and our own numbers decide');
+
+// Beside the code it holds to the brief, like the growth desk's.
+{
+  const { trendsSelftest } = await import('../src/trends/selftest.js');
+  await trendsSelftest({ ok, eq });
+  const botSrc4 = readFileSync(new URL('../bot.js', import.meta.url), 'utf8');
+  ok('the watcher is asked every minute, and decides for itself whether it is due', botSrc4.includes('runTrends(now.getTime())'));
+  ok('scoring runs after every metrics pass', botSrc4.includes('.then(() => scoreTrends())'));
+  ok('the slate, the watcher and the scoring share one store object', botSrc4.split('openTrends(').length === 2);
 }
 
 /* -------------------------------------------------------------------------- */

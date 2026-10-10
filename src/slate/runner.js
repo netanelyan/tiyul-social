@@ -70,3 +70,16 @@ export function digestTimeFor(date, cfg) {
   for (let i = 0; i < 4 * 24 && inShabbat(at); i++) at = new Date(at.getTime() + 15 * 60_000);
   return at;
 }
+
+/**
+ * The format picks ({ kind, formatId }) of the slates before `date` within
+ * `days`, oldest first, for the 70/30 split and the trials' turns. Skipped items count too: the split is about what was
+ * offered, and the owner skipping a trial should not make the next slate offer two.
+ */
+export function recentFormatPicks(slates, date, days = 14) {
+  const from = dateMinus(date, days);
+  return slates
+    .filter((s) => s.date < date && s.date >= from)
+    .sort((a, b) => (a.date < b.date ? -1 : 1))
+    .flatMap((s) => s.items.filter((it) => it.formatKind).map((it) => ({ kind: it.formatKind, formatId: it.formatId || null })));
+}

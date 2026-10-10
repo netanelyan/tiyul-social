@@ -276,10 +276,12 @@ end   שמרו לפני שמזמינים 🔖
 `/before רומא` names the place, `npm run before-lab -- rome paris` builds them locally
 without touching the store, and `before_video` is in `formats.mix` at weight 30.
 
-### The five post types
+### The post types
 
 Each is built from a tiyulplus.com destination page, so every fact on it is ours
-to stand behind.
+to stand behind. Five are drawn by the rotation; the last two have weight 0 and
+reach the daily slate through the trend watcher's format mix, as trials that
+have to earn their place (see "The trend watcher" below).
 
 | | Hook shape | What it is |
 |---|---|---|
@@ -288,6 +290,8 @@ to stand behind.
 | **instead** | `תפסיקו לטוס רק ל{default} כשיש את {alt}` | The Israeli default against three to five site destinations in the same region, each with a real reason quoted from its own page. |
 | **verdict** | `{dest}: שווה או לא?` | What is good, then the page's own drawbacks quoted verbatim, then who it is for, then the best three places. Refuses to build when the page names no drawbacks. |
 | **map** | `מפת {dest}: כל המקומות מהמסלול` | Numbered pins at the itinerary's real coordinates, coloured by day, with a scale bar. |
+| **know** | `{n} דברים שכדאי לדעת לפני {dest}` | The broad listicle: four to seven of the page's own practical facts, one per slide (the flight, getting around, when to go, what to book ahead, what a day costs). A page with fewer than four throws rather than pad the count the cover promises. |
+| **budget** | `כמה עולה יום ב{dest}?` | The page's split daily cost in its own currency, without flights or lodging, then the budget and comfort tiers, free entry, what to book ahead. The date the figures were checked is on the cover, the owner's condition for printing prices at all. |
 
 **Four looks**, never two inside one post: `route` (stops down a dotted line with
 the real walking distance between them), `notes` (the iPhone Notes checklist, which
@@ -845,7 +849,138 @@ slide and the caption both fall back to pointing at the bio. `plans.giveaway.on`
 still works and is now `false`. See [`DEPLOY.md`](DEPLOY.md) for the Meta setup,
 including the one question about Advanced Access that is not settled.
 
+## One tap a day: the daily slate
+
+Volume is TikTok 2 a day in the first week and 3 after, Instagram 1 to 2, and the
+owner's whole job is one tap. `src/slate/` plans the day at once:
+
+- **At `slate.digestAt` (08:00 Israel)** the day's slideshows are built (the same
+  `buildPost` every post uses) and sent to Telegram as one message: the covers,
+  one line per post with its time, **✅ אשר הכל** and a skip per post. The admin
+  site shows the same slate with the same two buttons, through the same function.
+- **Nothing posts without that tap.** `slate.autoApprove` exists and is off. An
+  unapproved item expires at midnight; it never goes out late.
+- **Times are configured, not drawn**: `slate.slots` per platform, inside the
+  posting windows and outside Shabbat (`src/schedule.js` holds both). Friday and
+  Saturday have their own slots (`slotsByDay`): Friday before 15:00, Saturday
+  after Shabbat ends, so both still count as posting days.
+- **The spacing rules**: the same deck never goes to both platforms within an
+  hour (`sameDeckGapMinutes`); no two consecutive posts on a platform share a
+  template; no destination twice in seven days, no opening line twice in
+  fourteen.
+- **The ramp**: the first `rampDays` (7) after the first slate post carry
+  `rampTiktokPerDay` (2) TikTok posts, then every TikTok slot is used.
+
+While the slate is on, the ordinary format rotation builds no slideshows of its
+own; videos keep their per-item approval.
+
+### Public TikTok posts, through Zernio
+
+The slate's TikTok posts leave through [Zernio](https://zernio.com) (Late, renamed),
+which is free for one TikTok and one Instagram account and can publish photo
+carousels publicly with TikTok's own auto music. `src/publish/tiktokRoute.js`
+decides per post:
+
+- **Only a slate post goes through Zernio**, and only with `publish.tiktok.via:
+  "zernio"`. Everything else stays the inbox draft described below.
+- **Privacy is `SELF_ONLY` unless set otherwise**: an unset or unknown value in
+  post-config is never public.
+- **Caps**: `publish.tiktok.dailyCap` (3), under Zernio's 15 photo posts a day
+  and TikTok's own limit. A cap or a platform limit makes the post wait; it is not
+  a failure and makes no draft.
+- **Any other Zernio failure falls back to the inbox draft**, with a note saying
+  so, so a bad day at the service still leaves the post one tap from live.
+- Zernio fetches the slides by URL and has no upload endpoint, so a slate post
+  can only leave from where the card host serves files (the VPS).
+
+`npm run zernio-test -- private` builds one real post and publishes it
+`SELF_ONLY` with music; `prepare-public` builds one and stops; `publish-public
+<id>` posts that one publicly, and running it with that id is the owner's
+approval. The slate stays off until both have been seen.
+
+**Measuring TikTok**: the app now asks for `video.list`, which has to be enabled
+in the developer portal before `npm run tiktok-token` is run again. TikTok
+publishes views, likes, comments and shares, and **no save count**, so nothing
+here ever ranks TikTok by saves.
+
+## The trend watcher
+
+`src/trends/` looks for slideshow formats that are working right now, keeps
+their shape and none of their content, fills them only from our own pages, and
+lets our own numbers decide which stay. Off until `trends.on`; twice a week
+(`trends.days`) from the bot, or once by hand with `npm run trends`.
+
+**Where it looks.** YouTube carries the signal, with real numbers: Shorts from
+the last 30 days in Hebrew and English, on queries aimed at the formats our
+builders can fill, searched by relevance and kept only above a view floor
+(`minViews`: 1,000 Hebrew, 20,000 English). Ordered by views instead, "3 days
+in" returned a game, a phone advert and a fidget toy. TikTok through Brave is a
+weak signal with no numbers and is labelled that way; nothing invents a figure
+for it. YouTube search's 100 a day is shared with the growth desk, and on a day
+it runs out Brave finds the videos and YouTube still gives the numbers, inside a
+wider window (`fallbackWindowDays`, because Brave's index is months old), with
+each card showing its source's upload date.
+
+**The format, never the content.** The vision model gets the thumbnail and the
+title and returns a Hebrew hook shape with `{dest}` and `{n}`, a topic, a look,
+a slide order and a caption style. The image lives for one request and is never
+written anywhere. A card is refused if any field repeats three words of the
+source, or the hook carries a number or a Latin word (a name). A card keeps the
+source's link and numbers, for the report, and nothing else of it.
+
+**The cover has to promise what the builder delivers.** Our builders are fixed:
+a know post is practical facts, a plan is a day per slide. So a format is
+dropped, with the reason kept, when:
+
+- its topic has no builder (hidden gems: the site does not mark what is "less
+  known", and the Roman Forum would end up a hidden gem; mistakes; don'ts)
+- its hook needs something the builder cannot fill (`{n}` on a budget post)
+- its hook does not promise that builder's content ("day {n} in X" is one day; a
+  plan is several), or ties itself to a moment ("this season", "new") no page
+  backs
+- the voice rules refuse it (filler, a first-person experience, an em dash)
+- a second, text-only look says it over-promises (an audience, an activity, the
+  cost of flights) or does not fill into natural Hebrew
+
+`npm run trends -- --recheck` judges the kept cards again when a rule tightens,
+without paying to look at the sources again.
+
+**What the first real runs found** (10 Oct 2026): of 24 winners looked at, about
+four survive as formats we can fill honestly. Most viral travel Shorts are food,
+a moment, news or "the place nobody talks about", and those are dropped. The ones
+that stayed: `{n} מקומות שחובה לבקר ב{dest}` (670K views), `האם {dest} שווה את
+ההייפ?` (668K), `{n} המקומות הכי יפים שכדאי לבקר ב{dest}` (153K), `{days} ימים
+ב{dest}` (57K).
+
+**Our own numbers decide.** A post is scored 72 hours after it went out, per
+platform against that platform's own median: TikTok by (shares + likes) per
+view, Instagram by (saves + shares) per view. 70% of slate slots go to proven
+formats (our own types, weighted by their configured weight times their
+numbers), 30% to trials, which take turns. A trial with 3 results at or above
+the median becomes proven; any format under 70% of the median 3 times in a row
+drops out (`lossBelow`, `dropAfter`: "under the median" would retire an average
+format inside a month). A found format stays dropped; one of our own types rests
+14 days and returns as a trial. At least two proven formats always stay.
+
+**Weekly**, beside the metrics report: the top three formats by Instagram saves
+(TikTok's shares and likes shown beside them and labelled as such), the trials,
+what dropped and why, and the week's best post with its numbers.
+
+**Cost**: its own monthly cap, `trends.budgetUsd` ($3), on the growth desk's
+ledger code but in its own file (`data/trends.json`). A run looks at up to 12
+winners for about $0.10 of vision calls; YouTube costs nothing.
+
+```bash
+npm run trends                                   # one run, then the cards with sources
+npm run trends -- --build 3                      # and 3 posts from the new formats, 9:16 and 4:5
+npm run trends -- --build 1 --format trend:<id> --dest phuket
+npm run trends -- --store out/trends-demo/trends.json   # anywhere but the bot's own file
+```
+
 ## Why TikTok posts are drafts
+
+Everything outside the daily slate still goes this way; the slate's posts go
+out publicly through Zernio, above.
 
 TikTok's photo API has no field for a sound. `auto_add_music` is a boolean, on,
 and TikTok picks a track you never see; off, and the post is silent, which costs
@@ -984,6 +1119,14 @@ message says when the slot frees.
 | `src/render/postSlides.js` | the looks: label, sheet, route card, notes checklist, collage, pin map |
 | `src/render/post.js` | the five types to files, with Instagram's ten-image limit enforced where it can still be acted on |
 | `src/metrics/` | what a post did, ranked on saves and shares per view, and why TikTok cannot answer |
+| `src/slate/` | the daily slate: slots, spacing, the digest, one approval, expiry |
+| `src/publish/zernio.js` | public TikTok photo posts through Zernio, with music, and what each failure means |
+| `src/publish/tiktokRoute.js` | Zernio for slate posts, the inbox draft for everything else, the cap and the fallback |
+| `src/trends/` | the trend watcher: find, extract the format, map to a builder, score, 70/30, the weekly report |
+| `src/clients/` | the outside APIs the growth desk and the watcher share, with the allowlist and the monthly ledger |
+| `src/posts/know.js`, `src/posts/budget.js` | the know-before listicle and the day's cost, from the page alone |
+| `scripts/zernio-test.js` | the private test post and the hand-approved public one |
+| `scripts/trends-run.js` | one watcher run by hand, the cards with sources, and posts built from them |
 | `scripts/post-lab.js` | build and render one post of any type without going near Telegram |
 | `src/urlLike.js` | the link pattern, where three import chains can all reach it |
 | `src/dashes.js` | the em dash ban, and the one function every writer runs on model output |

@@ -2317,6 +2317,28 @@
           "tiktok"
         ],
         "desc": "Owner-supplied reference: a serif headline over one stunning photograph, then a run of beautiful photographs with NO text on them, and one CTA mid-roll or at the end. The only format here that asks the viewer to look rather than to read, and the cheapest to build - it is the Commons photo ladder with the captions taken off. TIKTOK ONLY, AND IT WAS FAILING BEFORE THIS LINE EXISTED: the builder makes up to 14 slides including the closing ones, Instagram's carousel takes 10, and the roll was declared for both. The live log is full of `a roll is 14 slides and an Instagram carousel takes 10 - this type should not be routed to Instagram`, which is the render refusing to build and a post slot producing nothing. Same reason the list type is TikTok only: there is no honest nine-slide version of a format whose whole shape is the run."
+      },
+      {
+        "id": "know",
+        "he": "לפני שנוסעים",
+        "weight": 0,
+        "slidesMin": 5,
+        "slidesMax": 8,
+        "needs": [
+          "specifics"
+        ],
+        "desc": "ADDED 10 Oct 2026 for the trend watcher: the broad listicle that works across languages, '{n} דברים שכדאי לדעת לפני {dest}'. One practical fact per slide, all the page's own and quoted: the flight, getting around, when to go, what to book ahead, what a day costs. Weight 0, so the ordinary rotation never draws it; with the trend watcher on it starts as a trial in the slate's format mix (trends.seedTrials) and stays by its numbers (src/trends/mix.js). See src/posts/know.js."
+      },
+      {
+        "id": "budget",
+        "he": "כמה עולה",
+        "weight": 0,
+        "slidesMin": 3,
+        "slidesMax": 6,
+        "needs": [
+          "cost"
+        ],
+        "desc": "ADDED 10 Oct 2026 for the trend watcher: 'כמה עולה יום ב{dest}', from the page's split daily cost in its local currency, with the date it was checked on the cover - the owner's condition for printing prices. Then the budget and comfort tiers, what is free to walk into, what to book ahead. Weight 0 for the same reason as know. See src/posts/budget.js."
       }
     ],
     "_looks_comment": [
@@ -2357,7 +2379,9 @@
           "list",
           "instead",
           "verdict",
-          "map"
+          "map",
+          "know",
+          "budget"
         ],
         "desc": "TikTok's native text tool: large white type with a dark outline over a full-bleed photograph. What @teonakan's 108K-like post is, and it is nothing more than that."
       },
@@ -2367,7 +2391,9 @@
         "weight": 1,
         "types": [
           "verdict",
-          "instead"
+          "instead",
+          "know",
+          "budget"
         ],
         "desc": "White rounded label boxes over a darkened photograph, the other shape TikTok's own text tool makes. For a slide carrying two or three quoted lines, where an outline alone would not separate them."
       },
@@ -2536,6 +2562,28 @@
           "he": "{dest} ב-{n} תמונות",
           "weight": 2,
           "desc": "Counted and flatter. For a destination with no itinerary length to quote."
+        }
+      ],
+      "know": [
+        {
+          "id": "knowbefore",
+          "he": "{n} דברים שכדאי לדעת לפני {dest}",
+          "weight": 2,
+          "desc": "The broad listicle the owner pointed at (250K+ views on the examples). A trend format brings its own opening shape instead when it has one."
+        },
+        {
+          "id": "beforeyougo",
+          "he": "טסים ל{dest}? {n} דברים לפני",
+          "weight": 1,
+          "desc": "The same promise as a question to the person about to book."
+        }
+      ],
+      "budget": [
+        {
+          "id": "dayprice",
+          "he": "כמה עולה יום ב{dest}?",
+          "weight": 2,
+          "desc": "The question the format answers, with the page's checked date on the cover."
         }
       ],
       "_shared_comment": [
@@ -3101,5 +3149,63 @@
     "sameDeckGapMinutes": 60,
     "destinationRepeatDays": 7,
     "openingRepeatDays": 14
+  },
+  "_trends_comment": [
+    "THE TREND WATCHER: formats that work right now, and our own numbers on each.",
+    "On `days` (getDay(), 0 Sunday) at `hour` Israel time it looks for winning",
+    "travel slideshows from the last `windowDays`, in Hebrew and English. YouTube",
+    "carries the signal, with real views (at least `minViews` per language). TikTok",
+    "through Brave is a weak signal with no numbers, and is labelled that way.",
+    "On a day YouTube search's 100 a day is used up (it is shared with the growth",
+    "desk), Brave finds the videos and YouTube still gives the numbers, inside",
+    "`fallbackWindowDays`: Brave's index is months old, so the evidence is older,",
+    "and every card shows its source's upload date.",
+    "The `queries` aim at the five formats our builders can fill (know before,",
+    "N days, a day's cost, places to see, worth it or not): generic travel searches",
+    "return food clips, news and \"hidden gems\", which are all dropped.",
+    "",
+    "From each winner the vision model takes the FORMAT only: a Hebrew hook shape",
+    "with {dest} and {n}, a topic, a look, a slide order. A card that repeats three",
+    "words of the source, or carries a number or a Latin name in its hook, is",
+    "refused, and no image is ever kept. A format is filled with site data only;",
+    "one that needs facts we do not have is dropped, with the reason in the report.",
+    "",
+    "Scoring, `scoreAfterHours` after a post: TikTok by (shares + likes) per view,",
+    "Instagram by (saves + shares) per view, each against its own platform's median.",
+    "TikTok publishes no save count and none is made up. `provenShare` of slate",
+    "slots go to proven formats, the rest to new ones (at most `maxTrials` at once).",
+    "A trial with `minPosts` results at or above the median becomes proven; any",
+    "format under `lossBelow` of the median `dropAfter` times in a row drops out",
+    "(not \"under the median\": an average format is, half the time). One of our own",
+    "types comes back as a trial after `restDays`; a found format stays dropped.",
+    "`seedTrials` are our own weight-0 types that start as trials: the broad",
+    "listicle (know) and the day's cost (budget).",
+    "",
+    "`budgetUsd` is the watcher's own monthly cap (the vision calls and Brave), kept",
+    "in data/trends.json apart from the growth desk's. YouTube costs nothing.",
+    "OFF until the owner turns it on; `npm run trends` runs it once by hand."
+  ],
+  "trends": {
+    "on": false,
+    "days": [0, 3],
+    "hour": 9,
+    "budgetUsd": 3,
+    "perRun": 12,
+    "windowDays": 30,
+    "fallbackWindowDays": 365,
+    "minViews": { "he": 1000, "en": 20000 },
+    "provenShare": 0.7,
+    "dropAfter": 3,
+    "lossBelow": 0.7,
+    "restDays": 14,
+    "minPosts": 3,
+    "scoreAfterHours": 72,
+    "maxTrials": 6,
+    "seedTrials": ["know", "budget"],
+    "queries": {
+      "he": ["דברים שחשוב לדעת לפני טיול", "מסלול 3 ימים באירופה", "כמה עולה יום בחופשה", "מקומות שחייבים לראות באירופה", "שווה לטוס ל"],
+      "en": ["things to know before traveling to", "3 day itinerary europe", "how much does a day cost in europe", "places you must visit in europe", "is it worth visiting europe"]
+    },
+    "tiktokQueries": ["טיפים לטיול", "travel tips slideshow"]
   }
 }
