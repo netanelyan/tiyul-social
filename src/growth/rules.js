@@ -257,6 +257,31 @@ export function candidates(state, column, settings, now = Date.now()) {
 }
 
 /**
+ * The agencies the desk would message next, `caps.agency` of them, best first,
+ * as leads: what the column takes once the pause in Settings is lifted. While it
+ * is on, the desk makes these ready (prepare/index.js) so their routes can be
+ * seen to pass first (the owner, 2026-10-11).
+ */
+export function nextInLine(state, settings, now = Date.now()) {
+  return candidates(state, 'agency', { ...settings, agencyPaused: false }, now)
+    .filter((k) => k.endsWith(':message'))
+    .slice(0, Math.max(0, Number(settings.caps?.agency) || 0))
+    .map((k) => state.leads[parseItem(k).leadId])
+    .filter(Boolean);
+}
+
+/** Where an agency in line stands on its route, in a few words; `ready` when its route passed both checks. */
+export function lineState(lead) {
+  const c = lead.routeCheck;
+  if (!lead.profile && !lead.example) return { ready: false, words: 'site not read yet' };
+  if (!lead.example) return { ready: false, words: 'no example' };
+  if (!c) return { ready: false, words: 'route not checked yet' };
+  if (c.status === 'pass') return { ready: true, words: `route passed (${lead.example.he || lead.example.slug})` };
+  if (c.status === 'error') return { ready: false, words: /quota/i.test(c.error || '') ? 'check waits for Google\'s daily limit (10:00)' : 'check could not run yet' };
+  return { ready: false, words: `route failed (${c.issues?.length || 0} issues)` };
+}
+
+/**
  * Today's items, within the caps, stable for the day.
  *
  * Once an item is on today's list it stays on it, done or not, and it keeps

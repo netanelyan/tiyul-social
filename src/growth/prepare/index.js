@@ -5,7 +5,7 @@ import { fillVideoContext } from '../find/videoContext.js';
 import { BudgetError, guard, marginal, record } from '../../clients/budget.js';
 import { claudeConfigured } from '../claude.js';
 import { itineraryPath } from '../links.js';
-import { ilDate, itemDone, parseItem, pickToday } from '../rules.js';
+import { ilDate, itemDone, nextInLine, parseItem, pickToday } from '../rules.js';
 import { chooseExample, extractProfile, readAgencySite } from './agencyProfile.js';
 import { draftItem } from './draft.js';
 import { targetFor } from './compose.js';
@@ -106,6 +106,7 @@ async function doPrepare({ store, settings, now = Date.now(), deps = DEFAULT_DEP
 
   try {
     await refreshSent({ state, settings, now, deps, env, report, city });
+    if (settings.agencyPaused) await readyNext({ state, settings, now, deps, env, report, city, canDraft });
   } catch (e) {
     if (!(e instanceof BudgetError)) throw e;
     report.stopped = 'budget';
@@ -194,6 +195,37 @@ async function doPrepare({ store, settings, now = Date.now(), deps = DEFAULT_DEP
  * site when they sell a city we cover, and the drafts.
  */
 async function prepareAgency({ state, settings, lead, now, deps, env, report, city, canDraft }) {
+  const { ex, c } = await readyAgency({ state, settings, lead, now, deps, env, city, canDraft });
+  // THE ROUTE IS CHECKED BEFORE IT GOES PUBLIC, and only a route that passed is
+  // published (the owner's rule of 2026-10-11).
+  if (ex?.kind === 'route' && lead.routeCheck?.status === 'pass') lead.trip = await publishWithin({ state, settings, lead, now, deps, env, report });
+  await linkUp({ state, lead, what: 'message', deps, env, now });
+  if (!lead.socials?.length && !lead.socialsLooked && braveConfigured(env)) await findSocials({ state, settings, lead, now, deps, env });
+  // No message is written for a route that has not passed: it could not be sent.
+  if (ex && lead.routeCheck?.status !== 'pass') return;
+  if (!lead.drafts?.message?.variants?.length && canDraft && ex) {
+    lead.drafts = {
+      ...lead.drafts,
+      message: await deps.draftItem('agency', {
+        state,
+        settings,
+        lead,
+        site: siteContext(c, { maxPlaces: 8 }),
+        extra: { route: ex.kind === 'route' ? lead.route : null, exampleHe: ex.he },
+        examples: examplesFor(state, 'agency'),
+      }),
+    };
+    report.drafted++;
+  }
+}
+
+/**
+ * An agency made ready to be messaged, short of anything that goes out: its
+ * site read, its example chosen, and its route built and checked (built from
+ * the site's itinerary and rebuilt around any stop Google says is closed,
+ * sampleRoute.js). Returns { ex, c }.
+ */
+async function readyAgency({ state, settings, lead, now, deps, env, city, canDraft }) {
   if (!lead.profile && canDraft) {
     let site = { text: '' };
     try {
@@ -218,33 +250,33 @@ async function prepareAgency({ state, settings, lead, now, deps, env, report, ci
     // An agency drafted before this read had a rotation page; the route replaces it.
     delete lead.agencyDest;
     c = await city(ex.slug);
-    // THE ROUTE IS CHECKED BEFORE IT GOES PUBLIC, and only a route that passed is
-    // published (the owner's rule of 2026-10-11). It is built from the site's
-    // itinerary and rebuilt around any stop Google says is closed (sampleRoute.js).
     if (c) Object.assign(lead, await readyRouteFor(c, { lead, state, settings, env, now, deps }));
-    if (lead.routeCheck?.status === 'pass') lead.trip = await publishWithin({ state, settings, lead, now, deps, env, report });
   } else if (ex?.kind === 'page') {
     // A page already sent: the agency has that link, and it stays what it is.
     lead.agencyDest = { slug: ex.slug, he: ex.he, path: ex.path };
     c = await city(ex.slug);
   }
-  await linkUp({ state, lead, what: 'message', deps, env, now });
-  if (!lead.socials?.length && !lead.socialsLooked && braveConfigured(env)) await findSocials({ state, settings, lead, now, deps, env });
-  // No message is written for a route that has not passed: it could not be sent.
-  if (ex && lead.routeCheck?.status !== 'pass') return;
-  if (!lead.drafts?.message?.variants?.length && canDraft && ex) {
-    lead.drafts = {
-      ...lead.drafts,
-      message: await deps.draftItem('agency', {
-        state,
-        settings,
-        lead,
-        site: siteContext(c, { maxPlaces: 8 }),
-        extra: { route: ex.kind === 'route' ? lead.route : null, exampleHe: ex.he },
-        examples: examplesFor(state, 'agency'),
-      }),
-    };
-    report.drafted++;
+  return { ex, c };
+}
+
+/**
+ * While new agency messages are paused (Settings), the next agencies in line
+ * are made ready: site read, route built and checked on Google, nothing
+ * published, drafted or put on Today. The owner unpauses once their routes pass
+ * (2026-10-11), and the desk then picks them with these same routes. One that
+ * still fails after the rebuild is set aside, as on Today, and the next agency
+ * moves into line.
+ */
+async function readyNext({ state, settings, now, deps, env, report, city, canDraft }) {
+  for (const lead of nextInLine(state, settings, now)) {
+    try {
+      await readyAgency({ state, settings, lead, now, deps, env, city, canDraft });
+      delete lead.readyError;
+      if (lead.routeCheck?.status === 'fail' && setAside(state, lead, null, settings, now)) report.setAside = (report.setAside || 0) + 1;
+    } catch (e) {
+      if (e instanceof BudgetError) throw e;
+      lead.readyError = e.message;
+    }
   }
 }
 

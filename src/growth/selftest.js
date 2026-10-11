@@ -35,7 +35,7 @@ import { destinationSupported, matchPlaces, postDestination, resolveDestination 
 import { checkTemplate, fill, readTemplates } from './prepare/templates.js';
 import { ga4Missing, jwtFor } from './report/ga4.js';
 import { byChannel } from './report/stats.js';
-import { applyAction, awaitingOutcome, blockedBy, closeSilent, dmReady, followupDue, ilDate, leadKeys, parseItem, pickToday, RuleError } from './rules.js';
+import { applyAction, awaitingOutcome, blockedBy, closeSilent, dmReady, followupDue, ilDate, leadKeys, lineState, nextInLine, parseItem, pickToday, RuleError } from './rules.js';
 import { emptyState, migrate, openStore } from './store.js';
 import { main } from './main.js';
 import { authConfig, makeSession, sessionOk, startProblem } from './web/auth.js';
@@ -1274,6 +1274,61 @@ export async function growthSelftest({ ok, eq }) {
     await prepareToday({ store: pageStore, settings: { ...S, caps: { ...S.caps, agency: 1 } }, now: NOW, deps, env: {} });
     const pg = pageStore.data.leads['ag:place7'];
     ok('a page example is chosen again, as a route built from the itinerary', pg.example.kind === 'route' && pg.example.fallback && !pg.agencyDest && pg.route?.builder === BUILDER, JSON.stringify(pg.example));
+  }
+
+  /* ---------------------------------------------------------- paused: the next agencies in line made ready (owner, 2026-10-11) */
+
+  {
+    const store = memStore();
+    store.data.site = { options: OPTIONS, itineraries: [{ slug: 'athens', days: 5 }] };
+    for (const [n, score] of [[41, 90], [42, 85], [43, 80], [44, 75]]) store.data.leads[`ag:place${n}`] = agency(n, { score });
+    const published = [];
+    let drafted = 0;
+    let reads = 0;
+    const failing = new Set();
+    const deps = {
+      cityFor: async () => CITY,
+      draftItem: async () => (drafted++, { variants: [] }),
+      fillVideoContext: async () => 0,
+      readAgencySite: async () => (reads++, { text: 'טיולים מאורגנים ליוון' }),
+      extractProfile: async () => ({ siteText: 'טיולים מאורגנים ליוון', destinations: [{ name: 'יוון', quote: 'ליוון' }], clientele: [], tripTypes: [] }),
+      publishRoute: async (l) => (published.push(l.id), { status: 'published', url: 'x', slug: 'x', externalId: externalIdFor(l), publishedAt: new Date(NOW).toISOString() }),
+      shortLink: async () => null,
+      brave: async () => [],
+      checkRoute: async (route, c, { now }) => ({ status: 'pass', issues: [], stops: [], days: route.days.length, stopCount: 6, routeKey: routeKey(route), checkedAt: new Date(now).toISOString() }),
+    };
+    const paused = { ...S, agencyPaused: true };
+    const KEY = { ANTHROPIC_API_KEY: 'test' };
+    eq('next in line: the three the column takes once unpaused', nextInLine(store.data, paused, NOW).map((l) => l.id).join(), 'ag:place41,ag:place42,ag:place43');
+    await prepareToday({ store, settings: paused, now: NOW, deps, env: KEY });
+    const line = nextInLine(store.data, paused, NOW);
+    ok('paused, the next three in line are made ready: site read, route built and checked', reads === 3 && line.every((l) => l.profile && l.route && l.routeCheck?.status === 'pass'));
+    ok('and nothing goes out: not published, not drafted, not on Today', published.length === 0 && drafted === 0 && !pickToday(store.data, paused, NOW).agency.length);
+    ok('lineState says they are ready', line.every((l) => lineState(l).ready));
+    const page = todayPage({ state: store.data, settings: paused, token: 't', now: NOW, templates: readTemplates(), day: pickToday(store.data, paused, NOW), env: {} });
+    ok('the Agencies column lists them with where they stand', page.includes('Next in line, made ready meanwhile') && page.includes('סוכנות 41: route passed'));
+    eq('the fourth is not touched', store.data.leads['ag:place44'].profile, undefined);
+
+    // Unpaused, the desk picks the same three with the same routes, and does not check them again.
+    const keys = line.map((l) => routeKey(l.route));
+    let asked = 0;
+    const counting = { ...deps, checkRoute: async (...a) => (asked++, deps.checkRoute(...a)) };
+    const open = { ...S, agencyPaused: false };
+    await prepareToday({ store, settings: open, now: NOW + 60_000, deps: counting, env: KEY });
+    ok('unpaused, they are picked with the routes that passed, not checked again, then published and drafted', asked === 0 && line.every((l, i) => routeKey(l.route) === keys[i]) && published.length === 3 && drafted === 3, `${asked} ${published.length} ${drafted}`);
+
+    // A route that still fails is set aside, and the next agency moves into line.
+    const s2 = memStore();
+    s2.data.site = store.data.site;
+    for (const [n, score] of [[51, 90], [52, 85], [53, 80], [54, 75]]) s2.data.leads[`ag:place${n}`] = agency(n, { score });
+    const fail52 = { ...deps, checkRoute: async (route, c, o) => (failingFor(route, c, o)) };
+    function failingFor(route, c, { now }) {
+      return { status: failing.size ? 'fail' : 'pass', issues: failing.size ? ['x'] : [], stops: [], days: route.days.length, stopCount: 6, routeKey: routeKey(route), checkedAt: new Date(now).toISOString() };
+    }
+    failing.add('all');
+    await prepareToday({ store: s2, settings: paused, now: NOW, deps: fail52, env: KEY });
+    ok('paused, a route that fails is set aside like on Today, up to the day\'s cap', ['ag:place51', 'ag:place52', 'ag:place53'].every((id) => s2.data.leads[id].routeSetAside));
+    eq('and the next agency moves into line', nextInLine(s2.data, paused, NOW).map((l) => l.id)[0], 'ag:place54');
   }
 
   /* ---------------------------------------------------------- runs by hand count in the ledger (owner, 2026-10-11) */

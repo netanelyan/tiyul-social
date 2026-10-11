@@ -7,7 +7,7 @@ import { fill } from '../prepare/templates.js';
 import { CONNECTIVES, FAKE_EXPERIENCE, FORMAL, PRAISE } from '../prepare/tells.js';
 import { SITE_FACTS } from '../prepare/voice.js';
 import { byChannel, bySearch, funnel, stageCounts, weekOverWeek } from '../report/stats.js';
-import { awaitingOutcome, COLUMN_LABEL, COLUMNS, dayDiff, dmReady, followupDue, ilDate, itemDone, openPost, parseItem, routeProblem, STAGE_LABEL, STAGES, TYPE_LABEL } from '../rules.js';
+import { awaitingOutcome, COLUMN_LABEL, COLUMNS, dayDiff, dmReady, followupDue, ilDate, itemDone, lineState, nextInLine, openPost, parseItem, routeProblem, STAGE_LABEL, STAGES, TYPE_LABEL } from '../rules.js';
 
 // Every page, as a function from state to HTML. Server-rendered, English,
 // left to right.
@@ -483,7 +483,8 @@ function emptyText(col, state, settings, now, day = {}) {
   }
   if (col === 'agency' && settings.agencyPaused) {
     const waiting = leads.filter((l) => l.type === 'agency' && !l.closed && l.stage === 'found' && !l.messagedAt && !l.routeSetAside).length;
-    return `New agency messages are paused in Settings${waiting ? `; ${plural(waiting, 'agency', 'agencies')} waiting` : ''}. Follow-ups to agencies you messaged still come here.`;
+    const line = nextInLine(state, settings, now).map((l) => `${displayName(l)}: ${lineState(l).words}`);
+    return `New agency messages are paused in Settings${waiting ? `; ${plural(waiting, 'agency', 'agencies')} waiting` : ''}. Follow-ups to agencies you messaged still come here.${line.length ? ` Next in line, made ready meanwhile: ${line.join(' · ')}.` : ''}`;
   }
   if (col === 'agency') return 'No agencies today. New ones are looked for in the next search.';
   return 'No questions today. New ones are looked for in the next search.';
