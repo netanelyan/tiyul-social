@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { chownSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 // Spending the desk did not do itself, brought into its ledger.
@@ -37,11 +37,21 @@ export function spendDelta(before = {}, after = {}) {
 
 const total = (spend) => Object.values(spend || {}).reduce((n, apis) => n + Object.values(apis).reduce((m, r) => m + (Number(r.usd) || 0), 0), 0);
 
-/** Drop one run's spend (and the Google answers it paid for) for the desk to fold in. Returns the file. */
+/**
+ * Drop one run's spend (and the Google answers it paid for) for the desk to
+ * fold in. Returns the file. Run as root (ssh on the VPS), the folder and the
+ * file are handed to the owner of the store's folder: the desk runs as its own
+ * user, in a folder only that user can open, and must be able to read the file
+ * and move it to used/.
+ */
 export function dropSpend(dir, { source, at = new Date().toISOString(), spend, placeChecks = {}, note = '' }) {
   mkdirSync(dir, { recursive: true });
   const file = join(dir, `${at.replace(/[^0-9TZ]/g, '')}-${String(source).replace(/[^A-Za-z0-9]+/g, '-').slice(0, 40)}.json`);
   writeFileSync(file, JSON.stringify({ kind: 'spend', source, at, note, spend, placeChecks }, null, 1));
+  if (process.getuid?.() === 0) {
+    const owner = statSync(dirname(dir));
+    for (const p of [dir, file]) chownSync(p, owner.uid, owner.gid);
+  }
   return file;
 }
 
