@@ -1,8 +1,13 @@
 # Daily posting, hands-off: plan
 
-Status: proposed on 2026-10-10, waiting for the owner's approval. Branch `daily-posting`,
-cut from `growth-desk` because Part 2 reuses the growth desk's search clients. Nothing is
-built yet, nothing is signed up for, and the tiyul-plus repo is not touched.
+Status: approved on 2026-10-10 with every default in section 4, and built on branch
+`daily-posting` (cut from `growth-desk`, because Part 2 reuses the growth desk's search
+clients). The three choices made while building the mix (section 3.5) were approved on
+2026-10-11. The tiyul-plus repo is not touched.
+
+**Merge gate:** the branch merges only after the private test post and one public post
+the owner approves by hand (section 6). The private test runs from a separate checkout on
+the VPS, never from the bot's own.
 
 The goal: one approval tap a day. TikTok 2 posts a day in week 1, then 3, all public.
 Instagram 1 to 2 a day. Formats from what works now plus our own numbers.
@@ -187,12 +192,18 @@ and the card says so. Broad listicles that are not about Tiyul+ ("5 דברים �
 - Instagram: views, saves, shares, through the existing `src/metrics` (works today).
 - TikTok: fix the two bugs, take the post id from Zernio's resolved URL, then read
   views, likes and shares with `video.list` (decision 7), or Zernio's analytics if they
-  carry views, or `/views` by hand. TikTok has no saves, so TikTok scores on shares per
-  view and Instagram on saves plus shares per view, each against its own platform.
+  carry views, or `/views` by hand. TikTok has no saves, so TikTok scores on shares plus
+  likes per view (as approved; no TikTok save number is faked) and Instagram on saves
+  plus shares per view, each against its own platform.
 - **The mix:** 70% of slate slots to proven formats (at least 3 measured posts, score at
-  or above the median), 30% to new formats from the watcher. A format that scores below
-  the median 3 times in a row drops out, with the reason recorded. Mix and thresholds in
-  `post-config.json` (`formats.learning`).
+  or above the median), 30% to new formats from the watcher. Mix and thresholds in
+  `post-config.json` (`trends`). Approved on 2026-10-11:
+  - A format drops after 3 results in a row under 70% of its platform's median, with
+    the reason recorded. "Under the median" would retire an average format within a
+    month.
+  - One of our own types that drops rests 14 days and returns as a trial; a found
+    format stays dropped.
+  - `know` and `budget` start as trials, since the ordinary rotation never draws them.
 
 **3.6 The weekly Telegram report:** the top 3 formats by saves (Instagram saves, TikTok
 shares beside them), the new formats in trial, the ones dropped and why, and the week's
@@ -226,8 +237,10 @@ best post with its numbers.
   fallback, daily caps, schedule spacing (windows, Shabbat, same-deck gap, no repeated
   template), format extraction never carrying source text or images, the 70/30 mix, and
   dropping a format after 3 losses.
-- One real end-to-end post through Zernio as SELF_ONLY, with music, for you to switch to
-  public.
+- One real end-to-end post through Zernio as SELF_ONLY, with music
+  (`npm run zernio-test -- private`, from the separate checkout on the VPS).
+- One public post the owner approves by hand (`prepare-public`, then
+  `publish-public <id>`). Only then the merge, and only then the schedule.
 - One watcher run: the format cards with their sources, and 3 posts built from them,
   rendered at 9:16 and 4:5.
 - README and `post-config.json` comments updated. Then the diff.
