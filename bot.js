@@ -83,6 +83,7 @@ import { getPost as getZernioPost, tiktokPart as zernioTikTokPart, zernioConfigu
 import { slotsFor, assign as assignSlate, israelDate } from './src/slate/plan.js';
 import { newSlate, approveAll as approveAllSlate, skipItem as skipSlateItem, dueItems as slateDue, markOutcome as markSlateOutcome, expire as expireSlate } from './src/slate/state.js';
 import { digestMessage } from './src/slate/digest.js';
+import { readInbox, placeInbox, markUsed as markInboxUsed } from './src/slate/inbox.js';
 import { buildSlateDecks } from './src/slate/build.js';
 import { rampFor, lastTemplates, recentPlacesFor, recentOpeningsFor, digestTimeFor, recentFormatPicks } from './src/slate/runner.js';
 import { openTrends } from './src/trends/store.js';
@@ -1493,6 +1494,12 @@ async function buildSlateFor(date) {
     return empty;
   }
 
+  // Posts waiting in data/slate-inbox/ take the day's earliest slots on their
+  // platforms, and the slate builds its own posts for the slots left (src/slate/inbox.js).
+  const inbox = readInbox();
+  const fromInbox = placeInbox(inbox.entries, slots);
+  const lastInboxIg = fromInbox.items.filter((it) => it.instagramAt).at(-1);
+
   const { buildPost } = await import('./src/posts/index.js');
   const { pickDestination } = await import('./src/plan/write.js');
   const { nextShape, destinationsFor } = await import('./src/posts/types.js');
@@ -1513,7 +1520,7 @@ async function buildSlateFor(date) {
     : () => nextShape().type;
 
   const { decks, failures } = await buildSlateDecks({
-    count: slots.tiktok.length,
+    count: fromInbox.slots.tiktok.length,
     pickType,
     pickDest: (type, avoid) => pickDestination(avoid, { from: destinationsFor(type, rows) }),
     buildOne: (dest, type, format) =>
@@ -1530,19 +1537,23 @@ async function buildSlateFor(date) {
         targets: targetsForKind('post'),
         onProgress: (text) => console.log(`slate post: ${text}`),
       }).then((r) => r.cand),
-    recentPlaces: recentPlacesFor(published, slates, date, cfg.destinationRepeatDays, store.recentSuggested()),
+    recentPlaces: [
+      ...recentPlacesFor(published, slates, date, cfg.destinationRepeatDays, store.recentSuggested()),
+      ...fromInbox.items.map((it) => it.cand.deck?.where).filter(Boolean),
+    ],
     recentOpenings: recentOpeningsFor(published, slates, date, cfg.openingRepeatDays),
     onProgress: (t) => console.log(t),
   });
 
+  const last = lastTemplates(slates, date);
   const { items, warnings } = assignSlate(
     decks.map((d) => ({ template: d.template })),
-    slots,
-    { gapMs: cfg.sameDeckGapMinutes * 60_000, last: lastTemplates(slates, date) }
+    fromInbox.slots,
+    { gapMs: cfg.sameDeckGapMinutes * 60_000, last: lastInboxIg ? { ...last, instagram: lastInboxIg.template } : last }
   );
   const slate = newSlate({
     date,
-    items: items.map((it) => {
+    items: [...fromInbox.items, ...items.map((it) => {
       const d = decks[it.deck];
       return {
         key: d.cand.id,
@@ -1555,12 +1566,13 @@ async function buildSlateFor(date) {
         tiktokAt: it.tiktokAt,
         instagramAt: it.instagramAt,
       };
-    }),
+    })],
     autoApprove: cfg.autoApprove,
-    warnings: [...warnings, ...failures],
+    warnings: [...inbox.warnings, ...warnings, ...failures],
     dropped: slots.dropped,
   });
   store.putSlate(slate);
+  fromInbox.files.forEach(markInboxUsed);
   await sendSlateDigest(slate);
   return slate;
 }

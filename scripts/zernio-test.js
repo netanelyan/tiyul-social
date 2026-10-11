@@ -26,6 +26,12 @@ loadEnv();
 //       Posts the prepared post PUBLICLY, and only if <id> is the id printed by
 //       prepare-public. Running this command with that id is the owner's approval.
 //
+//   npm run zernio-test -- prepare-instagram <id> --inbox /opt/tiyul-social/data/slate-inbox
+//       The prepared post's Instagram half, at 4:5, into the bot's slate inbox: an
+//       item of the next morning's digest, posted only after that tap. Rebuilt,
+//       because a candidate keeps no photographs, and saved only when the rebuild is
+//       the same post (same id, same words, same photographs). Posts nothing itself.
+//
 // RUN WHERE THE CARD HOST SERVES THE FILES (the VPS: CARD_OUTPUT_DIR is the folder
 // Caddy serves at CARD_PUBLIC_BASE_URL). Zernio fetches the images by URL and has no
 // upload endpoint; a slide rendered on a laptop is a URL nobody can fetch.
@@ -59,13 +65,18 @@ const flag = (name) => {
   return i > 0 ? process.argv[i + 1] || null : null;
 };
 
-async function buildOne({ destAsked = null, typeAsked = null } = {}) {
+async function buildOne({ destAsked = null, typeAsked = null, hookId = null, targets = ['tiktok'] } = {}) {
   const { buildPost } = await import('../src/posts/index.js');
   const { pickDestination } = await import('../src/plan/write.js');
   const { nextShape, destinationsFor } = await import('../src/posts/types.js');
+  const { postConfig } = await import('../src/postConfig.js');
   const rows = JSON.parse(readFileSync(new URL('../destinations.json', import.meta.url), 'utf8')).destinations;
   const type = nextShape({ type: typeAsked }).type;
   if (typeAsked && type !== typeAsked) throw new Error(`no post type "${typeAsked}"`);
+  // The hook a post already drew, so a rebuild of it opens the same way.
+  const hooks = postConfig().posts.hooks || {};
+  const hookOverride = hookId ? [...(hooks[type] || []), ...(hooks.shared || [])].find((h) => h.id === hookId) || null : null;
+  if (hookId && !hookOverride) throw new Error(`no hook "${hookId}" for ${type}`);
   const q = String(destAsked || '').trim().toLowerCase();
   const asked = q ? rows.find((r) => [r.id, r.siteSlug, r.he, r.en].some((v) => String(v || '').toLowerCase() === q)) : null;
   if (q && !asked) throw new Error(`no destination "${destAsked}" in destinations.json`);
@@ -84,7 +95,8 @@ async function buildOne({ destAsked = null, typeAsked = null } = {}) {
         // TikTok by name, not targetsForKind('post'): that one includes TikTok only
         // when our own app's token is in data/store.json, and this checkout has no
         // store of its own. Zernio posts with its own app and never reads ours.
-        targets: ['tiktok'],
+        targets,
+        hookOverride,
         remember: false,
         onProgress: (t) => console.log(`  ${t}`),
       });
@@ -102,6 +114,17 @@ async function checkFetchable(urls) {
     const res = await fetch(u, { method: 'HEAD', signal: AbortSignal.timeout(15_000) }).catch((e) => ({ ok: false, status: e.message }));
     if (!res.ok) throw new Error(`${u} is not publicly fetchable (${res.status}). Run this where CARD_PUBLIC_BASE_URL serves CARD_OUTPUT_DIR.`);
   }
+}
+
+/**
+ * What differs between two builds' slides, or null when they are the same post:
+ * the same words in the same order on the same photographs.
+ */
+function sameSlides(a = [], b = []) {
+  const face = (s) => JSON.stringify([s.look, s.titleHe, s.noteHe, (s.lines || []).map((l) => l.text), s.image?.provenance || null]);
+  if (a.length !== b.length) return `${a.length} slides against ${b.length}`;
+  const i = a.findIndex((s, k) => face(s) !== face(b[k]));
+  return i < 0 ? null : `slide ${i + 1} differs`;
 }
 
 function show(cand) {
@@ -152,7 +175,26 @@ if (mode === 'private') {
   show(cand);
   await checkFetchable(cand.deck.urls.tiktok);
   await post(cand, 'PUBLIC_TO_EVERYONE');
+} else if (mode === 'prepare-instagram') {
+  const id = process.argv[3];
+  const inbox = flag('inbox');
+  if (!inbox) throw new Error("prepare-instagram needs --inbox <the bot's data/slate-inbox>");
+  if (!existsSync(PUBLIC_FILE)) throw new Error('nothing prepared - run prepare-public first');
+  const saved = JSON.parse(readFileSync(PUBLIC_FILE, 'utf8'));
+  if (!id || id !== saved.id) throw new Error(`prepare-instagram needs the id of the prepared post (${saved.id})`);
+  const cand = await buildOne({ destAsked: saved.deck.slug, typeAsked: saved.deck.type, hookId: saved.deck.hook, targets: ['instagram'] });
+  const differs = sameSlides(saved.deck.slides, cand.deck.slides);
+  if (cand.id !== saved.id || differs) throw new Error(`the rebuild is not the same post (${cand.id}: ${differs || 'another id'}); nothing saved`);
+  const { addToInbox } = await import('../src/slate/inbox.js');
+  const urls = cand.deck.urls.instagram;
+  if (!urls.length) throw new Error('no Instagram slides were rendered');
+  await checkFetchable(urls);
+  console.log(`\n  ${cand.deck.type} · ${cand.deck.where} · ${urls.length} Instagram slides (4:5)${cand.deck.instagramTrimmed ? ` · ${cand.deck.instagramTrimmed}` : ''}`);
+  urls.forEach((u, i) => console.log(`  slide ${i + 1}: ${u}`));
+  console.log(`  caption: ${String(cand.instagramCaption || '').split('\n').join(' / ')}`);
+  const file = addToInbox({ cand, platforms: ['instagram'], note: `↩️ פורסם בטיקטוק (${saved.id}); כאן חצי האינסטגרם שלו` }, inbox);
+  console.log(`\n  In the slate inbox, NOT posted: ${file}\n  It is an item of the next morning's digest, and posts only after that tap.`);
 } else {
-  console.log('usage: npm run zernio-test -- private | prepare-public | recaption | publish-public <id>');
+  console.log('usage: npm run zernio-test -- private | prepare-public | recaption | publish-public <id> | prepare-instagram <id> --inbox <dir>');
   process.exitCode = 1;
 }

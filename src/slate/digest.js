@@ -19,7 +19,10 @@ const firstLine = (s) => String(s || '').split('\n').map((l) => l.trim()).find(B
 export function itemLine(it) {
   const d = it.cand?.deck || {};
   const when = [it.tiktokAt && `טיקטוק ${HHMM(it.tiktokAt)}`, it.instagramAt && `אינסטגרם ${HHMM(it.instagramAt)}`].filter(Boolean).join(' · ');
-  const slides = d.urls?.tiktok?.length || d.slides?.length || 0;
+  // Per platform: an Instagram set can be a trimmed one, and an inbox post can be Instagram only.
+  const counts = [it.tiktokAt && d.urls?.tiktok?.length, it.instagramAt && d.urls?.instagram?.length].filter(Boolean);
+  const slides = counts.length === 2 && counts[0] !== counts[1] ? `${counts[0]} שקפים, ${counts[1]} באינסטגרם` : `${counts[0] || d.slides?.length || 0} שקפים`;
+  const extra = [d.instagramTrimmed && it.instagramAt && `   ✂️ באינסטגרם ${d.instagramTrimmed}`, it.note && `   ${it.note}`].filter(Boolean);
   const state = it.skipped
     ? ' · דולג'
     : ['tiktok', 'instagram']
@@ -27,15 +30,16 @@ export function itemLine(it) {
         .filter((s) => s && !['planned', 'approved', 'none'].includes(s))
         .map((s) => ` · ${STATUS_HE[s] || s}`)
         .join('');
-  return `${it.n}. ${when}\n   ${TYPE_HE()[d.type] || d.type} · ${d.where || ''} · ${slides} שקפים${state}\n   "${firstLine(it.cand?.headline)}"`;
+  return [`${it.n}. ${when}`, `   ${TYPE_HE()[d.type] || d.type} · ${d.where || ''} · ${slides}${state}`, `   "${firstLine(it.cand?.headline)}"`, ...extra].join('\n');
 }
 
 /** { media, text, keyboard } for a slate. `media` is for sendMediaGroup, `keyboard` an inline keyboard. */
 export function digestMessage(slate) {
+  const cover = (it) => it.cand?.deck?.urls?.[it.tiktokAt ? 'tiktok' : 'instagram']?.[0] || it.cand?.deck?.urls?.tiktok?.[0];
   const media = slate.items
-    .filter((it) => it.cand?.deck?.urls?.tiktok?.[0])
+    .filter(cover)
     .slice(0, 10)
-    .map((it) => ({ type: 'photo', media: it.cand.deck.urls.tiktok[0], caption: `${it.n}. ${it.cand.deck.where || ''}` }));
+    .map((it) => ({ type: 'photo', media: cover(it), caption: `${it.n}. ${it.cand.deck.where || ''}` }));
 
   const head = slate.approved
     ? `📅 התוכנית להיום (${slate.date}) - ${slate.auto ? 'אושרה אוטומטית' : 'מאושרת'}`

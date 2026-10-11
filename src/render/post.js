@@ -50,7 +50,7 @@ const IG_BUDGET = IG_MAX - 1;
  * renders, and the answer narrows that one post to TikTok instead of losing it on both.
  */
 export const fitsInstagram = (slides = []) =>
-  slides.length <= IG_BUDGET || slides.filter((s) => !s.optional).length <= IG_BUDGET;
+  slides.length <= IG_BUDGET || slides.filter((s) => !s.optional && !Number.isFinite(s.trimRank)).length <= IG_BUDGET;
 
 /**
  * The slides that fit the platform, and what it costs to make them fit.
@@ -66,6 +66,13 @@ export const fitsInstagram = (slides = []) =>
  *   days: they are the breath in the post rather than its content, and a plan without
  *   them is the same itinerary read a little faster. Nothing is lost that the post
  *   promised.
+ *
+ *   Then, the RANKED slides, highest `trimRank` first and only as many as it takes.
+ *   The owner's rule of 2026-10-11: a verdict over ten slides goes to Instagram
+ *   trimmed rather than skipped, keeping the cover, the verdict and the closing
+ *   slide. Its builder ranks the place photographs, the last place first; the
+ *   good, the bad and the booking slides carry no rank and are never dropped,
+ *   because they are what the cover promised.
  *
  *   Then, refuse. A list post is twenty-one slides because its hook says "20 דברים",
  *   and there is no honest nine-slide version of that - trimming it publishes a post
@@ -83,6 +90,13 @@ export function fitTo(slides, size, type = null) {
 
   const trimmed = slides.filter((s) => !s.optional);
   if (trimmed.length <= IG_BUDGET) return trimmed;
+
+  const ranked = trimmed.filter((s) => Number.isFinite(s.trimRank)).sort((a, b) => b.trimRank - a.trimRank);
+  const over = trimmed.length - IG_BUDGET;
+  if (ranked.length >= over) {
+    const drop = new Set(ranked.slice(0, over));
+    return trimmed.filter((s) => !drop.has(s));
+  }
 
   throw new Error(
     `a ${type || 'post'} is ${slides.length} slides and an Instagram carousel takes ${IG_MAX} - ` +

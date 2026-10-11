@@ -301,9 +301,12 @@ export function buildVerdictPost(city, { hook, dest, questionHe = null } = {}) {
   // The best three, as label slides, so the post ends on photographs rather than on
   // text. A verdict post is four slides of reading; ending on three pictures is what
   // stops it feeling like an article.
+  // `trimRank` is the order Instagram drops them in when the post is over its ten:
+  // the last place first. See fitTo in src/render/post.js.
   for (const [i, p] of best.slice(0, 5).entries()) {
     slides.push({
       look: 'label',
+      trimRank: i + 1,
       number: `${i + 1}.`,
       titleHe: line(p.name, { where: `best${i}` }),
       noteHe: placeLine(p),

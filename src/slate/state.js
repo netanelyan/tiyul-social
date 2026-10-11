@@ -6,7 +6,7 @@ import { israelDate } from './plan.js';
 //
 //   {
 //     date, builtAt, approved, approvedBy, approvedAt, auto,
-//     items: [{ n, key, cand, template, tiktokAt, instagramAt, skipped,
+//     items: [{ n, key, cand, template, formatId, formatKind, note, tiktokAt, instagramAt, skipped,
 //               tiktok: { status, ... }, instagram: { status, ... } }],
 //     warnings: [], dropped: []
 //   }
@@ -29,6 +29,11 @@ export function newSlate({ date, items, autoApprove = false, warnings = [], drop
       key: it.key,
       cand: it.cand,
       template: it.template,
+      // The trend format it was built from, which recentFormatPicks reads back to
+      // keep the 70/30 split; and a line for the digest (an inbox post says why it is there).
+      formatId: it.formatId || null,
+      formatKind: it.formatKind || null,
+      note: it.note || null,
       tiktokAt: it.tiktokAt ? new Date(it.tiktokAt).toISOString() : null,
       instagramAt: it.instagramAt ? new Date(it.instagramAt).toISOString() : null,
       skipped: false,

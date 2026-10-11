@@ -88,6 +88,7 @@ export function postApprovalMessage(cand) {
   lines.push('');
   lines.push(targets.length ? `📤 יפורסם ל${targetsHe(targets)}` : '⛔ אין יעד פרסום מוגדר');
   if (post.instagramSkipped) lines.push(`📵 לא לאינסטגרם: ${post.instagramSkipped}`);
+  if (post.instagramTrimmed) lines.push(`✂️ באינסטגרם ${post.instagramTrimmed}`);
 
   // THE ONE THING THE PIPELINE CANNOT DO, said every time. A carousel published without
   // a sound is a post with no sound for ever - the API has no field for it and it cannot

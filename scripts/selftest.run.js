@@ -9452,6 +9452,31 @@ group('Instagram numbers - read with the publisher\'s token, and a reel says how
 }
 
 {
+  // A VERDICT OVER TEN GOES TO INSTAGRAM TRIMMED, NOT SKIPPED (the owner, 2026-10-11):
+  // the last place photographs go first, the cover, the verdict and the closing slide stay.
+  const { fitTo, fitsInstagram } = await import('../src/render/post.js');
+  // Florence: the cover, five sheets, four places, the answer. Eleven, and the close makes twelve.
+  const florence = [
+    { t: 'cover' }, { t: 'pros' }, { t: 'cons' }, { t: 'cons2' }, { t: 'booking' }, { t: 'who' },
+    { t: 'p1', trimRank: 1 }, { t: 'p2', trimRank: 2 }, { t: 'p3', trimRank: 3 }, { t: 'p4', trimRank: 4 },
+    { t: 'answer' },
+  ];
+  ok('a verdict with its places ranked fits', fitsInstagram(florence));
+  const ig = fitTo(florence, 'instagram', 'verdict');
+  eq('trimmed to nine, the closing slide makes ten', ig.length, 9);
+  eq('the last two places went, and only those', ig.map((s) => s.t).join(','), 'cover,pros,cons,cons2,booking,who,p1,p2,answer');
+  eq('TikTok keeps every slide', fitTo(florence, 'tiktok', 'verdict').length, 11);
+  eq('one over drops one place', fitTo(florence.filter((s) => s.t !== 'cons2'), 'instagram', 'verdict').map((s) => s.t).filter((t) => /^p\d$/.test(t)).join(','), 'p1,p2,p3');
+  const unranked = florence.map(({ trimRank, ...s }) => s);
+  ok('without the ranks it does not fit', !fitsInstagram(unranked));
+  throws('and fitTo still refuses it', () => fitTo(unranked, 'instagram', 'verdict'));
+  const verdictSrc = readFileSync(new URL('../src/posts/verdict.js', import.meta.url), 'utf8');
+  ok('the verdict builder ranks its place slides, the last place first', /look: 'label',\s*trimRank: i \+ 1,/.test(verdictSrc));
+  const indexSrc = readFileSync(new URL('../src/posts/index.js', import.meta.url), 'utf8');
+  ok('and the approval card says what Instagram loses', /post\.instagramTrimmed = /.test(indexSrc) && /instagramTrimmed/.test(readFileSync(new URL('../src/posts/message.js', import.meta.url), 'utf8')));
+}
+
+{
   // A TikTok VIDEO DRAFT ARRIVES WITHOUT ITS DESCRIPTION. The paste message used to
   // ride on the Instagram hand-off, which is gone, so the publish line now says the
   // caption is coming whenever the caller is about to send one.
@@ -10320,6 +10345,51 @@ group('the daily slate - one tap a day, and nothing goes out unapproved');
   let sentPrivacy = null;
   await publishTikTokRouted(slateCand, { cfg: { ...route, privacy: 'PUBLIC' }, deps: { zernio: async (c, o) => ((sentPrivacy = o.privacy), {}), draft: async () => ({}), usedLast24h: () => 0, cap: () => 3 } });
   eq('a typo in the config reaches Zernio as SELF_ONLY', sentPrivacy, 'SELF_ONLY');
+
+  // THE SLATE INBOX: a post the owner asked to see in tomorrow's digest (Florence's
+  // Instagram half, 2026-10-11). It takes the earliest slot of its platform, the
+  // slate builds its own posts for the rest, and it still waits for the tap.
+  const inboxMod = await import('../src/slate/inbox.js');
+  const igUrls = Array.from({ length: 10 }, (_, i) => `https://cards.example/ig-${i + 1}.jpg`);
+  const florenceIg = { id: 'f95d994d60d4', kind: 'post', headline: 'פירנצה: שווה או לא?', deck: { type: 'verdict', where: 'פירנצה', instagramTrimmed: 'בלי 2 שקופיות: א, ב', urls: { tiktok: [], instagram: igUrls } } };
+  const entry = { cand: florenceIg, platforms: ['instagram'], note: '↩️ פורסם בטיקטוק' };
+  eq('an Instagram-only post with ten slides is a valid entry', inboxMod.entryProblem(entry), null);
+  ok('eleven Instagram slides are not', /carousel takes 10/.test(inboxMod.entryProblem({ ...entry, cand: { ...florenceIg, deck: { ...florenceIg.deck, urls: { instagram: [...igUrls, igUrls[0]] } } } })));
+  ok('nor a platform it has no slides for', /no tiktok slides/.test(inboxMod.entryProblem({ ...entry, platforms: ['tiktok', 'instagram'] })));
+  ok('nor http slides', /not https/.test(inboxMod.entryProblem({ ...entry, cand: { ...florenceIg, deck: { ...florenceIg.deck, urls: { instagram: ['http://x/1.jpg', 'http://x/2.jpg'] } } } })));
+  const placed = inboxMod.placeInbox([{ file: 'f.json', entry }], sun);
+  eq('it takes the day\'s first Instagram slot', placed.items[0].instagramAt, sun.instagram[0]);
+  ok('and no TikTok slot', placed.items[0].tiktokAt === null && placed.slots.tiktok.length === sun.tiktok.length);
+  eq('leaving the rest of Instagram to the built posts', placed.slots.instagram.length, sun.instagram.length - 1);
+  eq('it publishes to Instagram only', placed.items[0].cand.publishTargets.join(','), 'instagram');
+  eq('a post with no slot left waits in the inbox', inboxMod.placeInbox([{ file: 'f.json', entry }], { ...sun, instagram: [] }).items.length, 0);
+  const inboxSlate = st.newSlate({ date: '2026-10-11', items: [...placed.items, { key: 'b', cand: { id: 'b', headline: 'h', deck: { type: 'list', where: 'אתונה', urls: { tiktok: ['https://cards.example/t1.jpg', 'https://cards.example/t2.jpg'] } } }, template: 'list', tiktokAt: sun.tiktok[0], formatId: 'type:list', formatKind: 'proven' }] });
+  eq('the slate keeps the inbox note', inboxSlate.items[0].note, entry.note);
+  ok('and every item keeps the format it was built from', inboxSlate.items[1].formatId === 'type:list' && inboxSlate.items[1].formatKind === 'proven');
+  ok('the inbox post is planned on Instagram only', inboxSlate.items[0].instagram.status === 'planned' && inboxSlate.items[0].tiktok.status === 'none');
+  eq('an unapproved inbox post is never due', st.dueItems(inboxSlate, Date.parse('2026-10-11T10:30:00Z')).length, 0);
+  const inboxDigest = digestMessage(inboxSlate);
+  eq('its cover in the album is the Instagram one', inboxDigest.media[0].media, igUrls[0]);
+  ok('its line counts its Instagram slides and says why it is there', /פירנצה · 10 שקפים/.test(inboxDigest.text) && inboxDigest.text.includes(entry.note));
+  ok('and what Instagram trims', inboxDigest.text.includes('✂️ באינסטגרם בלי 2 שקופיות'));
+  const both = st.newSlate({ date: '2026-10-11', items: [{ key: 'c', cand: { id: 'c', headline: 'h', deck: { type: 'verdict', where: 'פירנצה', urls: { tiktok: [...igUrls, 'https://cards.example/11.jpg', 'https://cards.example/12.jpg'], instagram: igUrls } } }, template: 'verdict', tiktokAt: sun.tiktok[0], instagramAt: sun.instagram[1] }] });
+  ok('a post on both says both counts', /12 שקפים, 10 באינסטגרם/.test(digestMessage(both).text));
+
+  const { mkdtempSync, existsSync: exists2, writeFileSync: write2 } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const inboxTmp = mkdtempSync(`${tmpdir()}/slate-inbox-`);
+  const saved = inboxMod.addToInbox(entry, inboxTmp);
+  write2(`${inboxTmp}/broken.json`, '{nope');
+  const read = inboxMod.readInbox(inboxTmp);
+  eq('a saved entry is read back', read.entries.map((e) => e.entry.cand.id).join(','), 'f95d994d60d4');
+  ok('a broken file is a warning, moved out of the way', read.warnings.length === 1 && exists2(`${inboxTmp}/rejected/broken.json`));
+  inboxMod.markUsed(saved);
+  ok('once a slate holds it, it leaves the inbox', !exists2(saved) && exists2(`${inboxTmp}/used/f95d994d60d4.json`) && inboxMod.readInbox(inboxTmp).entries.length === 0);
+  throws('a bad entry is refused before it is written', () => inboxMod.addToInbox({ ...entry, platforms: [] }, inboxTmp));
+
+  const botSlate = readFileSync(new URL('../bot.js', import.meta.url), 'utf8');
+  ok('the slate places the inbox before it builds, and builds for the slots left', /placeInbox\(inbox\.entries, slots\)/.test(botSlate) && /count: fromInbox\.slots\.tiktok\.length/.test(botSlate));
+  ok('the inbox files leave only after the slate is saved', /store\.putSlate\(slate\);\s*fromInbox\.files\.forEach\(markInboxUsed\);/.test(botSlate));
 
   const botSrc3 = readFileSync(new URL('../bot.js', import.meta.url), 'utf8');
   ok('the published record says what TikTok actually got, not what was asked', /publishedFacts\(\{ \.\.\.cand, tiktokDraft: tiktokWasDraft \}\)/.test(botSrc3) && /const drafted = tiktokWasDraft &&/.test(botSrc3));

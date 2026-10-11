@@ -4,7 +4,7 @@ import { captionFollow } from '../hashtags.js';
 import { targetsForKind } from '../publish/targets.js';
 import { overrideActive, overrideNotes } from '../override.js';
 import { cardOutputDir } from '../render/index.js';
-import { renderPost, fitsInstagram, IG_MAX } from '../render/post.js';
+import { renderPost, fitsInstagram, fitTo, IG_MAX } from '../render/post.js';
 import { notePostShape } from '../store.js';
 import { loadCity, verdictOf, firstClause, hasFlightClaim } from './source.js';
 import { nextShape, canBuild, platformsFor, hooksToAvoid } from './types.js';
@@ -329,6 +329,13 @@ export async function buildPost({
   if (sizes.includes('instagram') && sizes.length > 1 && !fitsInstagram(post.slides)) {
     sizes = sizes.filter((s) => s !== 'instagram');
     post.instagramSkipped = `${post.slides.length} שקופיות, וקרוסלה באינסטגרם לוקחת ${IG_MAX}`;
+  }
+  // ONE THAT FITS ONLY TRIMMED SAYS WHAT INSTAGRAM LOSES, on the card before the tap.
+  // A verdict over ten drops its last place photographs there (fitTo); TikTok keeps all.
+  if (sizes.includes('instagram')) {
+    const kept = new Set(fitTo(post.slides, 'instagram', post.type));
+    const lost = post.slides.filter((s) => !kept.has(s) && Number.isFinite(s.trimRank));
+    if (lost.length) post.instagramTrimmed = `בלי ${lost.length} שקופיות: ${lost.map((s) => s.titleHe).join(', ')}`;
   }
   if (!sizes.length) {
     throw new Error(
