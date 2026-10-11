@@ -84,6 +84,12 @@ export const LIMITS = Object.freeze({
 
 export const DEFAULT_SETTINGS = Object.freeze({
   caps: { comment: 10, creator: 5, agency: 3, customer: 5 },
+  // No NEW agency messages while on: the Agencies column takes only the
+  // follow-ups owed to agencies already messaged. The owner paused them on
+  // 2026-10-11 until the new route builder's sample routes pass the check, so a
+  // failing route does not use one of the day's slots (store.js turns it on once
+  // for the live desk; unticking it in Settings is the way back).
+  agencyPaused: false,
   // Dollars a month, billable: after each API's free allowance. $50 from
   // 2026-10-11, when drafting moved to Opus 5.5 with a review pass.
   budgetUsd: 50,

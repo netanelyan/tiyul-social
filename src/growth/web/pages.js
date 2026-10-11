@@ -351,7 +351,9 @@ export function todaySummary(state, day, settings, now = Date.now()) {
   lines.push(
     ag.length
       ? `${plural(ag.length, 'agency message')} ready.${backlog ? ` ${waiting} agencies are still waiting for you, so I didn't look for more.` : ''}`
-      : backlog
+      : settings.agencyPaused && !open('agency').length
+        ? `New agency messages are paused in Settings${waiting ? `; ${waiting} waiting` : ''}.`
+        : backlog
         ? `${waiting} agencies are still waiting for you, so I didn't look for more.`
         : open('agency').length
           ? `${plural(open('agency').length, 'agency message')} being written.`
@@ -460,6 +462,10 @@ function emptyText(col, state, settings, now, day = {}) {
     const last = state.runs[0];
     if (last?.tooOld && !last.candidates) return `Everything today's search found was older than ${settings.maxPostAgeDays} days. The next search is tomorrow at ${String(settings.runHour).padStart(2, '0')}:00.`;
     return `No new videos. The next search is tomorrow at ${String(settings.runHour).padStart(2, '0')}:00, or press "Look for new leads".`;
+  }
+  if (col === 'agency' && settings.agencyPaused) {
+    const waiting = leads.filter((l) => l.type === 'agency' && !l.closed && l.stage === 'found' && !l.messagedAt).length;
+    return `New agency messages are paused in Settings${waiting ? `; ${plural(waiting, 'agency', 'agencies')} waiting` : ''}. Follow-ups to agencies you messaged still come here.`;
   }
   if (col === 'agency') return 'No agencies today. New ones are looked for in the next search.';
   return 'No questions today. New ones are looked for in the next search.';
@@ -750,6 +756,7 @@ export function settingsPage({ state, settings, token, now = Date.now(), templat
   const form = `<form id="settings" class="settings">
 <fieldset><legend>A day's work</legend>
 ${num('caps.comment', 'Comments', settings.caps.comment)}${num('caps.creator', 'Creator messages', settings.caps.creator)}${num('caps.agency', 'Agency messages', settings.caps.agency)}${num('caps.customer', 'Questions', settings.caps.customer)}
+${check('agencyPaused', 'Pause new agency messages (follow-ups to agencies you messaged still come)', settings.agencyPaused)}
 ${num('publishPerDay', 'New route pages a day', settings.publishPerDay, 1, 'Creators and agencies together. The site takes 20 a day.')}
 </fieldset>
 <fieldset><legend>Budget and timing</legend>

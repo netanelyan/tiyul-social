@@ -1203,6 +1203,26 @@ export async function growthSelftest({ ok, eq }) {
     for (const k of d.agency) applyAction(capped.data, capped.data.leads[parseItem(k).leadId], 'sent', {}, { now: NOW, settings: S });
     const page = todayPage({ state: capped.data, settings: S, token: 't', now: NOW, templates: readTemplates(), day: d, env: {} });
     ok('a full day of agencies says the cap, and how many wait', page.includes(`${S.caps.agency} agency messages are done`) && page.includes('2 agencies still waiting'));
+
+    // Paused: no new agency messages, and the follow-ups still come.
+    const paused = { ...S, agencyPaused: true };
+    const p = memStore();
+    for (let n = 30; n < 33; n++) p.data.leads[`ag:place${n}`] = agency(n);
+    const owed = agency(33, { messagedAt: new Date(NOW - 6 * DAY).toISOString(), stage: 'messaged' });
+    p.data.leads[owed.id] = owed;
+    const pd = pickToday(p.data, paused, NOW);
+    ok('paused, the Agencies column takes no new message', !pd.agency.some((k) => k.endsWith(':message')), JSON.stringify(pd.agency));
+    ok('and still takes the follow-up that is owed', pd.agency.includes(`agency:${owed.id}:followup`));
+    const p2 = memStore();
+    for (let n = 30; n < 33; n++) p2.data.leads[`ag:place${n}`] = agency(n);
+    const pausedPage = todayPage({ state: p2.data, settings: paused, token: 't', now: NOW, templates: readTemplates(), day: pickToday(p2.data, paused, NOW), env: {} });
+    ok('the empty column says it is paused, and how many wait', pausedPage.includes('New agency messages are paused in Settings; 3 agencies waiting'));
+    ok('Settings has the switch', settingsPage({ state: p2.data, settings: paused, token: 't', now: NOW, templates: readTemplates() }).includes('name="agencyPaused" checked'));
+    const live = migrate({ leads: {}, settings: { budgetUsd: 40 } });
+    ok('the live desk starts paused, once, keeping its other settings', live.settings.agencyPaused === true && live.settings.budgetUsd === 40 && live.applied.includes('agency-pause-2026-10-11'));
+    live.settings.agencyPaused = false;
+    eq('unticked, it stays unticked', migrate(live).settings.agencyPaused, false);
+    eq('a new desk is not paused', migrate(emptyState()).settings.agencyPaused, undefined);
   }
 
   /* ---------------------------------------------------------- learning from what was sent */

@@ -47,6 +47,9 @@ export const emptyState = () => ({
   // sent, and whether they differ. Few-shot examples and the weekly edits
   // report read it (prepare/learn.js).
   sentLog: [],
+  // One-time changes migrate() has made to this file, by name. A new desk starts
+  // with all of them, so none applies to it.
+  applied: ['agency-pause-2026-10-11'],
 });
 
 /**
@@ -64,6 +67,14 @@ export function migrate(data) {
     }
   }
   data.sentLog ??= [];
+  // The owner's pause of 2026-10-11: no new agency messages until the new route
+  // builder's routes pass the check. Set once, here, so the desk starts paused;
+  // unticking "Pause new agency messages" in Settings then sticks.
+  data.applied ??= [];
+  if (!data.applied.includes('agency-pause-2026-10-11')) {
+    data.settings = { ...(data.settings || {}), agencyPaused: true };
+    data.applied.push('agency-pause-2026-10-11');
+  }
   return data;
 }
 

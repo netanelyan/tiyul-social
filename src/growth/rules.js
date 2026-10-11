@@ -238,7 +238,10 @@ export function candidates(state, column, settings, now = Date.now()) {
     const fresh =
       column === 'creator'
         ? mine.filter((l) => dmReady(l, { now, warmupDays: s.warmupDays })).sort(byScore).map((l) => `creator:${l.id}:dm`)
-        : mine.filter((l) => l.stage === 'found' && !l.messagedAt).sort(byScore).map((l) => `agency:${l.id}:message`);
+        : // Paused in Settings: only the follow-ups owed to agencies already messaged.
+          s.agencyPaused
+          ? []
+          : mine.filter((l) => l.stage === 'found' && !l.messagedAt).sort(byScore).map((l) => `agency:${l.id}:message`);
     // Follow-ups first: they are owed, and they count inside the cap.
     return [...followups, ...fresh];
   }
