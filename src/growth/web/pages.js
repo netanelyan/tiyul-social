@@ -235,12 +235,22 @@ function routeBox(lead) {
       : t?.reason
         ? `<span class="warn">${esc(t.reason)}</span>`
         : 'not on the site yet';
-  const days = r.days.map((d, i) => `<li>${he(`<b>יום ${i + 1}</b> ${d.names.map(esc).join(' · ')}`, 'span')}</li>`).join('');
+  const days = r.days.map((d, i) => `<li>${he(`<b>יום ${i + 1}</b>${d.dayTrip ? ' (טיול יום)' : ''} ${d.names.map(esc).join(' · ')}`, 'span')}</li>`).join('');
+  const changes = (r.changes || []).length
+    ? `<details class="small"><summary>Built from the site's itinerary, with ${plural(r.changes.length, 'change')}</summary><ul>${r.changes.map((x) => `<li>${mixed(x)}</li>`).join('')}</ul></details>`
+    : '';
+  const refresh = lead.routeRefresh
+    ? `<p class="small">A rebuilt route waits to replace this page: ${lead.routeRefresh.check?.status === 'pass' ? `ready, re-sent on the next pass${lead.routeRefresh.error ? ` (the last try failed: ${mixed(lead.routeRefresh.error)})` : ''}` : lead.routeRefresh.check?.status === 'error' ? `its check could not run (${mixed(lead.routeRefresh.check.error)}), tried again within the hour` : `it did not pass its check either (${plural(lead.routeRefresh.check?.issues?.length || 0, 'issue')}), so the page stays as it is`}.</p>`
+    : '';
+  const aside = lead.routeSetAside ? `<p class="note warn">Set aside ${when(lead.routeSetAside.at)}: the route still failed its check after the rebuild, so it gave its slot on Today back.</p>` : '';
   return `<div class="routebox">
   <p><b>${lead.type === 'agency' ? 'Their example' : 'Their route'}:</b> ${plural(r.days.length, 'day')} in ${heIn(r.cityName)}, ${plural(r.stops, 'stop')}, ${status}</p>
   ${reason}
+  ${aside}
   ${check}
+  ${refresh}
   <details${lead.type === 'agency' ? ' open' : ''}><summary>The days</summary><ol class="days">${days}</ol></details>
+  ${changes}
 </div>`;
 }
 
@@ -253,7 +263,7 @@ export function routeCheckBadge(c) {
   if (c.status === 'error') return `<p class="check"><span class="tag bad">Route check: could not run</span> ${mixed(c.error)}. It runs again on the next pass.</p>`;
   const noStatus = (c.stops || []).filter((s) => s.google && !s.status).length;
   if (c.status === 'pass') {
-    return `<p class="check"><span class="tag ok">Route check: passed</span> ${plural(c.stopCount, 'stop')} found on Google and open${noStatus ? ` (${noStatus} of them a town or an area, with no opening status)` : ''}, inside the destination, ${plural(c.days, 'day')} of 4 or more stops. Checked ${when(c.checkedAt)}.</p>`;
+    return `<p class="check"><span class="tag ok">Route check: passed</span> ${plural(c.stopCount, 'stop')} found on Google and open${noStatus ? ` (${noStatus} of them a town or an area, with no opening status)` : ''}, ${plural(c.days, 'full day')}${c.dayTrips ? `, ${plural(c.dayTrips, 'of them a whole day trip', 'of them whole day trips')}` : ''}, no long hops inside a day. Checked ${when(c.checkedAt)}.</p>`;
   }
   return `<div class="check"><p><span class="tag bad">Route check: ${plural(c.issues.length, 'issue')}</span> No send button until the route passes.</p><ul class="issues">${c.issues.map((i) => `<li>${mixed(i)}</li>`).join('')}</ul></div>`;
 }
@@ -346,7 +356,7 @@ export function todaySummary(state, day, settings, now = Date.now()) {
   const warmTomorrow = Object.values(state.leads).filter((l) => l.type === 'creator' && l.warmedAt && !l.messagedAt && !l.closed && !dmReady(l, { now, warmupDays: settings.warmupDays })).length;
   lines.push(cr.length ? `${plural(cr.length, 'creator message')} ready.` : warmTomorrow ? `No creators to message today; ${warmTomorrow} tomorrow, the day after your comment.` : 'No new creators today.');
   const ag = ready('agency', 'message');
-  const waiting = Object.values(state.leads).filter((l) => l.type === 'agency' && !l.closed && l.stage === 'found' && !l.messagedAt).length;
+  const waiting = Object.values(state.leads).filter((l) => l.type === 'agency' && !l.closed && l.stage === 'found' && !l.messagedAt && !l.routeSetAside).length;
   const backlog = waiting >= settings.caps.agency * 5;
   lines.push(
     ag.length
@@ -394,6 +404,7 @@ export function todayPage({ state, settings, token, now = Date.now(), day, templ
     return `<section class="col" aria-label="${COLUMN_LABEL[col]}">
   <h2>${COLUMN_LABEL[col]} <span class="count">${open.length ? `${open.length} to do` : 'nothing to do'}</span></h2>
   ${open.map(render).join('') || `<p class="empty">${esc(emptyText(col, state, settings, now, day))}</p>`}
+  ${col === 'agency' ? setAsideLine(state, now) : ''}
   ${doneKeys.length ? `<details class="donebox"><summary>Done today (${doneKeys.length})</summary>${doneKeys.map(render).join('')}</details>` : ''}
 </section>`;
   }).join('');
@@ -402,6 +413,13 @@ ${runBox(state, day, settings, now, running, env)}
 <div class="columns">${cols}</div>
 ${waitingPanel(state, day, settings, now)}`;
   return layout({ title: 'Today', active: 'today', token, body, state, settings, now, loggedIn });
+}
+
+/** The agencies set aside today because their route failed its check, each linked to its lead page. */
+function setAsideLine(state, now) {
+  const today = Object.values(state.leads).filter((l) => l.routeSetAside && ilDate(l.routeSetAside.at) === ilDate(now));
+  if (!today.length) return '';
+  return `<p class="small">Set aside today, their sample route failed its check after the rebuild, and the next agency took the slot: ${today.map((l) => `<a href="/lead/${encodeURIComponent(l.id)}">${heIn(displayName(l))}</a>`).join(', ')}.</p>`;
 }
 
 /**
@@ -450,7 +468,7 @@ function emptyText(col, state, settings, now, day = {}) {
   // A column whose day is full says so: "no agencies today" read as none left.
   const cap = Number(settings.caps?.[col]) || 0;
   if ((col === 'agency' || col === 'creator') && cap && (day[col] || []).length >= cap) {
-    const waiting = leads.filter((l) => l.type === col && !l.closed && l.stage === 'found' && !l.messagedAt && (col === 'agency' || l.warmedAt)).length;
+    const waiting = leads.filter((l) => l.type === col && !l.closed && l.stage === 'found' && !l.messagedAt && !l.routeSetAside && (col === 'agency' || l.warmedAt)).length;
     const what = col === 'agency' ? 'agency message' : 'creator message';
     return `Today's ${plural(cap, what)} are done: ${cap} a day is the cap in Settings. ${waiting ? `${plural(waiting, col === 'agency' ? 'agency' : 'creator', col === 'agency' ? 'agencies' : 'creators')} still waiting; the next ${Math.min(cap, waiting)} come tomorrow, after any follow-ups that are due.` : 'Nobody else is waiting.'}`;
   }
@@ -464,7 +482,7 @@ function emptyText(col, state, settings, now, day = {}) {
     return `No new videos. The next search is tomorrow at ${String(settings.runHour).padStart(2, '0')}:00, or press "Look for new leads".`;
   }
   if (col === 'agency' && settings.agencyPaused) {
-    const waiting = leads.filter((l) => l.type === 'agency' && !l.closed && l.stage === 'found' && !l.messagedAt).length;
+    const waiting = leads.filter((l) => l.type === 'agency' && !l.closed && l.stage === 'found' && !l.messagedAt && !l.routeSetAside).length;
     return `New agency messages are paused in Settings${waiting ? `; ${plural(waiting, 'agency', 'agencies')} waiting` : ''}. Follow-ups to agencies you messaged still come here.`;
   }
   if (col === 'agency') return 'No agencies today. New ones are looked for in the next search.';
@@ -669,6 +687,14 @@ ${w.pairs.length ? `<details><summary>The last ${w.pairs.length} you changed</su
 </section>`;
 }
 
+/** Runs by hand (a route report) whose spend the desk folded into this month's ledger. */
+function manualRuns(state, now) {
+  const month = ilDate(now).slice(0, 7);
+  const runs = (state.ledgerRuns || []).filter((r) => ilDate(r.at).slice(0, 7) === month);
+  if (!runs.length) return '';
+  return `<p class="small">Included above: ${plural(runs.length, 'run by hand')}, ${runs.map((r) => `${esc(r.source)} on ${esc(ilDate(r.at))}, ${money(r.usd)} list price${r.note ? ` (${esc(r.note)})` : ''}`).join('; ')}.</p>`;
+}
+
 export function reportsPage({ state, settings, token, now = Date.now(), ga4, loggedIn }) {
   const leads = Object.values(state.leads);
   const spend = monthSpend(state, settings, now);
@@ -683,7 +709,7 @@ export function reportsPage({ state, settings, token, now = Date.now(), ga4, log
     Object.entries(spend.rows)
       .map(([api, r]) => `<tr><td>${esc(API_PRICES[api]?.label || api)}</td><td>${r.units}</td><td>${money(r.gross)}</td><td>${money(r.billable)}</td></tr>`)
       .join('') || '<tr><td colspan="4">Nothing spent yet this month.</td></tr>'
-  }</tbody></table></section>`;
+  }</tbody></table>${manualRuns(state, now)}</section>`;
 
   const channels = byChannel(leads);
   const perChannel = `<section class="panel" id="channels"><h2>Messages by channel</h2>${

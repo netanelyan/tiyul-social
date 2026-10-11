@@ -19,8 +19,10 @@ import { resolveDestination } from './site.js';
 //      whose quote is not really on the page is dropped in code;
 //   3. those destinations are matched to the cities in our catalog, and the
 //      example is a route on one of them (prepare/index.js publishes it);
-//   4. when none of them is in our catalog, the closest page we have is used,
-//      and the card says why.
+//   4. when none of them is in our catalog, a route on one of our most complete
+//      destinations is used, and the card says why. (Until 2026-10-11 that was
+//      the site's own itinerary page, which cannot be repaired when it fails the
+//      route check; the route is built from the same itinerary and fixed.)
 //
 // The homepage text is kept on the lead (up to 6,000 characters), because the
 // draft's one specific detail is quoted from it and checked against it.
@@ -152,7 +154,8 @@ export function soldCities(lead, options, preferred = destinations().map(siteSlu
  *
  * Returns { kind: 'route', slug, he, said, reason } when one of their
  * destinations is in our catalog (prepare/index.js builds and publishes the
- * route), else { kind: 'page', slug, he, path, reason } from `fallback`.
+ * route), else { kind: 'route', fallback: true, slug, he, reason } on the city
+ * `fallback` picks.
  */
 export function chooseExample(state, lead, { fallback, preferred } = {}) {
   const options = state.site?.options || [];
@@ -172,11 +175,13 @@ export function chooseExample(state, lead, { fallback, preferred } = {}) {
   const names = (lead.profile?.destinations || []).map((d) => d.name);
   return page
     ? {
-        kind: 'page',
-        ...page,
+        kind: 'route',
+        fallback: true,
+        slug: page.slug,
+        he: page.he,
         reason: names.length
-          ? `None of what they sell (${names.join(', ')}) is in our catalog, so the example is our ${page.he} page, one of the most complete we have.`
-          : `Their site did not say which destinations they sell, so the example is our ${page.he} page, one of the most complete we have.`,
+          ? `None of what they sell (${names.join(', ')}) is in our catalog, so the example is a route on ${page.he}, one of the most complete destinations we have.`
+          : `Their site did not say which destinations they sell, so the example is a route on ${page.he}, one of the most complete destinations we have.`,
       }
     : null;
 }

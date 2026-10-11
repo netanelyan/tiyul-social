@@ -241,7 +241,8 @@ export function candidates(state, column, settings, now = Date.now()) {
         : // Paused in Settings: only the follow-ups owed to agencies already messaged.
           s.agencyPaused
           ? []
-          : mine.filter((l) => l.stage === 'found' && !l.messagedAt).sort(byScore).map((l) => `agency:${l.id}:message`);
+          : // An agency set aside because its route failed the check does not come back (prepare/index.js).
+            mine.filter((l) => l.stage === 'found' && !l.messagedAt && !l.routeSetAside).sort(byScore).map((l) => `agency:${l.id}:message`);
     // Follow-ups first: they are owed, and they count inside the cap.
     return [...followups, ...fresh];
   }

@@ -3,6 +3,7 @@ import { ClaudeError } from './claude.js';
 import { growthPort, mergeSettings } from './config.js';
 import { runDiscovery } from './find/index.js';
 import { fillVideoContext } from './find/videoContext.js';
+import { foldInbox, inboxDir } from './ledgerInbox.js';
 import { channelOf, openTarget } from './links.js';
 import { checkEdit, draftsFor } from './prepare/compose.js';
 import { draftItem, DraftError } from './prepare/draft.js';
@@ -69,6 +70,9 @@ export function createOps({ store, env = process.env, clock = () => Date.now(), 
   const tick = async () => {
     if (running) return;
     const now = clock();
+    // Spend from scripts run by hand (ledgerInbox.js) goes into the ledger before
+    // anything here spends, so the budget counts it.
+    if (store.path) foldInbox(store.data, inboxDir(store.path), { save: store.save });
     // Any closed lead whose page is still up (a withdrawal the site did not
     // answer) is taken down first: a closed lead never keeps a live route.
     // Silent through the follow-up for `followupDays`: closed as no reply, and its

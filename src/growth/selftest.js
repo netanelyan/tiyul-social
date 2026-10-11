@@ -1,5 +1,6 @@
 import { generateKeyPairSync, createVerify } from 'node:crypto';
-import { existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { createServer, request } from 'node:http';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -25,9 +26,11 @@ import { CONNECTIVES, FORMAL, lengthOf, PRAISE, tellsIn } from './prepare/tells.
 import { addressLine } from './prepare/voice.js';
 import { checkDraft, urlsIn } from './prepare/guards.js';
 import { agencySample, prepareToday } from './prepare/index.js';
+import { dropSpend, foldInbox, inboxDir, spendDelta } from './ledgerInbox.js';
+import { readyRoute } from './prepare/sampleRoute.js';
 import { canPublishNew, externalIdFor, publishRoute, tripBody, withdrawClosed, withdrawRoute } from './prepare/publish.js';
-import { buildRoute } from './prepare/route.js';
-import { checkRoute, findOnGoogle, frameKm, judgeRoute, routeKey, scaleOf } from './prepare/routeCheck.js';
+import { BUILDER, buildRoute } from './prepare/route.js';
+import { checkRoute, findOnGoogle, frameKm, judgeRoute, knownBad, ROUTE_RULES, routeKey, scaleOf } from './prepare/routeCheck.js';
 import { destinationSupported, matchPlaces, postDestination, resolveDestination } from './prepare/site.js';
 import { checkTemplate, fill, readTemplates } from './prepare/templates.js';
 import { ga4Missing, jwtFor } from './report/ga4.js';
@@ -946,7 +949,7 @@ export async function growthSelftest({ ok, eq }) {
     eq('the agency\'s own name is enough when its site says nothing', chooseExample(state, agency(2, { name: 'טיולים מאורגנים למצרים' }), { fallback, preferred: [] }).slug, 'sinai');
     eq('a country resolves to the city this audience flies to', chooseExample(state, agency(3, { profile: { destinations: [{ name: 'יוון' }] } }), { fallback, preferred: ['athens'] }).slug, 'athens');
     const none = chooseExample(state, agency(4, { profile: { destinations: [{ name: 'פטגוניה' }] } }), { fallback, preferred: [] });
-    ok('nothing they sell in our catalog: the closest page, with the reason', none.kind === 'page' && /None of what they sell \(פטגוניה\) is in our catalog/.test(none.reason));
+    ok('nothing they sell in our catalog: a route on one of our most complete destinations, with the reason', none.kind === 'route' && none.fallback && none.slug === 'prague' && /None of what they sell \(פטגוניה\) is in our catalog, so the example is a route on פראג/.test(none.reason), JSON.stringify(none));
     const links = tripLinks('<a href="/trips/egypt">טיולים למצרים</a><a href="/about">אודות</a><a href="https://other.example/trips">x</a><a href="/destinations">יעדים</a><a href="/blog/x">טיול</a>', 'https://agency.co.il/');
     eq('their own trip pages are followed, two at most, same site only', links.join(' '), 'https://agency.co.il/trips/egypt https://agency.co.il/destinations');
   }
@@ -1012,6 +1015,8 @@ export async function growthSelftest({ ok, eq }) {
         { id: 'f7', name: 'מיכלאנג\'לו', nameLocal: 'Piazzale Michelangelo', lat: 43.7629, lng: 11.2651 },
         { id: 'f8', name: 'פיאזולה', nameLocal: 'Fiesole', lat: 43.8066, lng: 11.2939 },
         { id: 'pisa', name: 'פיזה', nameLocal: 'Leaning Tower of Pisa', lat: 43.723, lng: 10.3966 },
+        { id: 'pisa-bapt', name: 'הבפטיסטריום', nameLocal: 'Pisa Baptistery', lat: 43.7233, lng: 10.3944 },
+        { id: 'lucca', name: 'לוקה', nameLocal: 'Lucca', lat: 43.8429, lng: 10.5027 },
       ],
     };
     const route = { days: [{ placeIds: ['f1', 'f2', 'f3', 'f4'] }, { placeIds: ['f5', 'f6', 'f7', 'f8'] }] };
@@ -1027,8 +1032,11 @@ export async function growthSelftest({ ok, eq }) {
     eq('Dubai at zoom 11 is an area, not a compact city', scaleOf({ zoom: 11 }), 'area');
     ok('about 550 km across its frame', Math.abs(frameKm({ zoom: 8, center: { lat: 28.6 } }) - 550) < 10, String(frameKm({ zoom: 8, center: { lat: 28.6 } })));
 
-    const short = { days: [{ placeIds: ['f1', 'f2', 'f3', 'f4'] }, { placeIds: ['f5', 'f6', 'f7'] }] };
-    ok('a day of three stops fails', judge(short).issues.some((i) => /Day 2 has 3 stops; each day needs at least 4/.test(i)));
+    const short = { days: [{ placeIds: ['f1', 'f2', 'f3', 'f4'] }, { placeIds: ['f5', 'f6'] }] };
+    ok('a day of two short stops fails', judge(short).issues.some((i) => /Day 2 has 2 stops, none of them long; a day needs 3 stops, or 2 when one takes 3 hours or more/.test(i)), judge(short).issues.join(' | '));
+    eq('three stops are a day (the owner: four was too strict)', judge({ days: [route.days[0], { placeIds: ['f5', 'f6', 'f7'] }] }).status, 'pass');
+    const longBoboli = { ...GEO, places: GEO.places.map((p) => (p.id === 'f5' ? { ...p, durationMin: 180 } : p)) };
+    eq('and two are, when one of them takes three hours', judgeRoute(short, longBoboli, facts(short)).status, 'pass');
     ok('one day fails', judge({ days: [route.days[0]] }).issues.some((i) => /1 day; a sample route needs at least 2/.test(i)));
     ok('a stop closed for good fails', judge(route, { f3: found('f3', { status: 'CLOSED_PERMANENTLY' }) }).issues.some((i) => /"Ponte Vecchio" is closed for good on Google/.test(i)));
     ok('and one closed for now', judge(route, { f3: found('f3', { status: 'CLOSED_TEMPORARILY' }) }).issues.some((i) => /closed for now/.test(i)));
@@ -1037,7 +1045,11 @@ export async function growthSelftest({ ok, eq }) {
     ok('a town has no business status, and that is not "closed"', town.status === 'pass' && town.stops.find((s) => s.id === 'f8').status === null);
     const trip = { days: [{ placeIds: ['f1', 'f2', 'f3', 'pisa'] }, { placeIds: ['f5', 'f6', 'f7', 'f8'] }] };
     const far = judge(trip);
-    ok('a day trip in the catalog is outside the destination', far.issues.some((i) => /"Leaning Tower of Pisa" is 69 km from the centre of Florence, outside the destination \(14 km\)/.test(i)), far.issues.join(' | '));
+    ok('a day trip squeezed between city stops fails', far.issues.some((i) => /Day 1 squeezes a day trip between city stops: "Leaning Tower of Pisa" is 69 km from the centre of Florence, outside the destination \(14 km\)/.test(i)), far.issues.join(' | '));
+    const dayOut = { days: [route.days[0], { placeIds: ['pisa', 'pisa-bapt', 'lucca'] }] };
+    const whole = judge(dayOut);
+    ok('a day trip that is the whole day passes, its stops a drive apart (16 km)', whole.status === 'pass' && whole.dayTrips === 1, whole.issues.join(' | '));
+    ok('but not further out than a day allows', judgeRoute(dayOut, GEO, facts(dayOut), { ...ROUTE_RULES, dayTripKm: 50 }).issues.some((i) => /too far for a day trip \(50 km\)/.test(i)));
     ok('and its hop from the last stop is not a sensible day', far.issues.some((i) => /Day 1: "Ponte Vecchio" to "Leaning Tower of Pisa" is \d+ km; on a city route a day's stops stay within 10 km/.test(i)));
     ok('a stop missing from the catalog fails', judgeRoute({ days: [{ placeIds: ['f1', 'f2', 'f3', 'nope'] }, route.days[1]] }, GEO, facts(route)).issues.some((i) => /"nope" is not in the site's catalog/.test(i)));
 
@@ -1087,6 +1099,7 @@ export async function growthSelftest({ ok, eq }) {
     const store = memStore();
     store.data.site = { options: OPTIONS, itineraries: [{ slug: 'athens', days: 5 }] };
     store.data.leads['ag:place1'] = agency(1, { score: 90 });
+    store.data.leads['ag:place5'] = agency(5, { score: 80 });
     const published = [];
     let drafted = 0;
     let verdict = { status: 'fail', issues: ['Day 2 has 3 stops; each day needs at least 4.'], stops: [], days: 2, stopCount: 6 };
@@ -1104,9 +1117,13 @@ export async function growthSelftest({ ok, eq }) {
     const one = { ...S, caps: { ...S.caps, agency: 1 } };
     const KEY = { ANTHROPIC_API_KEY: 'test' };
     await prepareToday({ store, settings: one, now: NOW, deps, env: KEY });
-    const lead = store.data.leads['ag:place1'];
-    ok('a failed route is not published', published.length === 0 && !lead.trip);
+    const aside = store.data.leads['ag:place1'];
+    ok('a failed route is not published', published.length === 0 && !aside.trip);
     eq('and no message is written for it', drafted, 0);
+    ok('it gives its slot back: set aside, off Today, never picked again', Boolean(aside.routeSetAside) && !pickToday(store.data, one, NOW).agency.includes(`agency:${aside.id}:message`) && aside.history.some((h) => /set aside/.test(h.what)));
+    await prepareToday({ store, settings: one, now: NOW + 1000, deps, env: KEY });
+    const lead = store.data.leads['ag:place5'];
+    ok('the next agency takes the slot, and past the day\'s set-asides a failure stays on Today', pickToday(store.data, one, NOW).agency.includes(`agency:${lead.id}:message`) && !lead.routeSetAside);
     const page = () => todayPage({ state: store.data, settings: one, token: 't', now: NOW, templates: readTemplates(), day: pickToday(store.data, one, NOW), env: {} });
     ok('the card shows the check and its issues', page().includes('Route check: 1 issue') && page().includes('Day 2 has 3 stops'));
     ok('with no send button: no Copy & open, no Sent', !page().includes('data-act="sent"') && !page().includes('data-copy-open'));
@@ -1126,7 +1143,9 @@ export async function growthSelftest({ ok, eq }) {
     delete lead.routeCheck;
     delete lead.drafts;
     await prepareToday({ store, settings: one, now: NOW + 60_000, deps, env: KEY });
-    ok('a route that passes is published and written', published.join() === 'ag:place1' && drafted === 1);
+    ok('a route that passes is published and written', published.join() === 'ag:place5' && drafted === 1);
+    ok('the Agencies column names the one set aside', page().includes('Set aside today') && page().includes(`/lead/${encodeURIComponent(aside.id)}`));
+    eq('the published trip remembers the route it shows', lead.trip.routeKey, routeKey(lead.route));
     ok('with the passed badge and the send buttons', page().includes('Route check: passed') && page().includes('data-act="sent"') && page().includes('data-copy-open'));
 
     const errStore = memStore();
@@ -1135,6 +1154,153 @@ export async function growthSelftest({ ok, eq }) {
     verdict = { status: 'error', error: 'Google Places did not answer', issues: [] };
     await prepareToday({ store: errStore, settings: one, now: NOW, deps, env: KEY });
     ok('a check that could not run holds the message too', !errStore.data.leads['ag:place2'].trip && errStore.data.leads['ag:place2'].routeCheck.status === 'error');
+  }
+
+  /* ---------------------------------------------------------- the route builder (owner, 2026-10-11) */
+
+  {
+    // Florence at zoom 13 (a 14 km frame): a curated day with a day trip squeezed
+    // in, a short day, a closed cafe, and a lone day trip nothing is near.
+    const P = (id, name, nameLocal, lat, lng, durationMin, extra = {}) => ({ id, name, nameLocal, lat, lng, durationMin, rating: 4.5, ...extra });
+    const PIN = {
+      slug: 'florence', name: 'פירנצה', nameLocal: 'Florence', zoom: 13, center: { lat: 43.7696, lng: 11.2558 },
+      places: [
+        P('f1', 'הדואומו', 'Duomo', 43.7731, 11.2569, 90, { mustSee: true }),
+        P('f2', 'אופיצי', 'Uffizi', 43.7678, 11.2553, 180),
+        P('f3', 'פונטה וקיו', 'Ponte Vecchio', 43.768, 11.2531, 30),
+        P('f4', 'סיניוריה', 'Piazza della Signoria', 43.7696, 11.2556, 30),
+        P('f5', 'בובולי', 'Boboli Gardens', 43.7625, 11.2483, 120),
+        P('f6', 'סנטה קרוצ\'ה', 'Santa Croce', 43.7686, 11.2622, 60),
+        P('f7', 'מיכלאנג\'לו', 'Piazzale Michelangelo', 43.7629, 11.2651, 45),
+        P('f8', 'פיאזולה', 'Fiesole', 43.8066, 11.2939, 120),
+        P('f9', 'סן דומניקו', 'San Domenico', 43.7985, 11.2833, 60),
+        P('f10', 'סטיניאנו', 'Settignano', 43.785, 11.32, 60),
+        P('c1', 'קפה סגור', 'Closed Cafe', 43.805, 11.292, 30),
+        P('pisa', 'פיזה', 'Leaning Tower of Pisa', 43.723, 10.3966, 120, { mustSee: true }),
+        P('pisa-bapt', 'הבפטיסטריום', 'Pisa Baptistery', 43.7233, 10.3944, 45),
+        P('lucca', 'לוקה', 'Lucca', 43.8429, 10.5027, 180),
+        P('siena', 'סיינה', 'Siena', 43.3188, 11.3308, 240),
+      ],
+      itinerary: [
+        { day: 1, title: 'המרכז', placeIds: ['f1', 'f2', 'f3', 'f4'] },
+        { day: 2, title: 'מעבר לארנו', placeIds: ['f5', 'f6', 'pisa', 'f7'] },
+        { day: 3, title: 'פיאזולה', placeIds: ['f8', 'c1'] },
+        { day: 4, title: 'סיינה', placeIds: ['siena'] },
+      ],
+    };
+    const open = (r) => Object.fromEntries(r.days.flatMap((d) => d.placeIds).map((id) => [id, { found: true, status: 'OPERATIONAL' }]));
+    const r = buildRoute(PIN, {});
+    const ids = r.days.map((d) => d.placeIds);
+    eq('the site\'s whole day stays as it is, with its title', [ids[0].join(), r.days[0].title].join(' | '), 'f1,f2,f3,f4 | המרכז');
+    eq('a day trip squeezed into a city day is pulled out: the city stops stay a day', ids[1].join(), 'f5,f6,f7');
+    ok('and the day trip becomes a whole day, filled from the catalog near it', r.days[2].dayTrip && ids[2].slice().sort().join() === 'lucca,pisa,pisa-bapt', JSON.stringify(ids[2]));
+    ok('a short day takes the nearest catalog places, with every hop within the limit', ids[3].includes('f8') && ids[3].length >= 3, JSON.stringify(ids[3]));
+    ok('a lone day trip nothing is near is dropped, and the change says so', !ids.flat().includes('siena') && r.changes.some((c) => /Dropped a day trip of the site's day 4 \(Siena\)/.test(c)), r.changes.join(' | '));
+    eq('the route passes the check it was built for', judgeRoute(r, PIN, open(r)).status, 'pass', judgeRoute(r, PIN, open(r)).issues.join(' | '));
+    eq('it says which builder made it', r.builder, BUILDER);
+    ok('only a day still the site\'s whole day keeps the site\'s title', r.days[1].title === '' && r.days[2].title === '');
+    const named = buildRoute(PIN, { places: ['פיאזולה'], days: 2 });
+    ok('a creator\'s named place leads, on a day it fits', named.days.length === 2 && named.days[0].placeIds.includes('f8') && named.matched[0].id === 'f8');
+    ok('a stop Google says is closed is left out, and the day is filled around it', !buildRoute(PIN, { exclude: ['c1'] }).days.flatMap((d) => d.placeIds).includes('c1'));
+
+    // The desk's loop: build, check, rebuild without what Google says is closed.
+    const state = emptyState();
+    const iso = new Date(NOW).toISOString();
+    let rounds = 0;
+    const check = async (route, c, { state: st }) => {
+      rounds++;
+      if (route.days.some((d) => d.placeIds.includes('c1'))) {
+        st.placeChecks = { c1: { at: iso, query: 'Closed Cafe', pin: '43.805,11.292', answer: { found: true, status: 'CLOSED_PERMANENTLY' } } };
+        return { status: 'fail', issues: ['"Closed Cafe" is closed for good on Google.'], routeKey: routeKey(route), checkedAt: iso };
+      }
+      return { status: 'pass', issues: [], routeKey: routeKey(route), checkedAt: iso };
+    };
+    const ready = await readyRoute(PIN, { state, settings: S, now: NOW, deps: { checkRoute: check } });
+    ok('a route that fails on a closed stop is rebuilt without it and passes', ready.check.status === 'pass' && rounds === 2 && !ready.route.days.flatMap((d) => d.placeIds).includes('c1'), `${rounds} ${JSON.stringify(ready.route.days.map((d) => d.placeIds))}`);
+    ok('the closed stop is known from then on, for any route on that city', knownBad(state, PIN, { now: NOW }).has('c1'));
+    const again = await readyRoute(PIN, { state, settings: S, now: NOW + 60_000, route: ready.route, check: ready.check, deps: { checkRoute: check } });
+    ok('a ready route and its fresh check are reused, not asked again', again.route === ready.route && rounds === 2);
+    const hopeless = await readyRoute(PIN, { state: emptyState(), settings: S, now: NOW, deps: { checkRoute: async (route) => ({ status: 'fail', issues: ['Day 1 has 2 stops'], routeKey: routeKey(route), checkedAt: iso }) } });
+    ok('a failure with nothing to leave out stops after one round', hopeless.check.status === 'fail');
+
+    // The routes already sent are rebuilt and re-sent to the same page.
+    const store = memStore();
+    store.data.site = { options: OPTIONS, itineraries: [{ slug: 'florence', days: 4 }] };
+    const sent = agency(6, {
+      stage: 'messaged',
+      messagedAt: new Date(NOW - DAY).toISOString(),
+      example: { kind: 'route', slug: 'florence', he: 'פירנצה' },
+      route: { citySlug: 'florence', cityName: 'פירנצה', days: [{ citySlug: 'florence', placeIds: ['f1', 'pisa'], names: [] }, { citySlug: 'florence', placeIds: ['siena'], names: [] }], stops: 3 },
+      routeCheck: { status: 'fail', issues: ['x'], routeKey: 'old', checkedAt: iso },
+      trip: { status: 'published', url: 'https://www.tiyulplus.com/trips/florence-2-ab12', slug: 'florence-2-ab12', externalId: 'growth:ag:place6', publishedAt: new Date(NOW - DAY).toISOString() },
+    });
+    store.data.leads[sent.id] = sent;
+    const resent = [];
+    let verdict = 'fail';
+    const deps = {
+      cityFor: async () => PIN,
+      draftItem: async () => ({ variants: [] }),
+      fillVideoContext: async () => 0,
+      publishRoute: async (l) => (resent.push({ id: l.id, days: l.route.days.length }), { status: 'published', url: 'https://www.tiyulplus.com/trips/florence-2-ab12', slug: 'florence-2-ab12', externalId: externalIdFor(l), publishedAt: l.trip.publishedAt }),
+      shortLink: async () => null,
+      brave: async () => [],
+      checkRoute: async (route) => ({ status: verdict, issues: verdict === 'pass' ? [] : ['still failing'], stops: [], days: route.days.length, stopCount: 9, routeKey: routeKey(route), checkedAt: iso }),
+    };
+    const quiet = { ...S, agencyPaused: true };
+    await prepareToday({ store, settings: quiet, now: NOW, deps, env: {} });
+    ok('a rebuilt route that fails its check is not sent: the page they have stays', resent.length === 0 && sent.trip.url.endsWith('florence-2-ab12') && sent.routeRefresh?.check?.status === 'fail' && sent.route.days[0].placeIds.join() === 'f1,pisa');
+    verdict = 'pass';
+    delete sent.routeRefresh;
+    await prepareToday({ store, settings: quiet, now: NOW + 60_000, deps, env: {} });
+    ok('once it passes, it is re-sent under the same externalId, to the same address', resent.length === 1 && resent[0].id === sent.id && sent.trip.url === 'https://www.tiyulplus.com/trips/florence-2-ab12' && sent.route.builder === BUILDER);
+    ok('the lead keeps the new route and its check, and says so', sent.routeCheck.status === 'pass' && sent.trip.routeKey === routeKey(sent.route) && sent.history.some((h) => /route rebuilt and re-sent to the same page/.test(h.what)) && !sent.routeRefresh);
+    await prepareToday({ store, settings: quiet, now: NOW + 120_000, deps, env: {} });
+    eq('and it is not sent again', resent.length, 1);
+
+    // A page example of an agency not yet messaged becomes a route on the same kind of city.
+    const pageStore = memStore();
+    pageStore.data.site = { options: [...OPTIONS, { slug: 'florence', name: 'פירנצה', nameLocal: 'Florence', country: 'איטליה', haystack: 'פירנצה' }], itineraries: [{ slug: 'florence', days: 4 }] };
+    pageStore.data.leads['ag:place7'] = agency(7, { score: 90, profile: { siteText: '', destinations: [], clientele: [], tripTypes: [] }, example: { kind: 'page', slug: 'florence', he: 'פירנצה', path: '/itinerary/florence/4', reason: 'old' }, agencyDest: { slug: 'florence', path: '/itinerary/florence/4' } });
+    await prepareToday({ store: pageStore, settings: { ...S, caps: { ...S.caps, agency: 1 } }, now: NOW, deps, env: {} });
+    const pg = pageStore.data.leads['ag:place7'];
+    ok('a page example is chosen again, as a route built from the itinerary', pg.example.kind === 'route' && pg.example.fallback && !pg.agencyDest && pg.route?.builder === BUILDER, JSON.stringify(pg.example));
+  }
+
+  /* ---------------------------------------------------------- runs by hand count in the ledger (owner, 2026-10-11) */
+
+  {
+    const dir = mkdtempSync(join(tmpdir(), 'growth-ledger-'));
+    try {
+      const storePath = join(dir, 'growth.json');
+      const inbox = inboxDir(storePath);
+      const month = '2026-10';
+      const before = { [month]: { places: { units: 5, usd: 0.175 } } };
+      const after = { [month]: { places: { units: 115, usd: 4.025 }, claude: { units: 12, usd: 0.4 } } };
+      const delta = spendDelta(before, after);
+      ok('a script\'s spend is what it added', delta[month].places.units === 110 && Math.abs(delta[month].places.usd - 3.85) < 1e-9 && delta[month].claude.units === 12, JSON.stringify(delta));
+      dropSpend(inbox, { source: 'scripts/growth-route-check.js', at: '2026-10-11T16:47:12.000Z', spend: delta, placeChecks: { x1: { at: '2026-10-11T16:47:12.000Z', query: 'X', pin: '1,2', answer: { found: true, status: 'OPERATIONAL' } } } });
+      writeFileSync(join(inbox, 'zz-broken.json'), '{ not json');
+
+      const state = emptyState();
+      state.spend = { [month]: { places: { units: 20, usd: 0.7 } } };
+      const pending = structuredClone(state);
+      foldInbox(pending, inbox, { move: false });
+      ok('a script counts what is still waiting in the inbox, and leaves it there', pending.spend[month].places.units === 130 && readdirSync(inbox).filter((f) => f.endsWith('.json')).length === 2);
+
+      const order = [];
+      const desk = { data: state, save: () => order.push('save'), path: storePath };
+      const ops = createOps({ store: desk, env: {}, clock: () => NOW, deps: { runDiscovery: async () => {}, prepareToday: async () => {}, withdrawClosed: async () => 0 } });
+      await ops.tick();
+      ok('the desk folds it into its ledger on its tick', state.spend[month].places.units === 130 && Math.abs(state.spend[month].claude.usd - 0.4) < 1e-9);
+      ok('with the Google answers it paid for, so the desk does not ask again', state.placeChecks.x1?.answer?.found === true);
+      ok('saved before the file moves to used/, and a broken file goes to rejected/', order[0] === 'save' && existsSync(join(inbox, 'used')) && readdirSync(join(inbox, 'used')).length === 1 && readdirSync(join(inbox, 'rejected')).join() === 'zz-broken.json');
+      await ops.tick();
+      eq('folded once only', state.spend[month].places.units, 130);
+      const report = reportsPage({ state, settings: S, token: 't', now: NOW, ga4: { configured: false, missing: [] } });
+      ok('Reports says which runs by hand are in the month', report.includes('Included above: 1 run by hand, scripts/growth-route-check.js on 2026-10-11, $4.25 list price'), report.slice(report.indexOf('budget'), report.indexOf('budget') + 1500));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   }
 
   /* ---------------------------------------------------------- outcomes of a message (owner, 2026-10-11) */

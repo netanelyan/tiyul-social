@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto';
 import { postJson } from '../../clients/http.js';
 import { guard, marginal, record } from '../../clients/budget.js';
+import { dayRuleText, enoughStops, frameKm, hasPin, hopFor, km, outside, ROUTE_RULES, scaleOf } from './routeRules.js';
+
+export { frameKm, km, ROUTE_RULES, scaleOf } from './routeRules.js';
 
 // The route check: an agency's sample route, held against Google Places before
 // the message is ready (the owner's rule of 2026-10-11).
@@ -15,14 +18,23 @@ import { guard, marginal, record } from '../../clients/budget.js';
 //   - every stop sits inside the destination: inside the frame the site's own map
 //     of the destination shows (its centre and zoom), so Tokyo the region and
 //     Florence the city are each judged by their own size. Not by country: the
-//     Vatican Museums are on every Rome route and in another country;
+//     Vatican Museums are on every Rome route and in another country. A stop
+//     outside it is a day trip, fine when its whole day is outside (a Fuji day)
+//     and within `dayTripKm`, and a failure when it is squeezed between city stops;
 //   - consecutive stops on a day are a sensible distance apart: `hopKm` for a
 //     city, an area or a region, by the same zoom;
-//   - at least `minDays` days, and at least `minStopsPerDay` stops on each.
+//   - at least `minDays` days, and three stops on each, or two when one is long.
+//   The numbers are in routeRules.js, which the builder (route.js) shares.
+//
+// Distances are measured between OUR pins: a stop counts as found only when
+// Google's place is within `pinKm` of the pin or its area holds the pin, so the
+// pin is where the stop is, and the builder measures the same thing.
 //
 // A route that fails is not published and gets no send button (pages.js), no
 // draft (prepare/index.js), and no "Sent" (rules.js). One the check could not
-// run on is treated the same until it runs.
+// run on is treated the same until it runs. A stop that fails on Google carries
+// `code` ('missing', 'closed', 'no-pin', 'unknown'), and the desk rebuilds the
+// route without it (prepare/index.js).
 //
 // Google is asked once per catalog place a month, whichever agency's route it is
 // on (state.placeChecks), and every ask is recorded as a Places call in the
@@ -31,44 +43,7 @@ import { guard, marginal, record } from '../../clients/budget.js';
 const ENDPOINT = 'https://places.googleapis.com/v1/places:searchText';
 const FIELDS = ['places.id', 'places.displayName', 'places.businessStatus', 'places.location', 'places.viewport', 'places.formattedAddress'].join(',');
 
-export const ROUTE_RULES = Object.freeze({
-  minDays: 2,
-  minStopsPerDay: 4,
-  // How far Google's place may sit from our pin and still be the same place, and
-  // the largest area (its diagonal) whose outline may stand in for a point.
-  pinKm: 2,
-  areaKm: 150,
-  // The longest hop between two stops on one day, by the site's map zoom for the
-  // destination: a city (zoom 12 and closer), an area (10 to 11: Dubai), a region.
-  hopKm: { city: 10, area: 25, region: 50 },
-  cacheDays: 30,
-});
-
 const DAY = 86_400_000;
-
-export function km(a, b) {
-  const t = Math.PI / 180;
-  const dLat = (b.lat - a.lat) * t;
-  const dLng = (b.lng - a.lng) * t;
-  const x = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * t) * Math.cos(b.lat * t) * Math.sin(dLng / 2) ** 2;
-  return 2 * 6371 * Math.asin(Math.sqrt(x));
-}
-
-/** What the site's map of the destination calls its size: city, area or region. */
-export const scaleOf = (city) => (Number(city?.zoom) >= 12 || !city?.zoom ? 'city' : Number(city.zoom) >= 10 ? 'area' : 'region');
-
-/**
- * How far from its centre a stop may be and still be inside the destination:
- * the width of a 1024-pixel map at the zoom the site draws the destination at
- * (Web Mercator, 156,543 m a pixel at zoom 0 on the equator). Rome and Florence
- * (zoom 13) come to about 15 km, Vienna (12) about 26, Sinai (8) about 550. A
- * day trip the catalog lists (Prague to Cesky Krumlov, 142 km) is outside it.
- */
-export function frameKm(city) {
-  const zoom = Number(city?.zoom) || 12;
-  const lat = Number(city?.center?.lat) || 0;
-  return (1024 * 156_543.03392 * Math.cos((lat * Math.PI) / 180)) / 2 ** zoom / 1000;
-}
 
 const nameOf = (p) => String(p?.nameLocal || p?.name || p?.id || '').split('/')[0].trim();
 const queryOf = (p) => nameOf(p);
@@ -135,13 +110,16 @@ export function judgeRoute(route, city, facts, rules = ROUTE_RULES) {
   const byId = new Map((city?.places || []).map((p) => [p.id, p]));
   const days = (route?.days || []).filter((d) => d.placeIds?.length);
   const scale = scaleOf(city);
-  const hop = rules.hopKm[scale];
+  const hop = hopFor(city, rules);
   const frame = frameKm(city);
   const cityName = nameOf({ nameLocal: city?.nameLocal, name: city?.name }) || city?.slug;
 
   if (days.length < rules.minDays) issues.push(`${days.length} ${days.length === 1 ? 'day' : 'days'}; a sample route needs at least ${rules.minDays}.`);
   days.forEach((d, i) => {
-    if (d.placeIds.length < rules.minStopsPerDay) issues.push(`Day ${i + 1} has ${d.placeIds.length} ${d.placeIds.length === 1 ? 'stop' : 'stops'}; each day needs at least ${rules.minStopsPerDay}.`);
+    const ps = d.placeIds.map((id) => byId.get(id) || { id });
+    if (!enoughStops(ps, rules)) {
+      issues.push(`Day ${i + 1} has ${ps.length} ${ps.length === 1 ? 'stop' : 'stops'}${ps.length >= rules.minStopsLongDay ? ', none of them long' : ''}; a day needs ${dayRuleText(rules)}.`);
+    }
   });
 
   const stops = [];
@@ -154,44 +132,65 @@ export function judgeRoute(route, city, facts, rules = ROUTE_RULES) {
     const n = nameOf(p) || id;
     if (!p) {
       issues.push(`"${id}" is not in the site's catalog for ${cityName}.`);
-      stops.push({ id, name: id, ok: false });
+      stops.push({ id, name: id, ok: false, code: 'unknown' });
       continue;
     }
-    if (!Number.isFinite(p.lat) || !Number.isFinite(p.lng)) {
+    if (!hasPin(p)) {
       issues.push(`"${n}" has no pin in our catalog, so it cannot be checked.`);
-      stops.push({ id, name: n, ok: false });
+      stops.push({ id, name: n, ok: false, code: 'no-pin' });
       continue;
     }
     const stop = { id, name: n, ok: true, google: f?.found ? f.name : null, status: f?.found ? f.status : null };
     if (!f?.found) {
       issues.push(`"${n}" was not found on Google near our pin${f?.nearestKm != null ? ` (the nearest match is ${f.nearestKm.toFixed(1)} km away)` : ''}.`);
       stop.ok = false;
+      stop.code = 'missing';
     } else {
       if (f.status && f.status !== 'OPERATIONAL') {
         issues.push(`"${n}" is ${f.status === 'CLOSED_PERMANENTLY' ? 'closed for good' : f.status === 'CLOSED_TEMPORARILY' ? 'closed for now' : f.status.toLowerCase()} on Google.`);
         stop.ok = false;
+        stop.code = 'closed';
       }
     }
-    const where = f?.found ? { lat: f.lat, lng: f.lng } : { lat: p.lat, lng: p.lng };
-    const fromCentre = city?.center ? km(city.center, where) : 0;
-    stop.centreKm = Math.round(fromCentre * 10) / 10;
-    if (city?.center && fromCentre > frame) {
-      issues.push(`"${n}" is ${Math.round(fromCentre)} km from the centre of ${cityName}, outside the destination (${Math.round(frame)} km).`);
-      stop.ok = false;
-    }
-    stop.where = where;
+    stop.centreKm = city?.center ? Math.round(km(city.center, p) * 10) / 10 : 0;
+    stop.where = { lat: p.lat, lng: p.lng };
     stops.push(stop);
   }
 
+  // Inside the destination, or a day trip that is the whole day.
   const at = new Map(stops.map((s) => [s.id, s.where]));
+  const stopOf = new Map(stops.map((s) => [s.id, s]));
   days.forEach((d, i) => {
+    const pinned = d.placeIds.map((id) => byId.get(id)).filter(hasPin);
+    const out = pinned.filter((p) => outside(city, p, frame));
+    if (!out.length) return;
+    if (out.length < pinned.length) {
+      for (const p of out) {
+        issues.push(`Day ${i + 1} squeezes a day trip between city stops: "${nameOf(p)}" is ${Math.round(km(city.center, p))} km from the centre of ${cityName}, outside the destination (${Math.round(frame)} km). A day trip has to be the whole day.`);
+        stopOf.get(p.id).ok = false;
+      }
+      return;
+    }
+    for (const p of out.filter((x) => km(city.center, x) > rules.dayTripKm)) {
+      issues.push(`Day ${i + 1}: "${nameOf(p)}" is ${Math.round(km(city.center, p))} km from the centre of ${cityName}, too far for a day trip (${rules.dayTripKm} km).`);
+      stopOf.get(p.id).ok = false;
+    }
+  });
+
+  const tripHop = hopFor(city, rules, { dayTrip: true });
+  const wholeTrip = (d) => {
+    const pinned = d.placeIds.map((id) => byId.get(id)).filter(hasPin);
+    return pinned.length > 0 && pinned.every((p) => outside(city, p, frame));
+  };
+  days.forEach((d, i) => {
+    const limit = wholeTrip(d) ? tripHop : hop;
     for (let k = 1; k < d.placeIds.length; k++) {
       const a = at.get(d.placeIds[k - 1]);
       const b = at.get(d.placeIds[k]);
       if (!a || !b) continue;
       const dist = km(a, b);
-      if (dist > hop) {
-        issues.push(`Day ${i + 1}: "${nameOf(byId.get(d.placeIds[k - 1]))}" to "${nameOf(byId.get(d.placeIds[k]))}" is ${Math.round(dist)} km; on a ${scale} route a day's stops stay within ${hop} km of each other.`);
+      if (dist > limit) {
+        issues.push(`Day ${i + 1}: "${nameOf(byId.get(d.placeIds[k - 1]))}" to "${nameOf(byId.get(d.placeIds[k]))}" is ${Math.round(dist)} km; ${limit === hop ? `on a ${scale} route a day's stops stay` : 'a day trip\'s stops stay'} within ${limit} km of each other.`);
       }
     }
   });
@@ -202,6 +201,7 @@ export function judgeRoute(route, city, facts, rules = ROUTE_RULES) {
     stops: stops.map(({ where, ...s }) => s),
     scale,
     days: days.length,
+    dayTrips: days.filter(wholeTrip).length,
     stopCount: seen.size,
   };
 }
@@ -245,6 +245,22 @@ export async function checkRoute(route, city, { state, settings, env = process.e
     }
   }
   return { ...judgeRoute(route, city, facts, rules), routeKey: key, checkedAt: new Date(now).toISOString() };
+}
+
+/**
+ * The places of `city` Google has already said are closed or not there, from
+ * the check's cache: the builder leaves them out (route.js). Only answers still
+ * fresh, for the pin and the name the catalog has now.
+ */
+export function knownBad(state, city, { now = Date.now(), rules = ROUTE_RULES } = {}) {
+  const bad = new Set();
+  for (const p of city?.places || []) {
+    const hit = state?.placeChecks?.[p.id];
+    if (!hit || !hasPin(p) || hit.query !== queryOf(p) || hit.pin !== `${p.lat},${p.lng}` || now - Date.parse(hit.at) >= rules.cacheDays * DAY) continue;
+    const a = hit.answer || {};
+    if (!a.found || (a.status && a.status !== 'OPERATIONAL')) bad.add(p.id);
+  }
+  return bad;
 }
 
 export { routeProblem } from '../rules.js';

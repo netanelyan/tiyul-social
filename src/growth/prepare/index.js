@@ -13,8 +13,9 @@ import { examplesFor } from './learn.js';
 import { canPublishNew, publishRoute } from './publish.js';
 import { shortLinkFor } from './short.js';
 import { campaignFor } from '../links.js';
-import { buildRoute } from './route.js';
-import { checkRoute, ROUTE_RULES, routeKey } from './routeCheck.js';
+import { BUILDER, buildRoute } from './route.js';
+import { checkRoute, routeKey } from './routeCheck.js';
+import { readyRoute } from './sampleRoute.js';
 import { cityFor, siteContext } from './site.js';
 
 // Preparing what Today shows: only today's picks, only what is missing.
@@ -62,9 +63,22 @@ export function prepareToday(args) {
 const retryPublish = (trip, now) =>
   !trip || ['waiting-for-site', 'no-route', 'waiting-limit'].includes(trip.status) || (trip.status === 'failed' && now - Date.parse(trip.failedAt || 0) > 3_600_000);
 
-/** Publish a lead's route, inside the daily limit. Returns the trip state. */
+/**
+ * Publish a lead's route, inside the daily limit. Returns the trip state.
+ *
+ * A route that changed since it went up (rebuilt around a stop Google says is
+ * closed, or by a newer builder) is re-sent under the same externalId: an edit
+ * of the same page, at the same address, not a new page. `routeKey` on the trip
+ * is the route it shows.
+ */
 async function publishWithin({ state, settings, lead, now, deps, env, report }) {
-  if (lead.trip?.status === 'published' || !retryPublish(lead.trip, now)) return lead.trip;
+  const key = routeKey(lead.route);
+  if (lead.trip?.status === 'published') {
+    if (lead.trip.routeKey === key || now - Date.parse(lead.trip.resendFailedAt || 0) < 3_600_000) return lead.trip;
+    const trip = await deps.publishRoute(lead, { env, now });
+    return trip.status === 'published' ? { ...trip, routeKey: key } : { ...lead.trip, resendError: trip.reason, resendFailedAt: new Date(now).toISOString() };
+  }
+  if (!retryPublish(lead.trip, now)) return lead.trip;
   if (!canPublishNew(state, settings, now)) {
     return {
       status: 'waiting-limit',
@@ -72,8 +86,9 @@ async function publishWithin({ state, settings, lead, now, deps, env, report }) 
     };
   }
   const trip = await deps.publishRoute(lead, { env, now });
-  if (trip.status === 'published') report.published = (report.published || 0) + 1;
-  return trip;
+  if (trip.status !== 'published') return trip;
+  report.published = (report.published || 0) + 1;
+  return { ...trip, routeKey: key };
 }
 
 async function doPrepare({ store, settings, now = Date.now(), deps = DEFAULT_DEPS, env = process.env }) {
@@ -88,6 +103,13 @@ async function doPrepare({ store, settings, now = Date.now(), deps = DEFAULT_DEP
     return cities.get(slug);
   };
   const canDraft = claudeConfigured(env);
+
+  try {
+    await refreshSent({ state, settings, now, deps, env, report, city });
+  } catch (e) {
+    if (!(e instanceof BudgetError)) throw e;
+    report.stopped = 'budget';
+  }
 
   const items = [...day.comment, ...day.creator, ...day.agency, ...day.customer].filter((k) => !itemDone(state, k));
 
@@ -139,6 +161,7 @@ async function doPrepare({ store, settings, now = Date.now(), deps = DEFAULT_DEP
         }
       } else if (col === 'agency' && what === 'message') {
         await prepareAgency({ state, settings, lead, now, deps, env, report, city, canDraft });
+        if (lead.routeCheck?.status === 'fail' && setAside(state, lead, key, settings, now)) report.setAside = (report.setAside || 0) + 1;
       } else if (col === 'customer') {
         const post = lead.posts[0];
         if (lead.drafts?.reply?.variants?.length || !canDraft || !post) continue;
@@ -180,6 +203,14 @@ async function prepareAgency({ state, settings, lead, now, deps, env, report, ci
     }
     lead.profile = await deps.extractProfile({ state, settings, lead, siteText: site.text, now });
   }
+  // An example of a site itinerary PAGE (chosen before 2026-10-11's builder) is
+  // the site's own days, which cannot be repaired: chosen again, it becomes a
+  // route built from the same itinerary (agencyProfile.js).
+  if (lead.example?.kind === 'page' && !lead.messagedAt) {
+    delete lead.example;
+    delete lead.agencyDest;
+    delete lead.routeCheck;
+  }
   if (!lead.example) lead.example = chooseExample(state, lead, { fallback: agencySample });
   const ex = lead.example;
   let c = null;
@@ -187,18 +218,15 @@ async function prepareAgency({ state, settings, lead, now, deps, env, report, ci
     // An agency drafted before this read had a rotation page; the route replaces it.
     delete lead.agencyDest;
     c = await city(ex.slug);
-    if (!lead.route && c) lead.route = buildRoute(c, {});
     // THE ROUTE IS CHECKED BEFORE IT GOES PUBLIC, and only a route that passed is
-    // published (the owner's rule of 2026-10-11). See ./routeCheck.js.
-    if (lead.route && c) lead.routeCheck = await routeChecked(lead.routeCheck, lead.route, c, { state, settings, env, now, deps });
+    // published (the owner's rule of 2026-10-11). It is built from the site's
+    // itinerary and rebuilt around any stop Google says is closed (sampleRoute.js).
+    if (c) Object.assign(lead, await readyRouteFor(c, { lead, state, settings, env, now, deps }));
     if (lead.routeCheck?.status === 'pass') lead.trip = await publishWithin({ state, settings, lead, now, deps, env, report });
   } else if (ex?.kind === 'page') {
+    // A page already sent: the agency has that link, and it stays what it is.
     lead.agencyDest = { slug: ex.slug, he: ex.he, path: ex.path };
     c = await city(ex.slug);
-    // The page is the site's own itinerary for that many days, and it is held
-    // to the same check: it is the route the agency is shown.
-    const route = c ? buildRoute(c, { days: Number(/\/(\d+)$/.exec(ex.path || '')?.[1]) || null }) : null;
-    if (route) lead.routeCheck = await routeChecked(lead.routeCheck, route, c, { state, settings, env, now, deps });
   }
   await linkUp({ state, lead, what: 'message', deps, env, now });
   if (!lead.socials?.length && !lead.socialsLooked && braveConfigured(env)) await findSocials({ state, settings, lead, now, deps, env });
@@ -220,16 +248,65 @@ async function prepareAgency({ state, settings, lead, now, deps, env, report, ci
   }
 }
 
+/** The lead's route and check, made ready: { route, routeCheck }. */
+async function readyRouteFor(c, { lead, state, settings, env, now, deps }) {
+  const ready = await readyRoute(c, { state, settings, env, now, route: lead.route || null, check: lead.routeCheck || null, deps: { checkRoute: deps.checkRoute, buildRoute: deps.buildRoute } });
+  return { route: ready.route, routeCheck: ready.check };
+}
+
 /**
- * A route's check, reused while the route is the same one and the check is
- * fresh; run again when the route changed, the check is a month old, or it
- * could not run last time (at most once an hour).
+ * An agency whose sample route still fails after the rebuild gives its slot
+ * back (the owner's rule of 2026-10-11: a failing route must not use one of the
+ * day's three). It leaves Today, set aside with its check on the lead page, and
+ * the next agency takes the slot on the next pass. At most `caps.agency` a day,
+ * so a run of failures cannot read every waiting agency's site in one day.
+ * Returns whether it was set aside.
  */
-async function routeChecked(prev, route, c, { state, settings, env, now, deps }) {
-  const fresh = prev && prev.routeKey === routeKey(route) && now - Date.parse(prev.checkedAt || 0) < ROUTE_RULES.cacheDays * 86_400_000;
-  if (fresh && prev.status !== 'error') return prev;
-  if (fresh && now - Date.parse(prev.checkedAt) < 3_600_000) return prev;
-  return deps.checkRoute(route, c, { state, settings, env, now });
+export function setAside(state, lead, key, settings, now = Date.now()) {
+  const date = ilDate(now);
+  const today = Object.values(state.leads).filter((l) => l.routeSetAside && ilDate(l.routeSetAside.at) === date).length;
+  if (today >= (Number(settings.caps?.agency) || 0)) return false;
+  const at = new Date(now).toISOString();
+  lead.routeSetAside = { at, builder: BUILDER, issues: lead.routeCheck.issues.length };
+  (lead.history ??= []).push({ at, what: `set aside: its sample route failed the check (${lead.routeCheck.issues.length} issues) after the rebuild` });
+  const day = state.daily[date];
+  if (day?.agency) day.agency = day.agency.filter((k) => k !== key);
+  return true;
+}
+
+/**
+ * The routes already sent to agencies, rebuilt by the current builder and
+ * re-sent under the same externalId (the owner, 2026-10-11), so the link each
+ * agency has shows the new route. Only once the new route passes the check;
+ * until then the page they have stays as it is, and `routeRefresh` on the lead
+ * says why. A re-send is an edit of the same page, not a new one.
+ */
+async function refreshSent({ state, settings, now, deps, env, report, city }) {
+  for (const lead of Object.values(state.leads)) {
+    if (lead.type !== 'agency' || !lead.messagedAt || lead.closed || lead.trip?.status !== 'published') continue;
+    if (lead.example?.kind !== 'route' || lead.route?.builder === BUILDER) continue;
+    const c = await city(lead.example.slug || lead.route?.citySlug);
+    if (!c) continue;
+    const prev = lead.routeRefresh || {};
+    const ready = await readyRoute(c, { state, settings, env, now, route: prev.route || null, check: prev.check || null, deps: { checkRoute: deps.checkRoute, buildRoute: deps.buildRoute } });
+    lead.routeRefresh = { at: new Date(now).toISOString(), route: ready.route, check: ready.check };
+    if (ready.check?.status !== 'pass') continue;
+    const was = lead.trip;
+    const trip = await deps.publishRoute({ ...lead, route: ready.route }, { env, now });
+    if (trip.status !== 'published') {
+      lead.routeRefresh.error = trip.reason;
+      continue;
+    }
+    lead.route = ready.route;
+    lead.routeCheck = ready.check;
+    lead.trip = { ...trip, routeKey: routeKey(ready.route) };
+    delete lead.routeRefresh;
+    (lead.history ??= []).push({
+      at: new Date(now).toISOString(),
+      what: `route rebuilt and re-sent to the same page${trip.url !== was.url ? ` (its address changed: ${was.url} is now ${trip.url})` : ''}`,
+    });
+    report.resent = (report.resent || 0) + 1;
+  }
 }
 
 /**
