@@ -1,4 +1,5 @@
 import { fillFromSite } from '../images/commons.js';
+import { nudeIn, isNude } from '../images/nudity.js';
 import { fillImages } from '../deck/build.js';
 
 // The photograph ladder, and the order is the whole of it.
@@ -44,7 +45,7 @@ import { fillImages } from '../deck/build.js';
  */
 export async function fillPostPhotos(
   places,
-  { dest = '', search = true, width = 1440, onProgress = null } = {}
+  { dest = '', search = true, width = 1440, onProgress = null, nudeCheck = nudeIn, fromSite = fillFromSite } = {}
 ) {
   const rows = (places || []).filter(Boolean);
   if (!rows.length) return { commons: 0, stock: 0, missing: 0, why: new Map() };
@@ -52,11 +53,25 @@ export async function fillPostPhotos(
   const why = new Map();
 
   // Rung one, for every place at once. One request per fifty files.
-  const site = await fillFromSite(rows, { width }).catch((e) => {
+  const site = await fromSite(rows, { width }).catch((e) => {
     console.error(`posts: the site's own photographs were unavailable - ${e.message}`);
     return { filled: 0, why: new Map() };
   });
   for (const [place, reason] of site.why || []) why.set(place, reason);
+
+  // OUR EDITOR'S PHOTOGRAPH SHOWS THE PLACE, AND IT CAN STILL SHOW A NUDE STATUE.
+  // Florence's Accademia is a photograph of David. See ../images/nudity.js: a flagged
+  // one is cleared here and the place goes down the ladder to rung two, whose own
+  // looks refuse nudity too.
+  const ours = rows.filter((p) => p.image?.provenance === 'commons');
+  if (ours.length) {
+    const nude = await nudeCheck(ours.map((p) => p.image.src));
+    for (const [i, p] of ours.entries()) {
+      if (!nude.has(i)) continue;
+      p.image = null;
+      why.set(p, 'the page photograph shows nudity');
+    }
+  }
   const commons = rows.filter((p) => p.image?.provenance === 'commons').length;
   await onProgress?.({ stage: 'commons', done: commons, of: rows.length });
 
@@ -129,7 +144,7 @@ export async function coverPhoto(city, slides = [], { width = 1440 } = {}) {
     // Commons host, downloads the bytes and attaches the licence. A hero from
     // anywhere else falls through to a place photograph below.
     const got = await fillFromSite([probe], { width }).catch(() => ({ filled: 0 }));
-    if (got.filled && probe.image?.src && !taken.has(probe.image.src)) {
+    if (got.filled && probe.image?.src && !taken.has(probe.image.src) && !(await isNude(probe.image.src))) {
       return { ...probe.image, hero: true };
     }
   }

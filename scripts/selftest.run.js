@@ -6705,7 +6705,7 @@ group('captions vary, and the emoji are pictures');
     countryHe: 'צ׳כיה',
     titleHe: '4 ימים בפראג',
     captionHookHe: '4 ימים בפראג, ככה היינו בונים את זה',
-    practicalHe: 'טיסות ישירות מנתב"ג - כ-4 שעות',
+    practicalHe: 'יש מסעדות כשרות ובית חב״ד ליד העיר העתיקה',
     signoffHe: 'מקווה שזה עוזר לתכנן 🤍',
     siteSlug: 'prague',
     slides: [{ countryHe: 'צ׳כיה' }],
@@ -6766,6 +6766,30 @@ group('captions vary, and the emoji are pictures');
 
   // A post with no page drops the site part rather than substituting a random ask into
   // a shape that was not designed to carry one.
+  // NO FLIGHT CLAIM IN A CAPTION until the flight facts are verified: Florence's said
+  // direct flights from Ben Gurion run in season, and Kayak showed none.
+  const { FLIGHT_CLAIM } = await import('../src/posts/caption.js');
+  const { practicalFor } = await import('../src/posts/index.js');
+  for (const claim of [
+    'טיסות ישירות מנתב״ג לפירנצה (FLR) מופעלות בעונה, כארבע שעות',
+    'המון טיסות ישירות מנתב"ג (אל על, ארקיע, ישראייר) - כשעתיים בלבד',
+    'טיסה של כארבע שעות',
+    'זמן הטיסה כשלוש שעות וחצי',
+  ]) {
+    ok(`a flight claim is recognised: ${claim.slice(0, 30)}`, FLIGHT_CLAIM.test(claim));
+  }
+  for (const fine of ['שווה את הטיסה?', 'עדיין הייתם טסים?', 'יש מסעדות כשרות ובית חב״ד']) {
+    ok(`and a line that is not one is left alone: ${fine}`, !FLIGHT_CLAIM.test(fine));
+  }
+  const flown = { ...post, practicalHe: 'טיסות ישירות מנתב״ג לפירנצה (FLR) מופעלות בעונה, כארבע שעות' };
+  for (const s of shapes) {
+    const both = [true, false].map((titled) => buildCaption(flown, { shape: s, titled, question: 'x' }));
+    ok(`shape ${s.id} carries no flight claim`, both.every((c) => !/נתב/.test(c)), both.join(' | '));
+  }
+  const practical = { flightsHe: 'טיסות ישירות מנתב״ג לפירנצה, כארבע שעות.', kosherHe: 'הכשרות מסתמכת בעיקר על בית חב״ד.' };
+  ok('the practical line is the kosher one, never the flight', /חב״ד/.test(practicalFor({ practical }) || ''), practicalFor({ practical }));
+  eq('and with no kosher line there is none', practicalFor({ practical: { flightsHe: practical.flightsHe } }), null);
+
   const noPage = buildCaption({ ...post, siteSlug: null }, { shape: shapes[0], titled: true, question: 'x' });
   ok('no page means no site line', !noPage.includes('בלינק בביו'));
   ok('and the rest of the shape survives', noPage.includes('שמרו את זה לטיול'));
@@ -6839,6 +6863,75 @@ group('the photograph ladder starts on our own page');
   eq('the credit carries the author and the licence', commons.creditFor({ author: 'Tilman2007', license: 'CC BY-SA 4.0' }), 'Tilman2007 / CC BY-SA 4.0');
   ok('a half-known credit is still a credit', commons.creditFor({ license: 'CC BY 2.0' }).includes('CC BY 2.0'));
   ok('and an unknown one names the source', commons.creditFor({}).includes('Commons'));
+}
+
+/* -------------------------------------------------------------------------- */
+group('no nudity on a slide, art included');
+
+{
+  // The owner's rule after Florence's Accademia slide carried Michelangelo's David.
+  const nudity = await import('../src/images/nudity.js');
+  const curate = await import('../src/images/curate.js');
+  const { fillPostPhotos } = await import('../src/posts/photos.js');
+
+  // A stand-in for the API that answers with the JSON it is given and counts its calls.
+  const fake = (answer) => {
+    const c = {
+      calls: 0,
+      messages: {
+        create: async () => {
+          c.calls++;
+          return { content: [{ type: 'text', text: JSON.stringify(answer) }], usage: { input_tokens: 1, output_tokens: 1 } };
+        },
+      },
+    };
+    return c;
+  };
+  const jpeg = (tag) => `data:image/jpeg;base64,${Buffer.from(`photo ${tag} ${Date.now()}`).toString('base64')}`;
+  const david = jpeg('david');
+  const duomo = jpeg('duomo');
+
+  let api = fake({ nude: [1] });
+  nudity.setClient(api);
+  const flagged = await nudity.nudeIn([david, duomo]);
+  ok('the statue is flagged', flagged.has(0), JSON.stringify([...flagged]));
+  ok('and the cathedral is not', !flagged.has(1), JSON.stringify([...flagged]));
+  eq('both were looked at in one call', api.calls, 1);
+  api = fake({ nude: [] });
+  nudity.setClient(api);
+  ok('a photograph seen once is not paid for again', (await nudity.isNude(david)) && api.calls === 0, String(api.calls));
+  ok('one that cannot be shown to the model counts as nude', await nudity.isNude('https://example.com/x.jpg'));
+  eq('and costs no call', api.calls, 0);
+
+  // The page's own photograph is checked, and a nude one sends the place down the ladder.
+  const places = [{ name: 'הדואומו' }, { name: 'הדוד בגלריה דל אקדמיה' }];
+  const shots = await fillPostPhotos(places, {
+    search: false,
+    fromSite: async (rows) => {
+      rows[0].image = { src: duomo, provenance: 'commons' };
+      rows[1].image = { src: david, provenance: 'commons' };
+      return { filled: 2, why: new Map() };
+    },
+    nudeCheck: async (srcs) => new Set(srcs.flatMap((s, i) => (s === david ? [i] : []))),
+  });
+  ok('the cathedral keeps its photograph', places[0].image?.src === duomo);
+  eq('the statue loses its', places[1].image, null);
+  eq('so one photograph counts as ours', shots.commons, 1);
+  ok('and the reason is said', /nudity/.test(shots.why.get(places[1]) || ''), shots.why.get(places[1]));
+
+  // The stock judge: a pick it reports as nude is refused in code.
+  const answer = (n) => ({ pick: 1, shows_place: true, subject: 9, nudity: n, why: 'statue fills the frame' });
+  curate.setClient(fake(answer(true)));
+  eq('the stock judge cannot pick a nude photograph', await curate.pickCinematic([Buffer.from('x')], { place: 'Accademia' }), null);
+  curate.setClient(fake(answer(false)));
+  ok('and the same pick without nudity stands', (await curate.pickCinematic([Buffer.from('x')], { place: 'Accademia' }))?.index === 0);
+  const silent = answer(false);
+  delete silent.nudity;
+  curate.setClient(fake(silent));
+  eq('an answer that does not say is refused too', await curate.pickCinematic([Buffer.from('x')], { place: 'Accademia' }), null);
+
+  nudity.setClient(null);
+  curate.setClient(null);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -8844,6 +8937,28 @@ group('delivery - a promise the post does not keep costs the like, not the view'
   ok('the plan-for-the-day sentence is not mistaken for one', !/להתחיל מוקדם/.test(booked), booked);
   eq('two can be had when the page has two', bookingLines(city, { want: 2 }).length, 2);
   eq('a page with no notes has none', bookingLine({ itinerary: [] }), null);
+
+  // A SENTENCE THAT POINTS BACK KEEPS THE ONE BEFORE IT. Florence's "שניהם בהזמנה
+  // מראש" reached a slide alone, under a line about the dome, with nothing for
+  // "both" to mean.
+  const florence = {
+    itinerary: [
+      { day: 1, notes: 'העלייה לכיפת ברונלסקי דורשת הזמנה לשעה מדויקת.' },
+      { day: 2, notes: 'האופיצי בבוקר עם הפתיחה, והאקדמיה אחר הצהריים. שניהם בהזמנה מראש.' },
+    ],
+  };
+  const both = bookingLines(florence, { want: 2 });
+  ok('"שניהם" never stands alone', !both.some((b) => /^שניהם/.test(b)), JSON.stringify(both));
+  ok('it comes with the sentence it points at', both.includes('האופיצי בבוקר עם הפתיחה, והאקדמיה אחר הצהריים. שניהם בהזמנה מראש'), JSON.stringify(both));
+  ok('and the pair is still a verbatim quote', both.every((b) => notesSource(florence).replace(/\s+/g, ' ').includes(b)), JSON.stringify(both));
+  for (const opener of ['זה', 'גם', 'וגם']) {
+    const c = { itinerary: [{ day: 1, notes: `המגדל נסגר בשש. ${opener} דורש כרטיס מראש.` }] };
+    eq(`"${opener}" keeps the sentence before it`, bookingLine(c), `המגדל נסגר בשש. ${opener} דורש כרטיס מראש`);
+  }
+  eq('one with nothing before it is dropped', bookingLine({ itinerary: [{ day: 1, notes: 'שניהם בהזמנה מראש.' }] }), null);
+  eq('and so is a pair too long for the slide', bookingLine({ itinerary: [{ day: 1, notes: `${'א'.repeat(110)}. שניהם בהזמנה מראש.` }] }), null);
+  const twice = { itinerary: [{ day: 1, notes: 'הכיפה דורשת הזמנה מראש. גם המגדל דורש כרטיס.' }] };
+  eq('a sentence already taken alone is replaced by the pair, not repeated', JSON.stringify(bookingLines(twice, { want: 3 })), JSON.stringify(['הכיפה דורשת הזמנה מראש. גם המגדל דורש כרטיס']));
 
   // WHAT THE COVER PROMISED, read off the hook rather than guessed.
   ok('a counted cover is read as counted', promisedBy('3 יעדים ששווים את הטיסה').counted === 3);

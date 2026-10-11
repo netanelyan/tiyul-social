@@ -466,13 +466,35 @@ const BOOKING_CUE = /(מראש|כרטיס|כרטיסים|הזמנה|להזמין
  * genuinely longer than a verdict clause and the information is the point.
  */
 export function bookingLine(city, { max = 120 } = {}) {
+  for (const s of bookingCandidates(city, max)) return s;
+  return null;
+}
+
+// A sentence that opens by pointing back at the one before it.
+//
+// FLORENCE'S "שניהם בהזמנה מראש" REACHED A SLIDE ON ITS OWN, under a line about the
+// dome, so "both" pointed at nothing. The page says "האופיצי בבוקר עם הפתיחה,
+// והאקדמיה אחר הצהריים. שניהם בהזמנה מראש." and the booking fact is the second
+// sentence, which is only a fact together with the first. So a sentence like this
+// keeps the one before it, and is dropped when there is none or the pair is too long.
+const POINTS_BACK = /^ו?(?:שניהם|שניהן|שתיהן|שתיהם|זה|זו|זאת|גם)(?=[\s,])/;
+
+/** Booking facts in page order, each one whole: a pointing sentence with its antecedent. */
+function* bookingCandidates(city, max) {
   for (const day of city?.itinerary || []) {
-    for (const sentence of sentences(day?.notes)) {
-      const s = tidy(sentence);
-      if (s && s.length <= max && BOOKING_CUE.test(s)) return s;
+    const all = sentences(day?.notes);
+    for (const [i, sentence] of all.entries()) {
+      let s = tidy(sentence);
+      if (!s || !BOOKING_CUE.test(s)) continue;
+      if (POINTS_BACK.test(s)) {
+        // Joined with a space: the quote check flattens whitespace, so the pair is
+        // still a verbatim substring of the notes.
+        if (i === 0 || POINTS_BACK.test(tidy(all[i - 1]))) continue;
+        s = tidy(`${all[i - 1]} ${sentence}`);
+      }
+      if (s.length <= max) yield s;
     }
   }
-  return null;
 }
 
 /**
@@ -492,12 +514,14 @@ export const notesSource = (city) =>
 /** Every booking fact, for the caller that wants more than one. Deduplicated. */
 export function bookingLines(city, { max = 120, want = 3 } = {}) {
   const out = [];
-  for (const day of city?.itinerary || []) {
-    for (const sentence of sentences(day?.notes)) {
-      const s = tidy(sentence);
-      if (s && s.length <= max && BOOKING_CUE.test(s) && !out.includes(s)) out.push(s);
-      if (out.length >= want) return out;
-    }
+  for (const s of bookingCandidates(city, max)) {
+    if (out.includes(s)) continue;
+    // A joined pair carries the sentence before it, which may already be here on
+    // its own; the pair replaces it rather than saying it twice.
+    const inside = out.findIndex((o) => s.includes(o));
+    if (inside >= 0) out[inside] = s;
+    else out.push(s);
+    if (out.length >= want) return out;
   }
   return out;
 }

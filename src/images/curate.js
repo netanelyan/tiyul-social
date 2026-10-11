@@ -24,6 +24,11 @@ const EFFORT = process.env.CURATE_EFFORT || 'low';
 let client = null;
 const getClient = () => (client ??= new Anthropic());
 
+/** For the selftest: a stand-in with the same `messages.create`. */
+export const setClient = (c) => {
+  client = c;
+};
+
 const SCHEMA = {
   type: 'object',
   properties: {
@@ -42,9 +47,13 @@ const SCHEMA = {
       description:
         'How much of the frame the named thing itself occupies, 0-10. 8+ means it dominates and is unmistakable. 3 means it is somewhere in the picture if you know where to look. Be strict.',
     },
+    nudity: {
+      type: 'boolean',
+      description: 'True if the chosen photograph shows any nudity, including a nude statue, painting or other art.',
+    },
     why: { type: 'string', description: 'Six words at most, English, on what decided it' },
   },
-  required: ['pick', 'shows_place', 'subject', 'why'],
+  required: ['pick', 'shows_place', 'subject', 'nudity', 'why'],
   additionalProperties: false,
 };
 
@@ -96,6 +105,14 @@ REJECT, and prefer a worse-composed photograph over any of these:
 A person walking away from camera, small in a landscape, is GOOD - it gives
 scale and it is what the best travel posts do. A person facing the camera is a
 portrait, and this is not a portrait.
+
+NO NUDITY, AND THAT INCLUDES ART
+
+Never pick a photograph that shows nudity: a nude person, a nude statue or
+sculpture however famous (Michelangelo's David counts), a nude painting, fresco
+or relief. The slides go on TikTok, whose checks do not tell art from anything
+else. If the only photographs of the place show nudity, say 0. Report it in the
+nudity field for the photograph you picked.
 
 IT MUST BE THIS PLACE
 
@@ -196,6 +213,10 @@ export async function pickCinematic(
   // afford to be one place shorter; it cannot afford to name a place and show
   // somewhere else.
   if (parsed.shows_place === false) return null;
+
+  // No nudity on a slide, art included: the owner's rule, and a field rather than a
+  // hope for the same reason as the subject threshold below. See ./nudity.js.
+  if (parsed.nudity !== false) return null;
 
   // Nor one where the place is technically present and visually absent. Refused
   // here rather than in the prompt alone, because "be strict" is advice and a

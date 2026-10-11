@@ -58,6 +58,18 @@ export function tagsFor(post, opts = {}) {
 }
 
 /**
+ * A flight claim: a direct route, Ben Gurion, a flight time.
+ *
+ * NONE IN A CAPTION UNTIL THE FLIGHT FACTS ARE VERIFIED. The owner's rule, 2026-10-11.
+ * Florence's caption said "טיסות ישירות מנתב״ג לפירנצה (FLR) מופעלות בעונה, כארבע
+ * שעות", copied from our own page, and Kayak showed no direct flight on that route.
+ * Nothing checks the page's flights paragraph against a schedule, so practicalFor in
+ * ./index.js no longer offers it, and a part from anywhere else that carries one is
+ * dropped here rather than published. A tag like #טיסות is not a claim and is kept.
+ */
+export const FLIGHT_CLAIM = /טיס(?:ה|ות)\s+(?:ישיר|מנתב|מתל|של\s)|נתב["״׳']?ג|שעות\s+טיסה|זמן\s+(?:ה)?טיסה|קו\s+ישיר/;
+
+/**
  * One caption, from one shape.
  *
  * `shape` is the ordered list of part names from post-config.json. A part that
@@ -113,7 +125,7 @@ export function buildCaption(post, { shape, target = 'tiktok', titled = false, q
       default:
         text = null;
     }
-    if (text) parts.push(String(text).trim());
+    if (text && (part === 'tags' || !FLIGHT_CLAIM.test(text))) parts.push(String(text).trim());
   }
 
   // The tags are last whatever the shape says, because a tag block is where a reader

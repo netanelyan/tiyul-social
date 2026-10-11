@@ -9,6 +9,7 @@ import * as unsplash from '../images/unsplash.js';
 import * as pexels from '../images/pexels.js';
 import { pickCinematic, cinematicQueries } from '../images/curate.js';
 import { nearby, download as commonsDownload } from '../images/commons.js';
+import { isNude } from '../images/nudity.js';
 import { SIZES } from '../render/deckTemplates.js';
 import { destinationPlaces, pick, slugFromUrl } from '../sources/tiyulplus.js';
 import { coverForDeck } from './ideas.js';
@@ -733,7 +734,7 @@ async function sourcedImage({ nameEn, where, used, at = null }) {
   // The largest one. Commons geosearch returns no quality signal and file size is the
   // only proxy available without another call per file; at this radius every result is
   // the right subject, so the remaining question is only which is worth looking at.
-  const pick = fresh.sort((a, b) => (b.width || 0) * (b.height || 0) - (a.width || 0) * (a.height || 0))[0];
+  const bySize = fresh.sort((a, b) => (b.width || 0) * (b.height || 0) - (a.width || 0) * (a.height || 0));
 
   // FETCHED, NOT LINKED. The renderer measures every photograph by drawing it to a
   // canvas and reading the pixels back, and a canvas that has drawn a CROSS-ORIGIN image
@@ -741,7 +742,19 @@ async function sourcedImage({ nameEn, where, used, at = null }) {
   // it. Every other image path in this project hands the renderer a data URI for exactly
   // this reason; leaving a Commons thumbnail as an https URL was the one that did not,
   // and it failed the build rather than the slide.
-  const inlined = await commonsDownload(pick.src).catch(() => null);
+  //
+  // AND LOOKED AT FOR ONE THING. Nothing else here judges a geotagged file, and the
+  // largest file within 300 metres of a statue gallery is a photograph of its statue.
+  // See ../images/nudity.js. The next largest is tried, up to three.
+  let pick = null;
+  let inlined = null;
+  for (const hit of bySize.slice(0, 3)) {
+    const got = await commonsDownload(hit.src).catch(() => null);
+    if (!got || (await isNude(got))) continue;
+    pick = hit;
+    inlined = got;
+    break;
+  }
   if (!inlined) return null;
 
   used.add(`commons:${pick.title}`);

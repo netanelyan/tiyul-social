@@ -419,13 +419,14 @@ function buildFor(type, city, { look, hook, dest, days, questionHe, alts, defaul
 /**
  * The caption's one practical line.
  *
- * The flight before the kosher overview, for the reason practicalLine in ./caption.js
- * gives: the flight is the most Israeli fact on the page and the one the reader is
- * actually deciding on. Null when the builder loaded neither, and the caption shape
- * then has one part fewer - which is a real variation rather than a hole.
+ * The kosher overview, and no longer the flight. The flight came first, as the most
+ * Israeli fact on the page, until Florence's caption promised a direct flight from Ben
+ * Gurion that Kayak did not show: no flight claim goes in a caption until the flight
+ * facts are verified (FLIGHT_CLAIM in ./caption.js). Null when the builder loaded no
+ * kosher overview, and the caption shape then has one part fewer - which is a real
+ * variation rather than a hole.
  */
-const practicalFor = (built) =>
-  built.practical ? firstClause(built.practical.flightsHe) || firstClause(built.practical.kosherHe) : null;
+export const practicalFor = (built) => (built.practical ? firstClause(built.practical.kosherHe) : null);
 
 /**
  * The candidate, in the shape the queue already carries.

@@ -11,9 +11,10 @@ loadEnv();
 //       where the card host serves it, and posts it to TikTok through Zernio as
 //       SELF_ONLY with auto music. Only the account owner can see it.
 //
-//   npm run zernio-test -- prepare-public
+//   npm run zernio-test -- prepare-public [--dest florence] [--type verdict]
 //       Builds and renders another post and stops. Prints its cover, caption and
-//       slides, and saves it to data/zernio-public.json. Nothing is posted.
+//       slides, and saves it to data/zernio-public.json. Nothing is posted. The two
+//       flags rebuild a post the owner has already seen, after a fix to it.
 //
 //   npm run zernio-test -- publish-public <id>
 //       Posts the prepared post PUBLICLY, and only if <id> is the id printed by
@@ -47,15 +48,24 @@ for (const key of ['CARD_PUBLIC_BASE_URLS', 'CARD_PUBLIC_BASE_URL']) {
 const mode = process.argv[2];
 const PUBLIC_FILE = new URL('../data/zernio-public.json', import.meta.url);
 
-async function buildOne() {
+const flag = (name) => {
+  const i = process.argv.indexOf(`--${name}`);
+  return i > 0 ? process.argv[i + 1] || null : null;
+};
+
+async function buildOne({ destAsked = null, typeAsked = null } = {}) {
   const { buildPost } = await import('../src/posts/index.js');
   const { pickDestination } = await import('../src/plan/write.js');
   const { nextShape, destinationsFor } = await import('../src/posts/types.js');
   const rows = JSON.parse(readFileSync(new URL('../destinations.json', import.meta.url), 'utf8')).destinations;
-  const type = nextShape().type;
+  const type = nextShape({ type: typeAsked }).type;
+  if (typeAsked && type !== typeAsked) throw new Error(`no post type "${typeAsked}"`);
+  const q = String(destAsked || '').trim().toLowerCase();
+  const asked = q ? rows.find((r) => [r.id, r.siteSlug, r.he, r.en].some((v) => String(v || '').toLowerCase() === q)) : null;
+  if (q && !asked) throw new Error(`no destination "${destAsked}" in destinations.json`);
   const tried = [];
-  for (let i = 0; i < 3; i++) {
-    const dest = pickDestination(tried, { from: destinationsFor(type, rows) });
+  for (let i = 0; i < (asked ? 1 : 3); i++) {
+    const dest = asked || pickDestination(tried, { from: destinationsFor(type, rows) });
     if (!dest) break;
     tried.push(dest.he);
     try {
@@ -111,7 +121,7 @@ if (mode === 'private') {
   await post(cand, 'SELF_ONLY');
   console.log('\n  Open TikTok on the account: the post is visible to you only. Check it has music.');
 } else if (mode === 'prepare-public') {
-  const cand = await buildOne();
+  const cand = await buildOne({ destAsked: flag('dest'), typeAsked: flag('type') });
   show(cand);
   await checkFetchable(cand.deck.urls.tiktok);
   cand.deck.urls.tiktok.forEach((u, i) => console.log(`  slide ${i + 1}: ${u}`));
