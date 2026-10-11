@@ -49,22 +49,48 @@ export function growthPort({ env = process.env, configUrl = CONFIG_URL } = {}) {
 // Placeholders the templates may use. Anything else in square brackets is a
 // typo, and the Settings page refuses to save it rather than sending a DM with
 // "[שמ]" in it.
-export const PLACEHOLDERS = ['[שם]', '[יעד]', '[שורה אישית אחת על הפוסט]', '[קישור]', '[מתנה]'];
+//
+// THE FIRST MESSAGES ARE NO LONGER TEMPLATES. The agency message was a fixed
+// brochure sentence and the creator DM a template around one model line, and
+// both read as written by a bot (the owner's examples, 2026-10-11). They are
+// now written whole by the drafting model, in Netanel's voice, about the one
+// thing that is specific to that agency or that video (prepare/draft.js). The
+// follow-ups and the customer reply's link line stay templates: they are one
+// short sentence each, and the same sentence is the right one every time.
+export const PLACEHOLDERS = ['[יעד]', '[קישור]'];
 
-export const TEMPLATE_NAMES = ['creator', 'creator-followup', 'agency', 'agency-followup', 'customer-link'];
+export const TEMPLATE_NAMES = ['creator-followup', 'agency-followup', 'customer-link'];
 
 export const TEMPLATE_LABELS = {
-  creator: 'הודעה ליוצר/ת',
-  'creator-followup': 'תזכורת ליוצר/ת',
-  agency: 'הודעה לסוכנות',
-  'agency-followup': 'תזכורת לסוכנות',
-  'customer-link': 'שורת קישור בתגובה ללקוח (רק כשביקשו מסלול)',
+  'creator-followup': 'Follow-up to a creator',
+  'agency-followup': 'Follow-up to an agency',
+  'customer-link': 'Link line in a reply (only when they asked for a route)',
 };
+
+// The limits, in characters and sentences, enforced in code (prepare/tells.js).
+// `target` is what the prompt asks for; `max` is where code refuses. A link
+// counts as `linkChars`, whatever its real length, so a long trip slug does not
+// push a short message over.
+export const LIMITS = Object.freeze({
+  // A reaction to a video: one tip, said the way people say it in comments.
+  comment: { target: 150, max: 170, sentences: 2 },
+  // An answer to somebody asking how to plan a trip needs a little more room.
+  reply: { target: 250, max: 280, sentences: 3 },
+  // A first message to an agency or a creator, on WhatsApp or in a DM.
+  message: { target: 350, max: 380, sentences: 5, links: 1 },
+  followup: { target: 120, max: 140, sentences: 2 },
+  linkChars: 25,
+});
 
 export const DEFAULT_SETTINGS = Object.freeze({
   caps: { comment: 10, creator: 5, agency: 3, customer: 5 },
-  // Dollars a month, billable: after each API's free allowance.
-  budgetUsd: 25,
+  // Dollars a month, billable: after each API's free allowance. $50 from
+  // 2026-10-11, when drafting moved to Opus 5.5 with a review pass.
+  budgetUsd: 50,
+  // New route pages a day on tiyulplus.com, creators and agencies together. The
+  // site caps new publications by the editor account at 20 per 24 hours
+  // (SITE-SPEC.md); a re-send does not count.
+  publishPerDay: 20,
   // Brave gives a monthly credit on the Search plan. If the account turns out
   // not to get it, set this to 0 and the ledger stops subtracting it.
   braveCreditUsd: 5,
@@ -97,7 +123,16 @@ export const DEFAULT_SETTINGS = Object.freeze({
     'ירושלים', 'בני ברק', 'בית שמש', 'תל אביב', 'פתח תקווה', 'מודיעין עילית', 'חיפה',
     'אשדוד', 'ראשון לציון', 'נתניה', 'רחובות', 'באר שבע', 'אלעד', 'ביתר עילית',
   ],
-  models: { draft: 'claude-sonnet-5-5', sort: 'claude-haiku-4-5' },
+  // Drafting and the skeptical-reader pass: Opus 5.5, the owner's choice on
+  // 2026-10-11 over Fable 5.1, which costs two and a half times as much and is
+  // to be switched to only if the side-by-side proof shows it clearly better.
+  // Reading an agency's own site into facts is extraction, not text anybody
+  // reads, so Sonnet. Sorting found posts stays on Haiku.
+  models: { draft: 'claude-opus-5-5', review: 'claude-opus-5-5', extract: 'claude-sonnet-5-5', sort: 'claude-haiku-4-5' },
+  // How hard the drafting and review calls think. Thinking cannot be turned off
+  // on Opus 5.5 or Fable 5.1; effort is the only dial, and Opus 5.5's own
+  // default is medium.
+  effort: 'medium',
 });
 
 const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);

@@ -1,12 +1,18 @@
 import { siteSlugFor } from '../../plan/site.js';
 import { braveConfigured, braveSearch } from '../../clients/brave.js';
 import { destinations } from '../find/queries.js';
+import { fillVideoContext } from '../find/videoContext.js';
 import { BudgetError, guard, marginal, record } from '../../clients/budget.js';
 import { claudeConfigured } from '../claude.js';
 import { itineraryPath } from '../links.js';
 import { ilDate, itemDone, parseItem, pickToday } from '../rules.js';
-import { draftComments, draftCreatorLine, draftCustomerReply } from './draft.js';
-import { publishRoute } from './publish.js';
+import { chooseExample, extractProfile, readAgencySite } from './agencyProfile.js';
+import { draftItem } from './draft.js';
+import { targetFor } from './compose.js';
+import { examplesFor } from './learn.js';
+import { canPublishNew, publishRoute } from './publish.js';
+import { shortLinkFor } from './short.js';
+import { campaignFor } from '../links.js';
 import { buildRoute } from './route.js';
 import { cityFor, siteContext } from './site.js';
 
@@ -14,9 +20,30 @@ import { cityFor, siteContext } from './site.js';
 //
 // Drafting costs money, so it happens for the items inside the caps and for
 // nothing else. A lead that is found and never picked costs one classification
-// and no draft.
+// and no draft. The same holds for the two new reads: a video's description and
+// comments, and an agency's own site, are read only for what is on Today.
+//
+// TWO THINGS GO PUBLIC HERE, AND NOWHERE ELSE: a creator's route, the day they
+// reach the Creators column, and an agency's sample route, the day it is picked
+// for a message. Both go through the site's trips endpoint, and both count
+// against the one daily limit the site sets for new pages (canPublishNew).
 
-export const DEFAULT_DEPS = { cityFor, draftComments, draftCreatorLine, draftCustomerReply, publishRoute, brave: braveSearch };
+export const DEFAULT_DEPS = {
+  cityFor,
+  draftItem,
+  publishRoute,
+  brave: braveSearch,
+  fillVideoContext,
+  readAgencySite,
+  extractProfile,
+  shortLink: shortLinkFor,
+};
+
+/** Ask the site for this item's short link once; the card reads it from the lead. */
+async function linkUp({ state, lead, what, deps, env, now }) {
+  const url = targetFor(lead, what, { state });
+  if (url) await deps.shortLink(state, lead, url, { env, now, campaign: campaignFor(lead) });
+}
 
 let running = null;
 
@@ -28,7 +55,27 @@ export function prepareToday(args) {
   return running;
 }
 
+// A route the site has not taken yet is tried again on the next pass; a refusal
+// it will repeat waits an hour.
+const retryPublish = (trip, now) =>
+  !trip || ['waiting-for-site', 'no-route', 'waiting-limit'].includes(trip.status) || (trip.status === 'failed' && now - Date.parse(trip.failedAt || 0) > 3_600_000);
+
+/** Publish a lead's route, inside the daily limit. Returns the trip state. */
+async function publishWithin({ state, settings, lead, now, deps, env, report }) {
+  if (lead.trip?.status === 'published' || !retryPublish(lead.trip, now)) return lead.trip;
+  if (!canPublishNew(state, settings, now)) {
+    return {
+      status: 'waiting-limit',
+      reason: `The site takes ${settings.publishPerDay} new route pages a day and today's are used. This one goes up on a later pass.`,
+    };
+  }
+  const trip = await deps.publishRoute(lead, { env, now });
+  if (trip.status === 'published') report.published = (report.published || 0) + 1;
+  return trip;
+}
+
 async function doPrepare({ store, settings, now = Date.now(), deps = DEFAULT_DEPS, env = process.env }) {
+  deps = { ...DEFAULT_DEPS, ...deps };
   const state = store.data;
   const day = pickToday(state, settings, now);
   const report = { drafted: 0, failed: 0, stopped: null };
@@ -41,6 +88,23 @@ async function doPrepare({ store, settings, now = Date.now(), deps = DEFAULT_DEP
   const canDraft = claudeConfigured(env);
 
   const items = [...day.comment, ...day.creator, ...day.agency, ...day.customer].filter((k) => !itemDone(state, k));
+
+  // The videos' descriptions and top comments, for every video today's items
+  // will write about, in one batch.
+  const videos = [];
+  for (const key of items) {
+    const { col, leadId, what } = parseItem(key);
+    const lead = state.leads[leadId];
+    if (!lead) continue;
+    if (col === 'comment') videos.push(...lead.posts.filter((p) => p.id === what));
+    if (col === 'creator' && what === 'dm') videos.push(lead.posts.find((p) => p.status === 'commented') || lead.posts[0]);
+  }
+  try {
+    await deps.fillVideoContext(state, videos.filter(Boolean), { env, now });
+  } catch (e) {
+    report.contextError = e.message;
+  }
+
   for (const key of items) {
     const { col, leadId, what } = parseItem(key);
     const lead = state.leads[leadId];
@@ -48,40 +112,37 @@ async function doPrepare({ store, settings, now = Date.now(), deps = DEFAULT_DEP
     try {
       if (col === 'comment') {
         const post = lead.posts.find((p) => p.id === what);
-        if (!post || post.drafts?.comments?.length || !canDraft) continue;
+        if (!post || post.drafts?.variants?.length || !canDraft) continue;
         // The video's own destination, which is not always the one the creator
         // was first found for.
         const c = await city(post.dest?.slug || lead.dest?.slug);
-        post.drafts = { ...post.drafts, comments: await deps.draftComments({ state, settings, lead, post, context: siteContext(c) }), at: new Date(now).toISOString() };
+        post.drafts = await deps.draftItem('comment', { state, settings, lead, post, site: siteContext(c), examples: examplesFor(state, 'comment') });
         delete post.draftError;
         report.drafted++;
       } else if (col === 'creator' && what === 'dm') {
         // The DM is about the video that was commented on, so its destination
-        // decides the route and the [יעד] in the message.
+        // decides the route and the destination in the message.
         const post = lead.posts.find((p) => p.status === 'commented') || lead.posts[0];
         if (post?.dest) lead.dest = post.dest;
         const c = await city(lead.dest?.slug);
         if (!lead.route && c) lead.route = buildRoute(c, { places: post?.places, days: post?.days });
-        // Shown today, so this is the moment the route goes public, and the only
-        // place in the desk that publishes. A failed attempt is retried at most
-        // once an hour, so a refusal the site will repeat is not hammered.
-        const retry = lead.trip?.status === 'failed' && now - Date.parse(lead.trip.failedAt || 0) > 3_600_000;
-        if (!lead.trip || ['waiting-for-site', 'no-route'].includes(lead.trip.status) || retry) {
-          lead.trip = await deps.publishRoute(lead, { env, now });
-          report.published = (report.published || 0) + (lead.trip.status === 'published' ? 1 : 0);
-        }
-        if (!lead.drafts?.dm && canDraft && post) {
-          lead.drafts = { ...lead.drafts, dm: await deps.draftCreatorLine({ state, settings, lead, post }) };
+        lead.trip = await publishWithin({ state, settings, lead, now, deps, env, report });
+        await linkUp({ state, lead, what: 'dm', deps, env, now });
+        if (!lead.drafts?.dm?.variants?.length && canDraft && post) {
+          lead.drafts = {
+            ...lead.drafts,
+            dm: await deps.draftItem('creator', { state, settings, lead, post, site: siteContext(c), extra: { route: lead.route, offer: settings.offers.creator }, examples: examplesFor(state, 'creator') }),
+          };
           report.drafted++;
         }
       } else if (col === 'agency' && what === 'message') {
-        if (!lead.agencyDest) lead.agencyDest = agencySample(state, lead);
-        if (!lead.socials?.length && !lead.socialsLooked && braveConfigured(env)) await findSocials({ state, settings, lead, now, deps, env });
+        await prepareAgency({ state, settings, lead, now, deps, env, report, city, canDraft });
       } else if (col === 'customer') {
         const post = lead.posts[0];
-        if (lead.drafts?.reply || !canDraft || !post) continue;
+        if (lead.drafts?.reply?.variants?.length || !canDraft || !post) continue;
         const c = await city(lead.dest?.slug);
-        lead.drafts = { ...lead.drafts, reply: await deps.draftCustomerReply({ state, settings, lead, post, context: siteContext(c) }) };
+        await linkUp({ state, lead, what: 'reply', deps, env, now });
+        lead.drafts = { ...lead.drafts, reply: await deps.draftItem('reply', { state, settings, lead, post, site: siteContext(c), examples: examplesFor(state, 'reply') }) };
         report.drafted++;
       }
       delete lead.draftError;
@@ -91,12 +152,11 @@ async function doPrepare({ store, settings, now = Date.now(), deps = DEFAULT_DEP
         break;
       }
       report.failed++;
-      const msg = e.problems?.length ? `${e.message}` : e.message;
       if (col === 'comment') {
         const post = lead.posts.find((p) => p.id === what);
-        if (post) post.draftError = msg;
+        if (post) post.draftError = e.message;
       } else {
-        lead.draftError = msg;
+        lead.draftError = e.message;
       }
     }
   }
@@ -105,13 +165,57 @@ async function doPrepare({ store, settings, now = Date.now(), deps = DEFAULT_DEP
 }
 
 /**
- * The agency's sample: one of the site's live itinerary pages.
+ * One agency, ready to message: who they are, the example, the route on our
+ * site when they sell a city we cover, and the drafts.
+ */
+async function prepareAgency({ state, settings, lead, now, deps, env, report, city, canDraft }) {
+  if (!lead.profile && canDraft) {
+    let site = { text: '' };
+    try {
+      site = await deps.readAgencySite(lead);
+    } catch (e) {
+      lead.siteError = e.message;
+    }
+    lead.profile = await deps.extractProfile({ state, settings, lead, siteText: site.text, now });
+  }
+  if (!lead.example) lead.example = chooseExample(state, lead, { fallback: agencySample });
+  const ex = lead.example;
+  let c = null;
+  if (ex?.kind === 'route') {
+    // An agency drafted before this read had a rotation page; the route replaces it.
+    delete lead.agencyDest;
+    c = await city(ex.slug);
+    if (!lead.route && c) lead.route = buildRoute(c, {});
+    lead.trip = await publishWithin({ state, settings, lead, now, deps, env, report });
+  } else if (ex?.kind === 'page') {
+    lead.agencyDest = { slug: ex.slug, he: ex.he, path: ex.path };
+    c = await city(ex.slug);
+  }
+  await linkUp({ state, lead, what: 'message', deps, env, now });
+  if (!lead.socials?.length && !lead.socialsLooked && braveConfigured(env)) await findSocials({ state, settings, lead, now, deps, env });
+  if (!lead.drafts?.message?.variants?.length && canDraft && ex) {
+    lead.drafts = {
+      ...lead.drafts,
+      message: await deps.draftItem('agency', {
+        state,
+        settings,
+        lead,
+        site: siteContext(c, { maxPlaces: 8 }),
+        extra: { route: ex.kind === 'route' ? lead.route : null, exampleHe: ex.he },
+        examples: examplesFor(state, 'agency'),
+      }),
+    };
+    report.drafted++;
+  }
+}
+
+/**
+ * The fallback example: one of the site's live itinerary pages.
  *
- * From the destinations this audience actually flies to, in destinations.json's
- * order, first eight that have a live page: an agency shown "שווייץ הבוהמית" (the
- * first live run did exactly that) learns nothing about whether the tool fits
- * the trips it sells. The choice rotates by the lead's id, so three agencies on
- * one day do not all get Athens.
+ * Used only when nothing the agency sells is in our catalog (chooseExample). From
+ * the destinations this audience actually flies to, in destinations.json's order,
+ * first eight that have a live page; the choice rotates by the lead's id, so three
+ * agencies on one day do not all get Athens.
  */
 export function agencySample(state, lead, preferred = destinations().map(siteSlugFor)) {
   const pages = state.site?.itineraries || [];

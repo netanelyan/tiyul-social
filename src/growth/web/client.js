@@ -1,7 +1,9 @@
 // The desk's only script. Copy, open, and buttons that POST.
 //
-// Nothing here sends anything anywhere but the desk itself: [העתק ופתח] puts
+// Nothing here sends anything anywhere but the desk itself: [Copy & open] puts
 // the text on the clipboard and opens a tab, and the owner pastes and sends.
+// The desk is told which variant was copied and the exact text, so that when
+// it is marked sent the log has both the draft and what really went out.
 
 // The guard is for the selftest, which loads every .js under src/ in Node to
 // prove it parses. In a browser `document` is always there.
@@ -24,13 +26,17 @@ if (typeof document !== 'undefined') (() => {
       headers: { 'content-type': 'application/json', 'x-growth-token': token },
       body: JSON.stringify(body || {}),
     });
+    if (res.status === 401) {
+      location.href = '/login';
+      throw new Error('Log in first.');
+    }
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
     return data;
   }
 
   const textOf = (sel) => {
-    const el = document.querySelector(sel);
+    const el = sel ? document.querySelector(sel) : null;
     return el ? ('value' in el ? el.value : el.textContent) : '';
   };
 
@@ -51,7 +57,7 @@ if (typeof document !== 'undefined') (() => {
     }
     ta.remove();
     if (!ok && navigator.clipboard) {
-      navigator.clipboard.writeText(text).catch(() => toast('ההעתקה נכשלה', true));
+      navigator.clipboard.writeText(text).catch(() => toast('Copying failed. Select the text and copy it yourself.', true));
     }
     return true;
   }
@@ -64,15 +70,15 @@ if (typeof document !== 'undefined') (() => {
     const d = b.dataset;
 
     try {
-      if (d.copy) {
-        copy(textOf(d.copy));
-        toast('הועתק');
-        return;
-      }
       if (d.copyOpen) {
-        copy(textOf(d.copyOpen));
+        const text = textOf(d.copyOpen);
+        copy(text);
         if (d.href) window.open(d.href, '_blank', 'noopener');
-        toast('הועתק. הדבק ושלח בעצמך');
+        toast('Copied. Paste it and send it yourself.');
+        if (d.lead) {
+          const variant = d.variant === undefined || d.variant === '' ? null : Number(d.variant);
+          post(`/api/lead/${encodeURIComponent(d.lead)}/copied`, { what: d.what, postId: d.post || null, variant, text }).catch(() => {});
+        }
         return;
       }
       if (d.confirm && !b.classList.contains('armed')) {
@@ -87,7 +93,14 @@ if (typeof document !== 'undefined') (() => {
       }
       if (d.act) {
         b.disabled = true;
-        await post(`/api/lead/${encodeURIComponent(d.lead)}/action`, { action: d.act, postId: d.post || null, gender: d.gender || null, field: d.field || null });
+        const final = d.final ? textOf(d.final).trim() : '';
+        await post(`/api/lead/${encodeURIComponent(d.lead)}/action`, {
+          action: d.act,
+          postId: d.post || null,
+          gender: d.gender || null,
+          field: d.field || null,
+          final: final || null,
+        });
         reload();
         return;
       }
@@ -98,7 +111,7 @@ if (typeof document !== 'undefined') (() => {
           ta.readOnly = false;
           ta.classList.add('editing');
           ta.focus();
-          b.textContent = 'שמור';
+          b.textContent = 'Save';
           return;
         }
         await post(`/api/lead/${encodeURIComponent(d.lead)}/action`, { action: 'edit', field: d.field, text: ta.value });
@@ -107,30 +120,35 @@ if (typeof document !== 'undefined') (() => {
       }
       if (d.redraft) {
         b.disabled = true;
-        b.textContent = 'מנסח...';
+        b.textContent = 'Writing...';
         await post(`/api/lead/${encodeURIComponent(d.lead)}/redraft`, { what: d.redraft, postId: d.post || null });
         reload();
         return;
       }
       if (d.saveTemplate) {
         await post('/api/templates', { name: d.saveTemplate, text: textOf(`#tpl-${d.saveTemplate}`) });
-        toast('התבנית נשמרה');
+        toast('Saved.');
         setTimeout(reload, 600);
         return;
       }
       if (d.resetSettings) {
         if (!b.classList.contains('armed')) {
           b.classList.add('armed');
-          b.textContent = 'בטוח? לחץ שוב';
+          b.textContent = 'Sure? Press again';
           return;
         }
         await post('/api/settings', { reset: true });
         reload();
         return;
       }
+      if (d.logout) {
+        await post('/logout', {});
+        location.href = '/login';
+        return;
+      }
       if (b.id === 'run') {
         b.disabled = true;
-        b.textContent = 'מחפש...';
+        b.textContent = 'Looking...';
         await post('/api/run', {});
         poll();
       }
@@ -164,7 +182,7 @@ if (typeof document !== 'undefined') (() => {
       }
       try {
         await post('/api/settings', { settings: out });
-        toast('נשמר');
+        toast('Saved.');
       } catch (err) {
         toast(err.message, true);
       }

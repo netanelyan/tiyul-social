@@ -9,12 +9,15 @@ import { SITE } from '../links.js';
 // placeIds } per day, catalog ids only) under an externalId derived from the
 // lead, so a re-send is an edit that keeps the slug, never a second page.
 //
-// WHEN, AND ONLY WHEN. A route goes public when the creator is shown in the
-// Creators column (prepare/index.js calls publishRoute there and nowhere else),
-// which is the day after the owner marked the warm-up comment. It comes down on
-// [דלג], [לא מעוניינים] and [לא רלוונטי]; desk.js calls withdrawRoute on those,
-// and its timer retries any withdrawal that failed, so a closed lead never keeps
-// a live page.
+// WHEN, AND ONLY WHEN. A creator's route goes public when the creator is shown
+// in the Creators column, the day after the owner marked the warm-up comment.
+// An agency's sample route goes public when the agency is picked for today's
+// messages, on a city it sells (the owner's answer of 2026-10-11), and the card
+// shows the route before anything is sent. prepare/index.js publishes in those
+// two places and nowhere else, inside the site's daily limit (canPublishNew).
+// A page comes down on [Skip], [Not for us] and [Not interested]; desk.js calls
+// withdrawRoute on those, and its timer retries any withdrawal that failed, so
+// a closed lead never keeps a live page.
 //
 // This is a write to OUR site. http.js allows exactly these two calls there and
 // no write to any platform.
@@ -46,17 +49,32 @@ export function tripBody(lead) {
 }
 
 /**
- * Publish (or re-send) a creator's route. Returns the trip state to store.
+ * May one more NEW route page go up now?
+ *
+ * The site caps new publications by the editor account at 20 per 24 hours
+ * (SITE-SPEC.md), creators and agencies together, and answers 429 past it. The
+ * desk counts its own first publications over the last 24 hours against
+ * `settings.publishPerDay` and waits rather than spending the site's refusal.
+ * A re-send of a page already up is an edit, not a new page, and is not counted.
+ */
+export function canPublishNew(state, settings, now = Date.now()) {
+  const limit = Number(settings?.publishPerDay ?? 20);
+  const recent = Object.values(state.leads || {}).filter((l) => l.trip?.publishedAt && now - Date.parse(l.trip.publishedAt) < 86_400_000).length;
+  return recent < limit;
+}
+
+/**
+ * Publish (or re-send) a creator's or an agency's route. Returns the trip state to store.
  *
  * Never throws for an ordinary refusal: a failed publish is stored with its
  * reason, shown on the card, and retried on the next pass.
  */
 export async function publishRoute(lead, { env = process.env, post = postJson, now = Date.now() } = {}) {
   if (!lead.route?.days?.some((d) => d.placeIds?.length)) {
-    return { status: 'no-route', reason: 'אין מסלול לפרסם: היעד לא באתר או בלי מקומות' };
+    return { status: 'no-route', reason: 'No route to publish: the destination is not on the site, or has no places.' };
   }
   if (!publishingConfigured(env)) {
-    return { status: 'failed', reason: 'GROWTH_PUBLISH_TOKEN חסר ב-.env (לפחות 32 תווים)' };
+    return { status: 'failed', reason: 'GROWTH_PUBLISH_TOKEN is missing from .env (at least 32 characters).' };
   }
   try {
     const res = await post(ENDPOINT, tripBody(lead), { headers: auth(env), timeoutMs: 30_000 });
@@ -72,7 +90,8 @@ export async function publishRoute(lead, { env = process.env, post = postJson, n
     };
   } catch (e) {
     const unknown = e.body?.unknownPlaces?.length || e.body?.unknownCities?.length ? ` (${[...(e.body.unknownCities || []), ...(e.body.unknownPlaces || [])].join(', ')})` : '';
-    return { status: 'failed', reason: `הפרסום באתר נכשל: ${e.message}${unknown}`, failedAt: new Date(now).toISOString() };
+    const limited = e.status === 429 ? ' The site says today\'s new pages are used up.' : '';
+    return { status: 'failed', reason: `The site did not publish it: ${e.message}${unknown}.${limited}`, failedAt: new Date(now).toISOString() };
   }
 }
 

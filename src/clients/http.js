@@ -36,7 +36,7 @@ export const RULES = [
   { method: 'GET', host: 'imgs.search.brave.com', why: 'thumbnails' },
   { method: 'GET', host: 'i.ytimg.com', why: 'thumbnails' },
   { method: 'POST', host: 'places.googleapis.com', path: /^\/v1\/places:searchText$/, why: 'finding agencies' },
-  { method: 'GET', host: 'www.googleapis.com', path: /^\/youtube\/v3\/(search|channels|videos)$/, why: 'YouTube search, read only' },
+  { method: 'GET', host: 'www.googleapis.com', path: /^\/youtube\/v3\/(search|channels|videos|commentThreads)$/, why: 'YouTube search and a video\'s top comments, read only' },
   { method: 'POST', host: 'oauth2.googleapis.com', path: /^\/token$/, why: 'a GA4 access token' },
   { method: 'POST', host: 'analyticsdata.googleapis.com', path: /^\/v1beta\/properties\/\d+:runReport$/, why: 'GA4 reports' },
   { method: 'GET', host: 'www.tiyulplus.com', why: 'our own site data' },
@@ -44,6 +44,8 @@ export const RULES = [
   // tiyulplus.com under the editor account, and taking it down again.
   { method: 'POST', host: 'www.tiyulplus.com', path: /^\/api\/internal\/trips$/, why: 'publishing a route on our own site' },
   { method: 'DELETE', host: 'www.tiyulplus.com', path: /^\/api\/internal\/trips$/, why: 'withdrawing that route' },
+  // A short link for a message, once the site has the endpoint (links.js).
+  { method: 'POST', host: 'www.tiyulplus.com', path: /^\/api\/internal\/links$/, why: 'a short link on our own site' },
 ];
 
 export class HttpError extends Error {

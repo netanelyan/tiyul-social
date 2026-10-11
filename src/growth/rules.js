@@ -19,7 +19,7 @@
 //     dest: { he, slug } | null,
 //     posts: [{ id, platform, url, title, thumb, publishedAt, status, drafts, ... }],
 //     score, why: [],
-//     gender: 'f' | 'm', genderFrom: 'post' | 'default' | 'owner',
+//     gender: 'f' | 'm' | 'unknown', genderFrom: 'post' | 'default' | 'owner',
 //     stage, closed: null | 'skipped' | 'irrelevant' | 'not-interested' | 'done',
 //     warmedAt, followedAt, messagedAt, followupSentAt, repliedAt, decidedAt,
 //     route, trip, link, drafts: {}, edits: {}, history: []
@@ -27,19 +27,21 @@
 
 export const STAGES = ['found', 'commented', 'messaged', 'replied', 'yes', 'no', 'using'];
 
-export const STAGE_HE = {
-  found: 'נמצא',
-  commented: 'הגבתי',
-  messaged: 'נשלחה הודעה',
-  replied: 'ענו',
-  yes: 'מעוניינים',
-  no: 'לא מעוניינים',
-  using: 'משתמשים',
+// What the screens call them. The desk's own words are English (the owner's
+// brief, 2026-10-11); what goes out to people stays Hebrew.
+export const STAGE_LABEL = {
+  found: 'Found',
+  commented: 'Commented',
+  messaged: 'Messaged',
+  replied: 'Replied',
+  yes: 'Interested',
+  no: 'Not interested',
+  using: 'Using the site',
 };
 
-export const TYPE_HE = { creator: 'יוצרים', agency: 'סוכנויות', customer: 'לקוחות' };
+export const TYPE_LABEL = { creator: 'Creators', agency: 'Agencies', customer: 'People planning trips' };
 export const COLUMNS = ['comment', 'creator', 'agency', 'customer'];
-export const COLUMN_HE = { comment: 'תור תגובות', creator: 'יוצרים', agency: 'סוכנויות', customer: 'לקוחות' };
+export const COLUMN_LABEL = { comment: 'Comments', creator: 'Creators', agency: 'Agencies', customer: 'Questions' };
 
 const rank = (stage) => STAGES.indexOf(stage);
 
@@ -298,7 +300,7 @@ export function applyAction(state, lead, action, payload = {}, { now = Date.now(
         break;
       }
       const post = (lead.posts || []).find((p) => p.id === payload.postId);
-      if (!post) throw new RuleError('no-post', 'הסרטון לא נמצא');
+      if (!post) throw new RuleError('no-post', 'That video is not on this lead.');
       post.status = 'commented';
       post.commentedAt = at;
       lead.warmedAt ??= at;
@@ -312,7 +314,7 @@ export function applyAction(state, lead, action, payload = {}, { now = Date.now(
       // Only this video. The creator stays, and a new video of theirs found
       // later brings them back to the queue.
       const post = (lead.posts || []).find((p) => p.id === payload.postId);
-      if (!post) throw new RuleError('no-post', 'הסרטון לא נמצא');
+      if (!post) throw new RuleError('no-post', 'That video is not on this lead.');
       post.status = 'skipped';
       break;
     }
@@ -324,20 +326,20 @@ export function applyAction(state, lead, action, payload = {}, { now = Date.now(
 
     // ---- the message and its one follow-up
     case 'sent': {
-      if (lead.type === 'customer') throw new RuleError('no-dm', 'ללקוחות לא שולחים הודעה, רק תגובה');
-      if (lead.closed) throw new RuleError('closed', 'הליד סגור');
+      if (lead.type === 'customer') throw new RuleError('no-dm', 'People asking questions get a reply comment, never a message.');
+      if (lead.closed) throw new RuleError('closed', 'This lead is closed.');
       if (!lead.messagedAt) {
         if (lead.type === 'creator' && !dmReady(lead, { now, warmupDays: s.warmupDays ?? 1 })) {
-          throw new RuleError('not-warm', 'הודעה ליוצר/ת רק יום אחרי שסימנת שהגבת');
+          throw new RuleError('not-warm', 'A creator gets the message the day after you mark the comment, not before.');
         }
         lead.messagedAt = at;
         lead.stage = 'messaged';
       } else if (followupDue(lead, { now, followupDays: s.followupDays ?? 4 })) {
         lead.followupSentAt = at;
       } else if (lead.followupSentAt) {
-        throw new RuleError('done', 'כבר נשלחו הודעה ותזכורת אחת. זהו, לא שולחים עוד');
+        throw new RuleError('done', 'They already had the message and the one follow-up. Nothing more goes to them.');
       } else {
-        throw new RuleError('not-due', 'התזכורת עוד לא הגיעה');
+        throw new RuleError('not-due', 'The follow-up is not due yet.');
       }
       break;
     }
@@ -367,12 +369,12 @@ export function applyAction(state, lead, action, payload = {}, { now = Date.now(
 
     // ---- the drafts
     case 'gender':
-      if (payload.gender !== 'f' && payload.gender !== 'm') throw new RuleError('bad', 'f או m');
+      if (!['f', 'm', 'unknown'].includes(payload.gender)) throw new RuleError('bad', 'She, he or unknown.');
       lead.gender = payload.gender;
       lead.genderFrom = 'owner';
       break;
     case 'edit':
-      if (!payload.field) throw new RuleError('bad', 'חסר שדה');
+      if (!payload.field) throw new RuleError('bad', 'Which text? The field is missing.');
       (lead.edits ??= {})[payload.field] = String(payload.text ?? '');
       break;
     case 'unedit':
@@ -380,7 +382,7 @@ export function applyAction(state, lead, action, payload = {}, { now = Date.now(
       break;
 
     default:
-      throw new RuleError('unknown', `פעולה לא מוכרת: ${action}`);
+      throw new RuleError('unknown', `Unknown action: ${action}`);
   }
 
   log(lead, action + (payload.postId ? `:${payload.postId}` : ''), now);

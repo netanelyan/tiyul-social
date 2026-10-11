@@ -17,7 +17,9 @@ import { fileURLToPath } from 'node:url';
 // the port taken and exits before it opens this file.
 
 export const DEFAULT_PATH = fileURLToPath(new URL('../../data/growth.json', import.meta.url));
-export const THUMB_DIR = fileURLToPath(new URL('../../data/growth-thumbs/', import.meta.url));
+// On the VPS the data lives outside the code folder (/var/lib/tiyul-growth), so
+// both paths can be set: GROWTH_STORE_PATH below, GROWTH_THUMB_DIR here.
+export const THUMB_DIR = process.env.GROWTH_THUMB_DIR || fileURLToPath(new URL('../../data/growth-thumbs/', import.meta.url));
 
 export const VERSION = 1;
 
@@ -41,7 +43,29 @@ export const emptyState = () => ({
   hashtagLog: [],
   // The site's city list and itinerary pages, refreshed once a day.
   site: { at: null, options: [], itineraries: [] },
+  // Every text the owner marked sent or commented: the draft, what was really
+  // sent, and whether they differ. Few-shot examples and the weekly edits
+  // report read it (prepare/learn.js).
+  sentLog: [],
 });
+
+/**
+ * Bring an older file up to today's shape, in place.
+ *
+ * Every lead used to start as female ("gender: 'f', genderFrom: 'default'"),
+ * which is where "ומי שנוסעת" came from. A gender nobody established is now
+ * 'unknown', and the drafts address the person in the plural.
+ */
+export function migrate(data) {
+  for (const lead of Object.values(data.leads || {})) {
+    if (lead.genderFrom === 'default' || !lead.gender) {
+      lead.gender = 'unknown';
+      lead.genderFrom = 'default';
+    }
+  }
+  data.sentLog ??= [];
+  return data;
+}
 
 /**
  * Open the store at `path`.
@@ -54,7 +78,7 @@ export function openStore(path = process.env.GROWTH_STORE_PATH || DEFAULT_PATH) 
   let data = emptyState();
   if (existsSync(path)) {
     try {
-      data = { ...emptyState(), ...JSON.parse(readFileSync(path, 'utf8')) };
+      data = migrate({ ...emptyState(), ...JSON.parse(readFileSync(path, 'utf8')) });
     } catch (e) {
       throw new Error(`${path} could not be read (${e.message}). Fix or move it; starting empty would forget every do-not-contact.`);
     }

@@ -61,7 +61,7 @@ export function weekOverWeek(leads, now = Date.now()) {
 export function bySearch(leads, type) {
   const rows = new Map();
   for (const l of leads.filter((x) => x.type === type)) {
-    const key = l.hashtag || l.query || '(לא ידוע)';
+    const key = l.hashtag || l.query || '(unknown)';
     const r = rows.get(key) || { search: key, kind: l.hashtag ? 'hashtag' : 'query', found: 0, messaged: 0, replied: 0, yes: 0 };
     r.found++;
     if (l.messagedAt || l.stage === 'commented') r.messaged++;

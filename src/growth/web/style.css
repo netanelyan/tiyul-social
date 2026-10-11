@@ -1,4 +1,5 @@
-/* The growth desk. One stylesheet, RTL, laptop first. */
+/* The growth desk. One stylesheet, left to right, laptop first. Hebrew content
+   (drafts, titles, names) sits in its own right-to-left blocks, class "he". */
 
 :root {
   --bg: #f6f5f1;
@@ -23,8 +24,11 @@ body {
   background: var(--bg);
   color: var(--ink);
   font: 15px/1.5 "Segoe UI", "Rubik", "Assistant", Arial, sans-serif;
-  direction: rtl;
+  direction: ltr;
 }
+
+.he { direction: rtl; text-align: start; unicode-bidi: isolate; }
+p.he, span.he { margin: 4px 0 0; }
 
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
@@ -265,7 +269,7 @@ legend { font-weight: 700; padding: 0 6px; }
   position: fixed;
   bottom: 18px;
   inset-inline-start: 50%;
-  transform: translateX(50%);
+  transform: translateX(-50%);
   background: var(--ink);
   color: #fff;
   padding: 8px 16px;
@@ -277,3 +281,28 @@ legend { font-weight: 700; padding: 0 6px; }
 }
 #toast.show { opacity: 1; }
 #toast.bad { background: #a1361b; }
+
+/* ---------- the drafts: three options, each with the reviewer's score */
+
+.variant { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 8px; }
+.variant:first-of-type { border-top: 0; }
+.vhead { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; font-size: 13px; margin-bottom: 4px; }
+.score { font-size: 12px; font-weight: 700; border-radius: 6px; padding: 1px 8px; }
+.score.s-good { background: #e7f6ec; color: var(--ok); }
+.score.s-mid { background: var(--warn-bg); color: var(--warn); }
+.score.s-bad { background: #fde8e4; color: #a1361b; }
+.score.s-none { background: var(--tag); color: var(--soft); font-weight: 400; }
+.final { margin-top: 8px; font-size: 13px; }
+.final summary, .whybox summary, .details summary, .routebox summary { cursor: pointer; color: var(--soft); font-size: 13px; }
+.routebox { background: #f4f7fb; border-radius: 8px; padding: 8px 10px; margin-top: 8px; font-size: 13px; }
+.routebox p { margin: 2px 0; }
+.summary { font-size: 16px; margin: 0 0 4px; }
+.comments { margin: 4px 0; padding-inline-start: 18px; font-size: 13px; }
+.small-btn { font-size: 12px; padding: 3px 10px; background: transparent; color: #cfd6e4; border-color: rgba(255, 255, 255, 0.25); }
+
+/* ---------- login */
+
+.loginpage { display: flex; min-height: 100vh; align-items: center; justify-content: center; }
+.login { width: 320px; display: flex; flex-direction: column; gap: 12px; }
+.login h1 { font-size: 20px; margin: 0; }
+.login input { font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; }

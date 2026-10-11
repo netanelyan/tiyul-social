@@ -17,16 +17,24 @@ export const monthKey = (t = Date.now()) => MONTH.format(new Date(t)).slice(0, 7
 // expensive rate in the table, so a typo in Settings overstates the spend
 // rather than hiding it.
 
-// $ per 1M tokens, checked on platform.claude.com/docs pricing, 2026-10-10.
+// $ per 1M tokens: input, output, and a cache read, from Anthropic's published
+// rates as of 2026-10-11. A cache write is billed at 1.25 times the input rate.
+// Opus 5.5 was listed here at $5/$25 until the drafting moved to it; its price
+// is $4/$20.
 export const MODEL_RATES = {
-  'claude-sonnet-5-5': { in: 2, out: 10 },
-  'claude-haiku-4-5': { in: 1, out: 5 },
-  'claude-haiku-5-5': { in: 0.1, out: 0.5 },
-  'claude-sonnet-5': { in: 3, out: 15 },
-  'claude-opus-5': { in: 5, out: 25 },
-  'claude-opus-5-5': { in: 5, out: 25 },
+  'claude-fable-5-1': { in: 10, out: 50, cacheRead: 0.25 },
+  'claude-fable-5': { in: 10, out: 50, cacheRead: 0.25 },
+  'claude-opus-5-5': { in: 4, out: 20, cacheRead: 0.2 },
+  'claude-opus-5': { in: 5, out: 25, cacheRead: 0.5 },
+  'claude-sonnet-5-5': { in: 2, out: 10, cacheRead: 0.2 },
+  'claude-sonnet-5': { in: 2, out: 10, cacheRead: 0.2 },
+  'claude-haiku-4-5': { in: 1, out: 5, cacheRead: 0.1 },
 };
-const WORST = { in: 5, out: 25 };
+
+// An unknown model is billed at the most expensive rate in the table, so a typo
+// in Settings overstates the spend rather than hiding it. Computed, so adding a
+// dearer model above can never leave this at a cheaper one's price.
+export const WORST = Object.values(MODEL_RATES).reduce((a, b) => (b.in + b.out > a.in + a.out ? b : a));
 
 /** Dollars for one Claude response's usage block. */
 export function claudeCost(usage = {}, model) {
@@ -35,7 +43,7 @@ export function claudeCost(usage = {}, model) {
   const write = usage.cache_creation_input_tokens || 0;
   const read = usage.cache_read_input_tokens || 0;
   const out = usage.output_tokens || 0;
-  return (fresh * r.in + write * r.in * 1.25 + read * r.in * 0.1 + out * r.out) / 1e6;
+  return (fresh * r.in + write * r.in * 1.25 + read * (r.cacheRead ?? r.in * 0.1) + out * r.out) / 1e6;
 }
 
 // Per-unit list prices for the metered APIs. `free` is a monthly allowance in
@@ -95,10 +103,23 @@ export function monthSpend(state, settings, now = Date.now()) {
  */
 export function guard(state, settings, api, estimateUsd = 0, now = Date.now()) {
   const s = monthSpend(state, settings, now);
-  if (s.reached) throw new BudgetError(`תקציב החודש נוצל ($${s.billable.toFixed(2)} מתוך $${s.cap})`);
+  if (s.reached) throw new BudgetError(`This month's budget is used up ($${s.billable.toFixed(2)} of $${s.cap}).`);
   if (s.billable + estimateUsd > s.cap) {
-    throw new BudgetError(`הקריאה הבאה (${API_PRICES[api]?.label || api}) תעבור את התקציב ($${s.billable.toFixed(2)} מתוך $${s.cap})`);
+    throw new BudgetError(`The next ${API_PRICES[api]?.label || api} call would go over this month's budget ($${s.billable.toFixed(2)} of $${s.cap}).`);
   }
+}
+
+/**
+ * What one drafting call is expected to cost, for the guard.
+ *
+ * The guard refuses a call that would cross the cap, so this has to be a fair
+ * ceiling for the model in use: $0.03 was right for Sonnet and is a tenth of a
+ * Fable call. About 12,000 tokens in and 4,000 out (thinking included) is the
+ * size of a three-variant draft with its context and few-shot examples.
+ */
+export function draftEstimate(model, { inTokens = 12_000, outTokens = 4_000 } = {}) {
+  const r = MODEL_RATES[model] || WORST;
+  return (inTokens * r.in + outTokens * r.out) / 1e6;
 }
 
 /** What one more call of this API adds to the billable total, right now. */

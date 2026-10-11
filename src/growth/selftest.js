@@ -1,11 +1,12 @@
 import { generateKeyPairSync, createVerify } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { request } from 'node:http';
+import { createServer, request } from 'node:http';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { hasLongDash } from '../dashes.js';
-import { BudgetError, guard, monthSpend, record } from '../clients/budget.js';
+import { BudgetError, claudeCost, draftEstimate, guard, monthSpend, record, WORST } from '../clients/budget.js';
+import { setClient } from './claude.js';
 import { growthSwitch, mergeSettings, TEMPLATE_NAMES } from './config.js';
 import { createOps } from './desk.js';
 import { runDiscovery } from './find/index.js';
@@ -13,20 +14,28 @@ import { cleanText, instagramPost, instagramTime, parseFollowers, stripIgCounts,
 import { todaysSearches } from './find/queries.js';
 import { scoreAgency, scoreCreator } from './find/score.js';
 import { assertAllowed, isSocial, RULES } from '../clients/http.js';
-import { campaignFor, hasUtm, openTarget, tagged } from './links.js';
+import { campaignFor, hasUtm, openTarget, plainLink, tagged } from './links.js';
 import { contactsIn } from '../clients/youtube.js';
+import { chooseExample, tripLinks } from './prepare/agencyProfile.js';
 import { compose, linkFor } from './prepare/compose.js';
+import { draftItem, specificProblem } from './prepare/draft.js';
+import { examplesFor, noteCopied, recordSent, weeklyEdits } from './prepare/learn.js';
+import { shortLinkFor } from './prepare/short.js';
+import { CONNECTIVES, FORMAL, lengthOf, PRAISE, tellsIn } from './prepare/tells.js';
+import { addressLine } from './prepare/voice.js';
 import { checkDraft, urlsIn } from './prepare/guards.js';
 import { agencySample, prepareToday } from './prepare/index.js';
-import { externalIdFor, publishRoute, tripBody, withdrawClosed, withdrawRoute } from './prepare/publish.js';
+import { canPublishNew, externalIdFor, publishRoute, tripBody, withdrawClosed, withdrawRoute } from './prepare/publish.js';
 import { buildRoute } from './prepare/route.js';
 import { destinationSupported, matchPlaces, postDestination, resolveDestination } from './prepare/site.js';
 import { checkTemplate, fill, readTemplates } from './prepare/templates.js';
 import { ga4Missing, jwtFor } from './report/ga4.js';
 import { applyAction, blockedBy, dmReady, followupDue, ilDate, leadKeys, pickToday, RuleError } from './rules.js';
-import { emptyState, openStore } from './store.js';
-import { HOST, listen } from './web/server.js';
-import { leadPage, leadsPage, reportsPage, settingsPage, todayPage } from './web/pages.js';
+import { emptyState, migrate, openStore } from './store.js';
+import { main } from './main.js';
+import { authConfig, makeSession, sessionOk, startProblem } from './web/auth.js';
+import { createHandler, HOST, listen } from './web/server.js';
+import { leadPage, leadsPage, reportsPage, settingsPage, todayPage, todaySummary } from './web/pages.js';
 
 // The growth desk's selftest group: every hard rule in the brief, proved
 // against fakes. No network, no keys, and data/growth.json is never touched.
@@ -211,12 +220,12 @@ export async function growthSelftest({ ok, eq }) {
       post: async () => ({ ok: true }),
       ga4: async () => ({ configured: false, missing: ga4Missing({}) }),
     };
-    const { server, token, port } = await listen({ ops: fakeOps, port: 0 });
+    const { server, token, port } = await listen({ ops: fakeOps, port: 0, env: {} });
     try {
       eq('the server binds to 127.0.0.1 only', server.address().address, '127.0.0.1');
       eq('and the host is a constant, not a setting', HOST, '127.0.0.1');
       const page = await get(port);
-      ok('Today answers on 127.0.0.1', page.status === 200 && page.body.includes('dir="rtl"'), `status ${page.status}`);
+      ok('Today answers on 127.0.0.1', page.status === 200 && page.body.includes('dir="ltr"'), `status ${page.status}`);
       eq('a request under another Host name is refused (DNS rebinding)', (await get(port, { headers: { host: `evil.example:${port}` } })).status, 421);
       const json = { 'content-type': 'application/json' };
       eq('a POST without the page token is refused', (await get(port, { method: 'POST', path: '/api/run', headers: json, body: '{}' })).status, 403);
@@ -510,8 +519,9 @@ export async function growthSelftest({ ok, eq }) {
     const t = await publishRoute(lead, { env: TOKEN, post, now: NOW });
     ok('a route publishes to our own endpoint with the token', sent[0]?.url === 'https://www.tiyulplus.com/api/internal/trips' && sent[0].auth === `Bearer ${'x'.repeat(40)}`);
     ok('and the trip is stored as published with its address', t.status === 'published' && t.url.endsWith('/trips/athens-2-ab12cd34') && t.externalId === 'growth:tt:maker1');
-    const live = { ...lead, trip: t };
-    ok('the DM then carries that address, tagged', compose(live, 'dm', { templates: readTemplates(), settings: S, state: emptyState() }).text.includes('/trips/athens-2-ab12cd34?utm_source=creator&utm_medium=dm&utm_campaign=maker1'));
+    const live = { ...lead, trip: t, drafts: { dm: { variants: [{ text: 'היי, בניתי את המסלול שלכם: [קישור]', score: 1, tells: [] }] } } };
+    const dmText = compose(live, 'dm', { templates: readTemplates(), settings: S, state: emptyState() }).text;
+    ok('the DM then carries that address, plain: no tags for WhatsApp to show in full', dmText.includes('https://tiyulplus.com/trips/athens-2-ab12cd34') && !/utm_|\[קישור\]/.test(dmText), dmText);
 
     const refuse = async () => {
       throw Object.assign(new Error('unknown-ids'), { status: 422, body: { unknownPlaces: ['athens/ath-gone'] } });
@@ -542,9 +552,9 @@ export async function growthSelftest({ ok, eq }) {
     let published = [];
     const deps = {
       cityFor: async () => CITY,
-      draftComments: async () => ['a', 'b'],
-      draftCreatorLine: async () => ({ name: '', line: 'x', problems: [] }),
-      draftCustomerReply: async () => 'r',
+      draftItem: async () => ({ variants: [{ text: 'x', score: 1, tells: [] }] }),
+      fillVideoContext: async () => 0,
+      shortLink: async () => null,
       publishRoute: async (l) => {
         published.push(l.id);
         return { status: 'published', url: 'https://www.tiyulplus.com/trips/x', slug: 'x', externalId: externalIdFor(l), publishedAt: new Date(NOW).toISOString() };
@@ -559,10 +569,10 @@ export async function growthSelftest({ ok, eq }) {
     const withdrawn = [];
     const ops = createOps({ store, env: {}, clock: () => NOW, deps: { runDiscovery: async () => {}, prepareToday: async () => {}, withdrawRoute: async (l) => (withdrawn.push(l.id), { ...l.trip, status: 'withdrawn' }) } });
     await ops.post('/api/lead/tt:@maker2/action', { action: 'skip' });
-    ok('[דלג] takes the route down', withdrawn.join() === 'tt:@maker2' && store.data.leads['tt:@maker2'].trip.status === 'withdrawn');
+    ok('[Skip] takes the route down', withdrawn.join() === 'tt:@maker2' && store.data.leads['tt:@maker2'].trip.status === 'withdrawn');
 
     const writes = RULES.filter((r) => r.method !== 'GET');
-    ok('the only writes anywhere: Google APIs, and our own trips endpoint', writes.every((r) => ['places.googleapis.com', 'oauth2.googleapis.com', 'analyticsdata.googleapis.com'].includes(r.host) || (r.host === 'www.tiyulplus.com' && r.path?.test('/api/internal/trips') && !r.path.test('/api/trips/publish'))), writes.map((r) => `${r.method} ${r.host}`).join(', '));
+    ok('the only writes anywhere: Google APIs, and our own trips and short-link endpoints', writes.every((r) => ['places.googleapis.com', 'oauth2.googleapis.com', 'analyticsdata.googleapis.com'].includes(r.host) || (r.host === 'www.tiyulplus.com' && (r.path?.test('/api/internal/trips') || r.path?.test('/api/internal/links')) && !r.path.test('/api/trips/publish'))), writes.map((r) => `${r.method} ${r.host}`).join(', '));
   }
 
   {
@@ -584,7 +594,7 @@ export async function growthSelftest({ ok, eq }) {
     ok('1,100 bill the 100 over it', Math.abs(monthSpend(state, S, NOW).billable - 0.5) < 1e-9);
     for (let i = 0; i < 1000; i++) record(state, 'places', { now: NOW });
     ok('1,000 Places calls are free', Math.abs(monthSpend(state, S, NOW).rows.places.billable) < 1e-9);
-    record(state, 'claude', { usd: 30, now: NOW });
+    record(state, 'claude', { usd: S.budgetUsd + 5, now: NOW });
     let stopped = false;
     try {
       guard(state, S, 'claude', 0.01, NOW);
@@ -599,7 +609,7 @@ export async function growthSelftest({ ok, eq }) {
     ok('and discovery stops before searching', run.stopped === 'budget' && deps.calls.brave === 0);
 
     const s2 = emptyState();
-    record(s2, 'claude', { usd: 24.995, now: NOW });
+    record(s2, 'claude', { usd: S.budgetUsd - 0.005, now: NOW });
     const store2 = memStore(s2);
     const deps2 = fakeDeps({
       classify: async (posts, { state: st, settings }) => {
@@ -615,13 +625,14 @@ export async function growthSelftest({ ok, eq }) {
   /* ---------------------------------------------------------- links and drafts */
 
   {
-    const c = creator(1, { trip: { status: 'published', url: 'https://www.tiyulplus.com/trips/athens-4-ab12cd34' }, drafts: { dm: { name: 'מאיה', line: 'אהבתי את הטיפ על פלאקה' } } });
-    const a = agency(1, { agencyDest: { slug: 'athens', he: 'אתונה', path: '/itinerary/athens/5' } });
-    const u = customer(1, { dest: { he: 'אתונה', slug: 'athens' }, drafts: { reply: 'שלושה ימים מספיקים לרוב.' } });
+    const v = (text) => ({ variants: [{ text, score: 1, tells: [] }] });
+    const c = creator(1, { trip: { status: 'published', url: 'https://www.tiyulplus.com/trips/athens-4-ab12cd34' }, drafts: { dm: v('היי, ראיתי את הסרטון על פלאקה. בניתי את המסלול שלכם באתר: [קישור]') } });
+    const a = agency(1, { agencyDest: { slug: 'athens', he: 'אתונה', path: '/itinerary/athens/5' }, drafts: { message: v('היי, נתנאל כאן. הנה דוגמה לאתונה: [קישור]') } });
+    const u = customer(1, { dest: { he: 'אתונה', slug: 'athens' }, drafts: { reply: v('שלושה ימים מספיקים לרוב.') } });
     const state = { ...emptyState(), site: { options: OPTIONS, itineraries: [{ slug: 'athens', days: 5 }] } };
     for (const [lead, what] of [[c, 'dm'], [a, 'message'], [u, 'reply']]) {
       const link = linkFor(lead, what, { state });
-      ok(`${lead.type}: the link carries utm_source, utm_medium and utm_campaign`, hasUtm(link), link);
+      ok(`${lead.type}: the link is our page, plain, with no tags for WhatsApp to show in full`, Boolean(link) && !hasUtm(link) && /^https:\/\/tiyulplus\.com\/[a-z]/.test(link), link);
     }
     eq('a creator campaign is their handle', campaignFor(c), 'maker1');
     eq('an agency campaign is its website', campaignFor(a), 'agency1.co.il');
@@ -630,36 +641,36 @@ export async function growthSelftest({ ok, eq }) {
     const templates = readTemplates();
     const ctx = { templates, settings: S, state };
     for (const [lead, what] of [[c, 'dm'], [a, 'message'], [u, 'reply'], [c, 'followup']]) {
-      for (const gender of ['f', 'm']) {
+      for (const gender of ['f', 'm', 'unknown']) {
         const out = compose({ ...lead, gender, messagedAt: what === 'followup' ? 'x' : lead.messagedAt }, what, ctx);
         const link = linkFor(lead, what, { state });
         const urls = urlsIn(out.text);
-        ok(`${lead.type} ${what} (${gender}): no URL but our tagged link`, urls.every((x) => x === link) && (!link || urls.length === 1), urls.join(' '));
+        ok(`${lead.type} ${what} (${gender}): no URL but our own link`, urls.every((x) => x === link) && (!link || urls.length === 1), urls.join(' '));
         ok(`${lead.type} ${what} (${gender}): no long dash`, !hasLongDash(out.text));
       }
     }
-    const waiting = compose(creator(2, { trip: { status: 'waiting-for-site', reason: 'מחכה לאתר' }, drafts: { dm: { name: '', line: '' } } }), 'dm', ctx);
-    ok('a creator DM without a published route says why and is not sendable', waiting.missing.some((m) => /מחכה לאתר/.test(m)) && waiting.text.includes('[קישור]'));
-    const customerNoAsk = compose(customer(3, { dest: { he: 'אתונה', slug: 'athens' }, drafts: { reply: 'תשובה' }, posts: [{ ...customer(3).posts[0], asksForRoute: false }] }), 'reply', ctx);
+    const waiting = compose(creator(2, { trip: { status: 'waiting-limit', reason: 'The site takes 20 new route pages a day.' }, drafts: { dm: v('היי, בניתי את המסלול: [קישור]') } }), 'dm', ctx);
+    ok('a creator DM without a published route says why and is not sendable', waiting.missing.some((m) => /20 new route pages/.test(m)) && waiting.text.includes('[קישור]'));
+    const customerNoAsk = compose(customer(3, { dest: { he: 'אתונה', slug: 'athens' }, drafts: { reply: v('תשובה') }, posts: [{ ...customer(3).posts[0], asksForRoute: false }] }), 'reply', ctx);
     eq('a customer who did not ask for a route gets no link', urlsIn(customerNoAsk.text).length, 0);
 
     eq('a clean comment passes', checkDraft('שווה לעלות לליקבטוס בשקיעה', { kind: 'comment', sources: ['גבעת ליקבטוס בשקיעה'] }).length, 0);
     ok('a comment with a link is refused', checkDraft('תבדקו את tiyulplus.com', { kind: 'comment' }).length > 0);
     ok('a comment that mentions the site is refused', checkDraft('יש לנו באתר שלנו מסלול', { kind: 'comment' }).length > 0);
     ok('a long dash is refused', checkDraft('יפה \u2014 מאוד', { kind: 'comment' }).length > 0);
-    ok('an invented number is refused', checkDraft('צריך 3 ימים', { kind: 'comment', sources: ['אתונה'] }).some((p) => /מספר/.test(p)));
+    ok('an invented number is refused', checkDraft('צריך 3 ימים', { kind: 'comment', sources: ['אתונה'] }).some((p) => /number that is not in the sources/.test(p)));
     ok('a number from the source passes', checkDraft('צריך 3 ימים', { kind: 'comment', sources: ['יום 3: פלאקה'] }).length === 0);
     ok('a message with a foreign URL is refused', checkDraft('הנה https://evil.example/x', { kind: 'message', link: 'https://www.tiyulplus.com/trips/a' }).length > 0);
 
     for (const n of TEMPLATE_NAMES) {
       eq(`template ${n}.txt passes its own checks`, checkTemplate(n, templates[n]).join('; '), '');
+      eq(`template ${n}.txt reads like a person`, tellsIn(fill(templates[n], { dest: 'אתונה', link: 'https://tiyulplus.com/x' }), { kind: 'followup' }).map((t) => t.msg).join('; '), '');
     }
-    ok('a template with a URL is refused', checkTemplate('creator', 'היי [קישור] www.example.com').length > 0);
-    ok('a template with an unknown placeholder is refused', checkTemplate('creator', 'היי [שמ] [קישור]').length > 0);
-    const base = { dest: 'אתונה', link: 'L', gift: 'G' };
-    ok('the route-demand sentence appears only when the post shows demand', fill(templates.creator, { ...base, demand: true }).includes('שואלים אותך') && !fill(templates.creator, { ...base, demand: false }).includes('שואלים אותך'));
-    ok('with no name, "היי [שם]!" becomes "היי!"', fill(templates.creator, base).startsWith('היי!'));
-    ok('the toggle picks the gendered form', fill('{תרצה|תרצי}', { gender: 'm' }) === 'תרצה' && fill('{תרצה|תרצי}', { gender: 'f' }) === 'תרצי');
+    ok('a template with a URL is refused', checkTemplate('customer-link', 'היי [קישור] www.example.com').length > 0);
+    ok('a template with an unknown placeholder is refused', checkTemplate('customer-link', 'היי [שמ] [קישור]').length > 0);
+    ok('a template with a gendered pair is refused: most genders are unknown', checkTemplate('creator-followup', 'אם {תרצה|תרצי}, אתקן').length > 0);
+    const filled = fill(templates['customer-link'], { dest: 'אתונה', link: 'L' });
+    ok('fill puts in the destination and the link', filled.includes('אתונה') && filled.endsWith('L'), filled);
   }
 
   /* ---------------------------------------------------------- matching, scoring, parsing */
@@ -680,7 +691,7 @@ export async function growthSelftest({ ok, eq }) {
     const v = { hebrew: true, kind: 'creator', places: [], routeDemand: true };
     ok('not Hebrew rejects the person', scoreCreator({ verdict: { ...v, hebrew: false }, ageDays: 1, onSite: 'x' }, S).rejectPerson === true);
     ok('followers outside 1,000 to 30,000 reject the person', scoreCreator({ verdict: v, followers: 120_000, ageDays: 1, onSite: 'x' }, S).rejectPerson === true);
-    ok('unknown followers are fine, and said', scoreCreator({ verdict: v, ageDays: 1, onSite: 'x' }, S).why.includes('מספר עוקבים לא ידוע'));
+    ok('unknown followers are fine, and said', scoreCreator({ verdict: v, ageDays: 1, onSite: 'x' }, S).why.includes('follower count unknown'));
     ok('no site destination, no creator lead', Boolean(scoreCreator({ verdict: v, ageDays: 1, onSite: null }, S).reject));
     ok('kosher agencies get the bonus', scoreAgency({ phone: '1', abroad: 'טיסות', siteRead: true, kosher: 'כשר' }).score > scoreAgency({ phone: '1', abroad: 'טיסות', siteRead: true }).score);
     // Both found on the first live run under "טיולים לשומרי כשרות ירושלים".
@@ -698,9 +709,7 @@ export async function growthSelftest({ ok, eq }) {
     const nepal = new Set(['נפאל', 'הודו', 'יוון']);
     ok('a post that names Nepal is not filed in India, Himalaya or not', !destinationSupported(himachal, { destination: 'נפאל', places: ['ההימלאיה'] }, { countries: nepal }));
     ok('the same Himalaya post with no country named may be', destinationSupported(himachal, { destination: 'ההימלאיה', places: [] }, { countries: nepal }));
-    ok('a personal line that talks about the writer is refused', checkDraft('ואני עוקבת אחרי הסדרה הזאת כבר מפרק 1', { kind: 'line', sources: ['פרק 1'] }).some((p) => /לא על הכותב/.test(p)));
-    ok('a personal line may mention that they answer in DMs', checkDraft('ראיתי שאת עונה על שאלות בפרטי', { kind: 'line' }).length === 0);
-    ok('a comment claiming personal experience is refused', checkDraft('אני מכיר את הצפון טוב, שווה לעלות', { kind: 'comment' }).some((p) => /חוויה אישית/.test(p)));
+    ok('a comment claiming personal experience is refused', checkDraft('אני מכיר את הצפון טוב, שווה לעלות', { kind: 'comment' }).some((p) => /personal travel experience/.test(p)));
 
     eq('a TikTok id carries its upload time', tiktokTime('6718335390845095173')?.slice(0, 10), '2019-07-27');
     eq('a TikTok video URL parses', tiktokPost('https://www.tiktok.com/@a.b/video/7400000000000000001?lang=he')?.handle, 'a.b');
@@ -734,7 +743,8 @@ export async function growthSelftest({ ok, eq }) {
 
   {
     const state = emptyState();
-    state.leads['tt:@maker1'] = creator(1, { posts: [{ ...creator(1).posts[0], title: '<script>alert(1)</script> מסלול' }] });
+    const drafted = { variants: [{ text: 'ראיתי את העלייה לליקבטוס. כדאי להגיע לפני השקיעה', score: 2, tells: [], specific: { quote: 'מסלול', source: 'title' } }] };
+    state.leads['tt:@maker1'] = creator(1, { posts: [{ ...creator(1).posts[0], title: '<script>alert(1)</script> מסלול', drafts: drafted }] });
     state.leads['ag:place1'] = agency(1, { agencyDest: { slug: 'athens', he: 'אתונה', path: '/itinerary/athens/5' } });
     state.leads['cust:tt:@asker1'] = customer(1);
     const templates = readTemplates();
@@ -747,27 +757,365 @@ export async function growthSelftest({ ok, eq }) {
       settings: settingsPage(ctx),
     };
     for (const [name, html] of Object.entries(pages)) {
-      ok(`${name}: Hebrew, right to left`, html.includes('lang="he" dir="rtl"'));
+      ok(`${name}: English, left to right`, html.includes('lang="en" dir="ltr"'));
       ok(`${name}: no long dash anywhere on the page`, !hasLongDash(html));
     }
+    ok('Hebrew content sits in its own right-to-left blocks', ['today', 'lead', 'settings'].every((n) => pages[n].includes('dir="rtl" lang="he"')));
     ok('a caption is shown as text, never as markup', !pages.today.includes('<script>alert') && pages.today.includes('&lt;script&gt;'));
-    ok('Today has the four columns', ['תור תגובות', 'יוצרים', 'סוכנויות', 'לקוחות'].every((t) => pages.today.includes(t)));
-    ok('the lead page has every button', ['העתק ופתח', 'ערוך', 'נסח מחדש', 'נקבה', 'זכר', 'נשלח', 'דלג', 'ענו', 'מעוניינים', 'לא מעוניינים'].every((t) => pages.lead.includes(`>${t}<`)));
+    ok('Today has the four columns', ['Comments', 'Creators', 'Agencies', 'Questions'].every((t) => pages.today.includes(t)));
+    ok('the lead page has every button, in plain words', ['Copy &amp; open', 'Edit', 'Redraft', 'She', 'He', 'Unknown', 'Sent', 'Skip', 'They replied', 'Interested', 'Not for us'].every((t) => pages.lead.includes(`>${t}<`)));
+    ok('the card shows the bot score', pages.lead.includes('Bot score 2/10'));
+    ok('the internal counts sit behind Details', !/older than the age limit/.test(pages.today.split('<details class="details">')[0] || ''));
+
+    // The summary says what to do, in a person's words.
+    const s1 = emptyState();
+    for (let i = 1; i <= 16; i++) s1.leads[`ag:place${i}`] = agency(i);
+    const day = pickToday(s1, S, NOW);
+    const words = todaySummary(s1, day, S, NOW);
+    ok('the summary leads with what is ready and says why nothing new was looked for', /No videos to comment on today\./.test(words) && /16 agencies are still waiting for you, so I didn't look for more\./.test(words), words);
 
     const tmp = join(REPO, 'data', '.selftest-growth.json');
     rmSync(tmp, { force: true });
     const store = openStore(tmp);
     Object.assign(store.data.leads, state.leads);
     const ops = createOps({ store, env: {}, clock: () => NOW, deps: { runDiscovery: async () => {}, prepareToday: async () => {} } });
-    const bad = await ops.post('/api/lead/ag:place1/action', { action: 'edit', field: 'message', text: 'הנה https://evil.example' });
+    const bad = await ops.post('/api/lead/ag:place1/action', { action: 'edit', field: 'message:0', text: 'הנה https://evil.example' });
     ok('an edit with a foreign URL is refused', Boolean(bad.error), JSON.stringify(bad));
-    const dash = await ops.post('/api/lead/ag:place1/action', { action: 'edit', field: 'message', text: 'שלום \u2014 עולם' });
+    const dash = await ops.post('/api/lead/ag:place1/action', { action: 'edit', field: 'message:0', text: 'שלום \u2014 עולם' });
     ok('an edit with a long dash is refused', Boolean(dash.error));
-    const good = await ops.post('/api/lead/ag:place1/action', { action: 'edit', field: 'message', text: 'שלום, זו הודעה שלי' });
-    ok('a clean edit is saved, and is what gets copied', good.ok && compose(store.data.leads['ag:place1'], 'message', { templates, settings: S, state: store.data }).text === 'שלום, זו הודעה שלי');
+    const good = await ops.post('/api/lead/ag:place1/action', { action: 'edit', field: 'message:0', text: 'שלום, זו הודעה שלי' });
+    ok('a clean edit is saved, and is what gets copied', good.ok && compose(store.data.leads['ag:place1'], 'message', { templates, settings: S, state: store.data, i: 0 }).text === 'שלום, זו הודעה שלי');
     ok('settings out of range are refused', Boolean((await ops.post('/api/settings', { settings: { runHour: 30 } })).error));
     ok('settings in range are saved', (await ops.post('/api/settings', { settings: { caps: { comment: 8 } } })).ok && mergeSettings(store.data.settings).caps.comment === 8);
     ok('the store file is the one it was given, never the posting store', existsSync(tmp) && !/store\.json$/.test(store.path));
     rmSync(tmp, { force: true });
+  }
+
+  /* ---------------------------------------------------------- the bot tells, in code */
+
+  {
+    const refused = (text, kind = 'comment', opts = {}) => tellsIn(text, { kind, ...opts }).length > 0;
+    for (const t of [...CONNECTIVES, ...FORMAL, ...PRAISE]) ok(`refused: "${t.p}"`, refused(`${t.p} אפשר לעלות לגבעה בשקיעה`));
+    ok('with a one-letter prefix: "ובנוסף"', refused('ובנוסף אפשר לעלות לגבעה'));
+    ok('inside a word it is not: "שניתן"', refused('המקום שניתן לראות משם'));
+    ok('with niqqud', refused('בְּנוֹסָף אפשר לעלות'));
+    ok('"נקודה שמתחברת", the owner\'s example', refused('נקודה שמתחברת לעניין המוניות'));
+    // The owner's own examples of what good looks like pass every check.
+    const goodAgency = 'היי, נתנאל כאן 🙂 ראיתי שאתם עושים טיולים מאורגנים למצרים עם כשרות. בניתי אתר שמכין מסלולים בעברית עם זמני שבת וכשרות לכל יום. הנה דוגמה לסיני: [קישור]. אם בא לכם, שלחו לי בקשה של לקוח ואכין לו מסלול בחינם.';
+    eq('the owner\'s good agency message passes', tellsIn(goodAgency, { kind: 'message' }).map((t) => t.msg).join('; '), '');
+    eq('the owner\'s good taxi comment passes', tellsIn('המוניות שם זה סיפור 😅 ה-BTS וה-MRT מגיעים לרוב המקומות, ממוזגים וגם זולים יותר. ואם כבר מונית, רק עם מונה או Grab').map((t) => t.msg).join('; '), '');
+    eq('and the palace one, colon and all', tellsIn('טיפ לארמון המלכותי: להגיע ממש בפתיחה, לפני החום וההמונים. וכתפיים וברכיים מכוסות, אחרת לא נכנסים').map((t) => t.msg).join('; '), '');
+
+    const bad = 'היי, אני נתנאל מטיול+. בנינו כלי שמכין ללקוחות מסלול יום-יום בעברית: מפה, ניווט לכל יום, זמני שבת לכל עיר ונספח כשרות. הנה https://www.tiyulplus.com/itinerary/prague/5?utm_source=agency';
+    const why = tellsIn(bad, { kind: 'message' }).map((t) => t.msg).join(' | ');
+    ok('the old agency message is refused for "we"', /first person plural/.test(why), why);
+    ok('for its brochure colon', /a colon/.test(why), why);
+    ok('and for its list of features', /a list of three/.test(why), why);
+    ok('a semicolon is refused', refused('עולים בבוקר; יורדים בערב'));
+    ok('a summing-up last sentence is refused', refused('עולים מוקדם. בקיצור, שווה'));
+    ok('an exclamation mark is refused', refused('איזה נוף מטורף!'));
+    ok('two emoji are refused', refused('נוף מטורף 😍😍'));
+    ok('a colon in a clock time is not a tell', !refused('הפתיחה ב-08:00 והתור קצר'));
+
+    // Length, by kind: a reaction to a video is short, an answer to a question has more room.
+    eq('a comment of 170 characters passes', tellsIn('א'.repeat(170)).filter((t) => t.code === 'length').length, 0);
+    ok('a comment of 171 is refused', tellsIn('א'.repeat(171)).some((t) => t.code === 'length'));
+    ok('a comment of three sentences is refused', tellsIn('עולים מוקדם. יורדים בצהריים. אוכלים בשוק.').some((t) => t.code === 'length'));
+    eq('a reply to a question may be 250 characters in three sentences', tellsIn(`${'א'.repeat(80)}. ${'ב'.repeat(80)}. ${'ג'.repeat(80)}.`, { kind: 'reply' }).filter((t) => t.code === 'length').length, 0);
+    ok('but not 281', tellsIn('א'.repeat(281), { kind: 'reply' }).some((t) => t.code === 'length'));
+    ok('nor four sentences', tellsIn('א. ב. ג. ד.', { kind: 'reply' }).some((t) => t.code === 'length'));
+    ok('a first message over 380 is refused', tellsIn(`${'א'.repeat(370)} [קישור]`, { kind: 'message' }).some((t) => t.code === 'length'));
+    eq('and the link counts as 25 characters, whatever its length', lengthOf(`שלום ${'x'.repeat(0)}https://tiyulplus.com/trips/a-very-long-slug-that-goes-on-and-on-forever`), 4 + 25);
+    ok('a message with no link is refused', tellsIn('היי, נתנאל כאן', { kind: 'message' }).some((t) => t.code === 'link'));
+    ok('and with two', tellsIn('היי [קישור] ועוד [קישור]', { kind: 'message' }).some((t) => t.code === 'link'));
+
+    // @tiyulplus has never travelled, and Netanel is one person.
+    for (const p of ['הייתי שם', 'ניסינו', 'אנחנו עשינו']) {
+      ok(`fake experience refused in a comment: "${p}"`, tellsIn(`${p} את זה וזה שווה`).some((t) => t.code === 'experience'));
+      ok(`and in a message: "${p}"`, tellsIn(`${p} את זה [קישור]`, { kind: 'message' }).some((t) => t.code === 'experience'));
+    }
+    ok('"בניתי" and "הכנתי" are how he talks', !tellsIn('בניתי אתר והכנתי לכם דוגמה: [קישור]', { kind: 'message' }).some((t) => t.code === 'experience' || t.code === 'phrase'));
+
+    // Gender: unknown is the default, and then nobody is "את" or "מי שנוסעת".
+    ok('a singular "you" is refused when the gender is unknown', tellsIn('אם תרצי אני אשלח').some((t) => t.code === 'gender'));
+    ok('so is "ומי שנוסעת", the owner\'s example', tellsIn('ומי שנוסעת במונית, רק עם מונה').some((t) => t.code === 'gender'));
+    ok('both are fine for a woman', !tellsIn('אם תרצי, ומי שנוסעת במונית', { gender: 'f' }).some((t) => t.code === 'gender'));
+    ok('"מי שרוצה" is the same word for everybody', !tellsIn('מי שרוצה לעלות, בבוקר').some((t) => t.code === 'gender'));
+    ok('the prompt for an unknown gender asks for the plural', /plural/.test(addressLine('unknown', 'creator')) && /feminine/.test(addressLine('f', 'creator')));
+    const old = migrate({ leads: { a: { gender: 'f', genderFrom: 'default' }, b: { gender: 'f', genderFrom: 'post' } } });
+    ok('a gender nobody established becomes unknown; one the post showed stays', old.leads.a.gender === 'unknown' && old.leads.b.gender === 'f');
+    const store = memStore();
+    await runDiscovery({ store, settings: S, now: NOW, deps: fakeDeps({ classify: async (posts) => posts.map(() => ({ hebrew: true, kind: 'creator', destination: 'אתונה', places: [], routeDemand: false, gender: null, reason: '' })) }), env: ENV });
+    const found = Object.values(store.data.leads)[0];
+    eq('a new lead whose post says nothing is unknown, not female', found?.gender, 'unknown');
+  }
+
+  /* ---------------------------------------------------------- the one specific thing */
+
+  {
+    const sources = { title: 'סיור בגנים של וינה: Belvedere ו-Volksgarten', description: 'הגן הכי יפה בעיר', comment: ['איפה הכי שווה לשבת?'] };
+    eq('a draft that uses a real quote passes', specificProblem('הגנים של וינה בשקיעה זה משהו', { quote: 'בגנים של וינה', source: 'title' }, { ...sources, title: 'סיור בגנים של וינה' }), null);
+    ok('a quote that is not in the source it names fails', Boolean(specificProblem('הגנים של וינה', { quote: 'הגנים של פריז', source: 'title' }, sources)));
+    ok('a quote from another source fails', Boolean(specificProblem('איפה לשבת', { quote: 'איפה הכי שווה לשבת', source: 'description' }, sources)));
+    ok('a quote from a viewer\'s comment passes', !specificProblem('הכי שווה לשבת בבלוודרה', { quote: 'איפה הכי שווה לשבת', source: 'comment' }, sources));
+    ok('a draft that does not use the detail it quotes fails', Boolean(specificProblem('יפה מאוד שם', { quote: 'הגן הכי יפה בעיר', source: 'description' }, { ...sources, description: 'הגן הכי מרשים בעיר' })));
+    ok('no detail at all fails', Boolean(specificProblem('יפה', null, sources)));
+  }
+
+  /* ---------------------------------------------------------- drafting, with a stand-in model */
+
+  {
+    // The whole loop: three drafts, one refused by code and asked for again, the
+    // reviewer's scores, a rewrite that passes, and the second look at it.
+    const lead = creator(9, { name: 'נועה טיולים', handle: 'noa', gender: 'unknown' });
+    const post = { ...lead.posts[0], platform: 'youtube', title: 'שקיעה בליקבטוס עם כל העיר מתחת', description: 'עלינו ברגל', topComments: [{ text: 'כמה זמן העלייה?', likes: 3 }] };
+    const draftsOut = (variants) => ({ firstName: 'נועה', variants });
+    const answers = [
+      draftsOut([
+        { text: 'השקיעה מליקבטוס עם כל העיר מתחת, זה בדיוק הרגע', specific: { quote: 'שקיעה בליקבטוס', source: 'title' } },
+        { text: 'בנוסף, בליקבטוס יש רכבל', specific: { quote: 'שקיעה בליקבטוס', source: 'title' } },
+        { text: 'לשאלה כמה זמן העלייה: ברגל זה חלק מהכיף', specific: { quote: 'כמה זמן העלייה', source: 'comment' } },
+      ]),
+      draftsOut([{ text: 'עם כל העיר מתחת קשה לרדת משם, ושווה להישאר לאורות', specific: { quote: 'כל העיר מתחת', source: 'title' } }]),
+      { reviews: [
+        { index: 0, botScore: 2, tells: [], factProblem: '', rewrite: '' },
+        { index: 1, botScore: 6, tells: ['too polished'], factProblem: '', rewrite: 'כמה זמן העלייה? ברגל זה חצי מהכיף שם' },
+        { index: 2, botScore: 1, tells: [], factProblem: '', rewrite: '' },
+      ] },
+      { reviews: [{ index: 0, botScore: 2, tells: [], factProblem: '', rewrite: '' }] },
+    ];
+    const calls = [];
+    setClient({
+      messages: {
+        create: async (body) => {
+          calls.push(body);
+          const next = answers.shift();
+          return { model: body.model, stop_reason: 'end_turn', usage: { input_tokens: 100, output_tokens: 50 }, content: [{ type: 'text', text: JSON.stringify(next) }] };
+        },
+      },
+    });
+    const state = emptyState();
+    const out = await draftItem('comment', { state, settings: S, lead, post, site: 'יעד: אתונה' });
+    eq('four calls: draft, the redo of the refused one, review, the second look at a rewrite', calls.length, 4);
+    ok('the refused draft went back with its reason', /בנוסף/.test(calls[1].messages[0].content) && /AI opener/.test(calls[1].messages[0].content));
+    eq('three variants on the card', out.variants.length, 3);
+    ok('each with the reviewer\'s score, best first', out.variants.every((v) => Number.isInteger(v.score)) && out.variants[0].score <= out.variants[2].score);
+    const rw = out.variants.find((v) => v.rewritten);
+    ok('the rewrite replaced its draft and was scored again', rw && rw.score === 2 && rw.originalScore === 6 && /חצי מהכיף/.test(rw.text));
+    ok('every variant passed the code checks', out.variants.every((v) => !tellsIn(v.text).length));
+    ok('the drafting model is Opus 5.5 by default, and so is the reviewer', calls[0].model === 'claude-opus-5-5' && calls[2].model === 'claude-opus-5-5');
+    ok('no thinking parameter is sent (it cannot be turned off on these models)', calls.every((b) => !('thinking' in b)));
+    ok('and the fallback is asked for', calls.every((b) => b.fallbacks === 'default'));
+    ok('the cost is in the ledger', monthSpend(state, S, NOW).rows.claude?.units === 4);
+    setClient(null);
+  }
+
+  /* ---------------------------------------------------------- the agency's example */
+
+  {
+    const options = [
+      ...OPTIONS,
+      { slug: 'sinai', name: 'סיני', nameLocal: 'Sinai', country: 'מצרים', haystack: 'סיני | sinai' },
+      { slug: 'samarkand', name: 'סמרקנד', nameLocal: 'Samarkand', country: 'אוזבקיסטן', haystack: 'סמרקנד | samarkand' },
+      { slug: 'prague', name: 'פראג', nameLocal: 'Prague', country: 'צ׳כיה', haystack: 'פראג | prague' },
+    ];
+    const state = { ...emptyState(), site: { options, itineraries: [{ slug: 'athens', days: 5 }, { slug: 'prague', days: 5 }] } };
+    const fallback = (st, l) => ({ slug: 'prague', he: 'פראג', path: '/itinerary/prague/5' });
+    const egypt = agency(1, { name: 'עמק המלכים - טיולים מאורגנים למצרים', profile: { destinations: [{ name: 'מצרים' }, { name: 'סין' }, { name: 'אוזבקיסטן' }] } });
+    const ex1 = chooseExample(state, egypt, { fallback, preferred: [] });
+    ok('an agency that sells Egypt gets a route in Egypt, never Prague', ex1.kind === 'route' && ex1.slug === 'sinai', JSON.stringify(ex1));
+    ok('and the card says why', /They sell מצרים, סין, אוזבקיסטן/.test(ex1.reason));
+    eq('the agency\'s own name is enough when its site says nothing', chooseExample(state, agency(2, { name: 'טיולים מאורגנים למצרים' }), { fallback, preferred: [] }).slug, 'sinai');
+    eq('a country resolves to the city this audience flies to', chooseExample(state, agency(3, { profile: { destinations: [{ name: 'יוון' }] } }), { fallback, preferred: ['athens'] }).slug, 'athens');
+    const none = chooseExample(state, agency(4, { profile: { destinations: [{ name: 'פטגוניה' }] } }), { fallback, preferred: [] });
+    ok('nothing they sell in our catalog: the closest page, with the reason', none.kind === 'page' && /None of what they sell \(פטגוניה\) is in our catalog/.test(none.reason));
+    const links = tripLinks('<a href="/trips/egypt">טיולים למצרים</a><a href="/about">אודות</a><a href="https://other.example/trips">x</a><a href="/destinations">יעדים</a><a href="/blog/x">טיול</a>', 'https://agency.co.il/');
+    eq('their own trip pages are followed, two at most, same site only', links.join(' '), 'https://agency.co.il/trips/egypt https://agency.co.il/destinations');
+  }
+
+  /* ---------------------------------------------------------- agency routes go public, inside the limit */
+
+  {
+    const store = memStore();
+    store.data.site = { options: OPTIONS, itineraries: [{ slug: 'athens', days: 5 }] };
+    store.data.leads['ag:place1'] = agency(1, { score: 90 });
+    store.data.leads['ag:place2'] = agency(2, { score: 10 });
+    const published = [];
+    const deps = {
+      cityFor: async () => CITY,
+      draftItem: async () => ({ variants: [{ text: 'היי, נתנאל כאן. הנה דוגמה לאתונה: [קישור]', score: 1, tells: [] }] }),
+      fillVideoContext: async () => 0,
+      readAgencySite: async () => ({ text: 'טיולים מאורגנים ליוון' }),
+      extractProfile: async () => ({ siteText: 'טיולים מאורגנים ליוון', destinations: [{ name: 'יוון', quote: 'ליוון' }], clientele: [], tripTypes: [] }),
+      publishRoute: async (l) => (published.push(l.id), { status: 'published', url: `https://www.tiyulplus.com/trips/${l.id}`, slug: 'x', externalId: externalIdFor(l), publishedAt: new Date(NOW).toISOString() }),
+      shortLink: async () => null,
+      brave: async () => [],
+    };
+    const one = { ...S, caps: { ...S.caps, agency: 1 } };
+    const KEY = { ANTHROPIC_API_KEY: 'test' };
+    await prepareToday({ store, settings: one, now: NOW, deps, env: KEY });
+    eq('a sample route goes public only for the agency picked for today', published.join(), 'ag:place1');
+    const a1 = store.data.leads['ag:place1'];
+    ok('on a city they sell, built from our catalog', a1.route?.citySlug === 'athens' && a1.route.days.every((d) => d.placeIds.every((id) => CITY.places.some((p) => p.id === id))));
+    ok('and the card shows the route before anything is sent', todayPage({ state: store.data, settings: one, token: 't', now: NOW, templates: readTemplates(), day: pickToday(store.data, one, NOW), env: {} }).includes('Their example'));
+    ok('the message carries the route page, plain', compose(a1, 'message', { templates: readTemplates(), settings: one, state: store.data }).text.includes('https://tiyulplus.com/trips/ag:place1'));
+
+    // The site's limit is one number for creators and agencies together.
+    const full = memStore();
+    full.data.site = store.data.site;
+    full.data.leads['tt:@maker1'] = creator(1, { trip: { status: 'published', url: 'u', publishedAt: new Date(NOW - 3_600_000).toISOString() } });
+    full.data.leads['ag:place3'] = agency(3);
+    const limited = { ...S, publishPerDay: 1 };
+    eq('one page up in the last day fills a limit of one', canPublishNew(full.data, limited, NOW), false);
+    await prepareToday({ store: full, settings: limited, now: NOW, deps, env: KEY });
+    eq('so the agency waits, and says why', full.data.leads['ag:place3'].trip?.status, 'waiting-limit');
+    eq('a day later it may go up', canPublishNew(full.data, limited, NOW + 86_400_000), true);
+
+    const withdrawn = [];
+    const ops = createOps({ store, env: {}, clock: () => NOW, deps: { runDiscovery: async () => {}, prepareToday: async () => {}, withdrawRoute: async (l) => (withdrawn.push(l.id), { ...l.trip, status: 'withdrawn' }) } });
+    await ops.post('/api/lead/ag:place1/action', { action: 'skip' });
+    ok('[Skip] takes the agency\'s route down', withdrawn.join() === 'ag:place1' && store.data.leads['ag:place1'].trip.status === 'withdrawn');
+  }
+
+  /* ---------------------------------------------------------- learning from what was sent */
+
+  {
+    const state = emptyState();
+    const lead = creator(1, { posts: [{ ...creator(1).posts[0], drafts: { variants: [{ text: 'בנוסף, שווה לעלות בשקיעה', score: 3 }, { text: 'שווה לעלות בשקיעה', score: 1 }] } }] });
+    state.leads[lead.id] = lead;
+    const pid = lead.posts[0].id;
+    noteCopied(lead, { what: 'comment', postId: pid, variant: 1, text: 'שווה לעלות ממש בשקיעה', draft: 'שווה לעלות בשקיעה', at: NOW });
+    const rec = recordSent(state, lead, { what: 'comment', postId: pid, at: NOW });
+    ok('copy then sent writes the draft, the sent text and the variant', rec && rec.draft === 'שווה לעלות בשקיעה' && rec.sent === 'שווה לעלות ממש בשקיעה' && rec.variant === 1 && rec.edited === true);
+    noteCopied(lead, { what: 'dm', variant: 0, text: 'x', draft: 'x', at: NOW });
+    const final = recordSent(state, lead, { what: 'dm', final: 'מה ששלחתי באמת', at: NOW });
+    ok('the text pasted after sending wins', final.sent === 'מה ששלחתי באמת' && final.kind === 'creator' && final.edited);
+    eq('nothing copied and nothing pasted logs nothing', recordSent(state, lead, { what: 'dm', at: NOW }), null);
+    for (let i = 0; i < 12; i++) state.sentLog.push({ at: new Date(NOW + i).toISOString(), kind: 'comment', sent: `תגובה ${i}`, draft: `טיוטה ${i}`, edited: true });
+    const ex = examplesFor(state, 'comment');
+    ok('few-shot is the last ten of that kind, newest first', ex.length === 10 && ex[0] === 'תגובה 11' && ex[9] === 'תגובה 2');
+    ok('and never another kind', !examplesFor(state, 'agency').length && !examplesFor(state, 'comment').includes('מה ששלחתי באמת'));
+    const s2 = emptyState();
+    for (let i = 0; i < 3; i++) s2.sentLog.push({ at: new Date(NOW).toISOString(), kind: 'comment', variant: 0, draft: 'בנוסף שווה לעלות בשקיעה', sent: 'שווה לעלות בשקיעה', edited: true });
+    const w = weeklyEdits(s2, NOW);
+    ok('the weekly diff names what you usually cut', w.removed[0]?.phrase === 'בנוסף' && w.removed[0].count === 3, JSON.stringify(w.removed));
+    ok('and how much shorter you make them', w.avgLengthChange < 0 && w.edited === 3 && w.variants[0] === 3);
+    ok('Reports shows it', reportsPage({ state: s2, settings: S, token: 't', now: NOW, ga4: { configured: false, missing: [] } }).includes('You usually cut'));
+  }
+
+  /* ---------------------------------------------------------- budget, at Fable's and Opus's prices */
+
+  {
+    ok('Fable 5.1 is billed at $10 in and $50 out', Math.abs(claudeCost({ input_tokens: 1e6, output_tokens: 1e6 }, 'claude-fable-5-1') - 60) < 1e-9);
+    ok('Opus 5.5 at $4 and $20', Math.abs(claudeCost({ input_tokens: 1e6, output_tokens: 1e6 }, 'claude-opus-5-5') - 24) < 1e-9);
+    ok('a cache read at the model\'s own rate', Math.abs(claudeCost({ cache_read_input_tokens: 1e6 }, 'claude-fable-5-1') - 0.25) < 1e-9);
+    ok('an unknown model is billed at the dearest rate in the table, not half of it', claudeCost({ input_tokens: 1e6 }, 'claude-typo') === claudeCost({ input_tokens: 1e6 }, 'claude-fable-5-1') && WORST.in === 10);
+    eq('the default cap is $50', S.budgetUsd, 50);
+    const state = emptyState();
+    record(state, 'claude', { usd: 49.9, now: NOW });
+    let stopped = false;
+    try {
+      guard(state, S, 'claude', draftEstimate('claude-fable-5-1'), NOW);
+    } catch (e) {
+      stopped = e instanceof BudgetError;
+    }
+    ok('the guard refuses a Fable call that would cross the cap, before it is made', stopped && draftEstimate('claude-fable-5-1') > 0.1);
+  }
+
+  /* ---------------------------------------------------------- short links */
+
+  {
+    const lead = creator(1);
+    const state = emptyState();
+    const TOKEN = { GROWTH_PUBLISH_TOKEN: 'x'.repeat(40) };
+    const url = 'https://www.tiyulplus.com/trips/athens-4-ab12cd34';
+    const missing = async () => {
+      throw Object.assign(new Error('not found'), { status: 404 });
+    };
+    eq('with no short-link endpoint on the site, the plain link', await shortLinkFor(state, lead, url, { env: TOKEN, post: missing, now: NOW }), 'https://tiyulplus.com/trips/athens-4-ab12cd34');
+    let asked = 0;
+    await shortLinkFor(state, creator(2), url, { env: TOKEN, post: async () => (asked++, { url: 'https://tiyulplus.com/go/k3f9a' }), now: NOW + 1000 });
+    eq('a missing endpoint is not asked again for a day', asked, 0);
+    const later = await shortLinkFor(state, creator(3), url, { env: TOKEN, post: async (u, body) => (asked++, { url: 'https://tiyulplus.com/go/k3f9a', body }), now: NOW + 2 * DAY, campaign: 'maker3' });
+    ok('the day the site has it, the desk uses it by itself', later === 'https://tiyulplus.com/go/k3f9a' && asked === 1);
+    eq('plainLink drops the tags and the www', plainLink('https://www.tiyulplus.com/itinerary/athens/5?utm_source=x'), 'https://tiyulplus.com/itinerary/athens/5');
+    ok('a video\'s top comments may be read, never written', Boolean(assertAllowed('GET', 'https://www.googleapis.com/youtube/v3/commentThreads?videoId=x')));
+  }
+
+  /* ---------------------------------------------------------- the login */
+
+  {
+    const fakeOps = {
+      context: () => ({ state: emptyState(), settings: S, templates: readTemplates(), now: NOW, env: {} }),
+      today: () => ({ comment: [], creator: [], agency: [], customer: [] }),
+      status: () => ({ running: false }),
+      post: async () => ({ ok: true }),
+      ga4: async () => ({ configured: false, missing: [] }),
+    };
+    const env = { GROWTH_PASSWORD: 'correct horse battery', GROWTH_PUBLIC_HOST: 'desk.example.test' };
+    const server = createServer();
+    await new Promise((r) => server.listen(0, '127.0.0.1', r));
+    const port = server.address().port;
+    const { handler, token } = createHandler({ ops: fakeOps, port, env, failDelayMs: 0 });
+    server.on('request', handler);
+    const local = `127.0.0.1:${port}`;
+    const form = (pw) => ({ method: 'POST', path: '/login', headers: { host: local, 'content-type': 'application/x-www-form-urlencoded' }, body: `password=${encodeURIComponent(pw)}` });
+    const raw = (opts) =>
+      new Promise((done, fail) => {
+        const r = request({ host: '127.0.0.1', port, method: opts.method || 'GET', path: opts.path || '/', headers: opts.headers || {} }, (res) => {
+          let s = '';
+          res.on('data', (d) => (s += d));
+          res.on('end', () => done({ status: res.statusCode, headers: res.headers, body: s }));
+        });
+        r.on('error', fail);
+        if (opts.body) r.write(opts.body);
+        r.end();
+      });
+    try {
+      const home = await raw({ headers: { host: local } });
+      ok('without a session, every page goes to the login', home.status === 302 && home.headers.location === '/login');
+      eq('and the API answers 401', (await raw({ path: '/api/status', headers: { host: local } })).status, 401);
+      eq('so does a thumbnail', (await raw({ path: '/thumb/tt-1.jpg', headers: { host: local } })).status, 401);
+      eq('and a button, even with the page token', (await raw({ method: 'POST', path: '/api/run', headers: { host: local, 'content-type': 'application/json', 'x-growth-token': token }, body: '{}' })).status, 401);
+      eq('the login page itself answers', (await raw({ path: '/login', headers: { host: local } })).status, 200);
+      eq('a wrong password is refused', (await raw(form('wrong'))).status, 401);
+      for (let i = 0; i < 3; i++) await raw(form('wrong'));
+      const fifth = await raw(form('wrong'));
+      const sixth = await raw(form('correct horse battery'));
+      ok('after five wrong passwords even the right one waits, with Retry-After', fifth.status === 401 && sixth.status === 429 && Number(sixth.headers['retry-after']) > 0, `${fifth.status} ${sixth.status}`);
+      const fresh = createHandler({ ops: fakeOps, port, env, failDelayMs: 0 });
+      server.removeAllListeners('request');
+      server.on('request', fresh.handler);
+      const good = await raw(form('correct horse battery'));
+      const cookie = String(good.headers['set-cookie'] || '');
+      ok('the right password logs in with an HttpOnly, SameSite=Strict cookie', good.status === 303 && /HttpOnly/.test(cookie) && /SameSite=Strict/.test(cookie), cookie);
+      const viaProxy = await raw({ ...form('correct horse battery'), headers: { ...form('').headers, host: 'desk.example.test', 'x-forwarded-proto': 'https', 'x-forwarded-for': '203.0.113.9' } });
+      ok('over HTTPS it is Secure, with the __Host- prefix', /^__Host-desk=/.test(String(viaProxy.headers['set-cookie'])) && /Secure/.test(String(viaProxy.headers['set-cookie'])));
+      const session = cookie.split(';')[0];
+      eq('with the session, Today answers', (await raw({ headers: { host: local, cookie: session } })).status, 200);
+      eq('a forged session does not', (await raw({ headers: { host: local, cookie: 'desk=v1.99999999999999.AAAA' } })).status, 302);
+      ok('an expired one does not either', !sessionOk(makeSession(authConfig(env), NOW - 31 * DAY), authConfig(env), NOW));
+      eq('the public name over plain HTTP is refused', (await raw({ headers: { host: 'desk.example.test', cookie: session } })).status, 403);
+      ok('a public desk with no password does not start', Boolean(startProblem({ GROWTH_PUBLIC_HOST: 'desk.example.test' })) && !startProblem(env));
+    } finally {
+      server.close();
+    }
+    const broken = createHandler({ ops: { ...fakeOps, today: () => { throw new Error('secret path /var/lib/x'); } }, port: 1, env: {} });
+    const out = { status: 0, body: '' };
+    const quiet = console.error;
+    console.error = () => {};
+    await broken.handler({ method: 'GET', url: '/', headers: { host: '127.0.0.1:1' }, socket: {} }, { writeHead: (s) => (out.status = s), end: (b) => (out.body = String(b)) });
+    console.error = quiet;
+    ok('an error page shows no stack and no path', out.status === 500 && !/secret path|at /.test(out.body), out.body);
+  }
+
+  /* ---------------------------------------------------------- one desk */
+
+  {
+    const moved = join(REPO, 'data', '.selftest-growth.MOVED');
+    writeFileSync(moved, 'https://desk.example.test');
+    const r = await main({ env: { GROWTH_ON: '1' }, movedFile: moved });
+    rmSync(moved, { force: true });
+    ok('a desk next to a growth.MOVED marker does not start', r.on === false && r.moved === true);
   }
 }

@@ -20,11 +20,11 @@ const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 export function ga4Missing(env = process.env) {
   const out = [];
   if (!String(env.GA4_PROPERTY_ID || '').trim()) {
-    out.push('GA4_PROPERTY_ID: מספר ה-property (ספרות בלבד, לא G-MR48GYKQ3R). ב-GA4: Admin, Property details.');
+    out.push('GA4_PROPERTY_ID: the property number (digits only, not G-MR48GYKQ3R). In GA4: Admin, Property details.');
   }
   if (!String(env.GA4_SERVICE_ACCOUNT_FILE || env.GOOGLE_APPLICATION_CREDENTIALS || '').trim()) {
-    out.push('GA4_SERVICE_ACCOUNT_FILE: נתיב לקובץ JSON של service account מ-Google Cloud (עם Google Analytics Data API מופעל).');
-    out.push('ואת כתובת המייל של ה-service account מוסיפים ב-GA4 תחת Admin, Property access management, בהרשאת Viewer.');
+    out.push('GA4_SERVICE_ACCOUNT_FILE: the path to a service account JSON key from Google Cloud, with the Google Analytics Data API turned on.');
+    out.push('Then add the service account email in GA4 under Admin, Property access management, as a Viewer.');
   }
   return out;
 }

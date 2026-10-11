@@ -42,6 +42,19 @@ export function tagged(url, lead, { medium } = {}) {
   return u.toString();
 }
 
+/**
+ * A page of ours as a person should see it in a message: no tags, no "www".
+ *
+ * The bare domain redirects to www, so the shorter form opens the same page.
+ * Since 2026-10-11 this, not tagged(), is what a message carries: a link with
+ * three utm_ parameters on it reads as spam in WhatsApp. prepare/short.js swaps
+ * in a short tagged link once the site can make one.
+ */
+export function plainLink(url) {
+  const u = new URL(url, SITE);
+  return `https://${u.hostname.replace(/^www\./, '')}${u.pathname.replace(/\/$/, '') || '/'}`;
+}
+
 export const hasUtm = (url) => {
   try {
     const p = new URL(url).searchParams;

@@ -64,12 +64,12 @@ export async function runDiscovery({ store, settings, trigger = 'button', now = 
     return finish();
   }
   if (!claudeConfigured(env)) {
-    run.errors.push('ANTHROPIC_API_KEY חסר: בלעדיו אי אפשר למיין את מה שנמצא');
+    run.errors.push('ANTHROPIC_API_KEY is missing, so nothing found could be sorted.');
     return finish();
   }
 
   await deps.refreshSite(state, { now });
-  if (!state.site?.options?.length) run.errors.push('רשימת היעדים מהאתר לא נטענה, אין למה להתאים יעדים');
+  if (!state.site?.options?.length) run.errors.push('The destination list from our site did not load, so nothing could be matched to a destination.');
   const plan = todaysSearches(settings, { now });
   run.dests = plan.dests.map((d) => d.he);
 
@@ -88,7 +88,7 @@ export async function runDiscovery({ store, settings, trigger = 'button', now = 
 
 async function findSocial({ state, settings, plan, run, now, deps, env }) {
   if (!braveConfigured(env)) {
-    run.skipped.push('BRAVE_API_KEY חסר: לא חיפשתי בטיקטוק ובאינסטגרם');
+    run.skipped.push('BRAVE_API_KEY is missing, so TikTok and Instagram were not searched.');
     return;
   }
 
@@ -196,7 +196,7 @@ async function findSocial({ state, settings, plan, run, now, deps, env }) {
 
 async function findYoutube({ state, settings, plan, run, now, deps, env }) {
   if (!youtubeConfigured(env)) {
-    run.skipped.push('YouTube מופעל בהגדרות אבל אין YOUTUBE_API_KEY');
+    run.skipped.push('YouTube is on in Settings but YOUTUBE_API_KEY is missing.');
     return;
   }
   // The same Hebrew templates as TikTok, without the "video" that only Brave
@@ -350,7 +350,9 @@ async function judge({ state, settings, cands, followers, run, now, deps }) {
     const who = c.handle ? `@${c.handle}` : `p:${c.id}`;
     const id = type === 'customer' ? `cust:${pf}:${who}` : `${pf}:${who}`;
     post.thumb = await deps.saveThumb(c.thumbUrl, c.platform, c.id);
-    const gender = v.gender === 'f' || v.gender === 'm' ? v.gender : 'f';
+    // Only the post's own grammar says who wrote it; otherwise nobody knows, and
+    // the drafts use the plural. Every lead used to start as female.
+    const gender = v.gender === 'f' || v.gender === 'm' ? v.gender : 'unknown';
     state.leads[id] = {
       id,
       type,
@@ -371,7 +373,7 @@ async function judge({ state, settings, cands, followers, run, now, deps }) {
       dest: dest ? { he: dest.name, slug: dest.slug } : null,
       posts: [post],
       score: scored.score,
-      why: [...scored.why, `נמצא בחיפוש: ${c.searched}`],
+      why: [...scored.why, `found by searching "${c.searched}"`],
       reason: v.reason,
       gender,
       genderFrom: v.gender === 'f' || v.gender === 'm' ? 'post' : 'default',
@@ -391,14 +393,14 @@ async function judge({ state, settings, cands, followers, run, now, deps }) {
 
 async function findAgencies({ state, settings, plan, run, now, deps, env }) {
   if (!placesConfigured(env)) {
-    run.skipped.push('GOOGLE_MAPS_KEY חסר: לא חיפשתי סוכנויות');
+    run.skipped.push('GOOGLE_MAPS_KEY is missing, so agencies were not searched.');
     return;
   }
   // No search while there is a week of agencies waiting: a backlog bigger than
   // the next five days of the cap is money spent on leads nobody will reach.
   const backlog = Object.values(state.leads).filter((l) => l.type === 'agency' && !l.closed && l.stage === 'found').length;
   if (backlog >= settings.caps.agency * 5) {
-    run.skipped.push(`יש ${backlog} סוכנויות שממתינות, לא חיפשתי חדשות`);
+    run.skipped.push(`${backlog} agencies are still waiting for you, so I did not look for more.`);
     return;
   }
   if (!plan.agency) return;
@@ -428,7 +430,7 @@ async function findAgencies({ state, settings, plan, run, now, deps, env }) {
     verdicts = await deps.classifyAgencies(fresh.map(({ a, extra }) => ({ ...a, snippet: extra.snippet })), { state, settings });
   } catch (e) {
     if (e instanceof BudgetError) throw e;
-    run.errors.push(`מיון הסוכנויות: ${e.message}`);
+    run.errors.push(`Sorting the agencies failed: ${e.message}`);
   }
 
   for (const [i, { a, keys, extra: raw }] of fresh.entries()) {
@@ -466,8 +468,9 @@ async function findAgencies({ state, settings, plan, run, now, deps, env }) {
       kosher: extra.kosher,
       siteError: extra.siteError,
       score: scored.score,
-      why: [...scored.why, `נמצא בחיפוש: ${plan.agency.text}`],
-      gender: 'f',
+      why: [...scored.why, `found by searching "${plan.agency.text}"`],
+      // An agency is a business, addressed in the plural.
+      gender: 'unknown',
       genderFrom: 'default',
       stage: 'found',
       closed: null,
