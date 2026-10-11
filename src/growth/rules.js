@@ -27,6 +27,19 @@
 
 export const STAGES = ['found', 'commented', 'messaged', 'replied', 'yes', 'no', 'using'];
 
+/**
+ * Why an agency's first message may not go yet because of its sample route, or
+ * null when the route passed its check (prepare/routeCheck.js runs it).
+ */
+export function routeProblem(lead) {
+  const c = lead?.routeCheck;
+  if (!lead?.example) return null;
+  if (!c) return 'The sample route is not checked yet. It is checked on the next pass, before the message is written.';
+  if (c.status === 'error') return `The route check could not run: ${c.error}. It runs again on the next pass.`;
+  if (c.status === 'fail') return `The sample route failed its check (${c.issues.length} ${c.issues.length === 1 ? 'issue' : 'issues'}), so this message has no send button.`;
+  return null;
+}
+
 // What the screens call them. The desk's own words are English (the owner's
 // brief, 2026-10-11); what goes out to people stays Hebrew.
 export const STAGE_LABEL = {
@@ -332,6 +345,8 @@ export function applyAction(state, lead, action, payload = {}, { now = Date.now(
         if (lead.type === 'creator' && !dmReady(lead, { now, warmupDays: s.warmupDays ?? 1 })) {
           throw new RuleError('not-warm', 'A creator gets the message the day after you mark the comment, not before.');
         }
+        // The card offers no send button then; this is the same rule for any other caller.
+        if (lead.type === 'agency' && routeProblem(lead)) throw new RuleError('route', routeProblem(lead));
         lead.messagedAt = at;
         lead.stage = 'messaged';
       } else if (followupDue(lead, { now, followupDays: s.followupDays ?? 4 })) {

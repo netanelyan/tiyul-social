@@ -14,6 +14,7 @@ import { canPublishNew, publishRoute } from './publish.js';
 import { shortLinkFor } from './short.js';
 import { campaignFor } from '../links.js';
 import { buildRoute } from './route.js';
+import { checkRoute, ROUTE_RULES, routeKey } from './routeCheck.js';
 import { cityFor, siteContext } from './site.js';
 
 // Preparing what Today shows: only today's picks, only what is missing.
@@ -37,6 +38,7 @@ export const DEFAULT_DEPS = {
   readAgencySite,
   extractProfile,
   shortLink: shortLinkFor,
+  checkRoute,
 };
 
 /** Ask the site for this item's short link once; the card reads it from the lead. */
@@ -186,13 +188,22 @@ async function prepareAgency({ state, settings, lead, now, deps, env, report, ci
     delete lead.agencyDest;
     c = await city(ex.slug);
     if (!lead.route && c) lead.route = buildRoute(c, {});
-    lead.trip = await publishWithin({ state, settings, lead, now, deps, env, report });
+    // THE ROUTE IS CHECKED BEFORE IT GOES PUBLIC, and only a route that passed is
+    // published (the owner's rule of 2026-10-11). See ./routeCheck.js.
+    if (lead.route && c) lead.routeCheck = await routeChecked(lead.routeCheck, lead.route, c, { state, settings, env, now, deps });
+    if (lead.routeCheck?.status === 'pass') lead.trip = await publishWithin({ state, settings, lead, now, deps, env, report });
   } else if (ex?.kind === 'page') {
     lead.agencyDest = { slug: ex.slug, he: ex.he, path: ex.path };
     c = await city(ex.slug);
+    // The page is the site's own itinerary for that many days, and it is held
+    // to the same check: it is the route the agency is shown.
+    const route = c ? buildRoute(c, { days: Number(/\/(\d+)$/.exec(ex.path || '')?.[1]) || null }) : null;
+    if (route) lead.routeCheck = await routeChecked(lead.routeCheck, route, c, { state, settings, env, now, deps });
   }
   await linkUp({ state, lead, what: 'message', deps, env, now });
   if (!lead.socials?.length && !lead.socialsLooked && braveConfigured(env)) await findSocials({ state, settings, lead, now, deps, env });
+  // No message is written for a route that has not passed: it could not be sent.
+  if (ex && lead.routeCheck?.status !== 'pass') return;
   if (!lead.drafts?.message?.variants?.length && canDraft && ex) {
     lead.drafts = {
       ...lead.drafts,
@@ -207,6 +218,18 @@ async function prepareAgency({ state, settings, lead, now, deps, env, report, ci
     };
     report.drafted++;
   }
+}
+
+/**
+ * A route's check, reused while the route is the same one and the check is
+ * fresh; run again when the route changed, the check is a month old, or it
+ * could not run last time (at most once an hour).
+ */
+async function routeChecked(prev, route, c, { state, settings, env, now, deps }) {
+  const fresh = prev && prev.routeKey === routeKey(route) && now - Date.parse(prev.checkedAt || 0) < ROUTE_RULES.cacheDays * 86_400_000;
+  if (fresh && prev.status !== 'error') return prev;
+  if (fresh && now - Date.parse(prev.checkedAt) < 3_600_000) return prev;
+  return deps.checkRoute(route, c, { state, settings, env, now });
 }
 
 /**

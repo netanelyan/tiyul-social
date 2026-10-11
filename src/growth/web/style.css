@@ -194,6 +194,9 @@ button[disabled] { opacity: 0.45; cursor: not-allowed; }
 
 .tag { display: inline-block; font-size: 12px; background: var(--tag); border-radius: 6px; padding: 1px 8px; color: var(--soft); }
 .tag.ok { background: #e7f6ec; color: var(--ok); }
+.tag.bad { background: var(--warn-bg); color: var(--warn); }
+.check { font-size: 13px; margin: 6px 0; color: var(--soft); }
+.check ul.issues { margin: 4px 0 0; padding-inline-start: 20px; color: var(--warn); }
 .tag.kosher { background: #fff1d6; color: #8a5a00; margin-inline-end: 6px; }
 
 .donebox { margin-top: 6px; }

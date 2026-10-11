@@ -27,6 +27,7 @@ import { checkDraft, urlsIn } from './prepare/guards.js';
 import { agencySample, prepareToday } from './prepare/index.js';
 import { canPublishNew, externalIdFor, publishRoute, tripBody, withdrawClosed, withdrawRoute } from './prepare/publish.js';
 import { buildRoute } from './prepare/route.js';
+import { checkRoute, findOnGoogle, frameKm, judgeRoute, routeKey, scaleOf } from './prepare/routeCheck.js';
 import { destinationSupported, matchPlaces, postDestination, resolveDestination } from './prepare/site.js';
 import { checkTemplate, fill, readTemplates } from './prepare/templates.js';
 import { ga4Missing, jwtFor } from './report/ga4.js';
@@ -964,6 +965,7 @@ export async function growthSelftest({ ok, eq }) {
       publishRoute: async (l) => (published.push(l.id), { status: 'published', url: `https://www.tiyulplus.com/trips/${l.id}`, slug: 'x', externalId: externalIdFor(l), publishedAt: new Date(NOW).toISOString() }),
       shortLink: async () => null,
       brave: async () => [],
+      checkRoute: async (route) => ({ status: 'pass', issues: [], stops: [], days: route.days.length, stopCount: route.stops, routeKey: routeKey(route), checkedAt: new Date(NOW).toISOString() }),
     };
     const one = { ...S, caps: { ...S.caps, agency: 1 } };
     const KEY = { ANTHROPIC_API_KEY: 'test' };
@@ -989,6 +991,136 @@ export async function growthSelftest({ ok, eq }) {
     const ops = createOps({ store, env: {}, clock: () => NOW, deps: { runDiscovery: async () => {}, prepareToday: async () => {}, withdrawRoute: async (l) => (withdrawn.push(l.id), { ...l.trip, status: 'withdrawn' }) } });
     await ops.post('/api/lead/ag:place1/action', { action: 'skip' });
     ok('[Skip] takes the agency\'s route down', withdrawn.join() === 'ag:place1' && store.data.leads['ag:place1'].trip.status === 'withdrawn');
+  }
+
+  /* ---------------------------------------------------------- the route check (owner, 2026-10-11) */
+
+  {
+    // Florence at the site's zoom 13, with a day trip to Pisa in the catalog.
+    const GEO = {
+      slug: 'florence', name: 'פירנצה', nameLocal: 'Florence', zoom: 13, center: { lat: 43.7696, lng: 11.2558 },
+      places: [
+        { id: 'f1', name: 'הדואומו', nameLocal: 'Duomo', lat: 43.7731, lng: 11.2569 },
+        { id: 'f2', name: 'אופיצי', nameLocal: 'Uffizi', lat: 43.7678, lng: 11.2553 },
+        { id: 'f3', name: 'פונטה וקיו', nameLocal: 'Ponte Vecchio', lat: 43.768, lng: 11.2531 },
+        { id: 'f4', name: 'סיניוריה', nameLocal: 'Piazza della Signoria', lat: 43.7696, lng: 11.2556 },
+        { id: 'f5', name: 'בובולי', nameLocal: 'Boboli Gardens', lat: 43.7625, lng: 11.2483 },
+        { id: 'f6', name: 'סנטה קרוצ\'ה', nameLocal: 'Santa Croce', lat: 43.7686, lng: 11.2622 },
+        { id: 'f7', name: 'מיכלאנג\'לו', nameLocal: 'Piazzale Michelangelo', lat: 43.7629, lng: 11.2651 },
+        { id: 'f8', name: 'פיאזולה', nameLocal: 'Fiesole', lat: 43.8066, lng: 11.2939 },
+        { id: 'pisa', name: 'פיזה', nameLocal: 'Leaning Tower of Pisa', lat: 43.723, lng: 10.3966 },
+      ],
+    };
+    const route = { days: [{ placeIds: ['f1', 'f2', 'f3', 'f4'] }, { placeIds: ['f5', 'f6', 'f7', 'f8'] }] };
+    const place = (id) => GEO.places.find((p) => p.id === id);
+    const found = (id, over = {}) => ({ found: true, name: place(id).nameLocal, status: 'OPERATIONAL', lat: place(id).lat, lng: place(id).lng, country: 'IT', pinKm: 0.1, ...over });
+    const facts = (r, over = {}) => Object.fromEntries(r.days.flatMap((d) => d.placeIds).map((id) => [id, over[id] || found(id)]));
+    const judge = (r, over) => judgeRoute(r, GEO, facts(r, over));
+
+    eq('a city route of two days, four open stops each, passes', judge(route).status, 'pass', judge(route).issues.join(' | '));
+    eq('Florence at zoom 13 is a city', scaleOf(GEO), 'city');
+    ok('and its frame is about 14 km', frameKm(GEO) > 13 && frameKm(GEO) < 15, String(frameKm(GEO)));
+    eq('Sinai at zoom 8 is a region', scaleOf({ zoom: 8 }), 'region');
+    ok('about 550 km across its frame', Math.abs(frameKm({ zoom: 8, center: { lat: 28.6 } }) - 550) < 10, String(frameKm({ zoom: 8, center: { lat: 28.6 } })));
+
+    const short = { days: [{ placeIds: ['f1', 'f2', 'f3', 'f4'] }, { placeIds: ['f5', 'f6', 'f7'] }] };
+    ok('a day of three stops fails', judge(short).issues.some((i) => /Day 2 has 3 stops; each day needs at least 4/.test(i)));
+    ok('one day fails', judge({ days: [route.days[0]] }).issues.some((i) => /1 day; a sample route needs at least 2/.test(i)));
+    ok('a stop closed for good fails', judge(route, { f3: found('f3', { status: 'CLOSED_PERMANENTLY' }) }).issues.some((i) => /"Ponte Vecchio" is closed for good on Google/.test(i)));
+    ok('and one closed for now', judge(route, { f3: found('f3', { status: 'CLOSED_TEMPORARILY' }) }).issues.some((i) => /closed for now/.test(i)));
+    ok('a stop Google cannot find near our pin fails, with the distance', judge(route, { f5: { found: false, nearestKm: 3.24 } }).issues.some((i) => /"Boboli Gardens" was not found on Google near our pin \(the nearest match is 3\.2 km away\)/.test(i)));
+    const town = judge(route, { f8: found('f8', { status: null }) });
+    ok('a town has no business status, and that is not "closed"', town.status === 'pass' && town.stops.find((s) => s.id === 'f8').status === null);
+    ok('a stop in another country fails', judge(route, { f8: found('f8', { country: 'SM' }) }).issues.some((i) => /"Fiesole" is in SM; the rest of the route is in IT/.test(i)));
+    const trip = { days: [{ placeIds: ['f1', 'f2', 'f3', 'pisa'] }, { placeIds: ['f5', 'f6', 'f7', 'f8'] }] };
+    const far = judge(trip);
+    ok('a day trip in the catalog is outside the destination', far.issues.some((i) => /"Leaning Tower of Pisa" is 69 km from the centre of Florence, outside the destination \(14 km\)/.test(i)), far.issues.join(' | '));
+    ok('and its hop from the last stop is not a sensible day', far.issues.some((i) => /Day 1: "Ponte Vecchio" to "Leaning Tower of Pisa" is \d+ km; on a city route a day's stops stay within 10 km/.test(i)));
+    ok('a stop missing from the catalog fails', judgeRoute({ days: [{ placeIds: ['f1', 'f2', 'f3', 'nope'] }, route.days[1]] }, GEO, facts(route)).issues.some((i) => /"nope" is not in the site's catalog/.test(i)));
+
+    // findOnGoogle takes the first answer within 2 km of our pin, not the first answer.
+    const answer = (name, lat, lng, status = 'OPERATIONAL') => ({ displayName: { text: name }, businessStatus: status, location: { latitude: lat, longitude: lng }, addressComponents: [{ types: ['country', 'political'], shortText: 'IT' }] });
+    const asked = [];
+    const post = async (url, body, opts) => (asked.push({ url, body, opts }), { places: [answer('Uffizi Gift Shop, Rome', 41.9, 12.49), answer('Uffizi Gallery', 43.7678, 11.2553)] });
+    const hit = await findOnGoogle(place('f2'), { env: { GOOGLE_MAPS_KEY: 'k' }, post });
+    ok('the match is the one near our pin', hit.found && hit.name === 'Uffizi Gallery' && hit.country === 'IT');
+    ok('asked by its local name, biased to our pin', asked[0].body.textQuery === 'Uffizi' && asked[0].body.locationBias.circle.center.latitude === 43.7678 && asked[0].opts.headers['x-goog-fieldmask'].includes('places.businessStatus'));
+    const miss = await findOnGoogle(place('f2'), { env: { GOOGLE_MAPS_KEY: 'k' }, post: async () => ({ places: [answer('Uffizi Gift Shop, Rome', 41.9, 12.49)] }) });
+    ok('nothing near the pin is not found, with the nearest distance', !miss.found && miss.nearestKm > 200);
+
+    // checkRoute: once per place a month, recorded as Places calls, an error is not a verdict.
+    const state = emptyState();
+    let calls = 0;
+    const fake = async (url, body) => {
+      calls++;
+      const p = GEO.places.find((x) => x.nameLocal === body.textQuery);
+      return { places: [answer(p.nameLocal, p.lat, p.lng)] };
+    };
+    const first = await checkRoute(route, GEO, { state, settings: S, env: { GOOGLE_MAPS_KEY: 'k' }, now: NOW, post: fake });
+    ok('a real check of eight stops asks Google eight times and passes', calls === 8 && first.status === 'pass' && first.routeKey === routeKey(route), JSON.stringify(first.issues));
+    eq('each ask is a Places call in the budget', state.spend[Object.keys(state.spend)[0]].places.units, 8);
+    await checkRoute(short, GEO, { state, settings: S, env: { GOOGLE_MAPS_KEY: 'k' }, now: NOW + DAY, post: fake });
+    eq('the same places a day later are not asked again', calls, 8);
+    GEO.places[0] = { ...GEO.places[0], lat: 43.78 };
+    await checkRoute(route, GEO, { state, settings: S, env: { GOOGLE_MAPS_KEY: 'k' }, now: NOW + DAY, post: fake });
+    eq('a place whose pin moved is asked again', calls, 9);
+    GEO.places[0] = { ...GEO.places[0], lat: 43.7731 };
+    const down = await checkRoute(route, GEO, { state: emptyState(), settings: S, env: { GOOGLE_MAPS_KEY: 'k' }, now: NOW, post: async () => { throw new Error('HTTP 503'); } });
+    ok('Google down is "could not run", not a failed route', down.status === 'error' && /HTTP 503/.test(down.error));
+    eq('and with no key it says so', (await checkRoute(route, GEO, { state: emptyState(), settings: S, env: {}, now: NOW })).error, 'GOOGLE_MAPS_KEY is missing from .env');
+
+    // The desk: a route that fails is not published, not drafted, and has no send button.
+    const store = memStore();
+    store.data.site = { options: OPTIONS, itineraries: [{ slug: 'athens', days: 5 }] };
+    store.data.leads['ag:place1'] = agency(1, { score: 90 });
+    const published = [];
+    let drafted = 0;
+    let verdict = { status: 'fail', issues: ['Day 2 has 3 stops; each day needs at least 4.'], stops: [], days: 2, stopCount: 6 };
+    const deps = {
+      cityFor: async () => CITY,
+      draftItem: async () => (drafted++, { variants: [{ text: 'היי, נתנאל כאן. הנה דוגמה לאתונה: [קישור]', score: 1, tells: [] }] }),
+      fillVideoContext: async () => 0,
+      readAgencySite: async () => ({ text: 'טיולים מאורגנים ליוון' }),
+      extractProfile: async () => ({ siteText: 'טיולים מאורגנים ליוון', destinations: [{ name: 'יוון', quote: 'ליוון' }], clientele: [], tripTypes: [] }),
+      publishRoute: async (l) => (published.push(l.id), { status: 'published', url: `https://www.tiyulplus.com/trips/${l.id}`, slug: 'x', externalId: externalIdFor(l), publishedAt: new Date(NOW).toISOString() }),
+      shortLink: async () => null,
+      brave: async () => [],
+      checkRoute: async (r) => ({ ...verdict, routeKey: routeKey(r), checkedAt: new Date(NOW).toISOString() }),
+    };
+    const one = { ...S, caps: { ...S.caps, agency: 1 } };
+    const KEY = { ANTHROPIC_API_KEY: 'test' };
+    await prepareToday({ store, settings: one, now: NOW, deps, env: KEY });
+    const lead = store.data.leads['ag:place1'];
+    ok('a failed route is not published', published.length === 0 && !lead.trip);
+    eq('and no message is written for it', drafted, 0);
+    const page = () => todayPage({ state: store.data, settings: one, token: 't', now: NOW, templates: readTemplates(), day: pickToday(store.data, one, NOW), env: {} });
+    ok('the card shows the check and its issues', page().includes('Route check: 1 issue') && page().includes('Day 2 has 3 stops'));
+    ok('with no send button: no Copy & open, no Sent', !page().includes('data-act="sent"') && !page().includes('data-copy-open'));
+    ok('the lead page has no Sent either', !leadPage({ state: store.data, settings: one, token: 't', now: NOW, templates: readTemplates(), lead, env: {} }).includes('data-act="sent"'));
+    ok('it is not counted as ready', !/agency message ready/.test(todaySummary(store.data, pickToday(store.data, one, NOW), one, NOW)));
+    lead.drafts = { message: { variants: [{ text: 'היי [קישור]', score: 1, tells: [] }] } };
+    ok('a drafted message under a failed route says why it cannot go', compose(lead, 'message', { templates: readTemplates(), settings: one, state: store.data }).missing.some((m) => /failed its check/.test(m)));
+    let refused = null;
+    try {
+      applyAction(store.data, lead, 'sent', {}, { now: NOW, settings: one });
+    } catch (e) {
+      refused = e;
+    }
+    ok('and "Sent" is refused by the rules too', refused instanceof RuleError && refused.code === 'route' && !lead.messagedAt);
+
+    verdict = { status: 'pass', issues: [], stops: [], days: 2, stopCount: 8 };
+    delete lead.routeCheck;
+    delete lead.drafts;
+    await prepareToday({ store, settings: one, now: NOW + 60_000, deps, env: KEY });
+    ok('a route that passes is published and written', published.join() === 'ag:place1' && drafted === 1);
+    ok('with the passed badge and the send buttons', page().includes('Route check: passed') && page().includes('data-act="sent"') && page().includes('data-copy-open'));
+
+    const errStore = memStore();
+    errStore.data.site = store.data.site;
+    errStore.data.leads['ag:place2'] = agency(2, { score: 90 });
+    verdict = { status: 'error', error: 'Google Places did not answer', issues: [] };
+    await prepareToday({ store: errStore, settings: one, now: NOW, deps, env: KEY });
+    ok('a check that could not run holds the message too', !errStore.data.leads['ag:place2'].trip && errStore.data.leads['ag:place2'].routeCheck.status === 'error');
   }
 
   /* ---------------------------------------------------------- learning from what was sent */

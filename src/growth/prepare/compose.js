@@ -1,5 +1,6 @@
 import { destinationPage, plainLink, SITE } from '../links.js';
 import { checkDraft } from './guards.js';
+import { routeProblem } from '../rules.js';
 import { fill } from './templates.js';
 
 // The text the owner copies, assembled at the moment it is shown.
@@ -97,8 +98,13 @@ export function compose(lead, what, { templates, settings, state, i = 0, postId 
     variant = d?.variants?.[i] || null;
     text = variant?.text || '';
     if (!text) missing.push('Not drafted yet.');
+    // An agency's first message waits for its sample route to pass the check
+    // (./routeCheck.js); that reason replaces "not on the site yet", which a
+    // failed route never will be.
+    const route = lead.type === 'agency' && what === 'message' ? routeProblem(lead) : null;
+    if (route) missing.push(route);
     if (what === 'dm' || what === 'message') {
-      if (!link) missing.push(linkMissing(lead, what) || 'No link yet.');
+      if (!link && !route) missing.push(linkMissing(lead, what) || 'No link yet.');
       text = text.replaceAll('[קישור]', link || '[קישור]');
     }
     if (what === 'reply' && text) {

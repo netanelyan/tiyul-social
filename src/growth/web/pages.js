@@ -7,7 +7,7 @@ import { fill } from '../prepare/templates.js';
 import { CONNECTIVES, FAKE_EXPERIENCE, FORMAL, PRAISE } from '../prepare/tells.js';
 import { SITE_FACTS } from '../prepare/voice.js';
 import { bySearch, funnel, stageCounts, weekOverWeek } from '../report/stats.js';
-import { COLUMN_LABEL, COLUMNS, dmReady, followupDue, ilDate, itemDone, openPost, parseItem, STAGE_LABEL, STAGES, TYPE_LABEL } from '../rules.js';
+import { COLUMN_LABEL, COLUMNS, dmReady, followupDue, ilDate, itemDone, openPost, parseItem, routeProblem, STAGE_LABEL, STAGES, TYPE_LABEL } from '../rules.js';
 
 // Every page, as a function from state to HTML. Server-rendered, English,
 // left to right.
@@ -156,7 +156,7 @@ const specificLine = (v) =>
  * One variant: the reviewer's score, the text, what it is about, and its own
  * [Copy & open] and [Edit].
  */
-function variantBlock({ lead, what, i, postId = null, ctx, idBase, target, blocked, rows = 3 }) {
+function variantBlock({ lead, what, i, postId = null, ctx, idBase, target, blocked, noSend = false, rows = 3 }) {
   const c = compose(lead, what, { ...ctx, i, postId });
   if (!c.text) return '';
   const id = `${idBase}-v${i}`;
@@ -168,7 +168,7 @@ function variantBlock({ lead, what, i, postId = null, ctx, idBase, target, block
   ${c.edited ? '' : specificLine(c.variant)}
   ${warnings.length ? `<p class="note warn">Reads like a bot here: ${warnings.map(mixed).join('; ')}</p>` : ''}
   <div class="mini">
-    ${button('Copy &amp; open', { 'copy-open': `#${id}`, href: target, lead: lead.id, what, post: postId, variant: what === 'followup' ? null : i, disabled: blocked || !target ? 'disabled' : null }, i === 0 ? 'primary' : '')}
+    ${noSend ? '' : button('Copy &amp; open', { 'copy-open': `#${id}`, href: target, lead: lead.id, what, post: postId, variant: what === 'followup' ? null : i, disabled: blocked || !target ? 'disabled' : null }, i === 0 ? 'primary' : '')}
     ${button('Edit', { edit: `#${id}`, lead: lead.id, field })}
     ${c.edited ? button('Undo edit', { act: 'unedit', lead: lead.id, field }) : ''}
   </div>
@@ -224,8 +224,9 @@ function routeBox(lead) {
   const t = lead.trip;
   const ex = lead.example;
   const reason = ex?.reason ? `<p class="small">${mixed(ex.reason)}</p>` : '';
+  const check = lead.type === 'agency' && ex ? routeCheckBadge(lead.routeCheck) : '';
   if (lead.type === 'agency' && ex?.kind === 'page') {
-    return `<div class="routebox"><p><b>Example:</b> our ${heIn(ex.he)} page, <a href="https://www.tiyulplus.com${attr(ex.path)}" target="_blank" rel="noopener noreferrer"><bdi>tiyulplus.com${esc(ex.path)}</bdi></a></p>${reason}</div>`;
+    return `<div class="routebox"><p><b>Example:</b> our ${heIn(ex.he)} page, <a href="https://www.tiyulplus.com${attr(ex.path)}" target="_blank" rel="noopener noreferrer"><bdi>tiyulplus.com${esc(ex.path)}</bdi></a></p>${reason}${check}</div>`;
   }
   if (!r) return reason ? `<div class="routebox">${reason}</div>` : '';
   const status =
@@ -238,8 +239,23 @@ function routeBox(lead) {
   return `<div class="routebox">
   <p><b>${lead.type === 'agency' ? 'Their example' : 'Their route'}:</b> ${plural(r.days.length, 'day')} in ${heIn(r.cityName)}, ${plural(r.stops, 'stop')}, ${status}</p>
   ${reason}
+  ${check}
   <details${lead.type === 'agency' ? ' open' : ''}><summary>The days</summary><ol class="days">${days}</ol></details>
 </div>`;
+}
+
+/**
+ * The route check on an agency's card (prepare/routeCheck.js): passed, the
+ * issues one per line, or why it has not run.
+ */
+export function routeCheckBadge(c) {
+  if (!c) return '<p class="check"><span class="tag">Route check: not run yet</span> It runs on the next pass, before the message is written.</p>';
+  if (c.status === 'error') return `<p class="check"><span class="tag bad">Route check: could not run</span> ${mixed(c.error)}. It runs again on the next pass.</p>`;
+  const noStatus = (c.stops || []).filter((s) => s.google && !s.status).length;
+  if (c.status === 'pass') {
+    return `<p class="check"><span class="tag ok">Route check: passed</span> ${plural(c.stopCount, 'stop')} found on Google and open${noStatus ? ` (${noStatus} of them a town or an area, with no opening status)` : ''}, inside the destination, ${plural(c.days, 'day')} of 4 or more stops. Checked ${when(c.checkedAt)}.</p>`;
+  }
+  return `<div class="check"><p><span class="tag bad">Route check: ${plural(c.issues.length, 'issue')}</span> No send button until the route passes.</p><ul class="issues">${c.issues.map((i) => `<li>${mixed(i)}</li>`).join('')}</ul></div>`;
 }
 
 function cardMessage(state, key, ctx) {
@@ -251,22 +267,24 @@ function cardMessage(state, key, ctx) {
   const target = openTarget(lead, what);
   const first = compose(lead, what, { ...ctx, i: 0 });
   const blocked = first.missing.filter((m) => m !== 'Not drafted yet.').length > 0 && what !== 'followup';
+  // No send button at all, rather than a greyed one, for a route that has not passed.
+  const noSend = col === 'agency' && what !== 'followup' && Boolean(routeProblem(lead));
   const label = what === 'followup' ? 'The one follow-up' : col === 'agency' ? 'First message' : 'First message';
   const agency = col === 'agency' ? `<p class="contact">${lead.kosher ? '<span class="tag kosher">kosher audience</span>' : ''}${contactLine(lead)}</p>` : '';
-  const body = variants({ lead, what, ctx, idBase: id, target, blocked, rows: what === 'followup' ? 2 : 5 });
+  const body = variants({ lead, what, ctx, idBase: id, target, blocked, noSend, rows: what === 'followup' ? 2 : 5 });
   return `<article class="card${done ? ' done' : ''}" id="${id}">
   <div class="row">${col === 'creator' ? thumb(lead.posts.find((p) => p.status === 'commented') || lead.posts[0]) : ''}<div class="meta">${whoLine(lead)}${agency}</div></div>
   ${what === 'followup' ? '' : routeBox(lead)}
   <p class="label">${label}</p>
   ${done ? '' : missingNote(first.missing.filter((m) => m !== 'Not drafted yet.' || !lead.draftError))}
   ${lead.draftError ? `<p class="note warn">Couldn't draft this one: ${mixed(lead.draftError)}</p>` : ''}
-  ${body || (lead.draftError ? '' : '<p class="note">The message is written on the next pass, within 15 minutes.</p>')}
-  ${done ? '' : finalBox(id)}
+  ${body || (lead.draftError || noSend ? '' : '<p class="note">The message is written on the next pass, within 15 minutes.</p>')}
+  ${done || noSend ? '' : finalBox(id)}
   <div class="actions">${
     done
       ? `<span class="tag ok">${lead.closed ? 'Closed' : what === 'followup' ? 'Follow-up sent' : 'Sent'}</span>`
       : [
-          button('Sent', { act: 'sent', lead: lead.id, final: `#${id}-final`, disabled: blocked ? 'disabled' : null }, 'primary'),
+          noSend ? '' : button('Sent', { act: 'sent', lead: lead.id, final: `#${id}-final`, disabled: blocked ? 'disabled' : null }, 'primary'),
           what === 'followup' ? button('They replied', { act: 'replied', lead: lead.id }) : button('Skip', { act: 'skip', lead: lead.id }),
           button('Not for us', { act: 'no', lead: lead.id, confirm: 'Sure? They are never contacted again' }, 'quiet'),
         ].join('')
@@ -318,6 +336,7 @@ export function todaySummary(state, day, settings, now = Date.now()) {
     const lead = state.leads[leadId];
     if (!lead) return false;
     if (col === 'comment') return Boolean(draftsFor(lead, 'comment', w)?.variants?.length);
+    if (col === 'agency' && w !== 'followup' && routeProblem(lead)) return false;
     return w === 'followup' || Boolean(draftsFor(lead, what || w)?.variants?.length);
   });
   const lines = [];
@@ -461,11 +480,12 @@ export function leadPage({ state, settings, token, now = Date.now(), lead, templ
     const target = openTarget(lead, what === 'comment' ? 'comment' : what);
     const first = compose(lead, what, { ...ctx, ...extra });
     const blocked = first.missing.filter((m) => m !== 'Not drafted yet.').length > 0 && !['followup', 'comment'].includes(what);
+    const noSend = lead.type === 'agency' && what === 'message' && Boolean(routeProblem(lead));
     const canRedraft = ['comment', 'dm', 'message', 'reply'].includes(what);
     return `<div class="block">
   <h3>${title}</h3>
   ${missingNote(first.missing.filter((m) => m !== 'Not drafted yet.'))}
-  ${variants({ lead, what, postId: extra.postId || null, ctx, idBase: `t-${hash(`${what}:${extra.postId || ''}`)}`, target, blocked, rows: what === 'followup' ? 2 : what === 'comment' ? 3 : 5 }) || '<p class="small">Not drafted yet.</p>'}
+  ${variants({ lead, what, postId: extra.postId || null, ctx, idBase: `t-${hash(`${what}:${extra.postId || ''}`)}`, target, blocked, noSend, rows: what === 'followup' ? 2 : what === 'comment' ? 3 : 5 }) || '<p class="small">Not drafted yet.</p>'}
   ${canRedraft ? `<div class="actions">${button('Redraft', { redraft: what, lead: lead.id, post: extra.postId || null })}</div>` : ''}
 </div>`;
   };
@@ -494,7 +514,7 @@ export function leadPage({ state, settings, token, now = Date.now(), lead, templ
       const first = lead.type === 'agency' ? 'message' : 'dm';
       const notWarm = lead.type === 'creator' && !dmReady(lead, { now, warmupDays: settings.warmupDays });
       const missing = compose(lead, first, ctx).missing.length > 0;
-      acts.push(button('Sent', { act: 'sent', lead: lead.id, disabled: notWarm || missing, title: notWarm ? 'The message goes the day after your comment' : missing ? 'The message is not ready yet' : null }));
+      if (!(lead.type === 'agency' && routeProblem(lead))) acts.push(button('Sent', { act: 'sent', lead: lead.id, disabled: notWarm || missing, title: notWarm ? 'The message goes the day after your comment' : missing ? 'The message is not ready yet' : null }));
     } else if (followupDue(lead, { now, followupDays: settings.followupDays })) {
       acts.push(button('Follow-up sent', { act: 'sent', lead: lead.id }, 'primary'));
     } else {
