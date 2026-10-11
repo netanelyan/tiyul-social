@@ -53,6 +53,14 @@ const he = (html, tag = 'div', cls = '') => `<${tag} dir="rtl" lang="he" class="
 /** A Hebrew run inside an English line. */
 const heIn = (text) => `<bdi>${esc(text)}</bdi>`;
 
+/**
+ * An English sentence the desk wrote with Hebrew inside it ("They sell מצרים,
+ * סין; סיני is in our catalog"), escaped, with every Hebrew run isolated. Without
+ * it the browser reorders the English words around the Hebrew ones.
+ */
+export const mixed = (text) =>
+  esc(text).replace(/[֐-׿](?:[֐-׿\s,'"״׳\-]|&quot;|&#39;)*[֐-׿]|[֐-׿]/g, (run) => `<bdi>${run}</bdi>`);
+
 /* ------------------------------------------------------------ layout */
 
 function layout({ title, active, token, body, state, settings, now, loggedIn = false }) {
@@ -126,7 +134,7 @@ function whoLine(lead) {
 
 const textBox = (id, text, { rows = 4 } = {}) => he(`<textarea id="${attr(id)}" class="draft-text" rows="${rows}" readonly>${esc(text)}</textarea>`);
 
-const missingNote = (missing) => (missing?.length ? `<p class="note warn">${missing.map(esc).join('<br>')}</p>` : '');
+const missingNote = (missing) => (missing?.length ? `<p class="note warn">${missing.map(mixed).join('<br>')}</p>` : '');
 
 const SOURCE_LABEL = { title: 'the title', description: 'the description', comment: 'a viewer\'s comment', site: 'their website', listing: 'their Google listing', question: 'their question' };
 
@@ -135,9 +143,9 @@ function scoreLine(v) {
   if (!v) return '';
   if (v.score == null) return '<span class="score s-none">Not reviewed (an older draft)</span>';
   const cls = v.score <= 3 ? 's-good' : v.score <= 6 ? 's-mid' : 's-bad';
-  const tells = v.tells?.length ? ` <span class="small">${v.tells.map(esc).join(', ')}</span>` : '';
+  const tells = v.tells?.length ? ` <span class="small">${v.tells.map(mixed).join(', ')}</span>` : '';
   const fixed = v.rewritten ? ` <span class="tag" title="${attr(`Before the reviewer's rewrite (${v.originalScore}/10): ${v.original}`)}">rewritten by the reviewer</span>` : '';
-  const fact = v.factProblem ? `<p class="note warn">The reviewer flags a fact: ${esc(v.factProblem)}</p>` : '';
+  const fact = v.factProblem ? `<p class="note warn">The reviewer flags a fact: ${mixed(v.factProblem)}</p>` : '';
   return `<span class="score ${cls}">Bot score ${v.score}/10</span>${tells}${fixed}${fact}`;
 }
 
@@ -158,7 +166,7 @@ function variantBlock({ lead, what, i, postId = null, ctx, idBase, target, block
   <div class="vhead">${what === 'followup' ? '' : `<b>Option ${i + 1}</b> `}${c.edited ? '<span class="tag">your edit</span>' : scoreLine(c.variant)}</div>
   ${textBox(id, c.text, { rows })}
   ${c.edited ? '' : specificLine(c.variant)}
-  ${warnings.length ? `<p class="note warn">Reads like a bot here: ${warnings.map(esc).join('; ')}</p>` : ''}
+  ${warnings.length ? `<p class="note warn">Reads like a bot here: ${warnings.map(mixed).join('; ')}</p>` : ''}
   <div class="mini">
     ${button('Copy &amp; open', { 'copy-open': `#${id}`, href: target, lead: lead.id, what, post: postId, variant: what === 'followup' ? null : i, disabled: blocked || !target ? 'disabled' : null }, i === 0 ? 'primary' : '')}
     ${button('Edit', { edit: `#${id}`, lead: lead.id, field })}
@@ -194,7 +202,7 @@ function cardComment(state, key, ctx) {
   return `<article class="card${done ? ' done' : ''}" id="${id}">
   <div class="row">${thumb(post)}<div class="meta">${whoLine(lead)}${he(esc(post.title), 'p', 'caption')}<p class="small">${esc(context)}</p></div></div>
   ${whyList(post.why)}
-  ${post.draftError ? `<p class="note warn">Couldn't draft this one: ${esc(post.draftError)}</p>` : ''}
+  ${post.draftError ? `<p class="note warn">Couldn't draft this one: ${mixed(post.draftError)}</p>` : ''}
   ${body || (post.draftError ? '' : '<p class="note">The comments are written on the next pass, within 15 minutes.</p>')}
   ${done ? '' : finalBox(id)}
   <div class="actions">${
@@ -215,7 +223,7 @@ function routeBox(lead) {
   const r = lead.route;
   const t = lead.trip;
   const ex = lead.example;
-  const reason = ex?.reason ? `<p class="small">${esc(ex.reason)}</p>` : '';
+  const reason = ex?.reason ? `<p class="small">${mixed(ex.reason)}</p>` : '';
   if (lead.type === 'agency' && ex?.kind === 'page') {
     return `<div class="routebox"><p><b>Example:</b> our ${heIn(ex.he)} page, <a href="https://www.tiyulplus.com${attr(ex.path)}" target="_blank" rel="noopener noreferrer"><bdi>tiyulplus.com${esc(ex.path)}</bdi></a></p>${reason}</div>`;
   }
@@ -251,7 +259,7 @@ function cardMessage(state, key, ctx) {
   ${what === 'followup' ? '' : routeBox(lead)}
   <p class="label">${label}</p>
   ${done ? '' : missingNote(first.missing.filter((m) => m !== 'Not drafted yet.' || !lead.draftError))}
-  ${lead.draftError ? `<p class="note warn">Couldn't draft this one: ${esc(lead.draftError)}</p>` : ''}
+  ${lead.draftError ? `<p class="note warn">Couldn't draft this one: ${mixed(lead.draftError)}</p>` : ''}
   ${body || (lead.draftError ? '' : '<p class="note">The message is written on the next pass, within 15 minutes.</p>')}
   ${done ? '' : finalBox(id)}
   <div class="actions">${
@@ -277,7 +285,7 @@ function cardCustomer(state, key, ctx) {
   return `<article class="card${done ? ' done' : ''}" id="${id}">
   <div class="row">${thumb(post)}<div class="meta">${whoLine(lead)}${he(esc(post?.title), 'p', 'caption')}</div></div>
   ${whyList(post?.why)}
-  ${lead.draftError ? `<p class="note warn">Couldn't draft this one: ${esc(lead.draftError)}</p>` : ''}
+  ${lead.draftError ? `<p class="note warn">Couldn't draft this one: ${mixed(lead.draftError)}</p>` : ''}
   ${body || (lead.draftError ? '' : '<p class="note">The reply is written on the next pass, within 15 minutes.</p>')}
   ${done ? '' : finalBox(id)}
   <div class="actions">${

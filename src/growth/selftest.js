@@ -907,6 +907,20 @@ export async function growthSelftest({ ok, eq }) {
     ok('no thinking parameter is sent (it cannot be turned off on these models)', calls.every((b) => !('thinking' in b)));
     ok('and the fallback is asked for', calls.every((b) => b.fallbacks === 'default'));
     ok('the cost is in the ledger', monthSpend(state, S, NOW).rows.claude?.units === 4);
+
+    // A fact the reviewer cannot find in the context is not offered while a clean
+    // variant remains (the proof run's London season, said of the South Downs).
+    const fine = (q) => ({ text: `השקיעה מליקבטוס ${q}`, specific: { quote: 'שקיעה בליקבטוס', source: 'title' } });
+    const review = (flags) => ({ reviews: flags.map((f, index) => ({ index, botScore: 2, tells: [], factProblem: f, rewrite: '' })) });
+    const run = async (flags) => {
+      const queue = [draftsOut([fine('עם כל העיר'), fine('בערב'), fine('בקיץ')]), review(flags)];
+      setClient({ messages: { create: async (body) => ({ model: body.model, stop_reason: 'end_turn', usage: {}, content: [{ type: 'text', text: JSON.stringify(queue.shift()) }] }) } });
+      return draftItem('comment', { state: emptyState(), settings: S, lead, post, site: 'יעד: אתונה' });
+    };
+    const flagged = await run(['', 'the season is not in the context', '']);
+    ok('a variant with a fact the reviewer could not find is dropped', flagged.variants.length === 2 && flagged.variants.every((v) => !v.factProblem) && flagged.droppedForFacts === 1);
+    const allFlagged = await run(['x', 'y', 'z']);
+    ok('when every variant is flagged they stay, each with its warning', allFlagged.variants.length === 3 && allFlagged.variants.every((v) => v.factProblem));
     setClient(null);
   }
 

@@ -267,8 +267,17 @@ export async function draftItem(kind, { state, settings, lead, post = null, site
     for (const [j, i] of rewritten.entries()) Object.assign(variants[i], { score: second[j].botScore, tells: second[j].tells, factProblem: second[j].factProblem });
   }
 
+  // A FACT THE REVIEWER COULD NOT FIND IN THE CONTEXT IS NOT OFFERED. The number
+  // rule in code catches an invented number; a misplaced fact ("London's season,
+  // said of a walk in the South Downs", from the first proof run) only a reader
+  // catches. A flagged variant is dropped while a clean one remains; when every
+  // variant is flagged they stay, each with its warning on the card.
+  const factual = variants.filter((v) => !v.factProblem);
+  const kept = factual.length ? factual : variants;
+
   return {
-    variants: variants.map(({ problems, ...v }) => v).sort((a, b) => a.score - b.score),
+    variants: kept.map(({ problems, ...v }) => v).sort((a, b) => a.score - b.score),
+    droppedForFacts: variants.length - kept.length,
     firstName,
     model,
     reviewer,
