@@ -89,7 +89,10 @@ export function openStore(path = process.env.GROWTH_STORE_PATH || DEFAULT_PATH) 
   let data = emptyState();
   if (existsSync(path)) {
     try {
-      data = migrate({ ...emptyState(), ...JSON.parse(readFileSync(path, 'utf8')) });
+      // `applied: []` before the file: a file that never had the list has had none
+      // of the one-time changes. emptyState's own list is for a NEW desk only;
+      // filling it in here is how the pause of 2026-10-11 never reached the live desk.
+      data = migrate({ ...emptyState(), applied: [], ...JSON.parse(readFileSync(path, 'utf8')) });
     } catch (e) {
       throw new Error(`${path} could not be read (${e.message}). Fix or move it; starting empty would forget every do-not-contact.`);
     }

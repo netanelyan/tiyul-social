@@ -795,6 +795,14 @@ export async function growthSelftest({ ok, eq }) {
     ok('settings out of range are refused', Boolean((await ops.post('/api/settings', { settings: { runHour: 30 } })).error));
     ok('settings in range are saved', (await ops.post('/api/settings', { settings: { caps: { comment: 8 } } })).ok && mergeSettings(store.data.settings).caps.comment === 8);
     ok('the store file is the one it was given, never the posting store', existsSync(tmp) && !/store\.json$/.test(store.path));
+    // A file written before the one-time changes existed gets them when it is opened.
+    writeFileSync(tmp, JSON.stringify({ v: 1, settings: { budgetUsd: 40 }, leads: {} }));
+    const old = openStore(tmp).data;
+    ok('a live desk file without the list gets the pause when it opens', old.settings.agencyPaused === true && old.settings.budgetUsd === 40 && old.applied.includes('agency-pause-2026-10-11'));
+    writeFileSync(tmp, JSON.stringify({ v: 1, settings: { agencyPaused: false }, leads: {}, applied: ['agency-pause-2026-10-11'] }));
+    eq('and once only: unticked, it stays unticked', openStore(tmp).data.settings.agencyPaused, false);
+    rmSync(tmp, { force: true });
+    eq('a new desk (no file) is not paused', openStore(tmp).data.settings.agencyPaused, undefined);
     rmSync(tmp, { force: true });
   }
 
@@ -1091,8 +1099,10 @@ export async function growthSelftest({ ok, eq }) {
     await checkRoute(route, GEO, { state, settings: S, env: { GOOGLE_MAPS_KEY: 'k' }, now: NOW + DAY, post: fake });
     eq('a place whose pin moved is asked again', calls, 9);
     GEO.places[0] = { ...GEO.places[0], lat: 43.7731 };
-    const down = await checkRoute(route, GEO, { state: emptyState(), settings: S, env: { GOOGLE_MAPS_KEY: 'k' }, now: NOW, post: async () => { throw new Error('HTTP 503'); } });
+    const refusedState = emptyState();
+    const down = await checkRoute(route, GEO, { state: refusedState, settings: S, env: { GOOGLE_MAPS_KEY: 'k' }, now: NOW, post: async () => { throw new Error('HTTP 503'); } });
     ok('Google down is "could not run", not a failed route', down.status === 'error' && /HTTP 503/.test(down.error));
+    ok('and a refused call is not billed, so not recorded', !Object.keys(refusedState.spend).length);
     eq('and with no key it says so', (await checkRoute(route, GEO, { state: emptyState(), settings: S, env: {}, now: NOW })).error, 'GOOGLE_MAPS_KEY is missing from .env');
 
     // The desk: a route that fails is not published, not drafted, and has no send button.

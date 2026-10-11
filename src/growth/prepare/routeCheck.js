@@ -232,17 +232,16 @@ export async function checkRoute(route, city, { state, settings, env = process.e
       continue;
     }
     guard(state, settings, 'places', marginal(state, settings, 'places', now), now);
-    let units = 1;
+    let answer;
     try {
-      const answer = await findOnGoogle(p, { env, post, pinKm: rules.pinKm, areaKm: rules.areaKm, cityName: nameOf({ nameLocal: city?.nameLocal, name: city?.name }) });
-      units = answer.asks || 1;
-      cache[id] = { at: new Date(now).toISOString(), query: queryOf(p), pin, answer };
-      facts[id] = answer;
+      answer = await findOnGoogle(p, { env, post, pinKm: rules.pinKm, areaKm: rules.areaKm, cityName: nameOf({ nameLocal: city?.nameLocal, name: city?.name }) });
     } catch (e) {
+      // A refused call (the daily quota, a bad key) is not billed, so it is not recorded.
       return { status: 'error', error: `Google Places did not answer for "${nameOf(p)}": ${e.message}`, routeKey: key, checkedAt: new Date(now).toISOString() };
-    } finally {
-      record(state, 'places', { units, now });
     }
+    record(state, 'places', { units: answer.asks || 1, now });
+    cache[id] = { at: new Date(now).toISOString(), query: queryOf(p), pin, answer };
+    facts[id] = answer;
   }
   return { ...judgeRoute(route, city, facts, rules), routeKey: key, checkedAt: new Date(now).toISOString() };
 }
