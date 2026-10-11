@@ -3110,9 +3110,9 @@
     "(src/publish/zernio.js), whose app posts publicly and is free for one TikTok",
     "and one Instagram account. Anything not from the slate stays a draft.",
     "",
-    "`privacy` is SELF_ONLY until the owner has seen the private test and then one",
-    "public post approved by hand; it becomes PUBLIC_TO_EVERYONE after that, and not",
-    "before. An unknown value here also means SELF_ONLY, never public.",
+    "`privacy` was SELF_ONLY until the owner had seen the private test and then one",
+    "public post approved by hand (Florence, 2026-10-11); it is PUBLIC_TO_EVERYONE",
+    "since. An unknown value here means SELF_ONLY, never public.",
     "`autoAddMusic` asks TikTok to add a track to photo posts (it does not always",
     "attach one; the publish notice says so). `fallback: \"draft\"` sends a post",
     "Zernio refused to the inbox as a draft instead, which is today's path.",
@@ -3122,7 +3122,7 @@
   "publish": {
     "tiktok": {
       "via": "zernio",
-      "privacy": "SELF_ONLY",
+      "privacy": "PUBLIC_TO_EVERYONE",
       "autoAddMusic": true,
       "fallback": "draft",
       "dailyCap": 3
@@ -3144,12 +3144,12 @@
     "repeats within `destinationRepeatDays`, no opening line within",
     "`openingRepeatDays`.",
     "",
-    "OFF until the owner has seen the private test post and approved one public",
-    "post by hand. While it is on, the format rotation builds no slideshows of its",
-    "own: the slate makes them, and the videos keep their own per-item approval."
+    "ON since 2026-10-11, after the private test post and one public post the owner",
+    "approved by hand. While it is on, the format rotation builds no slideshows of",
+    "its own: the slate makes them, and the videos keep their own per-item approval."
   ],
   "slate": {
-    "on": false,
+    "on": true,
     "autoApprove": false,
     "digestAt": "08:00",
     "slots": {

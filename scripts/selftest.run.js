@@ -10146,11 +10146,11 @@ group('the daily slate - one tap a day, and nothing goes out unapproved');
   const { inWindow, inShabbat } = await import('../src/schedule.js');
   const cfg = postConfig().slate;
 
-  // THE CONFIG SHIPS SAFE: the slate off, TikTok privacy private, until the owner
-  // has seen the private test and approved one public post by hand.
-  eq('the slate ships off', cfg.on, false);
+  // THE SCHEDULE IS ON, since 2026-10-11: the private test and one public post the
+  // owner approved by hand came first. Every day still waits for the morning tap.
+  eq('the slate is on', cfg.on, true);
   eq('and nothing is approved without the tap', cfg.autoApprove, false);
-  eq('TikTok privacy starts private', postConfig().publish.tiktok.privacy, 'SELF_ONLY');
+  eq('TikTok slate posts are public', postConfig().publish.tiktok.privacy, 'PUBLIC_TO_EVERYONE');
 
   // SCHEDULE SPACING. Sunday 2026-10-11, Friday the 16th, Saturday the 17th.
   const sun = plan.slotsFor('2026-10-11', cfg);
@@ -10314,6 +10314,12 @@ group('the daily slate - one tap a day, and nothing goes out unapproved');
   ok('anything not from the slate stays the inbox draft it always was', legacy.legacy && legacy.draft);
   const off = await publishTikTokRouted(slateCand, { cfg: { ...route, via: 'draft' }, deps: { legacy: async (c) => ({ draft: Boolean(c.tiktokDraft), legacy: true }) } });
   ok('and with Zernio switched off, a slate post is a draft too', off.legacy && off.draft);
+  const { privacyLevel } = await import('../src/publish/tiktokRoute.js');
+  ok('a privacy value TikTok does not know posts as SELF_ONLY', ['PUBLIC', 'public_to_everyone', '', undefined].every((v) => privacyLevel(v) === 'SELF_ONLY'));
+  ok('and the real ones pass through', ['PUBLIC_TO_EVERYONE', 'SELF_ONLY', 'MUTUAL_FOLLOW_FRIENDS', 'FOLLOWER_OF_CREATOR'].every((v) => privacyLevel(v) === v));
+  let sentPrivacy = null;
+  await publishTikTokRouted(slateCand, { cfg: { ...route, privacy: 'PUBLIC' }, deps: { zernio: async (c, o) => ((sentPrivacy = o.privacy), {}), draft: async () => ({}), usedLast24h: () => 0, cap: () => 3 } });
+  eq('a typo in the config reaches Zernio as SELF_ONLY', sentPrivacy, 'SELF_ONLY');
 
   const botSrc3 = readFileSync(new URL('../bot.js', import.meta.url), 'utf8');
   ok('the published record says what TikTok actually got, not what was asked', /publishedFacts\(\{ \.\.\.cand, tiktokDraft: tiktokWasDraft \}\)/.test(botSrc3) && /const drafted = tiktokWasDraft &&/.test(botSrc3));

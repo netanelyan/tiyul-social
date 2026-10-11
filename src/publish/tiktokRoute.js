@@ -34,6 +34,11 @@ import {
 /** The zernio route's own ceiling: the lower of TIKTOK_DAILY_CAP and Zernio's 15. */
 export const zernioDailyCap = () => Math.min(15, TIKTOK_DAILY_CAP());
 
+// TikTok's four privacy levels. Anything else (a typo in post-config.json, an
+// empty field) posts as SELF_ONLY: a wrong value can hide a post, never publish one.
+const PRIVACY_LEVELS = new Set(['PUBLIC_TO_EVERYONE', 'MUTUAL_FOLLOW_FRIENDS', 'FOLLOWER_OF_CREATOR', 'SELF_ONLY']);
+export const privacyLevel = (value) => (PRIVACY_LEVELS.has(value) ? value : 'SELF_ONLY');
+
 export async function publishTikTokRouted(cand, { cfg = postConfig().publish.tiktok, deps = {}, env = process.env } = {}) {
   const viaZernio = cfg.via === 'zernio' && cand.tiktokVia === 'zernio';
   const draft = deps.draft || ((c) => publishTikTok(c, { draft: true }));
@@ -48,7 +53,7 @@ export async function publishTikTokRouted(cand, { cfg = postConfig().publish.tik
   try {
     return await (deps.zernio || publishZernioTikTok)(cand, {
       // A post may carry its own privacy (the first test is SELF_ONLY); otherwise the config's.
-      privacy: cand.tiktokPrivacy || cfg.privacy,
+      privacy: privacyLevel(cand.tiktokPrivacy || cfg.privacy),
       autoAddMusic: cfg.autoAddMusic,
       env,
     });
