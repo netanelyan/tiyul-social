@@ -187,9 +187,9 @@ up first as `<file>.bak.<epoch>`):
 
 1. DNS at Porkbun: an A record, host `desk`, `129.121.89.58`, TTL 600.
 2. `useradd --system --no-create-home --shell /usr/sbin/nologin tiyul-growth`;
-   a git checkout of `growth-desk` at `/opt/tiyul-growth` with
-   `receive.denyCurrentBranch updateInstead`, so it is updated with
-   `git push ssh://tiyul-vps/opt/tiyul-growth growth-desk:growth-desk`;
+   a git checkout at `/opt/tiyul-growth` with
+   `receive.denyCurrentBranch updateInstead`, so it is updated by a push of the
+   branch it has checked out (`main` since the desk merged, 2026-10-11);
    `npm ci --omit=dev`; `/opt/tiyul-growth/.env` mode 600, owned by the desk's
    user, with the keys above and `GROWTH_PUBLIC_HOST=desk.tiyulplus.com`.
 3. The data: `data/growth.json` and `data/growth-thumbs/` copied into
@@ -210,7 +210,7 @@ Commands:
 - logs, live: `ssh tiyul-vps 'journalctl -u tiyul-growth -f'`
 - logs, today: `ssh tiyul-vps 'journalctl -u tiyul-growth --since today'`
 - status: `ssh tiyul-vps 'systemctl status tiyul-growth'`
-- update: `git push ssh://tiyul-vps/opt/tiyul-growth growth-desk:growth-desk`, then
+- update: `git push ssh://tiyul-vps/opt/tiyul-growth main:main`, then
   `ssh tiyul-vps 'cd /opt/tiyul-growth && npm ci --omit=dev && systemctl restart tiyul-growth'`
 
 The host firewall is a separate step, after the desk is live.
