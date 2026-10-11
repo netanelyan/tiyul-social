@@ -896,7 +896,10 @@ decides per post:
 `npm run zernio-test -- private` builds one real post and publishes it
 `SELF_ONLY` with music; `prepare-public` builds one and stops; `publish-public
 <id>` posts that one publicly, and running it with that id is the owner's
-approval. The slate stays off until both have been seen.
+approval. The slate stays off until both have been seen. The script renders into
+a `zernio-test` folder under the card directory, served at the same base plus
+`/zernio-test`: post ids are keyed on content, so a test post of the same type and
+destination as one the bot has queued would otherwise write over its slides.
 
 **Measuring TikTok**: the app now asks for `video.list`, which has to be enabled
 in the developer portal before `npm run tiktok-token` is run again. TikTok

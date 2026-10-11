@@ -1,4 +1,5 @@
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import path from 'node:path';
 import { loadEnv } from '../src/env.js';
 
 loadEnv();
@@ -23,6 +24,25 @@ loadEnv();
 // upload endpoint; a slide rendered on a laptop is a URL nobody can fetch.
 //
 // It never imports bot.js and never touches the bot's queue or approvals.
+//
+// IT RENDERS INTO A FOLDER OF ITS OWN under the card host, served at the same base
+// plus /zernio-test. A post's id is keyed on its content (postId in src/posts), and
+// its slide files are named by that id, so a test post of the same type and
+// destination as one the bot has queued would otherwise write over that queued
+// post's slides in the folder they share.
+const TEST_DIR = 'zernio-test';
+if (process.env.CARD_OUTPUT_DIR) {
+  process.env.CARD_OUTPUT_DIR = path.join(process.env.CARD_OUTPUT_DIR, TEST_DIR);
+  mkdirSync(process.env.CARD_OUTPUT_DIR, { recursive: true });
+}
+for (const key of ['CARD_PUBLIC_BASE_URLS', 'CARD_PUBLIC_BASE_URL']) {
+  if (!process.env[key]) continue;
+  process.env[key] = process.env[key]
+    .split(/[\s,]+/)
+    .filter(Boolean)
+    .map((base) => `${base.replace(/\/+$/, '')}/${TEST_DIR}`)
+    .join(',');
+}
 
 const mode = process.argv[2];
 const PUBLIC_FILE = new URL('../data/zernio-public.json', import.meta.url);
