@@ -139,6 +139,7 @@ export function buildCaption(post, { shape, target = 'tiktok', titled = false, q
   const cfg = postConfig().posts;
   const parts = [];
   const asked = [];
+  let siteText = null;
 
   for (const part of shape.parts) {
     let text = null;
@@ -184,6 +185,7 @@ export function buildCaption(post, { shape, target = 'tiktok', titled = false, q
     // published. A question is not a claim. A tag like #טיסות is not one either, and
     // is kept out anyway, by tagAllowed in ../hashtags.js.
     if (!text || (part !== 'tags' && hasFlightClaim(text))) continue;
+    if (part === 'site') siteText = String(text).trim();
     (part === 'question' ? asked : parts).push(String(text).trim());
   }
 
@@ -192,8 +194,11 @@ export function buildCaption(post, { shape, target = 'tiktok', titled = false, q
   // slide 11: the first line under the post spent on something the viewer reads
   // anyway. A part that repeats a slide line is dropped, the question included, and
   // the caption then opens on whatever part is next.
+  //
+  // ONE EXCEPTION, the owner's: the site line ("המסלול המלא ל..., בלינק בביו") stays
+  // even when the closing slide says the same, because it is the traffic line.
   const onSlides = slideLines(post, { target, follow });
-  const fresh = (p) => !onSlides.some((s) => repeatsSlideLine(p, s));
+  const fresh = (p) => p === siteText || !onSlides.some((s) => repeatsSlideLine(p, s));
 
   // The tags are last whatever the shape says, because a tag block is where a reader
   // stops reading and anything under it is unread. A shape that puts them elsewhere

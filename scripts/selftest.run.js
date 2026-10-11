@@ -6867,15 +6867,20 @@ group('captions vary, and the emoji are pictures');
     for (const target of ['tiktok', 'instagram']) {
       const c = buildCaption(florence, { shape: s, target, titled: target === 'instagram', question: q });
       const said = slideLines(florence, { target });
-      const echo = bodyOf(c).find((p) => said.some((l) => repeatsSlideLine(p, l)));
+      const site = siteLine({ siteSlug: florence.siteSlug, destHe: florence.where, target });
+      const echo = bodyOf(c).find((p) => p !== site && said.some((l) => repeatsSlideLine(p, l)));
       ok(`shape ${s.id} on ${target} repeats no slide line`, !echo, echo);
       ok(`shape ${s.id} on ${target} does not ask what the last slide asks`, !c.includes(q), c);
     }
   }
   ok('the closing site slide is among the slide lines', slideLines(florence).includes('המסלול המלא לפירנצה'));
+  // The owner's one exception: the site line is the traffic line, and stays.
+  const withSite = shapes.find((s) => s.parts.includes('site'));
   ok(
-    'so the site line, which says it again, is not in the caption',
-    !buildCaption(florence, { shape: shapes[0], titled: false, question: q }).includes('המסלול המלא')
+    'the site line stays although the closing slide says the same',
+    buildCaption(florence, { shape: withSite, titled: false, question: q }).includes(
+      siteLine({ siteSlug: 'florence', destHe: 'פירנצה', target: 'tiktok' })
+    )
   );
   ok('a slide line said again with words around it is a repeat', repeatsSlideLine('המסלול המלא לפירנצה, עם מפה, בלינק בביו', 'המסלול המלא לפירנצה'));
   ok('and so is a caption line that sits inside a slide line', repeatsSlideLine('מסתמכת בעיקר על בית חב״ד', 'הכשרות מסתמכת בעיקר על בית חב״ד'));
