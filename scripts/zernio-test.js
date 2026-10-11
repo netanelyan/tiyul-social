@@ -114,6 +114,9 @@ if (mode === 'private') {
   const cand = await buildOne();
   show(cand);
   await checkFetchable(cand.deck.urls.tiktok);
+  cand.deck.urls.tiktok.forEach((u, i) => console.log(`  slide ${i + 1}: ${u}`));
+  // The test checkout has no data/ of its own until something writes there.
+  mkdirSync(new URL('.', PUBLIC_FILE), { recursive: true });
   writeFileSync(PUBLIC_FILE, JSON.stringify(cand, null, 1));
   console.log(`\n  Prepared, NOT posted. To post it publicly:\n    npm run zernio-test -- publish-public ${cand.id}`);
 } else if (mode === 'publish-public') {
