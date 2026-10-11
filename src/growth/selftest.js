@@ -1021,6 +1021,7 @@ export async function growthSelftest({ ok, eq }) {
     eq('Florence at zoom 13 is a city', scaleOf(GEO), 'city');
     ok('and its frame is about 14 km', frameKm(GEO) > 13 && frameKm(GEO) < 15, String(frameKm(GEO)));
     eq('Sinai at zoom 8 is a region', scaleOf({ zoom: 8 }), 'region');
+    eq('Dubai at zoom 11 is an area, not a compact city', scaleOf({ zoom: 11 }), 'area');
     ok('about 550 km across its frame', Math.abs(frameKm({ zoom: 8, center: { lat: 28.6 } }) - 550) < 10, String(frameKm({ zoom: 8, center: { lat: 28.6 } })));
 
     const short = { days: [{ placeIds: ['f1', 'f2', 'f3', 'f4'] }, { placeIds: ['f5', 'f6', 'f7'] }] };
@@ -1031,7 +1032,6 @@ export async function growthSelftest({ ok, eq }) {
     ok('a stop Google cannot find near our pin fails, with the distance', judge(route, { f5: { found: false, nearestKm: 3.24 } }).issues.some((i) => /"Boboli Gardens" was not found on Google near our pin \(the nearest match is 3\.2 km away\)/.test(i)));
     const town = judge(route, { f8: found('f8', { status: null }) });
     ok('a town has no business status, and that is not "closed"', town.status === 'pass' && town.stops.find((s) => s.id === 'f8').status === null);
-    ok('a stop in another country fails', judge(route, { f8: found('f8', { country: 'SM' }) }).issues.some((i) => /"Fiesole" is in SM; the rest of the route is in IT/.test(i)));
     const trip = { days: [{ placeIds: ['f1', 'f2', 'f3', 'pisa'] }, { placeIds: ['f5', 'f6', 'f7', 'f8'] }] };
     const far = judge(trip);
     ok('a day trip in the catalog is outside the destination', far.issues.some((i) => /"Leaning Tower of Pisa" is 69 km from the centre of Florence, outside the destination \(14 km\)/.test(i)), far.issues.join(' | '));
@@ -1043,10 +1043,21 @@ export async function growthSelftest({ ok, eq }) {
     const asked = [];
     const post = async (url, body, opts) => (asked.push({ url, body, opts }), { places: [answer('Uffizi Gift Shop, Rome', 41.9, 12.49), answer('Uffizi Gallery', 43.7678, 11.2553)] });
     const hit = await findOnGoogle(place('f2'), { env: { GOOGLE_MAPS_KEY: 'k' }, post });
-    ok('the match is the one near our pin', hit.found && hit.name === 'Uffizi Gallery' && hit.country === 'IT');
+    ok('the match is the one near our pin', hit.found && hit.name === 'Uffizi Gallery' && hit.asks === 1);
     ok('asked by its local name, biased to our pin', asked[0].body.textQuery === 'Uffizi' && asked[0].body.locationBias.circle.center.latitude === 43.7678 && asked[0].opts.headers['x-goog-fieldmask'].includes('places.businessStatus'));
     const miss = await findOnGoogle(place('f2'), { env: { GOOGLE_MAPS_KEY: 'k' }, post: async () => ({ places: [answer('Uffizi Gift Shop, Rome', 41.9, 12.49)] }) });
     ok('nothing near the pin is not found, with the nearest distance', !miss.found && miss.nearestKm > 200);
+    // A town, a park, a lake: Google's point for it can be kilometres from our pin,
+    // and our pin is inside the area Google draws for it (Hakone, 9 km).
+    const townArea = { ...answer('Fiesole', 43.84, 11.33), viewport: { low: { latitude: 43.78, longitude: 11.25 }, high: { latitude: 43.86, longitude: 11.36 } } };
+    ok('a town whose area holds our pin is found', (await findOnGoogle(place('f8'), { env: { GOOGLE_MAPS_KEY: 'k' }, post: async () => ({ places: [townArea] }) })).found);
+    const country = { ...answer('Italy', 41.87, 12.56), viewport: { low: { latitude: 35.5, longitude: 6.6 }, high: { latitude: 47.1, longitude: 18.5 } } };
+    ok('a country-sized area does not stand in for a stop', !(await findOnGoogle(place('f8'), { env: { GOOGLE_MAPS_KEY: 'k' }, post: async () => ({ places: [country] }) })).found);
+    // A plain name ("Old Market"; Rome's kosher "Yotvata" found the kibbutz) is
+    // asked again with the destination's name.
+    const queries = [];
+    const twice = await findOnGoogle(place('f2'), { cityName: 'Florence', env: { GOOGLE_MAPS_KEY: 'k' }, post: async (u, body) => (queries.push(body.textQuery), { places: [queries.length === 1 ? answer('Uffizi, Israel', 29.9, 35.06) : answer('Uffizi Gallery', 43.7678, 11.2553)] }) });
+    ok('a plain name is asked again with the destination, and found', twice.found && twice.asks === 2 && queries.join(' | ') === 'Uffizi | Uffizi, Florence', queries.join(' | '));
 
     // checkRoute: once per place a month, recorded as Places calls, an error is not a verdict.
     const state = emptyState();
