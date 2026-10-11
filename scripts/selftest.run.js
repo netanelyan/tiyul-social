@@ -9473,7 +9473,9 @@ group('Instagram numbers - read with the publisher\'s token, and a reel says how
   const verdictSrc = readFileSync(new URL('../src/posts/verdict.js', import.meta.url), 'utf8');
   ok('the verdict builder ranks its place slides, the last place first', /look: 'label',\s*trimRank: i \+ 1,/.test(verdictSrc));
   const indexSrc = readFileSync(new URL('../src/posts/index.js', import.meta.url), 'utf8');
-  ok('and the approval card says what Instagram loses', /post\.instagramTrimmed = /.test(indexSrc) && /instagramTrimmed/.test(readFileSync(new URL('../src/posts/message.js', import.meta.url), 'utf8')));
+  ok('a rebuild can keep the question the post already closed on', /const questionHe = questionOverride \|\| questionFor\(/.test(indexSrc));
+  ok('and the Instagram half of a posted post asks it', /questionOverride: questionHe/.test(readFileSync(new URL('./zernio-test.js', import.meta.url), 'utf8')));
+  ok('and the approval card says what Instagram loses',/post\.instagramTrimmed = /.test(indexSrc) && /instagramTrimmed/.test(readFileSync(new URL('../src/posts/message.js', import.meta.url), 'utf8')));
 }
 
 {

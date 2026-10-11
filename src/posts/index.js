@@ -145,6 +145,9 @@ export async function buildPost({
   // A trend format brings its own opening shape ({ id, he } with {dest} and {n}).
   // Absent, the type's own hook pool decides.
   hookOverride = null,
+  // The closing question a post already drew, so a rebuild of it (its Instagram
+  // half, after the TikTok one went out) asks the same thing. Absent, it is drawn.
+  questionOverride = null,
   trendFormat = null,
 } = {}) {
   const slug = dest?.siteSlug || dest?.id;
@@ -183,7 +186,7 @@ export async function buildPost({
   // posts.questions in post-config.json: the shared pool cannot know which post it is
   // on, and it put "מי מכיר טיסה ישירה לשם?" under a post that had just quoted the
   // flight time two slides earlier.
-  const questionHe = questionFor(shape.type, { rand });
+  const questionHe = questionOverride || questionFor(shape.type, { rand });
   const follow = captionFollow({ rand });
   const signoffs = postConfig().posts.signoffsHe;
   const signoffHe = signoffs.length ? signoffs[Math.floor(rand() * signoffs.length)] : null;

@@ -65,7 +65,7 @@ const flag = (name) => {
   return i > 0 ? process.argv[i + 1] || null : null;
 };
 
-async function buildOne({ destAsked = null, typeAsked = null, hookId = null, targets = ['tiktok'] } = {}) {
+async function buildOne({ destAsked = null, typeAsked = null, hookId = null, questionHe = null, targets = ['tiktok'] } = {}) {
   const { buildPost } = await import('../src/posts/index.js');
   const { pickDestination } = await import('../src/plan/write.js');
   const { nextShape, destinationsFor } = await import('../src/posts/types.js');
@@ -97,6 +97,7 @@ async function buildOne({ destAsked = null, typeAsked = null, hookId = null, tar
         // store of its own. Zernio posts with its own app and never reads ours.
         targets,
         hookOverride,
+        questionOverride: questionHe,
         remember: false,
         onProgress: (t) => console.log(`  ${t}`),
       });
@@ -182,7 +183,9 @@ if (mode === 'private') {
   if (!existsSync(PUBLIC_FILE)) throw new Error('nothing prepared - run prepare-public first');
   const saved = JSON.parse(readFileSync(PUBLIC_FILE, 'utf8'));
   if (!id || id !== saved.id) throw new Error(`prepare-instagram needs the id of the prepared post (${saved.id})`);
-  const cand = await buildOne({ destAsked: saved.deck.slug, typeAsked: saved.deck.type, hookId: saved.deck.hook, targets: ['instagram'] });
+  // The question the post closed on, which is drawn per build: the marked line of its last slide.
+  const questionHe = (saved.deck.slides.at(-1)?.lines || []).find((l) => l.mark)?.text || null;
+  const cand = await buildOne({ destAsked: saved.deck.slug, typeAsked: saved.deck.type, hookId: saved.deck.hook, questionHe, targets: ['instagram'] });
   const differs = sameSlides(saved.deck.slides, cand.deck.slides);
   if (cand.id !== saved.id || differs) throw new Error(`the rebuild is not the same post (${cand.id}: ${differs || 'another id'}); nothing saved`);
   const { addToInbox } = await import('../src/slate/inbox.js');
