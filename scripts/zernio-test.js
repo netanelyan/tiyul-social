@@ -51,7 +51,6 @@ async function buildOne() {
   const { buildPost } = await import('../src/posts/index.js');
   const { pickDestination } = await import('../src/plan/write.js');
   const { nextShape, destinationsFor } = await import('../src/posts/types.js');
-  const { targetsForKind } = await import('../src/publish/targets.js');
   const rows = JSON.parse(readFileSync(new URL('../destinations.json', import.meta.url), 'utf8')).destinations;
   const type = nextShape().type;
   const tried = [];
@@ -66,7 +65,10 @@ async function buildOne() {
         alternatives: rows.filter((r) => r.country === dest.country && r.id !== dest.id && r.siteSlug).slice(0, 4),
         defaultHe: dest.he,
         regionHe: dest.country,
-        targets: targetsForKind('post'),
+        // TikTok by name, not targetsForKind('post'): that one includes TikTok only
+        // when our own app's token is in data/store.json, and this checkout has no
+        // store of its own. Zernio posts with its own app and never reads ours.
+        targets: ['tiktok'],
         remember: false,
         onProgress: (t) => console.log(`  ${t}`),
       });
@@ -79,6 +81,7 @@ async function buildOne() {
 }
 
 async function checkFetchable(urls) {
+  if (!urls?.length) throw new Error('no TikTok slides were rendered, so there is nothing for Zernio to fetch');
   for (const u of urls) {
     const res = await fetch(u, { method: 'HEAD', signal: AbortSignal.timeout(15_000) }).catch((e) => ({ ok: false, status: e.message }));
     if (!res.ok) throw new Error(`${u} is not publicly fetchable (${res.status}). Run this where CARD_PUBLIC_BASE_URL serves CARD_OUTPUT_DIR.`);
