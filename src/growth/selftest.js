@@ -1105,6 +1105,35 @@ export async function growthSelftest({ ok, eq }) {
       ok('the right password logs in with an HttpOnly, SameSite=Strict cookie', good.status === 303 && /HttpOnly/.test(cookie) && /SameSite=Strict/.test(cookie), cookie);
       const viaProxy = await raw({ ...form('correct horse battery'), headers: { ...form('').headers, host: 'desk.example.test', 'x-forwarded-proto': 'https', 'x-forwarded-for': '203.0.113.9' } });
       ok('over HTTPS it is Secure, with the __Host- prefix', /^__Host-desk=/.test(String(viaProxy.headers['set-cookie'])) && /Secure/.test(String(viaProxy.headers['set-cookie'])));
+
+      // THE BROWSER'S OWN ORIGIN HEADER. Every post above went without one, as curl
+      // does, and a browser never does: in production the login form was refused
+      // because no-referrer made Chromium send "Origin: null". These go through the
+      // proxy path exactly as Chromium's did through Caddy.
+      const viaCaddy = (origin, ip, pw = 'wrong') => ({
+        ...form(pw),
+        headers: { ...form('').headers, host: 'desk.example.test', 'x-forwarded-proto': 'https', 'x-forwarded-for': ip, origin },
+      });
+      eq('a browser login from the public origin reaches the password check', (await raw(viaCaddy('https://desk.example.test', '203.0.113.21'))).status, 401);
+      eq('and with the right password it logs in', (await raw(viaCaddy('https://desk.example.test', '203.0.113.22', 'correct horse battery'))).status, 303);
+      for (const [bad, ip] of [
+        ['null', '203.0.113.23'],
+        ['https://evil.example', '203.0.113.24'],
+        ['http://desk.example.test', '203.0.113.25'],
+        ['https://desk.example.test.evil.example', '203.0.113.26'],
+      ]) {
+        eq(`a login from origin ${bad} is refused`, (await raw(viaCaddy(bad, ip, 'correct horse battery'))).status, 403);
+      }
+      const loginPage = await raw({ path: '/login', headers: { host: 'desk.example.test', 'x-forwarded-proto': 'https' } });
+      eq('the login page lets the browser send its real origin', loginPage.headers['referrer-policy'], 'same-origin');
+      const secureSession = String(viaProxy.headers['set-cookie']).split(';')[0];
+      const button = await raw({
+        method: 'POST',
+        path: '/api/run',
+        headers: { host: 'desk.example.test', 'x-forwarded-proto': 'https', origin: 'https://desk.example.test', cookie: secureSession, 'content-type': 'application/json', 'x-growth-token': fresh.token },
+        body: '{}',
+      });
+      eq('and a button pressed on the public page goes through', button.status, 200);
       const session = cookie.split(';')[0];
       eq('with the session, Today answers', (await raw({ headers: { host: local, cookie: session } })).status, 200);
       eq('a forged session does not', (await raw({ headers: { host: local, cookie: 'desk=v1.99999999999999.AAAA' } })).status, 302);

@@ -40,7 +40,12 @@ const send = (res, status, body, type = 'text/html; charset=utf-8', extra = {}) 
     'cache-control': 'no-store',
     'x-content-type-options': 'nosniff',
     'x-frame-options': 'DENY',
-    'referrer-policy': 'no-referrer',
+    // SAME-ORIGIN, NOT NO-REFERRER. Under no-referrer a browser sends a form post
+    // with "Origin: null" (the Fetch standard's rule for a non-CORS request), so
+    // the login form's own post was refused as cross-origin and nobody could log
+    // in. same-origin still sends nothing to another site, which is what
+    // no-referrer was for, and lets the desk's own forms carry their real origin.
+    'referrer-policy': 'same-origin',
     'content-security-policy': "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
     ...extra,
   });
@@ -84,6 +89,9 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 export function createHandler({ ops, port, token = randomBytes(18).toString('hex'), env = process.env, limiter = createLimiter(), failDelayMs = 500 }) {
   const auth = authConfig(env);
   const hosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`, ...(auth.publicHost ? [auth.publicHost] : [])]);
+  // The origins a POST may come from, exactly: the two local ones, and the public
+  // name over HTTPS. Anything else is refused, "null" included: a sandboxed frame
+  // or a data: page on any site can send that one.
   const origins = new Set([`http://127.0.0.1:${port}`, `http://localhost:${port}`, ...(auth.publicHost ? [`https://${auth.publicHost}`] : [])]);
 
   const handler = async (req, res) => {
