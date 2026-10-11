@@ -6834,6 +6834,90 @@ group('captions vary, and the emoji are pictures');
     true
   );
 
+  // THE OWNER'S TWO CAPTION RULES, 2026-10-11, from the Florence verdict post: its
+  // caption opened on the question slide 11 already asks, and tagged #טיסות on a post
+  // that withholds every flight fact.
+  const { slideLines, repeatsSlideLine, recaption } = await import('../src/posts/caption.js');
+  const florence = {
+    type: 'verdict',
+    where: 'פירנצה',
+    countryHe: 'איטליה',
+    titleHe: 'פירנצה: שווה או לא?',
+    captionHookHe: 'פירנצה: מה טוב ומה פחות, בלי לייפות',
+    practicalHe: 'הכשרות מסתמכת בעיקר על בית חב״ד',
+    siteSlug: 'florence',
+    category: 'verdict',
+    slides: [
+      { look: 'label', titleHe: 'פירנצה: שווה או לא?', noteHe: '3 דברים שכדאי לדעת לפני', countryHe: 'איטליה' },
+      { look: 'sheet', titleHe: 'מה טוב שם', lines: [{ text: 'שלושה-ארבעה ימים הם מידה טובה' }], countryHe: 'איטליה' },
+      { look: 'sheet', titleHe: 'מה פחות', lines: [{ text: 'הכשרות מסתמכת בעיקר על בית חב״ד' }], countryHe: 'איטליה' },
+      {
+        look: 'sheet',
+        titleHe: 'התשובה שלנו: 4.7 ⭐',
+        lines: [{ text: 'ריכוז האמנות הגבוה ביותר' }, { text: 'מי היה שם ויכול להגיד אם זה מדויק?', mark: true }],
+        countryHe: 'איטליה',
+      },
+    ],
+  };
+  const q = 'מי היה שם ויכול להגיד אם זה מדויק?';
+  const bodyOf = (c) => c.split('\n\n').filter((p) => !p.startsWith('#'));
+
+  // (1) Nothing a slide already says, and the question once, at the end.
+  for (const s of shapes) {
+    for (const target of ['tiktok', 'instagram']) {
+      const c = buildCaption(florence, { shape: s, target, titled: target === 'instagram', question: q });
+      const said = slideLines(florence, { target });
+      const echo = bodyOf(c).find((p) => said.some((l) => repeatsSlideLine(p, l)));
+      ok(`shape ${s.id} on ${target} repeats no slide line`, !echo, echo);
+      ok(`shape ${s.id} on ${target} does not ask what the last slide asks`, !c.includes(q), c);
+    }
+  }
+  ok('the closing site slide is among the slide lines', slideLines(florence).includes('המסלול המלא לפירנצה'));
+  ok(
+    'so the site line, which says it again, is not in the caption',
+    !buildCaption(florence, { shape: shapes[0], titled: false, question: q }).includes('המסלול המלא')
+  );
+  ok('a slide line said again with words around it is a repeat', repeatsSlideLine('המסלול המלא לפירנצה, עם מפה, בלינק בביו', 'המסלול המלא לפירנצה'));
+  ok('and so is a caption line that sits inside a slide line', repeatsSlideLine('מסתמכת בעיקר על בית חב״ד', 'הכשרות מסתמכת בעיקר על בית חב״ד'));
+  ok('the pin is not the cover', !repeatsSlideLine('📍 פירנצה, איטליה', 'פירנצה: שווה או לא?'));
+  ok('no shape opens on the question', shapes.every((s) => s.parts[0] !== 'question'));
+  for (const s of shapes.filter((x) => x.parts.includes('question'))) {
+    const c = buildCaption(post, { shape: s, titled: true, question: 'מה הייתם מוסיפים?' });
+    const body = bodyOf(c);
+    eq(`shape ${s.id}: a question no slide asks closes the caption`, body[body.length - 1], 'מה הייתם מוסיפים?');
+    eq(`shape ${s.id}: and comes once`, c.split('מה הייתם מוסיפים?').length, 2);
+  }
+
+  // (2) No #טיסות while the flight data is unverified, and the destination always.
+  const many = Array.from({ length: 300 }, () => tagsFor(florence).split(' '));
+  const flew = many.find((t) => t.some((x) => x.startsWith('#טיס')));
+  ok('#טיסות is never drawn', !flew, flew?.join(' '));
+  ok('the destination is always tagged', many.every((t) => t.includes('#פירנצה')));
+  ok('and its country beside it', many.every((t) => t.includes('#איטליה')));
+  ok('still five tags, none twice', many.every((t) => t.length === 5 && new Set(t).size === 5), many[0].join(' '));
+  ok(
+    'a deck draws no flight tag either',
+    Array.from({ length: 200 }, () => hashtagsFor({ category: 'museum', slides: [{ iso: 'PT' }] })).every((t) => !t.includes('#טיסות'))
+  );
+
+  // A post that is waiting for approval gets the new caption and keeps its slides.
+  const waiting = {
+    id: 'f95d994d60d4',
+    captionShape: 'askfirst',
+    tiktokCaption: `${q}\n\n📍 פירנצה, איטליה\n\nשמרו את זה לטיול\n\n#פוריו #טיסות #טיול #איטליה #מטיילים`,
+    deck: { ...florence, slides: florence.slides.map((s) => ({ ...s })) },
+  };
+  const redone = recaption(waiting);
+  eq('recaption keeps the id', redone.id, waiting.id);
+  ok('and the slides', JSON.stringify(redone.deck.slides) === JSON.stringify(waiting.deck.slides));
+  ok('the new caption does not open on the question', !redone.tiktokCaption.includes(q), redone.tiktokCaption);
+  eq(
+    'its own tags stay, #טיסות out and #פירנצה in beside #איטליה',
+    redone.tiktokCaption.split('\n\n').pop(),
+    '#פוריו #טיול #פירנצה #איטליה #מטיילים'
+  );
+  eq('and the body opens on something other than the question', redone.tiktokCaption.split('\n\n')[0], 'שמרו את זה לטיול');
+
   // EMOJI ARE PICTURES, NOT CHARACTERS. A flag set as text came out as the letters
   // "GR" in the middle of a Hebrew line, because the rendering machine's font has no
   // glyph for a regional-indicator pair - and the machine that publishes is not the

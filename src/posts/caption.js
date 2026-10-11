@@ -1,7 +1,8 @@
 import { postConfig } from '../postConfig.js';
-import { hashtagLine, captionQuestion, followLine } from '../hashtags.js';
+import { hashtagsFor, captionQuestion, followLine, placeTag, destinationTag, tagAllowed } from '../hashtags.js';
 import { assertNoUrl } from '../format.js';
 import { assertNoDm } from '../dmPromise.js';
+import { closingSlidesFor } from '../deck/follow.js';
 import { line } from './voice.js';
 import { hasFlightClaim } from './source.js';
 
@@ -53,11 +54,72 @@ export function siteLine({ siteSlug, destHe, target }) {
  * feed tag.
  */
 export function tagsFor(post, opts = {}) {
-  const always = postConfig().posts.alwaysTags;
-  const drawn = hashtagLine(post, opts).split(' ').filter(Boolean);
-  const fresh = drawn.filter((t) => !always.includes(t));
-  const out = [...always, ...fresh].slice(0, Math.max(always.length, drawn.length));
+  const always = postConfig().posts.alwaysTags.filter(tagAllowed);
+  const drawn = hashtagsFor(post, { ...opts, placeHe: post.where });
+  const out = [...always, ...drawn.filter((t) => !always.includes(t))];
+  // Trimmed from the end, but never past the post's own destination: #פירנצה and
+  // #איטליה are the two tags that are about this post, and the owner's rule is that
+  // the destination is always tagged.
+  const kept = new Set([...always, placeTag(post.where), destinationTag(post)].filter(Boolean));
+  const count = Math.max(always.length, drawn.length);
+  for (let i = out.length - 1; i >= 0 && out.length > count; i--) if (!kept.has(out[i])) out.splice(i, 1);
   return out.join(' ');
+}
+
+/** For comparison only: punctuation, emoji and spacing are not what a line says. */
+const bare = (s) =>
+  String(s || '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+/**
+ * Does this caption line say what a slide line already says?
+ *
+ * The same words, or the caption line sitting inside a slide line (it adds nothing),
+ * or a slide line of some length sitting inside the caption line with a few words
+ * around it: "המסלול המלא לפירנצה, עם מפה, בלינק בביו" under a closing slide titled
+ * "המסלול המלא לפירנצה" is the slide said again.
+ */
+export function repeatsSlideLine(captionLine, slideLine) {
+  const c = bare(captionLine);
+  const s = bare(slideLine);
+  if (!c || !s) return false;
+  if (c === s) return true;
+  if (c.length >= 8 && s.includes(c)) return true;
+  return s.length >= 12 && c.includes(s);
+}
+
+// Keys that hold no published words: ids, links, photographs and their credits.
+const NOT_WORDS = new Set(['id', 'placeId', 'slug', 'siteSlug', 'url', 'src', 'image', 'images', 'bgImage', 'coverImage', 'shot', 'credit', 'provenance', 'nameEn', 'iso']);
+
+/**
+ * Every Hebrew line the viewer reads on the slides, the closing slide included.
+ *
+ * The closing slide is not in `post.slides` (see closingSlidesFor for why), so it is
+ * asked for here exactly as the renderer asks for it, with the post's own follow
+ * reason rather than a fresh draw, or the comparison would be against a slide that
+ * was never drawn.
+ */
+export function slideLines(post, { target = 'tiktok', follow = null } = {}) {
+  const out = [];
+  const walk = (node, key) => {
+    if (node == null || NOT_WORDS.has(key)) return;
+    if (typeof node === 'string') {
+      if (/[֐-׿]/.test(node)) out.push(node);
+      return;
+    }
+    if (Array.isArray(node)) return node.forEach((v) => walk(v, key));
+    if (typeof node === 'object') for (const [k, v] of Object.entries(node)) walk(v, k);
+  };
+  walk(post?.slides || [], 'slides');
+  const closing = closingSlidesFor(
+    { ...post, follow: follow || post?.follow || undefined },
+    { size: target === 'instagram' ? 'instagram' : 'tiktok', destHe: post?.siteDestHe || post?.where, replies: postConfig().igReplies }
+  );
+  walk(closing, 'closing');
+  return out;
 }
 
 /**
@@ -76,6 +138,7 @@ export function tagsFor(post, opts = {}) {
 export function buildCaption(post, { shape, target = 'tiktok', titled = false, question = null, follow = null } = {}) {
   const cfg = postConfig().posts;
   const parts = [];
+  const asked = [];
 
   for (const part of shape.parts) {
     let text = null;
@@ -118,16 +181,32 @@ export function buildCaption(post, { shape, target = 'tiktok', titled = false, q
     }
     // NO FLIGHT CLAIM IN A CAPTION until the flight data is verified; see
     // FLIGHTS_VERIFIED in ./source.js. A part that carries one is dropped rather than
-    // published. A tag like #טיסות is not a claim, and neither is a question.
-    if (text && (part === 'tags' || !hasFlightClaim(text))) parts.push(String(text).trim());
+    // published. A question is not a claim. A tag like #טיסות is not one either, and
+    // is kept out anyway, by tagAllowed in ../hashtags.js.
+    if (!text || (part !== 'tags' && hasFlightClaim(text))) continue;
+    (part === 'question' ? asked : parts).push(String(text).trim());
   }
+
+  // NOTHING A SLIDE ALREADY SAYS, the owner's rule of 2026-10-11. Florence's caption
+  // opened on "מי היה שם ויכול להגיד אם זה מדויק?", which is also the last line of
+  // slide 11: the first line under the post spent on something the viewer reads
+  // anyway. A part that repeats a slide line is dropped, the question included, and
+  // the caption then opens on whatever part is next.
+  const onSlides = slideLines(post, { target, follow });
+  const fresh = (p) => !onSlides.some((s) => repeatsSlideLine(p, s));
 
   // The tags are last whatever the shape says, because a tag block is where a reader
   // stops reading and anything under it is unread. A shape that puts them elsewhere
   // is a configuration mistake and this is where it is corrected rather than
   // published.
+  //
+  // THE QUESTION ONCE, AT THE END of what is read, the same rule: never the opening,
+  // and never twice. A shape that lists it earlier is corrected here like the tags.
   const tags = parts.filter((p) => p.startsWith('#'));
-  const body = parts.filter((p) => !p.startsWith('#'));
+  const body = [];
+  for (const p of [...parts.filter((x) => !x.startsWith('#')), ...asked.slice(0, 1)]) {
+    if (fresh(p) && !body.some((b) => bare(b) === bare(p))) body.push(p);
+  }
   for (const [i, p] of body.entries()) line(p, { where: `caption.${shape.id}[${i}]` });
 
   const text = [...body, ...tags].join('\n\n').trim();
@@ -166,4 +245,58 @@ export function captionsRepeat(a, b) {
   if (a?.shape && a.shape === b?.shape) reasons.push(`the same shape (${a.shape})`);
   if (open(a?.instagram) && open(a.instagram) === open(b?.instagram)) reasons.push('the same opening line');
   return reasons;
+}
+
+/**
+ * New captions for a post that is already built, from the caption code as it is now.
+ *
+ * The slides are not touched: nothing is fetched, nothing is rendered, and the id,
+ * which is keyed on the slides, stays the same. It is how a caption rule reaches a
+ * post that is waiting for approval without rebuilding a post the owner has already
+ * looked at. The shape, the follow reason and the question are the post's own: the
+ * question is read back off the closing slide where the type asks it there, and off
+ * the old caption otherwise.
+ *
+ * THE TAGS ARE THE POST'S OWN, corrected rather than redrawn: a tag the rules now
+ * refuse goes, the destination comes in beside its country, and only a gap left
+ * after that is filled from a fresh draw. Redrawing all five would change tags
+ * nothing was wrong with, on a post the owner has already read.
+ */
+export function recaption(cand) {
+  const post = cand?.deck;
+  if (!post?.slides?.length) throw new Error('recaption: this candidate has no slides');
+  const shape = postConfig().posts.captions.find((c) => c.id === cand.captionShape);
+  if (!shape) throw new Error(`recaption: unknown caption shape "${cand.captionShape}"`);
+  const onSlide = post.slides.flatMap((s) => s.lines || []).filter((l) => l?.mark && /\?\s*$/.test(l.text || '')).pop()?.text;
+  const inCaption = String(cand.tiktokCaption || cand.instagramCaption || '')
+    .split('\n')
+    .map((l) => l.trim())
+    .find((l) => !l.startsWith('#') && /\?\s*$/.test(l));
+  const tagged = { ...post, slides: post.slides.map((s) => ({ ...s, countryHe: post.countryHe })) };
+  const captions = captionsFor(tagged, { shape, question: onSlide || inCaption || '', follow: post.follow || null });
+  const instagram = keepTags(captions.instagram, cand.instagramCaption, tagged);
+  return {
+    ...cand,
+    instagramCaption: instagram,
+    tiktokCaption: keepTags(captions.tiktok, cand.tiktokCaption, tagged),
+    channelCaption: instagram,
+    captionShape: captions.shape,
+  };
+}
+
+/** The new caption's body over the old caption's tags, corrected. See recaption. */
+function keepTags(fresh, old, post) {
+  const tagsOf = (c) => (String(c || '').trim().split('\n\n').pop() || '').split(/\s+/).filter((t) => t.startsWith('#'));
+  const drawn = tagsOf(fresh);
+  const out = tagsOf(old).filter(tagAllowed);
+  if (!out.length) return fresh;
+  const place = placeTag(post.where);
+  const country = destinationTag(post);
+  if (country && !out.includes(country)) out.push(country);
+  if (place && !out.includes(place)) out.splice(country ? out.indexOf(country) : out.length, 0, place);
+  const kept = new Set([...postConfig().posts.alwaysTags, place, country].filter(Boolean));
+  for (let i = out.length - 1; i >= 0 && out.length > drawn.length; i--) if (!kept.has(out[i])) out.splice(i, 1);
+  for (const t of drawn) if (out.length < drawn.length && !out.includes(t)) out.push(t);
+  const body = String(fresh).trim().split('\n\n').filter((p) => !p.startsWith('#'));
+  return [...body, out.join(' ')].join('\n\n');
 }

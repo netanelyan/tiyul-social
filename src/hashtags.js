@@ -1,5 +1,6 @@
 import { postConfig } from './postConfig.js';
 import { deckPlace } from './deck/region.js';
+import { FLIGHTS_VERIFIED } from './posts/source.js';
 
 // The five tags under every slideshow.
 //
@@ -63,9 +64,30 @@ export function clipDestinationTag(cand) {
   return word.length >= 2 ? `#${word}` : null;
 }
 
+/**
+ * A tag about flights: #טיסות, #טיסה, #טיסותזולות.
+ *
+ * NOT ON ANY POST WHILE FLIGHTS_VERIFIED IS OFF, the owner's rule of 2026-10-11. The
+ * caption code used to argue that a tag is not a claim, and the owner disagreed: on
+ * a post that withholds every flight fact, #טיסות files it under the one subject it
+ * has been made to stay silent on. Every pool below is drawn through `draw`, so the
+ * filter there covers posts, decks, plans, clips and reels at once.
+ */
+export const FLIGHT_TAG = /^#טיס/;
+export const tagAllowed = (tag) => FLIGHTS_VERIFIED || !FLIGHT_TAG.test(String(tag || ''));
+
+/**
+ * A Hebrew place name as a tag: "פירנצה" is #פירנצה, "תל אביב" closes up into
+ * #תלאביב, and the geresh in "צ׳כיה" stays, for the reasons destinationTag gives.
+ */
+export function placeTag(he) {
+  const word = String(he || '').replace(/\s+/g, '').replace(/[^\p{L}\p{N}׳״'"]/gu, '');
+  return word.length >= 2 ? `#${word}` : null;
+}
+
 /** `n` distinct entries from a pool, chosen at random, in the order drawn. */
 function draw(pool, n, taken, rand) {
-  const left = pool.filter((t) => !taken.has(t));
+  const left = pool.filter((t) => !taken.has(t) && tagAllowed(t));
   const out = [];
   while (out.length < n && left.length) {
     const [tag] = left.splice(Math.floor(rand() * left.length), 1);
@@ -87,17 +109,22 @@ function draw(pool, n, taken, rand) {
  * Broad tags lead. They are what the first impressions come from, and a
  * description is read from its first line.
  */
-export function hashtagsFor(deck, { rand = Math.random } = {}) {
+export function hashtagsFor(deck, { rand = Math.random, placeHe = null } = {}) {
   const cfg = postConfig().hashtags;
   const taken = new Set();
 
   const broad = draw(cfg.broad, cfg.broadCount, taken, rand);
 
+  // `placeHe` is the post's own destination, #פירנצה beside #איטליה. On a post it is
+  // always there, the owner's rule of 2026-10-11: the country is where the trip is,
+  // the city is what somebody planning it types. It leads the niche slots, so a trim
+  // from the end can never reach it. A deck passes none and keeps the country alone.
   const niche = [];
   const dest = cfg.useDestination ? destinationTag(deck) : null;
-  if (dest) {
-    taken.add(dest);
-    niche.push(dest);
+  for (const tag of [placeTag(placeHe), dest]) {
+    if (!tag || taken.has(tag)) continue;
+    taken.add(tag);
+    niche.push(tag);
   }
   niche.push(...draw(cfg.niche, cfg.nicheCount - niche.length, taken, rand));
 

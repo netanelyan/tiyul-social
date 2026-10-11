@@ -16,6 +16,12 @@ loadEnv();
 //       slides, and saves it to data/zernio-public.json. Nothing is posted. The two
 //       flags rebuild a post the owner has already seen, after a fix to it.
 //
+//   npm run zernio-test -- recaption
+//       Rebuilds the prepared post's captions with the caption code as it is now and
+//       saves them. The slides, their files and the id are untouched, so the same
+//       publish-public <id> still posts it. For a caption rule that arrives after the
+//       owner has seen the slides.
+//
 //   npm run zernio-test -- publish-public <id>
 //       Posts the prepared post PUBLICLY, and only if <id> is the id printed by
 //       prepare-public. Running this command with that id is the owner's approval.
@@ -129,6 +135,15 @@ if (mode === 'private') {
   mkdirSync(new URL('.', PUBLIC_FILE), { recursive: true });
   writeFileSync(PUBLIC_FILE, JSON.stringify(cand, null, 1));
   console.log(`\n  Prepared, NOT posted. To post it publicly:\n    npm run zernio-test -- publish-public ${cand.id}`);
+} else if (mode === 'recaption') {
+  if (!existsSync(PUBLIC_FILE)) throw new Error('nothing prepared - run prepare-public first');
+  const { recaption } = await import('../src/posts/caption.js');
+  const before = JSON.parse(readFileSync(PUBLIC_FILE, 'utf8'));
+  const cand = recaption(before);
+  writeFileSync(PUBLIC_FILE, JSON.stringify(cand, null, 1));
+  console.log(`\n  was:     ${String(before.tiktokCaption || '').split('\n').join(' / ')}`);
+  show(cand);
+  console.log(`\n  Captions rebuilt, slides untouched, NOT posted. To post it publicly:\n    npm run zernio-test -- publish-public ${cand.id}`);
 } else if (mode === 'publish-public') {
   const id = process.argv[3];
   if (!existsSync(PUBLIC_FILE)) throw new Error('nothing prepared - run prepare-public first');
@@ -138,6 +153,6 @@ if (mode === 'private') {
   await checkFetchable(cand.deck.urls.tiktok);
   await post(cand, 'PUBLIC_TO_EVERYONE');
 } else {
-  console.log('usage: npm run zernio-test -- private | prepare-public | publish-public <id>');
+  console.log('usage: npm run zernio-test -- private | prepare-public | recaption | publish-public <id>');
   process.exitCode = 1;
 }

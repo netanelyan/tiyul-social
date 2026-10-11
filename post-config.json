@@ -389,6 +389,12 @@
       "Both are gone. The broad pool is now broad WITHIN TRAVEL and nothing",
       "else: #טיול, #חופשה, #טיסות, #תיירות, #עולם.",
       "",
+      "#טיסות IS NEVER DRAWN WHILE FLIGHTS_VERIFIED (src/posts/source.js) IS",
+      "FALSE, nor any other tag starting #טיס (owner, 2026-10-11). It stays in the",
+      "pool so that verifying the flight data brings it back with no edit here.",
+      "And a post always carries its own destination, #פירנצה beside #איטליה,",
+      "each spending a niche slot, so the count stays five.",
+      "",
       "AND THIS IS THE LAST TIME THIS BLOCK IS WORTH TUNING.",
       "",
       "Instagram's own head has said plainly that hashtags do not improve",
@@ -2640,13 +2646,22 @@
       "all. Five skeletons that all begin with the same part produce five captions with",
       "the same first line, which is the template problem moved one line down - and the",
       "first line is the one Instagram shows before the fold. `factfirst` opens on the",
-      "real fact off the page and `askfirst` opens on the question.",
+      "real fact off the page and `askfirst` opens on the save ask.",
+      "",
+      "NO SHAPE OPENS ON THE QUESTION, AND NO CAPTION REPEATS A SLIDE (owner,",
+      "2026-10-11). `askfirst` used to open on it, and on a verdict post the question",
+      "is also the last line of the closing slide, so the first line under the post",
+      "was one the viewer reads anyway. The question now comes once, as the last line",
+      "before the tags, and any part that repeats a slide line is dropped in",
+      "buildCaption whatever the shape says. The id `askfirst` stays because the",
+      "store's shape history is keyed on it.",
       "",
       "  hook      the cover line restated in a spoken way",
       "  practical one real line from the page: the flight, getting around, a season",
       "  save      the default ask, `closing.saveAskHe`",
       "  site      the destination-naming line, when the site has a page",
-      "  question  a real question, from `caption.questions`",
+      "  question  a real question, from `caption.questions`; always the last part",
+      "            before the tags, and dropped when a slide already asks it",
       "  signoff   a warm close from `closing.signoffsHe`",
       "  follow    the follow line, on SOME shapes only and never as the ask",
       "  tags      3 to 5, always last, because a tag block is where reading stops"
@@ -2677,9 +2692,9 @@
       {
         "id": "askfirst",
         "parts": [
-          "question",
-          "hook",
           "save",
+          "hook",
+          "question",
           "tags"
         ],
         "weight": 1
@@ -2688,8 +2703,8 @@
         "id": "asking",
         "parts": [
           "hook",
-          "question",
           "save",
+          "question",
           "tags"
         ],
         "weight": 2
