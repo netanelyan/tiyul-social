@@ -48,9 +48,13 @@ Missing keys never fail silently: Today says which source was skipped and why.
 
 Drafting and the review pass run on Opus 5.5 ($4 in, $20 out per million
 tokens); reading an agency's site on Sonnet 5.5; sorting on Haiku 4.5. One item
-(a video's comments, an agency message, a creator DM) is one drafting call for
-three variants, one review call, and a second look when the reviewer rewrote
-one: about $0.14 measured on 2026-10-11. The monthly cap (default $50) is in
+is one drafting call for three variants, a redo of any the checks refused, one
+review call, and a second look when the reviewer rewrote one. Measured on
+2026-10-11 over 17 real items: $0.12 a comment, $0.18 an agency message with
+its site read, $0.15 a creator DM. That is about $41 a month at that day's
+volume (7 comments and 3 agencies a day) and about $91 at the full caps, plus
+sorting and Brave. Fable 5.1 measured about three times as much ($0.36 a
+comment, $0.66 an agency message) and did not score better. The monthly cap (default $50) is in
 Settings; spend is in every page's header and on Reports, and searching and
 drafting stop when it is reached. Fable 5.1 ($10 / $50) is in the price table
 for the day it is chosen in Settings; an unknown model is billed at the dearest
