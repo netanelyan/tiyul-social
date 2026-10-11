@@ -10363,6 +10363,19 @@ group('the daily slate - one tap a day, and nothing goes out unapproved');
   eq('leaving the rest of Instagram to the built posts', placed.slots.instagram.length, sun.instagram.length - 1);
   eq('it publishes to Instagram only', placed.items[0].cand.publishTargets.join(','), 'instagram');
   eq('a post with no slot left waits in the inbox', inboxMod.placeInbox([{ file: 'f.json', entry }], { ...sun, instagram: [] }).items.length, 0);
+  const tomorrowOnly = { ...entry, notBefore: '2026-10-12' };
+  eq('one meant for the next morning waits out a slate built tonight', inboxMod.placeInbox([{ file: 'f.json', entry: tomorrowOnly }], sun, { date: '2026-10-11' }).items.length, 0);
+  eq('and goes into that morning\'s', inboxMod.placeInbox([{ file: 'f.json', entry: tomorrowOnly }], sun, { date: '2026-10-12' }).items.length, 1);
+  ok('a malformed date is refused', /notBefore/.test(inboxMod.entryProblem({ ...entry, notBefore: 'tomorrow' })));
+
+  // A SLATE BUILT LATE drops the slots already past, before the ramp picks: the first
+  // start was in the evening, and the tap would have posted every past slot at once.
+  const lateCfg = postConfig().slate;
+  const evening = plan.slotsFor('2026-10-11', lateCfg, { rampTiktok: 2, notBefore: Date.parse('2026-10-11T15:50:00Z') });
+  eq('at 18:50 only the TikTok slots still ahead are left', evening.tiktok.map((t) => t.toISOString().slice(11, 16)).join(','), '16:15,18:15');
+  eq('and the evening Instagram one', evening.instagram.map((t) => t.toISOString().slice(11, 16)).join(','), '17:30');
+  ok('each past one is named', evening.dropped.filter((d) => /השעה עברה/.test(d)).length === 2);
+  ok('the bot builds from now', /slotsFor\(date, cfg, \{ rampTiktok: rampFor\(cfg, slates, date\), notBefore: Date\.now\(\) \}\)/.test(readFileSync(new URL('../bot.js', import.meta.url), 'utf8')));
   const inboxSlate = st.newSlate({ date: '2026-10-11', items: [...placed.items, { key: 'b', cand: { id: 'b', headline: 'h', deck: { type: 'list', where: 'אתונה', urls: { tiktok: ['https://cards.example/t1.jpg', 'https://cards.example/t2.jpg'] } } }, template: 'list', tiktokAt: sun.tiktok[0], formatId: 'type:list', formatKind: 'proven' }] });
   eq('the slate keeps the inbox note', inboxSlate.items[0].note, entry.note);
   ok('and every item keeps the format it was built from', inboxSlate.items[1].formatId === 'type:list' && inboxSlate.items[1].formatKind === 'proven');
@@ -10388,7 +10401,7 @@ group('the daily slate - one tap a day, and nothing goes out unapproved');
   throws('a bad entry is refused before it is written', () => inboxMod.addToInbox({ ...entry, platforms: [] }, inboxTmp));
 
   const botSlate = readFileSync(new URL('../bot.js', import.meta.url), 'utf8');
-  ok('the slate places the inbox before it builds, and builds for the slots left', /placeInbox\(inbox\.entries, slots\)/.test(botSlate) && /count: fromInbox\.slots\.tiktok\.length/.test(botSlate));
+  ok('the slate places the inbox before it builds, and builds for the slots left', /placeInbox\(inbox\.entries, slots, \{ date \}\)/.test(botSlate) && /count: fromInbox\.slots\.tiktok\.length/.test(botSlate));
   ok('the inbox files leave only after the slate is saved', /store\.putSlate\(slate\);\s*fromInbox\.files\.forEach\(markInboxUsed\);/.test(botSlate));
 
   const botSrc3 = readFileSync(new URL('../bot.js', import.meta.url), 'utf8');

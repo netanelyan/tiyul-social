@@ -26,9 +26,9 @@ loadEnv();
 //       Posts the prepared post PUBLICLY, and only if <id> is the id printed by
 //       prepare-public. Running this command with that id is the owner's approval.
 //
-//   npm run zernio-test -- prepare-instagram <id> --inbox /opt/tiyul-social/data/slate-inbox
+//   npm run zernio-test -- prepare-instagram <id> --inbox /opt/tiyul-social/data/slate-inbox [--from YYYY-MM-DD]
 //       The prepared post's Instagram half, at 4:5, into the bot's slate inbox: an
-//       item of the next morning's digest, posted only after that tap. Rebuilt,
+//       item of the next morning's digest (or of --from's), posted only after that tap. Rebuilt,
 //       because a candidate keeps no photographs, and saved only when the rebuild is
 //       the same post (same id, same words, same photographs). Posts nothing itself.
 //
@@ -192,8 +192,11 @@ if (mode === 'private') {
   console.log(`\n  ${cand.deck.type} · ${cand.deck.where} · ${urls.length} Instagram slides (4:5)${cand.deck.instagramTrimmed ? ` · ${cand.deck.instagramTrimmed}` : ''}`);
   urls.forEach((u, i) => console.log(`  slide ${i + 1}: ${u}`));
   console.log(`  caption: ${String(cand.instagramCaption || '').split('\n').join(' / ')}`);
-  const file = addToInbox({ cand, platforms: ['instagram'], note: `↩️ פורסם בטיקטוק (${saved.id}); כאן חצי האינסטגרם שלו` }, inbox);
-  console.log(`\n  In the slate inbox, NOT posted: ${file}\n  It is an item of the next morning's digest, and posts only after that tap.`);
+  // The next morning's digest by default, not a slate built later today.
+  const { israelDate } = await import('../src/slate/plan.js');
+  const notBefore = flag('from') || israelDate(Date.now() + 86_400_000);
+  const file = addToInbox({ cand, platforms: ['instagram'], notBefore, note: `↩️ פורסם בטיקטוק (${saved.id}); כאן חצי האינסטגרם שלו` }, inbox);
+  console.log(`\n  In the slate inbox, NOT posted: ${file}\n  It is an item of the digest of ${notBefore} or the first after it, and posts only after that tap.`);
 } else {
   console.log('usage: npm run zernio-test -- private | prepare-public | recaption | publish-public <id> | prepare-instagram <id> --inbox <dir>');
   process.exitCode = 1;

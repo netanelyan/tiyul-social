@@ -1486,7 +1486,7 @@ async function refreshSlateDigest(slate) {
 async function buildSlateFor(date) {
   const cfg = postConfig().slate;
   const slates = store.allSlates();
-  const slots = slotsFor(date, cfg, { rampTiktok: rampFor(cfg, slates, date) });
+  const slots = slotsFor(date, cfg, { rampTiktok: rampFor(cfg, slates, date), notBefore: Date.now() });
   if (!slots.tiktok.length) {
     const empty = newSlate({ date, items: [], dropped: slots.dropped, warnings: ['אין היום שעות פרסום פנויות'] });
     store.putSlate(empty);
@@ -1497,7 +1497,7 @@ async function buildSlateFor(date) {
   // Posts waiting in data/slate-inbox/ take the day's earliest slots on their
   // platforms, and the slate builds its own posts for the slots left (src/slate/inbox.js).
   const inbox = readInbox();
-  const fromInbox = placeInbox(inbox.entries, slots);
+  const fromInbox = placeInbox(inbox.entries, slots, { date });
   const lastInboxIg = fromInbox.items.filter((it) => it.instagramAt).at(-1);
 
   const { buildPost } = await import('./src/posts/index.js');

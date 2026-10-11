@@ -64,13 +64,17 @@ export function spread(list, n) {
  * window dropped and named (a configured slot that can never post is a mistake
  * in the file, and the digest says so rather than quietly posting less).
  */
-export function slotsFor(date, cfg = postConfig().slate, { rampTiktok = null } = {}) {
+export function slotsFor(date, cfg = postConfig().slate, { rampTiktok = null, notBefore = null } = {}) {
   const day = cfg.slotsByDay?.[String(weekday(date))] || cfg.slots;
   const dropped = [];
+  // A slate built late (the bot started after the digest time) drops the slots
+  // already past, before the ramp picks its two: otherwise the tap would post
+  // every past one at once, a minute apart.
   const keep = (hhmm, platform) => {
     const at = israelInstant(date, hhmm);
     if (inShabbat(at)) return dropped.push(`${platform} ${hhmm}: שבת`), null;
     if (!inWindow(at)) return dropped.push(`${platform} ${hhmm}: מחוץ לשעות הפרסום`), null;
+    if (notBefore != null && at.getTime() < notBefore) return dropped.push(`${platform} ${hhmm}: השעה עברה`), null;
     return at;
   };
   let tiktok = day.tiktok.map((t) => keep(t, 'טיקטוק')).filter(Boolean);

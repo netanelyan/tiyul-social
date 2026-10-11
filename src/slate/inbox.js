@@ -24,6 +24,7 @@ const PLATFORMS = ['tiktok', 'instagram'];
 export function entryProblem(entry) {
   const cand = entry?.cand;
   if (!cand?.id || cand.kind !== 'post') return 'not a post candidate';
+  if (entry.notBefore && !/^\d{4}-\d{2}-\d{2}$/.test(entry.notBefore)) return `notBefore must be YYYY-MM-DD (got ${entry.notBefore})`;
   const platforms = entry.platforms || [];
   if (!platforms.length || platforms.some((p) => !PLATFORMS.includes(p))) return `platforms must be tiktok and/or instagram (got ${platforms.join(', ') || 'none'})`;
   for (const p of platforms) {
@@ -73,12 +74,14 @@ export function readInbox(dir = inboxDir()) {
 /**
  * Give inbox entries the day's earliest slots. Pure. Returns the slate items for
  * the ones placed, the files they came from, and the slots left for the built posts.
+ * An entry with `notBefore` (an Israel date) waits for the first slate on or after it.
  */
-export function placeInbox(entries, slots) {
+export function placeInbox(entries, slots, { date = null } = {}) {
   const left = { ...slots, tiktok: [...slots.tiktok], instagram: [...slots.instagram] };
   const items = [];
   const files = [];
   for (const { file, entry } of entries) {
+    if (entry.notBefore && date && date < entry.notBefore) continue;
     if (entry.platforms.some((p) => !left[p].length)) continue;
     const at = Object.fromEntries(entry.platforms.map((p) => [p, left[p].shift()]));
     items.push({
