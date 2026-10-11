@@ -1,3 +1,4 @@
+import { leadChannel } from '../links.js';
 import { STAGES } from '../rules.js';
 
 // The Reports page's numbers, from the store alone. Pure.
@@ -49,6 +50,26 @@ export function weekOverWeek(leads, now = Date.now()) {
     }
   }
   return out;
+}
+
+/**
+ * Messaged, replied, interested and closed as no reply, per channel the message
+ * went out on (WhatsApp, Email, Instagram, TikTok...), creators and agencies.
+ * Sorted by messaged.
+ */
+export function byChannel(leads) {
+  const rows = new Map();
+  for (const l of leads.filter((x) => x.messagedAt && (x.type === 'creator' || x.type === 'agency'))) {
+    const channel = leadChannel(l);
+    const r = rows.get(channel) || { channel, types: new Set(), messaged: 0, replied: 0, yes: 0, noReply: 0 };
+    r.types.add(l.type);
+    r.messaged++;
+    if (l.repliedAt) r.replied++;
+    if (l.stage === 'yes' || l.stage === 'using') r.yes++;
+    if (l.closed === 'no-reply') r.noReply++;
+    rows.set(channel, r);
+  }
+  return [...rows.values()].map((r) => ({ ...r, types: [...r.types].sort() })).sort((a, b) => b.messaged - a.messaged || a.channel.localeCompare(b.channel));
 }
 
 /**

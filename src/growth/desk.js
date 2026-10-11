@@ -3,6 +3,7 @@ import { ClaudeError } from './claude.js';
 import { growthPort, mergeSettings } from './config.js';
 import { runDiscovery } from './find/index.js';
 import { fillVideoContext } from './find/videoContext.js';
+import { channelOf, openTarget } from './links.js';
 import { checkEdit, draftsFor } from './prepare/compose.js';
 import { draftItem, DraftError } from './prepare/draft.js';
 import { prepareToday } from './prepare/index.js';
@@ -11,7 +12,7 @@ import { withdrawClosed, withdrawRoute } from './prepare/publish.js';
 import { cityFor, siteContext } from './prepare/site.js';
 import { readTemplates, saveTemplate, TemplateError } from './prepare/templates.js';
 import { campaignClicks } from './report/ga4.js';
-import { applyAction, ilDate, ilHour, pickToday, RuleError } from './rules.js';
+import { applyAction, closeSilent, ilDate, ilHour, pickToday, RuleError } from './rules.js';
 import { openStore } from './store.js';
 import { listen } from './web/server.js';
 
@@ -70,6 +71,9 @@ export function createOps({ store, env = process.env, clock = () => Date.now(), 
     const now = clock();
     // Any closed lead whose page is still up (a withdrawal the site did not
     // answer) is taken down first: a closed lead never keeps a live route.
+    // Silent through the follow-up for `followupDays`: closed as no reply, and its
+    // page comes down in the withdrawal just below.
+    if (closeSilent(store.data, { now, followupDays: settings().followupDays }).length) store.save();
     if (await withdraw.closed(store.data, { env, now })) store.save();
     const ranToday = store.data.runs.some((r) => ilDate(r.at) === ilDate(now));
     if (!ranToday && ilHour(now) >= settings().runHour) {
@@ -164,7 +168,10 @@ export function createOps({ store, env = process.env, clock = () => Date.now(), 
         // or the follow-up, the comment on one video, or a reply.
         const firstSend = body.action === 'sent' && !lead.messagedAt;
         const what = body.action === 'commented' ? (lead.type === 'customer' ? 'reply' : 'comment') : firstSend ? (lead.type === 'agency' ? 'message' : 'dm') : 'followup';
+        // The channel the first message went out on, for Reports: where the card opened it.
+        const channel = firstSend ? channelOf(openTarget(lead, what)) : null;
         const effects = applyAction(store.data, lead, body.action, body, { now: clock(), settings: settings() });
+        if (channel) lead.channel = channel;
         if (body.action === 'sent' || body.action === 'commented') {
           recordSent(store.data, lead, { what, postId: body.postId || null, final: body.final || null, at: clock() });
         }

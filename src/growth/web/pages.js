@@ -1,13 +1,13 @@
 import { keyStatus, LIMITS, TEMPLATE_LABELS, TEMPLATE_NAMES } from '../config.js';
 import { API_PRICES, monthSpend } from '../../clients/budget.js';
-import { openTarget } from '../links.js';
+import { leadChannel, openTarget } from '../links.js';
 import { compose, draftsFor, editWarnings, VARIANT_COUNT } from '../prepare/compose.js';
 import { weeklyEdits } from '../prepare/learn.js';
 import { fill } from '../prepare/templates.js';
 import { CONNECTIVES, FAKE_EXPERIENCE, FORMAL, PRAISE } from '../prepare/tells.js';
 import { SITE_FACTS } from '../prepare/voice.js';
-import { bySearch, funnel, stageCounts, weekOverWeek } from '../report/stats.js';
-import { COLUMN_LABEL, COLUMNS, dmReady, followupDue, ilDate, itemDone, openPost, parseItem, routeProblem, STAGE_LABEL, STAGES, TYPE_LABEL } from '../rules.js';
+import { byChannel, bySearch, funnel, stageCounts, weekOverWeek } from '../report/stats.js';
+import { awaitingOutcome, COLUMN_LABEL, COLUMNS, dayDiff, dmReady, followupDue, ilDate, itemDone, openPost, parseItem, routeProblem, STAGE_LABEL, STAGES, TYPE_LABEL } from '../rules.js';
 
 // Every page, as a function from state to HTML. Server-rendered, English,
 // left to right.
@@ -285,8 +285,8 @@ function cardMessage(state, key, ctx) {
       ? `<span class="tag ok">${lead.closed ? 'Closed' : what === 'followup' ? 'Follow-up sent' : 'Sent'}</span>`
       : [
           noSend ? '' : button('Sent', { act: 'sent', lead: lead.id, final: `#${id}-final`, disabled: blocked ? 'disabled' : null }, 'primary'),
-          what === 'followup' ? button('They replied', { act: 'replied', lead: lead.id }) : button('Skip', { act: 'skip', lead: lead.id }),
-          button('Not for us', { act: 'no', lead: lead.id, confirm: 'Sure? They are never contacted again' }, 'quiet'),
+          what === 'followup' ? outcomeBar(lead) : button('Skip', { act: 'skip', lead: lead.id }),
+          what === 'followup' ? '' : button('Not for us', { act: 'no', lead: lead.id, confirm: 'Sure? They are never contacted again' }, 'quiet'),
         ].join('')
   }<a class="more" href="/lead/${encodeURIComponent(lead.id)}">Lead page</a></div>
 </article>`;
@@ -391,19 +391,67 @@ export function todayPage({ state, settings, token, now = Date.now(), day, templ
     const render = (x) => (col === 'comment' ? cardComment(state, x, ctx) : col === 'customer' ? cardCustomer(state, x, ctx) : cardMessage(state, x, ctx));
     return `<section class="col" aria-label="${COLUMN_LABEL[col]}">
   <h2>${COLUMN_LABEL[col]} <span class="count">${open.length ? `${open.length} to do` : 'nothing to do'}</span></h2>
-  ${open.map(render).join('') || `<p class="empty">${esc(emptyText(col, state, settings, now))}</p>`}
+  ${open.map(render).join('') || `<p class="empty">${esc(emptyText(col, state, settings, now, day))}</p>`}
   ${doneKeys.length ? `<details class="donebox"><summary>Done today (${doneKeys.length})</summary>${doneKeys.map(render).join('')}</details>` : ''}
 </section>`;
   }).join('');
   const body = `<div class="pagehead"><h1>Today</h1><span class="date">${DAY.format(new Date(now))}</span></div>
 ${runBox(state, day, settings, now, running, env)}
-<div class="columns">${cols}</div>`;
+<div class="columns">${cols}</div>
+${waitingPanel(state, day, settings, now)}`;
   return layout({ title: 'Today', active: 'today', token, body, state, settings, now, loggedIn });
 }
 
+/**
+ * The four outcomes of a message, for any lead that was messaged: replied,
+ * interested, not interested (closed, never contacted again), no reply (closed).
+ */
+export function outcomeBar(lead) {
+  return [
+    button('Replied', { act: 'replied', lead: lead.id }, lead.repliedAt ? 'on' : ''),
+    button('Interested', { act: 'yes', lead: lead.id }, ['yes', 'using'].includes(lead.stage) ? 'on' : ''),
+    button('Not interested', { act: 'no', lead: lead.id, confirm: 'Sure? Never contacted again' }, lead.closed === 'not-interested' ? 'on' : 'quiet'),
+    button('No reply', { act: 'no-reply', lead: lead.id, confirm: 'Sure? Closes, no follow-up' }, lead.closed === 'no-reply' ? 'on' : 'quiet'),
+  ].join('');
+}
+
+/** Where a messaged lead stands on the follow-up, in a few words. */
+function followupLine(lead, settings, now) {
+  const days = settings.followupDays;
+  const at = (t, n) => ilDate(Date.parse(`${ilDate(t)}T12:00:00Z`) + n * 86_400_000);
+  if (lead.repliedAt) return `replied ${when(lead.repliedAt)}`;
+  if (lead.followupSentAt) return `follow-up sent ${when(lead.followupSentAt)}; closes as no reply on ${at(lead.followupSentAt, days)} if they stay silent`;
+  if (followupDue(lead, { now, followupDays: days })) return 'the follow-up is due today';
+  return `the follow-up comes back on Today on ${at(lead.messagedAt, days)} if they don't reply`;
+}
+
+/**
+ * Every lead you messaged that has no outcome yet, as a card with the four
+ * outcomes. One whose follow-up is on today's list is marked there instead.
+ */
+function waitingPanel(state, day, settings, now) {
+  const onToday = new Set([...(day.creator || []), ...(day.agency || [])].filter((k) => k.endsWith(':followup') && !itemDone(state, k)).map((k) => parseItem(k).leadId));
+  const leads = awaitingOutcome(state).filter((l) => !onToday.has(l.id));
+  if (!leads.length) return '';
+  const card = (l) => `<article class="card waiting">
+  <div class="meta">${whoLine(l)}<p class="small">${esc(l.type === 'agency' ? 'Agency' : 'Creator')} · ${esc(leadChannel(l))} · messaged ${when(l.messagedAt)}, ${plural(dayDiff(ilDate(l.messagedAt), ilDate(now)), 'day')} ago · ${esc(followupLine(l, settings, now))}</p></div>
+  <div class="actions">${outcomeBar(l)}<a class="more" href="/lead/${encodeURIComponent(l.id)}">Lead page</a></div>
+</article>`;
+  return `<section class="panel" id="waiting"><h2>Waiting for a reply <span class="count">${leads.length}</span></h2>
+<p class="small">Everyone you messaged with no outcome yet. Mark what happened; a lead still silent ${plural(settings.followupDays, 'day')} after the one follow-up closes as no reply by itself.</p>
+${leads.map(card).join('')}</section>`;
+}
+
 /** What an empty column says: what happens next, not how the desk works inside. */
-function emptyText(col, state, settings, now) {
+function emptyText(col, state, settings, now, day = {}) {
   const leads = Object.values(state.leads);
+  // A column whose day is full says so: "no agencies today" read as none left.
+  const cap = Number(settings.caps?.[col]) || 0;
+  if ((col === 'agency' || col === 'creator') && cap && (day[col] || []).length >= cap) {
+    const waiting = leads.filter((l) => l.type === col && !l.closed && l.stage === 'found' && !l.messagedAt && (col === 'agency' || l.warmedAt)).length;
+    const what = col === 'agency' ? 'agency message' : 'creator message';
+    return `Today's ${plural(cap, what)} are done: ${cap} a day is the cap in Settings. ${waiting ? `${plural(waiting, col === 'agency' ? 'agency' : 'creator', col === 'agency' ? 'agencies' : 'creators')} still waiting; the next ${Math.min(cap, waiting)} come tomorrow, after any follow-ups that are due.` : 'Nobody else is waiting.'}`;
+  }
   if (col === 'creator') {
     const warm = leads.filter((l) => l.type === 'creator' && l.warmedAt && !l.messagedAt && !l.closed && !dmReady(l, { now, warmupDays: settings.warmupDays })).length;
     return warm ? `${plural(warm, 'creator')} will be here tomorrow, the day after your comment.` : 'A creator shows up here the day after you mark a comment on their video.';
@@ -524,10 +572,14 @@ export function leadPage({ state, settings, token, now = Date.now(), lead, templ
     acts.push(button('Replied', { act: 'commented', lead: lead.id }, 'primary'));
   }
   acts.push(
-    button('Skip', { act: 'skip', lead: lead.id }),
-    button('They replied', { act: 'replied', lead: lead.id }, lead.repliedAt ? 'on' : ''),
-    button('Interested', { act: 'yes', lead: lead.id }, lead.stage === 'yes' ? 'on' : ''),
-    button('Not for us', { act: 'no', lead: lead.id, confirm: 'Sure? They are never contacted again' }, 'quiet'),
+    ...(lead.messagedAt
+      ? [outcomeBar(lead)]
+      : [
+          button('Skip', { act: 'skip', lead: lead.id }),
+          button('They replied', { act: 'replied', lead: lead.id }, lead.repliedAt ? 'on' : ''),
+          button('Interested', { act: 'yes', lead: lead.id }, lead.stage === 'yes' ? 'on' : ''),
+          button('Not for us', { act: 'no', lead: lead.id, confirm: 'Sure? They are never contacted again' }, 'quiet'),
+        ]),
     button('Using the site', { act: 'using', lead: lead.id }, lead.stage === 'using' ? 'on' : '')
   );
   const yesNote =
@@ -536,7 +588,7 @@ export function leadPage({ state, settings, token, now = Date.now(), lead, templ
       : '';
   const status = [
     `Stage: <b>${STAGE_LABEL[lead.stage] || lead.stage}</b>`,
-    lead.closed ? `closed (${esc({ skipped: 'skipped', irrelevant: 'not for us', 'not-interested': 'not interested', done: 'done' }[lead.closed] || lead.closed)})` : '',
+    lead.closed ? `closed (${esc({ skipped: 'skipped', irrelevant: 'not for us', 'not-interested': 'not interested', 'no-reply': 'no reply', done: 'done' }[lead.closed] || lead.closed)})` : '',
     lead.messagedAt ? `messaged ${when(lead.messagedAt)}` : '',
     followupDue(lead, { now, followupDays: settings.followupDays }) ? '<b>the follow-up is due today</b>' : '',
     lead.followupSentAt ? `follow-up sent ${when(lead.followupSentAt)}` : '',
@@ -627,6 +679,15 @@ export function reportsPage({ state, settings, token, now = Date.now(), ga4, log
       .join('') || '<tr><td colspan="4">Nothing spent yet this month.</td></tr>'
   }</tbody></table></section>`;
 
+  const channels = byChannel(leads);
+  const perChannel = `<section class="panel" id="channels"><h2>Messages by channel</h2>${
+    channels.length
+      ? `<table class="table"><thead><tr><th>Channel</th><th>Who</th><th>Messaged</th><th>Replied</th><th>Interested</th><th>No reply</th></tr></thead><tbody>${channels
+          .map((r) => `<tr><td>${esc(r.channel)}</td><td class="small">${esc(r.types.map((t) => (t === 'agency' ? 'agencies' : 'creators')).join(', '))}</td><td>${r.messaged}</td><td>${r.replied}${r.messaged ? ` <span class="small">(${Math.round((100 * r.replied) / r.messaged)}%)</span>` : ''}</td><td>${r.yes}</td><td>${r.noReply}</td></tr>`)
+          .join('')}</tbody></table><p class="small">The channel is where the card opened the message: WhatsApp or email for an agency, the platform for a creator.</p>`
+      : '<p class="small">Nobody messaged yet.</p>'
+  }</section>`;
+
   const perType = types
     .map((t) => {
       const fn = funnel(leads, t);
@@ -672,7 +733,7 @@ export function reportsPage({ state, settings, token, now = Date.now(), ga4, log
     }</tbody></table><p class="small">Only visitors who accepted cookies are counted; consent is off by default on the site.</p></section>`;
   }
 
-  const body = `<div class="pagehead"><h1>Reports</h1></div><div class="reports">${budget}${editsPanel(state, now)}${ga}${perType}</div>`;
+  const body = `<div class="pagehead"><h1>Reports</h1></div><div class="reports">${budget}${perChannel}${editsPanel(state, now)}${ga}${perType}</div>`;
   return layout({ title: 'Reports', active: 'reports', token, body, state, settings, now, loggedIn });
 }
 

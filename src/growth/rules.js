@@ -179,11 +179,34 @@ export function dmReady(lead, { now = Date.now(), warmupDays = 1 } = {}) {
 }
 
 /** Is the one follow-up owed today? */
-export function followupDue(lead, { now = Date.now(), followupDays = 4 } = {}) {
+export function followupDue(lead, { now = Date.now(), followupDays = 5 } = {}) {
   if (lead.closed || !lead.messagedAt || lead.followupSentAt || lead.repliedAt) return false;
   if (lead.stage !== 'messaged') return false;
   return dayDiff(ilDate(lead.messagedAt), ilDate(now)) >= followupDays;
 }
+
+/**
+ * Leads that stayed silent through the one follow-up, closed as "no reply"
+ * `followupDays` after it (the owner's rule of 2026-10-11). Returns them.
+ */
+export function closeSilent(state, { now = Date.now(), followupDays = 5 } = {}) {
+  const closed = [];
+  for (const lead of Object.values(state.leads || {})) {
+    if (lead.closed || !lead.followupSentAt || lead.repliedAt || lead.stage !== 'messaged') continue;
+    if (dayDiff(ilDate(lead.followupSentAt), ilDate(now)) < followupDays) continue;
+    lead.closed = 'no-reply';
+    lead.noReplyAt = new Date(now).toISOString();
+    (lead.history ??= []).push({ at: lead.noReplyAt, what: 'closed: no reply after the follow-up' });
+    closed.push(lead);
+  }
+  return closed;
+}
+
+/** Messaged leads still waiting on an outcome: no answer yet, or an answer and no decision. */
+export const awaitingOutcome = (state) =>
+  Object.values(state.leads || {})
+    .filter((l) => l.messagedAt && !l.closed && ['messaged', 'replied'].includes(l.stage))
+    .sort((a, b) => String(a.messagedAt).localeCompare(String(b.messagedAt)));
 
 /* ------------------------------------------------------------------ today */
 
@@ -349,7 +372,7 @@ export function applyAction(state, lead, action, payload = {}, { now = Date.now(
         if (lead.type === 'agency' && routeProblem(lead)) throw new RuleError('route', routeProblem(lead));
         lead.messagedAt = at;
         lead.stage = 'messaged';
-      } else if (followupDue(lead, { now, followupDays: s.followupDays ?? 4 })) {
+      } else if (followupDue(lead, { now, followupDays: s.followupDays ?? 5 })) {
         lead.followupSentAt = at;
       } else if (lead.followupSentAt) {
         throw new RuleError('done', 'They already had the message and the one follow-up. Nothing more goes to them.');
@@ -380,6 +403,16 @@ export function applyAction(state, lead, action, payload = {}, { now = Date.now(
       break;
     case 'using':
       lead.stage = 'using';
+      break;
+    // The fourth outcome of a message: they never answered. Closed, not on the
+    // do-not-contact list (that is for "not interested"), and the route page
+    // comes down like any closed lead's.
+    case 'no-reply':
+      if (!lead.messagedAt) throw new RuleError('not-messaged', 'Only a lead you messaged can be closed as no reply.');
+      if (lead.closed) throw new RuleError('closed', 'This lead is closed.');
+      lead.closed = 'no-reply';
+      lead.noReplyAt = at;
+      effects.withdraw = true;
       break;
 
     // ---- the drafts

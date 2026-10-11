@@ -96,7 +96,9 @@ export const DEFAULT_SETTINGS = Object.freeze({
   braveCreditUsd: 5,
   runHour: 8,
   warmupDays: 1,
-  followupDays: 4,
+  // Days without a reply before the one follow-up comes back on Today, and again
+  // after it before the lead closes as "no reply" (the owner, 2026-10-11: 5).
+  followupDays: 5,
   offers: { creator: '3 חודשי פרו מתנה', agency: 'חודש ראשון חינם' },
   followers: { min: 1000, max: 30000 },
   maxPostAgeDays: 45,

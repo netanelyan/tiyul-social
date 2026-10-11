@@ -113,6 +113,24 @@ export function openTarget(lead, what) {
   return lead.profileUrl || lead.posts?.[0]?.url || null;
 }
 
+/** Where a message went, from the address it was opened at: WhatsApp, Email, Instagram... */
+export function channelOf(url) {
+  const u = String(url || '');
+  if (!u) return null;
+  if (/^https:\/\/wa\.me\//.test(u)) return 'WhatsApp';
+  if (/^mailto:/.test(u)) return 'Email';
+  const host = (/^https?:\/\/(?:www\.|m\.)?([^/]+)/i.exec(u)?.[1] || '').toLowerCase();
+  if (host.endsWith('instagram.com')) return 'Instagram';
+  if (host.endsWith('tiktok.com')) return 'TikTok';
+  if (host.endsWith('youtube.com') || host === 'youtu.be') return 'YouTube';
+  if (host.endsWith('facebook.com')) return 'Facebook';
+  if (host.endsWith('google.com') || host.startsWith('maps.')) return 'Google Maps';
+  return 'Website';
+}
+
+/** The channel a lead was messaged on: recorded at "Sent", or worked out from where the card opens. */
+export const leadChannel = (lead) => lead.channel || channelOf(openTarget(lead, lead.type === 'agency' ? 'message' : 'dm')) || 'Unknown';
+
 const digits = (s) => String(s || '').replace(/\D/g, '');
 
 /** An Israeli number in international form, digits only: 972501234567. */

@@ -14,7 +14,7 @@ import { cleanText, instagramPost, instagramTime, parseFollowers, stripIgCounts,
 import { todaysSearches } from './find/queries.js';
 import { scoreAgency, scoreCreator } from './find/score.js';
 import { assertAllowed, isSocial, RULES } from '../clients/http.js';
-import { campaignFor, hasUtm, openTarget, plainLink, tagged } from './links.js';
+import { campaignFor, channelOf, hasUtm, openTarget, plainLink, tagged } from './links.js';
 import { contactsIn } from '../clients/youtube.js';
 import { chooseExample, tripLinks } from './prepare/agencyProfile.js';
 import { compose, linkFor } from './prepare/compose.js';
@@ -31,7 +31,8 @@ import { checkRoute, findOnGoogle, frameKm, judgeRoute, routeKey, scaleOf } from
 import { destinationSupported, matchPlaces, postDestination, resolveDestination } from './prepare/site.js';
 import { checkTemplate, fill, readTemplates } from './prepare/templates.js';
 import { ga4Missing, jwtFor } from './report/ga4.js';
-import { applyAction, blockedBy, dmReady, followupDue, ilDate, leadKeys, pickToday, RuleError } from './rules.js';
+import { byChannel } from './report/stats.js';
+import { applyAction, awaitingOutcome, blockedBy, closeSilent, dmReady, followupDue, ilDate, leadKeys, parseItem, pickToday, RuleError } from './rules.js';
 import { emptyState, migrate, openStore } from './store.js';
 import { main } from './main.js';
 import { authConfig, makeSession, sessionOk, startProblem } from './web/auth.js';
@@ -374,10 +375,12 @@ export async function growthSelftest({ ok, eq }) {
       }
     };
     eq('a second message the next day is refused (follow-up not due)', sendAt(t0 + DAY), 'not-due');
-    eq('the follow-up is due after 4 days', followupDue(l, { now: t0 + 4 * DAY, followupDays: 4 }), true);
-    eq('and can be sent once', sendAt(t0 + 4 * DAY), 'sent');
+    eq('the follow-up waits 5 days by default (the owner, 2026-10-11)', S.followupDays, 5);
+    eq('so it is not due after 4', followupDue(l, { now: t0 + 4 * DAY, followupDays: S.followupDays }), false);
+    eq('and is after 5', followupDue(l, { now: t0 + 5 * DAY, followupDays: S.followupDays }), true);
+    eq('and can be sent once', sendAt(t0 + 5 * DAY), 'sent');
     eq('then never again', sendAt(t0 + 9 * DAY), 'done');
-    eq('and it never comes back to Today', followupDue(l, { now: t0 + 20 * DAY, followupDays: 4 }), false);
+    eq('and it never comes back to Today', followupDue(l, { now: t0 + 20 * DAY, followupDays: S.followupDays }), false);
 
     const r = (state.leads['tt:@maker2'] = creator(2, { warmedAt: new Date(NOW - 9 * DAY).toISOString(), messagedAt: new Date(NOW - 6 * DAY).toISOString(), stage: 'messaged' }));
     applyAction(state, r, 'replied', {}, { now: NOW, settings: S });
@@ -1132,6 +1135,74 @@ export async function growthSelftest({ ok, eq }) {
     verdict = { status: 'error', error: 'Google Places did not answer', issues: [] };
     await prepareToday({ store: errStore, settings: one, now: NOW, deps, env: KEY });
     ok('a check that could not run holds the message too', !errStore.data.leads['ag:place2'].trip && errStore.data.leads['ag:place2'].routeCheck.status === 'error');
+  }
+
+  /* ---------------------------------------------------------- outcomes of a message (owner, 2026-10-11) */
+
+  {
+    const store = memStore();
+    const state = store.data;
+    const a = agency(7, { whatsapp: '+972 50-123-4567', messagedAt: new Date(NOW).toISOString(), stage: 'messaged' });
+    const c = creator(8, { source: 'instagram', profileUrl: 'https://www.instagram.com/maker8', messagedAt: new Date(NOW).toISOString(), stage: 'messaged', warmedAt: new Date(NOW - DAY).toISOString() });
+    const quiet = agency(9, { phone: null, email: 'hi@agency9.co.il', messagedAt: new Date(NOW).toISOString(), stage: 'messaged' });
+    for (const l of [a, c, quiet]) state.leads[l.id] = l;
+
+    eq('a lead is waiting for an outcome once messaged', awaitingOutcome(state).length, 3);
+    const today = todayPage({ state, settings: S, token: 't', now: NOW + DAY, templates: readTemplates(), day: pickToday(state, S, NOW + DAY), env: {} });
+    ok('Today lists them under "Waiting for a reply"', today.includes('Waiting for a reply') && today.includes('the follow-up comes back on Today on'));
+    ok('each card carries the four outcomes', ['data-act="replied"', 'data-act="yes"', 'data-act="no"', 'data-act="no-reply"'].every((x) => today.includes(x)));
+    ok('and the lead page too', leadPage({ state, settings: S, token: 't', now: NOW, templates: readTemplates(), lead: a, env: {} }).includes('data-act="no-reply"'));
+
+    applyAction(state, a, 'replied', {}, { now: NOW + DAY, settings: S });
+    applyAction(state, a, 'yes', {}, { now: NOW + DAY, settings: S });
+    eq('replied, then interested', [Boolean(a.repliedAt), a.stage].join(), 'true,yes');
+    ok('an interested lead leaves the waiting list', !awaitingOutcome(state).includes(a));
+    const r = applyAction(state, c, 'no-reply', {}, { now: NOW + 2 * DAY, settings: S });
+    ok('"No reply" closes a messaged lead, and its page comes down', c.closed === 'no-reply' && r.withdraw);
+    ok('without putting them on the do-not-contact list', !JSON.stringify(state.dnc || {}).includes('no-reply'));
+    let refused = null;
+    try {
+      applyAction(state, agency(10), 'no-reply', {}, { now: NOW, settings: S });
+    } catch (e) {
+      refused = e;
+    }
+    ok('and is refused for a lead never messaged', refused instanceof RuleError && refused.code === 'not-messaged');
+
+    // Silent: the follow-up after 5 days, once, then closed 5 days after it.
+    eq('no follow-up after 4 days', followupDue(quiet, { now: NOW + 4 * DAY, followupDays: S.followupDays }), false);
+    ok('it comes back on Today after 5, inside the cap', pickToday(state, S, NOW + 5 * DAY).agency.includes(`agency:${quiet.id}:followup`));
+    applyAction(state, quiet, 'sent', {}, { now: NOW + 5 * DAY, settings: S });
+    eq('nothing closes 4 days after the follow-up', closeSilent(state, { now: NOW + 9 * DAY, followupDays: S.followupDays }).length, 0);
+    const closed = closeSilent(state, { now: NOW + 10 * DAY, followupDays: S.followupDays });
+    ok('5 days after it, still silent: closed as no reply', closed.length === 1 && quiet.closed === 'no-reply' && quiet.history.some((h) => /no reply after the follow-up/.test(h.what)));
+    const replied = agency(11, { messagedAt: new Date(NOW).toISOString(), followupSentAt: new Date(NOW + 5 * DAY).toISOString(), repliedAt: new Date(NOW + 6 * DAY).toISOString(), stage: 'replied' });
+    state.leads[replied.id] = replied;
+    eq('a lead that replied is never closed as silent', closeSilent(state, { now: NOW + 30 * DAY, followupDays: 5 }).length, 0);
+
+    // The channel the message went out on, recorded at Sent, and Reports by channel.
+    eq('a WhatsApp link is WhatsApp', channelOf('https://wa.me/972501234567'), 'WhatsApp');
+    eq('mailto is Email', channelOf('mailto:x@y.co'), 'Email');
+    eq('an Instagram profile is Instagram', channelOf('https://www.instagram.com/maker8'), 'Instagram');
+    const fresh = memStore();
+    const b = agency(12, { whatsapp: '+972 50-765-4321' });
+    fresh.data.leads[b.id] = b;
+    const ops = createOps({ store: fresh, env: {}, clock: () => NOW, deps: { runDiscovery: async () => {}, prepareToday: async () => {}, withdrawRoute: async (l) => l.trip } });
+    await ops.post(`/api/lead/${b.id}/action`, { action: 'sent' });
+    eq('Sent records the channel it went out on', b.channel, 'WhatsApp');
+    const rows = byChannel(Object.values(state.leads));
+    const wa = rows.find((x) => x.channel === 'WhatsApp');
+    ok('Reports count messaged, replied, interested per channel', wa && wa.messaged === 2 && wa.replied === 2 && wa.yes === 1 && wa.noReply === 0, JSON.stringify(rows));
+    ok('and no reply', rows.find((x) => x.channel === 'Instagram')?.noReply === 1 && rows.find((x) => x.channel === 'Email')?.noReply === 1);
+    const report = reportsPage({ state, settings: S, token: 't', now: NOW, ga4: { configured: false, missing: [] } });
+    ok('the Reports page shows the table', report.includes('Messages by channel') && report.includes('<td>WhatsApp</td>'));
+
+    // An Agencies column that is empty because today's cap is used says so.
+    const capped = memStore();
+    for (let n = 20; n < 25; n++) capped.data.leads[`ag:place${n}`] = agency(n);
+    const d = pickToday(capped.data, S, NOW);
+    for (const k of d.agency) applyAction(capped.data, capped.data.leads[parseItem(k).leadId], 'sent', {}, { now: NOW, settings: S });
+    const page = todayPage({ state: capped.data, settings: S, token: 't', now: NOW, templates: readTemplates(), day: d, env: {} });
+    ok('a full day of agencies says the cap, and how many wait', page.includes(`${S.caps.agency} agency messages are done`) && page.includes('2 agencies still waiting'));
   }
 
   /* ---------------------------------------------------------- learning from what was sent */
