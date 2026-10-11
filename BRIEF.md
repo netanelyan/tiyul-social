@@ -194,9 +194,9 @@ And three rules for acting on them:
 - **A format that underperforms three times** is dropped. The two best get
   everything.
 
-TikTok's numbers reach this project once the account is reconnected with the
-`video.list` scope (requested since October 2026): views, likes, comments and
-shares, read 72 hours after a post by `src/metrics`. TikTok publishes no save
+TikTok's numbers come from Zernio's analytics (decided 2026-10-11, in place of
+our own app's `video.list` scope): views, likes, comments and shares, to be read
+72 hours after a post. Nothing reads them yet. TikTok publishes no save
 count through any API, so TikTok formats are weighed on shares plus likes per
 view, saves count only on Instagram, and no TikTok save number is ever made up.
 Watch time and follows still come from the app, by hand, once a week.

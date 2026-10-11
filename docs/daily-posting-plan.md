@@ -7,7 +7,8 @@ clients). The three choices made while building the mix (section 3.5) were appro
 
 **Merge gate:** the branch merges only after the private test post and one public post
 the owner approves by hand (section 6). The private test runs from a separate checkout on
-the VPS, never from the bot's own.
+the VPS, never from the bot's own. Both posts went out on 2026-10-11 (the public one is
+Florence), and the branch merged into main that day with the slate turned on.
 
 The goal: one approval tap a day. TikTok 2 posts a day in week 1, then 3, all public.
 Instagram 1 to 2 a day. Formats from what works now plus our own numbers.
@@ -191,8 +192,8 @@ and the card says so. Broad listicles that are not about Tiyul+ ("5 דברים �
 
 - Instagram: views, saves, shares, through the existing `src/metrics` (works today).
 - TikTok: fix the two bugs, take the post id from Zernio's resolved URL, then read
-  views, likes and shares with `video.list` (decision 7), or Zernio's analytics if they
-  carry views, or `/views` by hand. TikTok has no saves, so TikTok scores on shares plus
+  views, likes and shares from Zernio's analytics (decision 7, as decided), or `/views`
+  by hand. TikTok has no saves, so TikTok scores on shares plus
   likes per view (as approved; no TikTok save number is faked) and Instagram on saves
   plus shares per view, each against its own platform.
 - **The mix:** 70% of slate slots to proven formats (at least 3 measured posts, score at
@@ -221,15 +222,16 @@ best post with its numbers.
    in week 1, then let the 70/30 mix decide]
 6. **Budget format:** print the site's daily cost in local currency with its checked date
    [allowed], or drop budget formats.
-7. **TikTok metrics:** add `video.list` to our TikTok app and re-run `npm run tiktok-token`
-   [yes], or rely on Zernio's analytics or `/views`.
+7. **TikTok metrics:** add `video.list` to our TikTok app and re-run `npm run tiktok-token`,
+   or rely on Zernio's analytics or `/views`. [Zernio's analytics, decided 2026-10-11;
+   `video.list` and the new token are dropped. Reading them is not built yet.]
 
 ## 5. What needs you (I sign up for nothing)
 
 - A Zernio account, the TikTok account connected (and Instagram only if decision 2 says
   so), an API key as `ZERNIO_API_KEY` in `.env` here and on the VPS.
 - `BRAVE_API_KEY` and `YOUTUBE_API_KEY` in the VPS `.env`, since the watcher runs in the bot.
-- For decision 7: the `video.list` scope on the TikTok app, then a fresh token.
+- For decision 7: nothing; TikTok's numbers come from Zernio, not from our app's token.
 
 ## 6. Proof before merge
 

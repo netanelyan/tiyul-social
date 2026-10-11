@@ -901,10 +901,10 @@ a `zernio-test` folder under the card directory, served at the same base plus
 `/zernio-test`: post ids are keyed on content, so a test post of the same type and
 destination as one the bot has queued would otherwise write over its slides.
 
-**Measuring TikTok**: the app now asks for `video.list`, which has to be enabled
-in the developer portal before `npm run tiktok-token` is run again. TikTok
-publishes views, likes, comments and shares, and **no save count**, so nothing
-here ever ranks TikTok by saves.
+**Measuring TikTok**: TikTok's numbers come from Zernio's analytics (the owner's
+decision, 2026-10-11), not from our own app's `video.list`, which is no longer
+planned; nothing reads them yet. TikTok publishes views, likes, comments and
+shares, and **no save count**, so nothing here ever ranks TikTok by saves.
 
 ## The trend watcher
 
