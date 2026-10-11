@@ -3,6 +3,9 @@ import { hashtagLine, captionQuestion, followLine } from '../hashtags.js';
 import { assertNoUrl } from '../format.js';
 import { assertNoDm } from '../dmPromise.js';
 import { line } from './voice.js';
+import { hasFlightClaim } from './source.js';
+
+export { FLIGHT_CLAIM } from './source.js';
 
 // The description, built from a SHAPE rather than from one skeleton.
 //
@@ -56,18 +59,6 @@ export function tagsFor(post, opts = {}) {
   const out = [...always, ...fresh].slice(0, Math.max(always.length, drawn.length));
   return out.join(' ');
 }
-
-/**
- * A flight claim: a direct route, Ben Gurion, a flight time.
- *
- * NONE IN A CAPTION UNTIL THE FLIGHT FACTS ARE VERIFIED. The owner's rule, 2026-10-11.
- * Florence's caption said "טיסות ישירות מנתב״ג לפירנצה (FLR) מופעלות בעונה, כארבע
- * שעות", copied from our own page, and Kayak showed no direct flight on that route.
- * Nothing checks the page's flights paragraph against a schedule, so practicalFor in
- * ./index.js no longer offers it, and a part from anywhere else that carries one is
- * dropped here rather than published. A tag like #טיסות is not a claim and is kept.
- */
-export const FLIGHT_CLAIM = /טיס(?:ה|ות)\s+(?:ישיר|מנתב|מתל|של\s)|נתב["״׳']?ג|שעות\s+טיסה|זמן\s+(?:ה)?טיסה|קו\s+ישיר/;
 
 /**
  * One caption, from one shape.
@@ -125,7 +116,10 @@ export function buildCaption(post, { shape, target = 'tiktok', titled = false, q
       default:
         text = null;
     }
-    if (text && (part === 'tags' || !FLIGHT_CLAIM.test(text))) parts.push(String(text).trim());
+    // NO FLIGHT CLAIM IN A CAPTION until the flight data is verified; see
+    // FLIGHTS_VERIFIED in ./source.js. A part that carries one is dropped rather than
+    // published. A tag like #טיסות is not a claim, and neither is a question.
+    if (text && (part === 'tags' || !hasFlightClaim(text))) parts.push(String(text).trim());
   }
 
   // The tags are last whatever the shape says, because a tag block is where a reader

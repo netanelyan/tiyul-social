@@ -526,9 +526,34 @@ export function bookingLines(city, { max = 120, want = 3 } = {}) {
   return out;
 }
 
+// NO FLIGHT CLAIM ON A POST UNTIL THE SITE'S FLIGHT DATA IS VERIFIED.
+//
+// The owner's rule, 2026-10-11, for captions and slides alike. Florence's page says
+// "טיסות ישירות מנתב״ג לפירנצה (FLR) מופעלות בעונה, כארבע שעות" and Kayak showed no
+// direct flight on that route; nothing checks the flights paragraph against a
+// schedule. So practicalOf withholds the paragraph from every builder, slide, caption
+// and video at once, and hasFlightClaim is the backstop over what is left: a flight
+// claim reaching a post from any other text (a verdict quote, a day note, a hook).
+// Set this to true the day the flights paragraph is checked, and both come back.
+export const FLIGHTS_VERIFIED = false;
+
+/** A direct route, Ben Gurion, a flight time: a statement about flights. */
+export const FLIGHT_CLAIM = /טיס(?:ה|ות)\s+(?:ישיר|מנתב|מתל|של\s)|נתב["״׳']?ג|שעות\s+טיסה|זמן\s+(?:ה)?טיסה|קו\s+ישיר/;
+
+/**
+ * Does this text claim something about flights? A question does not: "מי מכיר טיסה
+ * ישירה לשם?" asks. Sentence by sentence, so a claim followed by a question is still
+ * a claim.
+ */
+export const hasFlightClaim = (text) =>
+  !FLIGHTS_VERIFIED &&
+  String(text || '')
+    .split(/(?<=[.!?])\s+/)
+    .some((s) => !/\?\s*$/.test(s.trim()) && FLIGHT_CLAIM.test(s));
+
 /** The practical paragraphs, trimmed. Flights and kosher are the Israeli angle. */
 export const practicalOf = (city) => ({
-  flightsHe: String(city?.practical?.flights || '').trim() || null,
+  flightsHe: FLIGHTS_VERIFIED ? String(city?.practical?.flights || '').trim() || null : null,
   aroundHe: String(city?.practical?.gettingAround || '').trim() || null,
   kosherHe: String(city?.practical?.kosherOverview || '').trim() || null,
   seasonHe: String(city?.bestSeason || '').trim() || null,

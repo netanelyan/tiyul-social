@@ -93,7 +93,10 @@ export async function trendsSelftest({ ok, eq }) {
     places: [{ name: 'גשר קארל', priceLevel: 0 }, { name: 'כיכר העיר העתיקה', priceLevel: 0 }, { name: 'טירת פראג', priceLevel: 2 }],
   };
   const facts = knowFacts(city);
-  ok(`the know post finds at least ${KNOW_MIN} of the page's own facts`, facts.length >= KNOW_MIN && facts.some((f) => f.label === 'הטיסה') && facts.some((f) => f.label === 'כמה עולה יום'));
+  ok(`the know post finds at least ${KNOW_MIN} of the page's own facts`, facts.length >= KNOW_MIN && facts.some((f) => f.label === 'כמה עולה יום'));
+  // The page's flight paragraph is not among them until the flight data is verified
+  // (FLIGHTS_VERIFIED in src/posts/source.js).
+  ok('and the flight is not one of them', !facts.some((f) => f.label === 'הטיסה'));
   const know = buildKnowPost(city, { hook: { id: 'h', he: '{n} דברים שכדאי לדעת לפני {dest}' }, dest: { he: 'פראג' } });
   eq('its cover counts exactly the facts it carries', know.slides[0].titleHe, `${facts.length} דברים שכדאי לדעת לפני פראג`);
   let thin = null;

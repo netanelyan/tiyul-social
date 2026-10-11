@@ -6549,7 +6549,9 @@ group('what a place is allowed to say about itself');
     places: [],
     itinerary: [],
     bestSeason: 'אפריל עד יוני',
-    practical: { flights: 'טיסה ישירה מתל אביב, כשלוש שעות.' },
+    // Getting around rather than the flight, which no post carries until the site's
+    // flight data is verified (FLIGHTS_VERIFIED in src/posts/source.js).
+    practical: { gettingAround: 'הרכבת מהשדה למרכז נוסעת כ-20 דקות.' },
   };
   ok('so a verdict post cannot be built from it', !canBuild('verdict', page, { verdict: u }).ok);
   ok('and it says why', canBuild('verdict', page, { verdict: u }).why.includes('drawbacks'));
@@ -6789,6 +6791,38 @@ group('captions vary, and the emoji are pictures');
   const practical = { flightsHe: 'טיסות ישירות מנתב״ג לפירנצה, כארבע שעות.', kosherHe: 'הכשרות מסתמכת בעיקר על בית חב״ד.' };
   ok('the practical line is the kosher one, never the flight', /חב״ד/.test(practicalFor({ practical }) || ''), practicalFor({ practical }));
   eq('and with no kosher line there is none', practicalFor({ practical: { flightsHe: practical.flightsHe } }), null);
+
+  // A QUESTION ASKS, IT DOES NOT CLAIM. "מי מכיר טיסה ישירה לשם?" is in the caption
+  // question pool and stays.
+  const asked = buildCaption(post, { shape: shapes.find((s) => s.parts.includes('question')) || shapes[0], titled: true, question: 'מי מכיר טיסה ישירה לשם?' });
+  ok('a question about flights is kept', !shapes.some((s) => s.parts.includes('question')) || asked.includes('מי מכיר טיסה ישירה לשם?'), asked);
+
+  // AND OFF THE SLIDES TOO, the same rule. The page's flights paragraph never reaches a
+  // builder, and a claim arriving any other way is dropped from the finished post.
+  const src = await import('../src/posts/source.js');
+  const { dropFlightClaims } = await import('../src/posts/index.js');
+  ok('the flight data is not verified yet', src.FLIGHTS_VERIFIED === false);
+  eq('so no builder is given the flights paragraph', src.practicalOf({ practical: { flights: 'טיסות ישירות מנתב״ג לפירנצה, כארבע שעות.' } }).flightsHe, null);
+  ok('a claim then a question is still a claim', src.hasFlightClaim('יש טיסות ישירות מנתב״ג. מי טס?'));
+  ok('and a question alone is not', !src.hasFlightClaim('מי מכיר טיסה ישירה לשם?'));
+  const flightPost = {
+    titleHe: 'נתנו לפירנצה 4.7. וזה למה',
+    slides: [
+      { look: 'label', titleHe: 'נתנו לפירנצה 4.7. וזה למה', noteHe: '4 דברים שכדאי לדעת לפני' },
+      { look: 'sheet', titleHe: 'למי זה מתאים', lines: [{ text: 'יום טיפוסי: כ-114 יורו לאדם' }, { text: 'טיסות ישירות מנתב״ג לפירנצה, כארבע שעות' }] },
+      { look: 'sheet', titleHe: 'איך מגיעים', lines: [{ text: 'טיסה של כארבע שעות' }] },
+      { look: 'label', titleHe: 'פונטה וקיו', noteHe: 'כניסה חופשית' },
+    ],
+  };
+  dropFlightClaims(flightPost, { where: 'test' });
+  eq('the flight line is dropped from its sheet', flightPost.slides[1].lines.length, 1);
+  eq('a sheet left with nothing on it goes', flightPost.slides.length, 3);
+  ok('and the rest of the post is untouched', flightPost.slides[2].titleHe === 'פונטה וקיו');
+  throws(
+    'a flight claim in a title refuses the post',
+    () => dropFlightClaims({ titleHe: 'x', slides: [{ look: 'label', titleHe: '4 שעות טיסה מישראל ונראה ככה' }] }, { where: 'test' }),
+    'unverified_flight'
+  );
 
   const noPage = buildCaption({ ...post, siteSlug: null }, { shape: shapes[0], titled: true, question: 'x' });
   ok('no page means no site line', !noPage.includes('בלינק בביו'));

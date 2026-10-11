@@ -6,9 +6,9 @@ import { overrideActive, overrideNotes } from '../override.js';
 import { cardOutputDir } from '../render/index.js';
 import { renderPost, fitsInstagram, IG_MAX } from '../render/post.js';
 import { notePostShape } from '../store.js';
-import { loadCity, verdictOf, firstClause } from './source.js';
+import { loadCity, verdictOf, firstClause, hasFlightClaim } from './source.js';
 import { nextShape, canBuild, platformsFor, hooksToAvoid } from './types.js';
-import { hookShape, fill, assertPostVoice, questionFor } from './voice.js';
+import { hookShape, fill, assertPostVoice, questionFor, VoiceError } from './voice.js';
 import { assertDelivers } from './deliver.js';
 import { buildSlideReel, reelable } from '../video/slideReel.js';
 import { fillPostPhotos, coverPhoto } from './photos.js';
@@ -289,6 +289,11 @@ export async function buildPost({
   // next year is covered by a check nobody had to remember to write.
   assertPostVoice(post, { where: `${shape.type}/${dest?.he || slug}` });
 
+  // No flight claim on a slide until the flight data is verified, over the same
+  // finished object and before the delivery gate, so a slide this empties is not
+  // counted as delivering anything.
+  dropFlightClaims(post, { where: `${shape.type}/${dest?.he || slug}` });
+
   // THE DELIVERY GATE, OVER THE SAME FINISHED OBJECT.
   //
   // Beside the voice gate because it is the same kind of check at the same moment:
@@ -421,12 +426,43 @@ function buildFor(type, city, { look, hook, dest, days, questionHe, alts, defaul
  *
  * The kosher overview, and no longer the flight. The flight came first, as the most
  * Israeli fact on the page, until Florence's caption promised a direct flight from Ben
- * Gurion that Kayak did not show: no flight claim goes in a caption until the flight
- * facts are verified (FLIGHT_CLAIM in ./caption.js). Null when the builder loaded no
+ * Gurion that Kayak did not show: no flight claim goes on a post until the flight data
+ * is verified (FLIGHTS_VERIFIED in ./source.js). Null when the builder loaded no
  * kosher overview, and the caption shape then has one part fewer - which is a real
  * variation rather than a hole.
  */
 export const practicalFor = (built) => (built.practical ? firstClause(built.practical.kosherHe) : null);
+
+/**
+ * Flight claims off the slides: the backstop to FLIGHTS_VERIFIED in ./source.js.
+ *
+ * practicalOf already withholds the page's flights paragraph, so this acts only on a
+ * claim that arrived some other way, a verdict quote or a day note. The line is
+ * dropped, and a sheet it leaves empty goes with it. A title or a note cannot lose
+ * words without saying something else, so a claim there refuses the post, and the
+ * caller tries another destination.
+ */
+export function dropFlightClaims(post, { where = 'post' } = {}) {
+  const refuse = (text, field) => {
+    throw new VoiceError(`${where}: a flight claim in the ${field}, and the flight data is not verified: ${text}`, {
+      reason: 'unverified_flight',
+      where,
+      text,
+    });
+  };
+  if (hasFlightClaim(post.titleHe)) refuse(post.titleHe, 'title');
+  const kept = [];
+  for (const s of post.slides || []) {
+    for (const field of ['titleHe', 'noteHe']) if (hasFlightClaim(s[field])) refuse(s[field], `slide ${field}`);
+    if (Array.isArray(s.lines) && s.lines.length) {
+      s.lines = s.lines.filter((l) => !hasFlightClaim(l?.text));
+      if (!s.lines.length) continue;
+    }
+    kept.push(s);
+  }
+  post.slides = kept;
+  return post;
+}
 
 /**
  * The candidate, in the shape the queue already carries.
