@@ -1111,6 +1111,20 @@ export async function growthSelftest({ ok, eq }) {
       ok('an expired one does not either', !sessionOk(makeSession(authConfig(env), NOW - 31 * DAY), authConfig(env), NOW));
       eq('the public name over plain HTTP is refused', (await raw({ headers: { host: 'desk.example.test', cookie: session } })).status, 403);
       ok('a public desk with no password does not start', Boolean(startProblem({ GROWTH_PUBLIC_HOST: 'desk.example.test' })) && !startProblem(env));
+
+      // A STRANGER CANNOT LOCK THE OWNER OUT. Twenty failures in an hour tighten every
+      // address to one try in fifteen minutes, and an address that has not failed
+      // still gets its try.
+      const { createLimiter } = await import('./web/auth.js');
+      const lim = createLimiter();
+      for (let i = 0; i < 20; i++) lim.fail(`198.51.100.${Math.floor(i / 5)}`, NOW + i * 1000);
+      eq('after twenty failures from four addresses, a fresh one may still try', lim.check('203.0.113.7', NOW + 30_000), null);
+      lim.fail('203.0.113.7', NOW + 31_000);
+      ok('but only once in fifteen minutes', lim.check('203.0.113.7', NOW + 32_000) > 0);
+      ok('and the address that sent them waits too', lim.check('198.51.100.0', NOW + 40_000) > 0);
+      const calm = createLimiter();
+      calm.fail('192.0.2.1', NOW);
+      eq('with nobody attacking, one wrong password leaves more tries', calm.check('192.0.2.1', NOW + 1000), null);
     } finally {
       server.close();
     }

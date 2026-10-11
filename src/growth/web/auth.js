@@ -16,8 +16,14 @@ import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 //     that one derived from the password, so changing either logs everyone out
 //     and a restart logs nobody out.
 //   - Failed logins are limited: five per address in fifteen minutes, then 429
-//     with Retry-After; twenty from anywhere in an hour locks the login for the
-//     hour. Every failure waits half a second before it is answered.
+//     with Retry-After. Every failure waits half a second before it is answered.
+//   - Twenty failures from anywhere in an hour tighten that to one per address,
+//     and never lock the login. A lock for everyone was the first version, and
+//     one stranger could hold it shut: five tries every fifteen minutes from a
+//     single address is twenty an hour, so the owner would be locked out of
+//     their own desk for as long as anybody cared to keep trying. The name is
+//     public from the moment its certificate is issued. Under pressure, an
+//     address that has not failed still gets its one try.
 //
 // The client's address is read from X-Forwarded-For only when the connection
 // itself came from Caddy on this machine; anybody else's header is ignored.
@@ -105,21 +111,20 @@ export function sessionFrom(req) {
 export function createLimiter({ perIp = PER_IP, global = GLOBAL } = {}) {
   const fails = new Map();
   let all = [];
-  let lockedUntil = 0;
   const prune = (list, windowMs, now) => list.filter((t) => now - t < windowMs);
   return {
     /** Null when a login may be tried, else the seconds to wait. */
     check(ip, now = Date.now()) {
-      if (lockedUntil > now) return Math.ceil((lockedUntil - now) / 1000);
+      all = prune(all, global.windowMs, now);
+      const max = all.length >= global.max ? 1 : perIp.max;
       const mine = prune(fails.get(ip) || [], perIp.windowMs, now);
       fails.set(ip, mine);
-      if (mine.length >= perIp.max) return Math.ceil((perIp.windowMs - (now - mine[0])) / 1000);
+      if (mine.length >= max) return Math.ceil((perIp.windowMs - (now - mine[mine.length - max])) / 1000);
       return null;
     },
     fail(ip, now = Date.now()) {
       fails.set(ip, [...prune(fails.get(ip) || [], perIp.windowMs, now), now]);
       all = [...prune(all, global.windowMs, now), now];
-      if (all.length >= global.max) lockedUntil = now + global.windowMs;
     },
     succeed(ip) {
       fails.delete(ip);
