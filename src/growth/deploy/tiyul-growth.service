@@ -1,0 +1,31 @@
+# The growth desk on the VPS. Copied to /etc/systemd/system/tiyul-growth.service.
+#
+# Its own user, its own folder (/opt/tiyul-growth) and its own data directory
+# (/var/lib/tiyul-growth). It listens on 127.0.0.1:4600 only; Caddy is the one
+# thing in front of it. Nothing of the bot's (pm2 "tiyul") or BrickDeal's is
+# reused or restarted. See src/growth/README.md, "On the VPS".
+
+[Unit]
+Description=tiyul+ growth desk
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=tiyul-growth
+Group=tiyul-growth
+WorkingDirectory=/opt/tiyul-growth
+Environment=GROWTH_ON=1 NODE_ENV=production GROWTH_PORT=4600
+Environment=GROWTH_STORE_PATH=/var/lib/tiyul-growth/growth.json GROWTH_THUMB_DIR=/var/lib/tiyul-growth/thumbs
+ExecStart=/usr/bin/node src/growth/main.js
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+# The data, and the follow-up templates the Settings page saves.
+ReadWritePaths=/var/lib/tiyul-growth /opt/tiyul-growth/src/growth/templates
+MemoryMax=300M
+
+[Install]
+WantedBy=multi-user.target

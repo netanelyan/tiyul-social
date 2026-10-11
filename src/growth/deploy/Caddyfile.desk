@@ -1,0 +1,12 @@
+# tiyul+ growth desk. NOT part of BrickDeal, like the cards.tiyulplus.com block.
+# Appended to /etc/caddy/Caddyfile, below the existing blocks, nothing above it
+# touched. Do not remove: the desk is only reachable through this block.
+# The desk listens on 127.0.0.1 only and has its own login.
+desk.tiyulplus.com {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+	reverse_proxy 127.0.0.1:4600
+}
