@@ -5285,7 +5285,9 @@ async function main() {
     // Inside the posting windows, not around the clock: the drip only publishes
     // there now, so 1440 / interval overstated what it drains by half or more.
     const drainPerDay = drainPerDayOf(intervalMs);
-    if (perDay > drainPerDay) {
+    // Not while the slate is on: none of those budgets runs then, and the queue
+    // holds only a slate post waiting to be retried.
+    if (!postConfig().slate.on && perDay > drainPerDay) {
       console.log(
         `   ⚠️ budgets produce ${perDay}/day and the drip publishes ${drainPerDay}/day inside the windows (${windowsHe()}) - ` +
           `the queue will grow by ${perDay - drainPerDay} a day. Lower a budget or shorten POST_INTERVAL_MINUTES.`
