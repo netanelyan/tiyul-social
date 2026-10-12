@@ -96,6 +96,26 @@ export async function ffmpegReady() {
 }
 
 /**
+ * Whether a rendered file carries an audio stream, read off the file itself.
+ *
+ * The candidate says what the renderer meant to mix in; this says what came out,
+ * and the owner's rule is about the second: a video posts only with sound in it.
+ * `ffmpeg -i` with no output always exits non-zero, so the answer is read off its
+ * stderr whatever the exit code.
+ */
+export async function audioStreamIn(file) {
+  let text = '';
+  try {
+    const { stderr } = await run(ffmpegPath(), ['-hide_banner', '-i', file]);
+    text = String(stderr || '');
+  } catch (e) {
+    text = String(e?.stderr || '');
+    if (!/Input #0/.test(text)) throw new Error(`could not read ${file}: ${text.trim().split('\n').pop() || e.message}`);
+  }
+  return /Stream #[^\n]*: Audio:/.test(text);
+}
+
+/**
  * Where the line goes and what colour it is — measured, not assumed.
  *
  * The first version hardcoded white, centred, at a fixed height, and it showed:

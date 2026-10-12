@@ -64,7 +64,7 @@ export function spread(list, n) {
  * window dropped and named (a configured slot that can never post is a mistake
  * in the file, and the digest says so rather than quietly posting less).
  */
-export function slotsFor(date, cfg = postConfig().slate, { rampTiktok = null, notBefore = null } = {}) {
+export function slotsFor(date, cfg = postConfig().slate, { rampTiktok = null, notBefore = null, label = '' } = {}) {
   const day = cfg.slotsByDay?.[String(weekday(date))] || cfg.slots;
   const dropped = [];
   // A slate built late (the bot started after the digest time) drops the slots
@@ -72,19 +72,23 @@ export function slotsFor(date, cfg = postConfig().slate, { rampTiktok = null, no
   // every past one at once, a minute apart.
   const keep = (hhmm, platform) => {
     const at = israelInstant(date, hhmm);
-    if (inShabbat(at)) return dropped.push(`${platform} ${hhmm}: שבת`), null;
-    if (!inWindow(at)) return dropped.push(`${platform} ${hhmm}: מחוץ לשעות הפרסום`), null;
-    if (notBefore != null && at.getTime() < notBefore) return dropped.push(`${platform} ${hhmm}: השעה עברה`), null;
+    if (inShabbat(at)) return dropped.push(`${label}${platform} ${hhmm}: שבת`), null;
+    if (!inWindow(at)) return dropped.push(`${label}${platform} ${hhmm}: מחוץ לשעות הפרסום`), null;
+    if (notBefore != null && at.getTime() < notBefore) return dropped.push(`${label}${platform} ${hhmm}: השעה עברה`), null;
     return at;
   };
-  let tiktok = day.tiktok.map((t) => keep(t, 'טיקטוק')).filter(Boolean);
-  const instagram = day.instagram.map((t) => keep(t, 'אינסטגרם')).filter(Boolean);
+  let tiktok = (day?.tiktok || []).map((t) => keep(t, 'טיקטוק')).filter(Boolean);
+  const instagram = (day?.instagram || []).map((t) => keep(t, 'אינסטגרם')).filter(Boolean);
   if (rampTiktok != null) tiktok = spread(tiktok, rampTiktok);
   return { tiktok, instagram, dropped };
 }
 
 /** What a viewer sees as "the same post again". The plan type is the one whose look changes the design. */
 export const templateOf = (deck) => (deck?.type === 'plan' ? `plan:${deck.look}` : deck?.type || 'unknown');
+
+/** The same, for any candidate: a video by its format, a news card as one template. */
+export const templateOfCand = (cand) =>
+  cand?.kind === 'clip' ? `clip:${cand.clip?.format || cand.clip?.shape || 'clip'}` : cand?.kind === 'card' ? 'card' : templateOf(cand?.deck);
 
 function permutations(list) {
   if (list.length <= 1) return [list.slice()];

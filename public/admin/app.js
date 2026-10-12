@@ -8,7 +8,7 @@
 // from a phone at the moment something else is already broken.
 //
 // THE SERVER DECIDES WHAT IS LEGAL, ALWAYS. Every button here is drawn from a
-// flag the server sent (`canRetitle`, `privacy`, `draft`) rather than from the
+// flag the server sent (`canRetitle`, `privacy`) rather than from the
 // page's own idea of what a kind supports. A page that offers a button the server
 // refuses is a page that looks broken, and the rules live in one place already —
 // stagingButtons in bot.js, which is what those flags are computed from.
@@ -345,7 +345,6 @@ function pendingCard(item) {
     el('span', { className: 'title', textContent: item.headline || '(ללא כותרת)' }),
   ]);
   for (const t of item.targets) head.append(el('span', { className: 'tag', textContent: t }));
-  if (item.draft && item.targets.includes('tiktok')) head.append(el('span', { className: 'tag', textContent: 'טיוטה' }));
 
   const actions = el('div', { className: 'row-actions' }, [
     el('button', {
@@ -482,15 +481,6 @@ function queueCard(item) {
       onclick: () => act('פרסום', () => api('/queue/publish', { method: 'POST', body: { n: item.n } })),
     }),
   ]);
-  // Offered on anything TikTok will take, including a post whose draft has
-  // already gone: re-sending after the file was redrawn is what the button is
-  // most useful for. The server is what decides, by kind — see draftQueued.
-  actions.append(
-    el('button', {
-      textContent: '🎵 טיוטה לטיקטוק',
-      onclick: () => act('טיוטה', () => api('/queue/draft', { method: 'POST', body: { n: item.n } })),
-    })
-  );
 
   const card = el('div', { className: 'card item' }, [head]);
   const pics = shots(item);

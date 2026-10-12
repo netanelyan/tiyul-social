@@ -1886,24 +1886,15 @@ withEnv({ ...IG, CHANNEL_ID: '@c' }, () => {
   ok('nothing publishes to Telegram, even with a channel configured', !allowedForKind('card').includes('telegram'));
   ok('not even a deck', !allowedForKind('deck').includes('telegram'));
 
-  // /draft asks whether the KIND belongs on TikTok, not whether this copy still
-  // owes it one.
-  //
-  // Approving a deck hands TikTok its draft at once and leaves only Instagram
-  // queued, so the target is spent a second after the tap - and a draft was
-  // therefore unrepeatable. The one moment you most want to send it again is
-  // after the file behind it has been fixed (npm run redraw), and the answer
-  // was "this item is not meant for TikTok" about a deck just sent there.
-  //
-  // The kind check is what keeps that from becoming "anything, anywhere": a
-  // card is still refused by name, because a card is an Instagram post.
+  // THE DRAFT PATH IS GONE FROM NORMAL POSTING (12 Oct 2026). /draft sent a queued
+  // post to the TikTok inbox by hand, and approving a card sent its TikTok half
+  // there at once. Every TikTok post now leaves publicly through Zernio, and the
+  // inbox draft is only Zernio's fallback (src/publish/tiktokRoute.js).
   const botSrc = readFileSync(new URL('../bot.js', import.meta.url), 'utf8');
-  ok('/draft allows a re-send', /const belongs = targetsForKind\(item\.kind\)\.includes\('tiktok'\)/.test(botSrc));
-  ok('and still refuses a kind that does not belong there', /!targets\.includes\('tiktok'\) && !belongs/.test(botSrc));
-  ok('a card is such a kind', !allowedForKind('card').includes('tiktok'));
-  ok('a plan is not', allowedForKind('plan').includes('tiktok'));
-  // The second draft cannot withdraw the first, so the command has to say so.
-  ok('and it says the old draft stays in the inbox', /מחקו את הקודמת בטיקטוק/.test(botSrc));
+  ok('there is no /draft command', !/bot\.command\('draft'/.test(botSrc) && !/function draftQueued/.test(botSrc));
+  ok('approving a card no longer hands TikTok a draft', !/draftNow/.test(botSrc));
+  ok('a card is still never a TikTok post', !allowedForKind('card').includes('tiktok'));
+  ok('a plan is', allowedForKind('plan').includes('tiktok'));
 
   // The distinction health and the quiet alarm depend on. publishTargets says
   // what is CONFIGURED and still counts a Telegram channel; liveTargets says
@@ -4300,28 +4291,19 @@ group('clip candidate - the fields the publish path reads');
 {
   const { targetsForKind, allowedForKind } = await import('../src/publish/targets.js');
 
-  // A clip is PUBLISHED to TikTok alone, and belongs on Instagram anyway.
-  //
-  // Both halves matter and they are separate assertions on purpose. A reel's
-  // audio cannot be changed after posting and the owner picks the sound in the
-  // app, so the Instagram copy is a hand-off. Automatic publishing was built on
-  // 5 Oct 2026 and set aside the same day by the owner's choice; see targets.js.
+  // A clip is PUBLISHED to both, a TikTok video and an Instagram Reel, through
+  // Zernio (12 Oct 2026). The Instagram hand-off existed only because a reel
+  // published from here would have gone up silent; the sound rule now stops
+  // that at publish (soundOf in src/video/tracks.js), so nothing is by hand.
   const { manualForKind } = await import('../src/publish/targets.js');
-  eq('a clip publishes to TikTok alone', allowedForKind('clip').join(','), 'tiktok');
-  eq('and Instagram is still where it belongs, by hand', manualForKind('clip').join(','), 'instagram');
-
-  // A hand-off is NOT a publish target. Nothing calls it, nothing can fail on
-  // it, and nothing records it as published; adding it to one is how a copy
-  // nobody made gets logged as a post.
-  ok('a manual destination never appears in the publish list',
-    manualForKind('clip').every((t) => !allowedForKind('clip').includes(t)));
-  eq('nothing else has one', manualForKind('deck').length + manualForKind('card').length, 0);
+  eq('a clip publishes to Instagram and TikTok', allowedForKind('clip').join(','), 'instagram,tiktok');
+  eq('and nothing is left to post by hand', manualForKind('clip').length + manualForKind('deck').length + manualForKind('card').length, 0);
 
   // targetsForKind filters by what is CONFIGURED, so this is empty on a box
   // with no credentials. That is the correct answer and the publish path holds
   // rather than failing, but the editorial rule above must hold regardless of
   // what happens to be configured.
-  ok('the rule does not depend on configuration', allowedForKind('clip').length === 1);
+  ok('the rule does not depend on configuration', allowedForKind('clip').length === 2);
   ok('targetsForKind is a subset of what is allowed',
     targetsForKind('clip').every((t) => allowedForKind('clip').includes(t)));
 }
@@ -4330,24 +4312,18 @@ group('clip candidate - the fields the publish path reads');
 group('a reel: its sound line, and a caption for every format');
 
 {
-  const { silentSoundLine } = await import('../src/video/tracks.js');
+  const { soundLine } = await import('../src/video/tracks.js');
   const { hasLongDash } = await import('../src/dashes.js');
   const { audioLine } = await import('../src/video/clip.js');
 
-  // A silent file is two different facts. On TikTok the sound is picked in the
-  // app; on Instagram the reel publishes as it is and stays that way, so the
-  // card has to say so while the reel can still be refused.
-  ok('to Instagram, the card says the reel goes up silent',
-    silentSoundLine(['instagram', 'tiktok']).includes('באינסטגרם הרילס יעלה שקט'));
-  ok('and that TikTok still gets its sound in the app',
-    silentSoundLine(['instagram', 'tiktok']).includes('בטיקטוק'));
-  ok('to Instagram alone, TikTok is not mentioned', !silentSoundLine(['instagram']).includes('טיקטוק'));
-  eq('to TikTok alone, it is the old line', silentSoundLine(['tiktok']), '🎵 הסאונד נבחר באפליקציה');
-  ok('every stock clip card reads the same line',
-    audioLine({ publishTargets: ['instagram', 'tiktok'], clip: { audio: null } }).includes('יעלה שקט'));
+  // A silent file is not posted (the owner's rule, 12 Oct 2026), so the card says
+  // that rather than where a sound would be picked: nobody picks one any more.
+  ok('a silent reel says it will not be posted', /לא יפורסם/.test(soundLine({ clip: {} })));
+  ok('and so does a stock clip card', /לא יפורסם/.test(audioLine({ clip: { audio: null } })));
+  ok('a narrated reel says it speaks', soundLine({ clip: { narrated: true } }).includes('קריינות'));
   ok('and a card with a track still names the track',
     audioLine({ publishTargets: ['instagram'], clip: { audio: true, track: 'calm.mp3' } }).includes('calm.mp3'));
-  ok('no line carries a long dash', [silentSoundLine(['instagram', 'tiktok']), silentSoundLine(['instagram'])].every((s) => !hasLongDash(s)));
+  ok('no line carries a long dash', [soundLine({ clip: {} }), soundLine({ clip: { narrated: true } })].every((s) => !hasLongDash(s)));
 }
 
 {
@@ -4438,7 +4414,7 @@ group('the music bed - a reel cannot be given a sound after it is posted');
     t.forgetTracks();
   };
   const declared = (over = {}) => ({
-    file: 'bed.mp3', title: 'A Bed', credit: 'Somebody', licence: 'CC0', source: 'https://example.invalid/x', ...over,
+    file: 'bed.mp3', title: 'A Bed', credit: 'Somebody', licence: 'CC0', source: 'https://example.invalid/x', commercial: true, ...over,
   });
   writeFileSync(join(dir, 'bed.mp3'), 'not really an mp3, but it exists');
   writeFileSync(join(dir, 'stray.mp3'), 'a file nobody declared');
@@ -4465,6 +4441,25 @@ group('the music bed - a reel cannot be given a sound after it is posted');
     try { t.tracks(); } catch (e) { threw = e.message; }
     ok(`a track with no ${field} is refused by name`, threw?.includes('bed.mp3') && threw?.includes(field), threw);
   }
+
+  // THE ACCOUNT IS A BUSINESS. A track is usable only when the manifest says its
+  // licence covers commercial use, in a field of its own (12 Oct 2026).
+  manifest([declared({ commercial: undefined })]);
+  {
+    let threw = null;
+    try { t.tracks(); } catch (e) { threw = e.message; }
+    ok('a track not marked commercial is refused by name', threw?.includes('bed.mp3') && /commercial/.test(threw), threw);
+  }
+
+  // THE OWNER'S SOUND RULE, read off a candidate: a voiceover, or a declared
+  // commercial track, or the video is not posted.
+  manifest([declared()]);
+  ok('a reel on a declared commercial track may be posted', t.soundOf({ clip: { audio: true, track: 'bed.mp3' } }).ok);
+  ok('so may a stock clip that recorded its track entry', t.soundOf({ clip: { audio: { name: 'bed.mp3' } } }).ok);
+  ok('and a narrated one, on its voice', t.soundOf({ clip: { narrated: true } }).kind === 'voice');
+  ok('a silent one may not', !t.soundOf({ clip: { audio: false } }).ok);
+  ok('nor one on a track the manifest does not declare', !t.soundOf({ clip: { audio: true, track: 'stray.mp3' } }).ok);
+  ok('nor a guide whose voice was never configured', !t.soundOf({ clip: { narrated: false } }).ok);
 
   // Declared and absent throws too. Skipping it silently would leave a silent
   // post, which is indistinguishable from the bug this exists to fix.
@@ -4510,14 +4505,9 @@ group('the music bed - a reel cannot be given a sound after it is posted');
   ok('a sounded clip names the track and its licence',
     audioLine({ clip: { audio: { title: 'A Bed', credit: 'Somebody', licence: 'CC0', offset: 12 } } }).includes('CC0'));
 
-  // NO TRACK IS NOT A WARNING ANY MORE, and that is a real change rather than a
-  // softened string. It read "⚠️ אין פסקול - יעלה אילם לרילס", which was true
-  // while a clip published to Instagram unattended: a reel's audio is fixed at
-  // upload, so a silent file meant a permanently silent post. Nothing publishes
-  // a reel now, so silence is the plan, and a warning against the intended
-  // workflow is what teaches somebody to skim the card.
-  ok('a silent clip says where its sound comes from', /באפליקציה/.test(audioLine({ clip: {} })));
-  ok('and does not warn about the normal case', !audioLine({ clip: {} }).includes('⚠️'));
+  // A clip publishes as a Reel again (12 Oct 2026), so a silent file would be a
+  // permanently silent post: the card says it will not be posted.
+  ok('a silent clip says it will not be posted', /לא יפורסם/.test(audioLine({ clip: {} })));
 
   // The mix itself is config, and the ceiling exists so a typo of 35 for 0.35
   // cannot ship a clip that clips. Asserted whatever `on` says, because the
@@ -4525,9 +4515,10 @@ group('the music bed - a reel cannot be given a sound after it is posted');
   const acfg = postConfig().clips.audio;
   ok('the bed sits under the line rather than over it', acfg.volume > 0 && acfg.volume <= 1, `volume=${acfg.volume}`);
   ok('it fades out, so an eight-second loop does not click', acfg.fadeOutSeconds > 0);
-  // Off by default: the sound is chosen by hand in each app, and a bed under a
-  // track added in the Instagram app MIXES with it rather than being replaced.
-  ok('and it is off, because the sound is chosen in the app', acfg.on === false);
+  // On since 12 Oct 2026: nobody picks a sound in an app any more, clips publish
+  // through Zernio, and a reel without a voice needs a track in the file.
+  ok('and it is on, because a video needs its own sound', acfg.on === true);
+  eq('the gems reel mixes a declared track too', postConfig().gems.sound, 'library');
 
   if (saved === undefined) delete process.env.AUDIO_DIR;
   else process.env.AUDIO_DIR = saved;
@@ -8906,7 +8897,7 @@ group('the hidden gems reel - the length is the format, and the hook has to deli
 
   // The audio line takes two shapes of the same field, because the three stock shapes
   // record the whole track entry and the reels record whether there is one at all.
-  eq('no bed says so', audioLine({ clip: { audio: false } }), '🎵 הסאונד נבחר באפליקציה');
+  ok('no bed says the reel is not posted', /לא יפורסם/.test(audioLine({ clip: { audio: false } })));
   ok('a named track prints its name', /bed-02/.test(audioLine({ clip: { audio: true, track: 'bed-02.mp3' } })));
   ok('and a track entry prints its licence', /CC0/.test(audioLine({ clip: { audio: { title: 'x', credit: 'y', licence: 'CC0' } } })));
   ok('and neither ever prints undefined', !/undefined/.test(audioLine({ clip: { audio: true } })));
@@ -10169,7 +10160,7 @@ group('the daily slate - one tap a day, and nothing goes out unapproved');
   const { buildSlateDecks, openingKey } = await import('../src/slate/build.js');
   const runner = await import('../src/slate/runner.js');
   const z = await import('../src/publish/zernio.js');
-  const { publishTikTokRouted } = await import('../src/publish/tiktokRoute.js');
+  const { publishTikTokRouted, publishInstagramRouted } = await import('../src/publish/tiktokRoute.js');
   const { inWindow, inShabbat } = await import('../src/schedule.js');
   const cfg = postConfig().slate;
 
@@ -10313,8 +10304,8 @@ group('the daily slate - one tap a day, and nothing goes out unapproved');
   ok('a refusal comes back as a card-level error with TikTok\'s reason', refused && z.isCardLevelZernio(refused) && /images rejected/.test(refused.message));
 
   // THE FALLBACK TO DRAFTS, and the caps.
-  const route = { via: 'zernio', privacy: 'SELF_ONLY', autoAddMusic: true, fallback: 'draft', dailyCap: 3 };
-  const slateCand = { id: 's1', headline: 'h', tiktokVia: 'zernio', tiktokDraft: true, deck: { urls: { tiktok: ['a', 'b'] } } };
+  const route = { privacy: 'SELF_ONLY', autoAddMusic: true, fallback: 'draft', dailyCap: 3 };
+  const slateCand = { id: 's1', headline: 'h', tiktokDraft: true, deck: { urls: { tiktok: ['a', 'b'] } } };
   let drafted = 0;
   const viaZ = await publishTikTokRouted(slateCand, { cfg: route, deps: { zernio: async () => ({ draft: false, via: 'zernio' }), draft: async () => (drafted++, { draft: true }), usedLast24h: () => 0, cap: () => 3 } });
   ok('a slate post goes through Zernio', viaZ.via === 'zernio' && drafted === 0);
@@ -10337,10 +10328,65 @@ group('the daily slate - one tap a day, and nothing goes out unapproved');
   }
   ok('the daily cap stops the post before Zernio is called', capped?.code === 'zernio_daily_cap' && !zernioCalled);
   ok('and is a platform limit, so it waits for tomorrow', z.isPlatformLimitZernio(capped));
-  const legacy = await publishTikTokRouted({ ...slateCand, tiktokVia: null }, { cfg: route, deps: { legacy: async (c) => ({ draft: Boolean(c.tiktokDraft), legacy: true }) } });
-  ok('anything not from the slate stays the inbox draft it always was', legacy.legacy && legacy.draft);
-  const off = await publishTikTokRouted(slateCand, { cfg: { ...route, via: 'draft' }, deps: { legacy: async (c) => ({ draft: Boolean(c.tiktokDraft), legacy: true }) } });
-  ok('and with Zernio switched off, a slate post is a draft too', off.legacy && off.draft);
+  // ONE PATH (12 Oct 2026). There is no `via` switch and no candidate flag that
+  // keeps a post a draft: anything that reaches TikTok goes through Zernio, and the
+  // inbox draft is only what a Zernio failure falls back to.
+  const anyCand = { id: 'a1', headline: 'h', tiktokDraft: true, deck: { urls: { tiktok: ['a', 'b'] } } };
+  let viaAny = null;
+  const plain = await publishTikTokRouted(anyCand, { cfg: route, deps: { zernio: async () => ((viaAny = 'zernio'), { draft: false, via: 'zernio' }), draft: async () => (drafted++, { draft: true }), usedLast24h: () => 0, cap: () => 3 } });
+  ok('a post that is not from the slate goes through Zernio too', viaAny === 'zernio' && plain.draft === false && drafted === 1);
+  ok('the config has no switch back to drafts', !('via' in postConfig().publish.tiktok));
+  const routeSrc = readFileSync(new URL('../src/publish/tiktokRoute.js', import.meta.url), 'utf8');
+  ok('and the router calls the draft only inside the fallback', (routeSrc.match(/publishTikTok\(/g) || []).length === 1 && /draft: true/.test(routeSrc));
+
+  // VIDEOS: the same door, as a video post, and only with sound.
+  const narrated = { id: 'v1', kind: 'clip', headline: 'h', tiktokCaption: 'c', clip: { narrated: true, file: '/x/clip-v1.mp4', url: 'https://cards.example/clip-v1.mp4' } };
+  const silent = { ...narrated, id: 'v2', clip: { audio: false, file: '/x/clip-v2.mp4', url: 'https://cards.example/clip-v2.mp4' } };
+  let videoCall = null;
+  const vid = await publishTikTokRouted(narrated, { cfg: route, deps: { zernioVideo: async (c, o) => ((videoCall = o), { draft: false, via: 'zernio' }), zernio: async () => { throw new Error('the carousel door'); }, draft: async () => (drafted++, { draft: true }), usedLast24h: () => 0, cap: () => 3 } });
+  ok('a clip goes to TikTok as a Zernio video', vid.via === 'zernio' && videoCall?.platform === 'tiktok' && videoCall?.privacy === 'SELF_ONLY');
+  let silentRefused = null;
+  let silentDrafted = drafted;
+  try {
+    await publishTikTokRouted(silent, { cfg: route, deps: { zernioVideo: async () => ({}), draft: async () => (drafted++, { draft: true }), usedLast24h: () => 0, cap: () => 3 } });
+  } catch (e) {
+    silentRefused = e;
+  }
+  ok('a silent clip is refused before Zernio', silentRefused?.code === 'no_sound' && silentRefused?.step === 'config');
+  ok('and is not sent to the inbox as a draft either', drafted === silentDrafted);
+  let reelCall = null;
+  const reel = await publishInstagramRouted(narrated, { deps: { zernioVideo: async (c, o) => ((reelCall = o), { mediaId: '1789', via: 'zernio' }), graph: async () => ({ graph: true }) } });
+  ok('a clip goes to Instagram as a Reel through Zernio', reel.via === 'zernio' && reelCall?.platform === 'instagram');
+  const photo = await publishInstagramRouted({ id: 'p1', kind: 'post' }, { deps: { zernioVideo: async () => ({}), graph: async () => ({ graph: true }) } });
+  ok('anything else still takes the Instagram API', photo.graph === true);
+  let silentReel = null;
+  try {
+    await publishInstagramRouted(silent, { deps: { zernioVideo: async () => ({}), graph: async () => ({}) } });
+  } catch (e) {
+    silentReel = e;
+  }
+  ok('and a silent clip is no Reel either', silentReel?.code === 'no_sound');
+
+  const vbody = z.videoBody({ tiktokCaption: 'כיתוב', instagramCaption: 'כיתוב לאינסטגרם' }, { platform: 'tiktok', accountId: 'a', privacy: 'PUBLIC_TO_EVERYONE', videoUrl: 'https://c/v.mp4' });
+  ok('a TikTok video carries its caption as content, with the consent flags', vbody.content === 'כיתוב' && vbody.mediaItems[0].type === 'video' && vbody.tiktokSettings.content_preview_confirmed && vbody.tiktokSettings.express_consent_given);
+  ok('and no photo-only fields', !('auto_add_music' in vbody.tiktokSettings) && !('description' in vbody.tiktokSettings));
+  const rbody = z.videoBody({ tiktokCaption: 'כיתוב', instagramCaption: 'כיתוב לאינסטגרם' }, { platform: 'instagram', accountId: 'b', videoUrl: 'https://c/v.mp4' });
+  ok('a Reel carries the Instagram caption and goes to the feed too', rbody.content === 'כיתוב לאינסטגרם' && rbody.platforms[0].platformSpecificData.shareToFeed === true && !rbody.tiktokSettings);
+
+  // A post Zernio is still processing when the wait runs out is not a failure:
+  // a fallback or a retry on top of it is how one post becomes two.
+  const slow = await z.publishZernioTikTok(
+    { headline: 'h', tiktokCaption: 'c', deck: { urls: { tiktok: ['https://c/1.jpg', 'https://c/2.jpg'] } } },
+    {
+      privacy: 'SELF_ONLY',
+      env: zenv,
+      pollMs: 1,
+      timeoutMs: 5,
+      fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ post: { _id: 'slow1', status: 'publishing', platforms: [{ platform: 'tiktok', status: 'processing' }] } }) }),
+    }
+  );
+  ok('a post still processing comes back pending, not as an error', slow.pending === true && slow.zernioId === 'slow1' && slow.notes.some((n) => /עדיין מעבד/.test(n)));
+  ok('the Instagram account is found like the TikTok one', (await z.accountIdFor('instagram', { env: { ZERNIO_API_KEY: 'k', ZERNIO_INSTAGRAM_ACCOUNT_ID: 'ig1' } })) === 'ig1');
   const { privacyLevel } = await import('../src/publish/tiktokRoute.js');
   ok('a privacy value TikTok does not know posts as SELF_ONLY', ['PUBLIC', 'public_to_everyone', '', undefined].every((v) => privacyLevel(v) === 'SELF_ONLY'));
   ok('and the real ones pass through', ['PUBLIC_TO_EVERYONE', 'SELF_ONLY', 'MUTUAL_FOLLOW_FRIENDS', 'FOLLOWER_OF_CREATOR'].every((v) => privacyLevel(v) === v));
@@ -10403,13 +10449,114 @@ group('the daily slate - one tap a day, and nothing goes out unapproved');
   throws('a bad entry is refused before it is written', () => inboxMod.addToInbox({ ...entry, platforms: [] }, inboxTmp));
 
   const botSlate = readFileSync(new URL('../bot.js', import.meta.url), 'utf8');
-  ok('the slate places the inbox before it builds, and builds for the slots left', /placeInbox\(inbox\.entries, slots, \{ date \}\)/.test(botSlate) && /count: fromInbox\.slots\.tiktok\.length/.test(botSlate));
+  ok('the slate places the inbox before it builds, and builds for the slots left', /placeInbox\(inbox\.entries, slots, \{ date, videoSlots \}\)/.test(botSlate) && /count: fromInbox\.slots\.tiktok\.length/.test(botSlate) && /slateVideos\(fromInbox\.videoSlots\.tiktok\.length\)/.test(botSlate));
   ok('the inbox files leave only after the slate is saved', /store\.putSlate\(slate\);\s*fromInbox\.files\.forEach\(markInboxUsed\);/.test(botSlate));
 
   const botSrc3 = readFileSync(new URL('../bot.js', import.meta.url), 'utf8');
   ok('the published record says what TikTok actually got, not what was asked', /publishedFacts\(\{ \.\.\.cand, tiktokDraft: tiktokWasDraft \}\)/.test(botSrc3) && /const drafted = tiktokWasDraft &&/.test(botSrc3));
-  ok('the rotation builds no slideshows while the slate is on', /postConfig\(\)\.slate\.on \? \['post'\] : \[\]/.test(botSrc3));
+  // ONE PIPELINE (12 Oct 2026): with the slate on, nothing else makes posts or asks
+  // for a tap. The rotation's reels, the deck ideas and the news gather are off, and
+  // a post built by a command goes into the next digest instead of a card of its own.
+  ok('the rotation builds nothing while the slate is on', /if \(rotationOn\(\) && !slateOn\)/.test(botSrc3));
+  ok('nor do the deck ideas', /!slateOn &&\s*inHours &&\s*DECKS_PER_DAY > 0/.test(botSrc3));
+  ok('nor the news gather', /if \(!slateOn && inHours && remaining > 0 && due\)/.test(botSrc3));
+  ok('nor any of the per-kind counters', (botSrc3.match(/!rotationOn\(\) &&\s*!slateOn &&/g) || []).length === 5);
+  ok('a post built by a command goes to the next digest, not to a card', /async function stage\(candidate\) \{\s*if \(postConfig\(\)\.slate\.on\) return toNextDigest\(candidate\);/.test(botSrc3));
+  ok('the tokens are still refreshed daily without the gather', /if \(inHours && day !== lastRunDay\) \{\s*lastRunDay = day;\s*maybeRefreshIgToken/.test(botSrc3));
   ok('Telegram and the admin site approve through one function', (botSrc3.match(/approveSlate\(israelDate\(\), \{ by \}\)|approveSlate\(ctx\.match\[1\], \{ by: 'telegram' \}\)/g) || []).length === 2);
+
+  // THE DAY'S VIDEOS (12 Oct 2026): slots of their own, inside the windows and out
+  // of Shabbat, one TikTok video and the same file as a Reel.
+  {
+    const vCfg = cfg.videos;
+    ok('the videos have their own slots', vCfg.slots.tiktok.length >= 1 && vCfg.slots.instagram.length >= 1);
+    for (const date of ['2026-10-12', '2026-10-16', '2026-10-17']) {
+      const v = plan.slotsFor(date, vCfg, { label: 'סרטון ' });
+      ok(`${date}: every video slot is inside a window and out of Shabbat`, v.dropped.length === 0 && [...v.tiktok, ...v.instagram].every((t) => inWindow(t) && !inShabbat(t)), v.dropped.join('; '));
+      const fit = plan.assign([{ template: 'clip:x' }], v, { gapMs: cfg.sameDeckGapMinutes * 60_000 });
+      ok(`${date}: the Reel is at least the gap after its TikTok video`, fit.items[0]?.instagramAt && Math.abs(fit.items[0].instagramAt - fit.items[0].tiktokAt) >= cfg.sameDeckGapMinutes * 60_000);
+      const day = plan.slotsFor(date, cfg);
+      const apart = (mine, theirs) => mine.every((t) => !theirs.some((u) => Math.abs(u - t) < 15 * 60_000));
+      ok(`${date}: and no video is within a quarter hour of a slideshow on its platform`, apart(v.tiktok, day.tiktok) && apart(v.instagram, day.instagram));
+    }
+    ok('no video slots configured means no videos', plan.slotsFor('2026-10-12', { slots: { tiktok: [], instagram: [] }, slotsByDay: {} }).tiktok.length === 0);
+
+    // The inbox takes every kind now, and a video only with its sound.
+    const clipUrl = 'https://cards.example/clip-v9.mp4';
+    const voiced = { id: 'v9', kind: 'clip', headline: 'ג׳מים', place: 'א · ב', clip: { shape: 'hidden_gems_video', format: 'hidden_gems_video', narrated: true, seconds: 9, file: '/x/clip-v9.mp4', url: clipUrl } };
+    const mute = { ...voiced, id: 'v8', clip: { ...voiced.clip, narrated: false, audio: false } };
+    eq('a video with a voice is a valid entry', inboxMod.entryProblem({ cand: voiced, platforms: ['tiktok', 'instagram'] }), null);
+    ok('a silent one is not, and says why', /לא מתפרסם/.test(inboxMod.entryProblem({ cand: mute, platforms: ['tiktok'] }) || ''));
+    const news = { id: 'c9', kind: 'card', headline: 'כרטיס', card: { url: 'https://cards.example/c9.jpg' }, trip: { where: 'ניס' } };
+    eq('a news card is a valid Instagram entry', inboxMod.entryProblem({ cand: news, platforms: ['instagram'] }), null);
+    ok('and only an Instagram one', /Instagram only/.test(inboxMod.entryProblem({ cand: news, platforms: ['tiktok'] }) || ''));
+    eq('a deck is a valid entry', inboxMod.entryProblem({ cand: { ...florenceIg, id: 'd9', kind: 'deck' }, platforms: ['instagram'] }), null);
+    const mon = plan.slotsFor('2026-10-12', cfg);
+    const monV = plan.slotsFor('2026-10-12', vCfg);
+    const lanes = inboxMod.placeInbox(
+      [{ file: 'v.json', entry: { cand: voiced, platforms: ['tiktok', 'instagram'] } }, { file: 'c.json', entry: { cand: news, platforms: ['instagram'] } }],
+      mon,
+      { date: '2026-10-12', videoSlots: monV }
+    );
+    ok('a video takes the video slots', lanes.items[0].tiktokAt === monV.tiktok[0] && lanes.items[0].instagramAt === monV.instagram[0] && lanes.videoSlots.tiktok.length === monV.tiktok.length - 1);
+    ok('and leaves the slideshow slots alone', lanes.items[1].instagramAt === mon.instagram[0] && lanes.slots.tiktok.length === mon.tiktok.length);
+    eq('a video is its own template', lanes.items[0].template, 'clip:hidden_gems_video');
+
+    // The digest shows a video as a video, with its sound, and a card as a card.
+    const vDigest = digestMessage(st.newSlate({ date: '2026-10-12', items: lanes.items }));
+    ok('the album plays the video itself', vDigest.media[0].type === 'video' && vDigest.media[0].media === clipUrl);
+    ok('and shows the card', vDigest.media[1].type === 'photo' && vDigest.media[1].media === news.card.url);
+    ok('its line names the format, its length and its sound', /🎬 ג׳מים · א · ב · 9 שניות/.test(vDigest.text) && /קריינות/.test(vDigest.text));
+    ok('and its Instagram half as a Reel', /רילס \d\d:\d\d/.test(vDigest.text));
+    ok('a card line says what it is', /📰 כרטיס · ניס/.test(vDigest.text));
+
+    // THE VIDEO BUILD: a format the sound check refuses is not a slot filled.
+    const { buildSlateVideos } = await import('../src/slate/build.js');
+    const order = ['postcard', 'hidden_gems_video'];
+    const made = await buildSlateVideos({
+      count: 1,
+      pick: (tried) => order.find((id) => !tried.includes(id)) || null,
+      buildOne: async (id) => ({ id: `x-${id}`, kind: 'clip', clip: { shape: id, format: id, narrated: id === 'hidden_gems_video' } }),
+      check: async (c) => (c.clip.narrated ? { ok: true } : { ok: false, why: 'אין בסרטון סאונד' }),
+    });
+    ok('a silent build is dropped and the next format tried', made.videos.length === 1 && made.videos[0].formatId === 'hidden_gems_video');
+    ok('and the drop is reported with its reason', made.failures.some((f) => /postcard/.test(f) && /אין בסרטון סאונד/.test(f)));
+    const nothing = await buildSlateVideos({ count: 1, pick: () => null, buildOne: async () => ({}), check: async () => ({ ok: true }) });
+    ok('nothing to build is said, not skipped', nothing.videos.length === 0 && nothing.failures.length === 1);
+    ok('the bot asks for sound before it builds a video', /const usable = await videoFormatsWithSound\(\);\s*if \(!usable\.ok\.length\) return \{ videos: \[\], warnings: \[`🔇 אין היום סרטון/.test(botSrc3));
+    ok('and checks the file itself for an audio stream', /audioStreamIn\(cand\.clip\.file\)/.test(botSrc3));
+  }
+
+  // THE LEFTOVERS of the per-post approvals: each one moves or is cancelled, once.
+  {
+    const { planLeftovers, leftoversReport } = await import('../src/slate/leftovers.js');
+    const { hasLongDash } = await import('../src/dashes.js');
+    const left = planLeftovers(
+      {
+        staged: [
+          { key: 'k1', cand: { id: 'deck1', kind: 'deck', publishTargets: ['instagram', 'tiktok'] } },
+          { key: 'k2', cand: { id: 'old1', kind: 'post' } },
+          { key: 'k3', cand: { id: 'new1', kind: 'card' } },
+        ],
+        queued: [{ id: 'q1', kind: 'card', pendingTargets: ['instagram'] }, { id: 'q2', kind: 'card', pendingTargets: ['instagram'] }],
+        proposals: [{ key: 'p1', proposal: { idea: { titleHe: 'רעיון' } } }],
+      },
+      {
+        move: [{ id: 'deck1', notBefore: '2026-10-13' }, { id: 'q1', platforms: ['instagram'], notBefore: '2026-10-14', note: 'n' }],
+        cancel: [{ id: 'old1', why: 'ישן' }],
+        unlisted: { notBefore: '2026-10-23' },
+      }
+    );
+    ok('a named one moves with its own date, owing what it owed', left.moves.some((m) => m.cand.id === 'deck1' && m.notBefore === '2026-10-13' && m.platforms.join(',') === 'instagram,tiktok'));
+    ok('a named cancel is cancelled with its reason', left.cancels.some((c) => c.cand.id === 'old1' && c.why === 'ישן'));
+    ok('an unnamed card nobody approved is cancelled', left.cancels.some((c) => c.cand.id === 'new1'));
+    ok('an unnamed approved post moves, after the named ones', left.moves.some((m) => m.cand.id === 'q2' && m.notBefore === '2026-10-23'));
+    ok('a deck idea is cancelled', left.cancels.some((c) => c.from === 'proposal' && c.key === 'p1'));
+    eq('and every leftover lands exactly once', left.moves.length + left.cancels.length, 6);
+    const report = leftoversReport({ moved: left.moves, cancelled: left.cancels, gone: ['zz'] });
+    ok('the report lists both, with no long dash', /עבר לתוכנית היומית/.test(report) && /בוטל/.test(report) && !hasLongDash(report));
+    ok('the bot applies the file once, at boot', /await applyLeftovers\(\)/.test(botSrc3) && /markLeftoversApplied\(/.test(botSrc3));
+  }
 }
 
 /* -------------------------------------------------------------------------- */

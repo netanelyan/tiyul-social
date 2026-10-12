@@ -1216,6 +1216,15 @@ export function queuedItems() {
  * person has misread the list and the last thing they need is for the bot to
  * confidently pick a neighbour.
  */
+/** Take one queued post out by its candidate id, or null. For the one-time move into the slate. */
+export function takeQueuedById(id) {
+  const i = state.queue.findIndex((c) => c?.id === id);
+  if (i === -1) return null;
+  const [item] = state.queue.splice(i, 1);
+  save();
+  return item;
+}
+
 export function takeQueuedAt(n) {
   const i = Number(n) - 1;
   if (!Number.isInteger(i) || i < 0 || i >= state.queue.length) return null;

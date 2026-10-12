@@ -10,7 +10,7 @@ import { COUNTRIES } from '../deck/flags.js';
 import { findClips } from './pexels.js';
 import { clipOutputDir } from './overlay.js';
 import { buildHiddenGemsClip } from './hiddenGems.js';
-import { silentSoundLine } from './tracks.js';
+import { soundLine } from './tracks.js';
 
 // THE "BEFORE YOU BOOK" REEL: the promise that reached the most people, paid off on
 // video, with a fact on every cut.
@@ -474,6 +474,6 @@ export function beforeApprovalMessage(cand) {
     `🔖 בסוף: ${c.questionHe}`,
     `📄 העובדות מהעמוד: ${cand.sourceUrl}`,
   ];
-  if (!c.audio) lines.push('', silentSoundLine(cand.publishTargets || []));
+  lines.push('', soundLine(cand));
   return lines.join('\n');
 }

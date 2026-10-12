@@ -294,10 +294,6 @@ export function startAdminServer(ops, {
       const body = await readJson(req).catch(() => ({}));
       return json(res, await ops.publish(body.n ?? null, { by: me }));
     }
-    if (path === '/api/queue/draft' && req.method === 'POST') {
-      const body = await readJson(req).catch(() => ({}));
-      return json(res, await ops.draft(body.n, { by: me }));
-    }
     if (path === '/api/held/retry' && req.method === 'POST') {
       return json(res, await ops.retryHeld({ by: me }));
     }

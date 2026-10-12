@@ -8,28 +8,36 @@ import {
   isPlatformLimit as isPlatformLimitTikTok,
   isConfigProblem as isConfigProblemTikTok,
 } from './tiktok.js';
+import { publishInstagram, describeError as describeInstagramError, isPlatformLimit as isPlatformLimitInstagram } from './instagram.js';
 import {
   ZernioError,
+  assertVideoSound,
   publishZernioTikTok,
+  publishZernioVideo,
   describeZernioError,
   isCardLevelZernio,
   isConfigProblemZernio,
   isPlatformLimitZernio,
 } from './zernio.js';
 
-// Which door a TikTok post leaves by, and what happens when that door fails.
+// Which door a post leaves by, and what happens when that door fails.
 //
-// THE SLATE'S POSTS GO PUBLICLY THROUGH ZERNIO; EVERYTHING ELSE STAYS A DRAFT.
-// A candidate the daily slate built carries `tiktokVia: 'zernio'`; clips, decks
-// and anything approved one at a time keep today's inbox draft. So turning
-// Zernio on changes the slideshows the owner approved in the morning digest and
-// nothing else.
+// ONE PATH, SINCE 12 OCT 2026. Everything reaches here from the daily slate, which
+// the owner approves in the 08:00 digest, and every TikTok post leaves publicly
+// through Zernio: a slideshow as a photo carousel, a clip as a video. A clip's
+// Instagram half is a Reel, also through Zernio. Instagram photos and carousels
+// keep the Instagram API they have published through for months.
 //
-// THE FALLBACK IS TODAY'S PATH. When Zernio fails for any reason that is not a
-// limit (a limit clears by itself, and the post waits for it), the same post goes
-// to the TikTok inbox as a draft, exactly as every post did before this file, and
-// the publish notice says it fell back and why. A post is never lost to the new
-// route, and never posted twice: the fallback runs only after Zernio said no.
+// THE TIKTOK INBOX DRAFT IS ONLY THE FALLBACK. When Zernio fails for any reason
+// that is not a limit (a limit clears by itself, and the post waits for it), the
+// same post goes to the TikTok inbox as a draft and the publish notice says it fell
+// back and why. A post is never lost to the new route, and never posted twice: the
+// fallback runs only after Zernio said no, never while Zernio is still working on
+// it (see createAndWait in zernio.js).
+//
+// A VIDEO WITHOUT SOUND IS NOT A FAILURE TO FALL BACK FROM. The owner's rule is that
+// a video goes out only with a voiceover or a track licensed for commercial use, so
+// a silent one is refused before Zernio is asked and does not become a draft.
 
 /** The zernio route's own ceiling: the lower of TIKTOK_DAILY_CAP and Zernio's 15. */
 export const zernioDailyCap = () => Math.min(15, TIKTOK_DAILY_CAP());
@@ -40,9 +48,9 @@ const PRIVACY_LEVELS = new Set(['PUBLIC_TO_EVERYONE', 'MUTUAL_FOLLOW_FRIENDS', '
 export const privacyLevel = (value) => (PRIVACY_LEVELS.has(value) ? value : 'SELF_ONLY');
 
 export async function publishTikTokRouted(cand, { cfg = postConfig().publish.tiktok, deps = {}, env = process.env } = {}) {
-  const viaZernio = cfg.via === 'zernio' && cand.tiktokVia === 'zernio';
+  const video = cand.kind === 'clip';
+  if (video) assertVideoSound(cand);
   const draft = deps.draft || ((c) => publishTikTok(c, { draft: true }));
-  if (!viaZernio) return (deps.legacy || ((c) => publishTikTok(c, { draft: Boolean(c.tiktokDraft) })))(cand);
 
   const used = (deps.usedLast24h || store.tiktokPostsInLast24h)();
   const cap = (deps.cap || zernioDailyCap)();
@@ -50,13 +58,12 @@ export async function publishTikTokRouted(cand, { cfg = postConfig().publish.tik
     throw new ZernioError(`${used} TikTok posts in the last 24 hours, the cap is ${cap}`, { step: 'platform_limit', code: 'zernio_daily_cap' });
   }
 
+  // A post may carry its own privacy (the first test was SELF_ONLY); otherwise the config's.
+  const privacy = privacyLevel(cand.tiktokPrivacy || cfg.privacy);
   try {
-    return await (deps.zernio || publishZernioTikTok)(cand, {
-      // A post may carry its own privacy (the first test is SELF_ONLY); otherwise the config's.
-      privacy: privacyLevel(cand.tiktokPrivacy || cfg.privacy),
-      autoAddMusic: cfg.autoAddMusic,
-      env,
-    });
+    return video
+      ? await (deps.zernioVideo || publishZernioVideo)(cand, { platform: 'tiktok', privacy, env })
+      : await (deps.zernio || publishZernioTikTok)(cand, { privacy, autoAddMusic: cfg.autoAddMusic, env });
   } catch (e) {
     if (isPlatformLimitZernio(e) || cfg.fallback !== 'draft') throw e;
     const res = await draft({ ...cand, tiktokDraft: true });
@@ -68,9 +75,24 @@ export async function publishTikTokRouted(cand, { cfg = postConfig().publish.tik
   }
 }
 
-/* ---------------------------------------------- the four questions, for both doors */
+/**
+ * Instagram: a clip is a Reel through Zernio, anything else the Instagram API.
+ *
+ * No fallback for the Reel. Instagram has no draft to fall back to, and the
+ * ordinary retry in bot.js is the right answer to a failure Zernio reported.
+ */
+export async function publishInstagramRouted(cand, { deps = {}, env = process.env } = {}) {
+  if (cand.kind !== 'clip') return (deps.graph || publishInstagram)(cand);
+  assertVideoSound(cand);
+  return (deps.zernioVideo || publishZernioVideo)(cand, { platform: 'instagram', env });
+}
+
+/* ---------------------------------------------- the four questions, for every door */
 
 export const describeTikTokAny = (e) => (e instanceof ZernioError ? describeZernioError(e) : describeTikTokError(e));
 export const isCardLevelTikTokAny = (e) => isCardLevelZernio(e) || isCardLevelTikTok(e);
 export const isPlatformLimitTikTokAny = (e) => isPlatformLimitZernio(e) || isPlatformLimitTikTok(e);
 export const isConfigProblemTikTokAny = (e) => isConfigProblemZernio(e) || isConfigProblemTikTok(e);
+
+export const describeInstagramAny = (e) => (e instanceof ZernioError ? describeZernioError(e) : describeInstagramError(e));
+export const isPlatformLimitInstagramAny = (e) => isPlatformLimitZernio(e) || isPlatformLimitInstagram(e);

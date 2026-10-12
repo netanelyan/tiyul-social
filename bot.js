@@ -44,7 +44,6 @@ import { buildWithFallback, describeAttempt } from './src/deck/attempt.js';
 import { buildFreeformDeck } from './src/deck/build.js';
 import { searchConfigured, remaining as searchRemaining, dailyBudget as searchBudget } from './src/search.js';
 import {
-  publishInstagram,
   instagramConfigured,
   remainingQuota,
   refreshToken,
@@ -74,17 +73,27 @@ import {
 } from './src/publish/tiktok.js';
 import {
   publishTikTokRouted,
+  publishInstagramRouted,
   describeTikTokAny,
+  describeInstagramAny,
   isCardLevelTikTokAny,
   isPlatformLimitTikTokAny,
+  isPlatformLimitInstagramAny,
   isConfigProblemTikTokAny,
 } from './src/publish/tiktokRoute.js';
-import { getPost as getZernioPost, tiktokPart as zernioTikTokPart, zernioConfigured } from './src/publish/zernio.js';
+import {
+  getPost as getZernioPost,
+  platformPart as zernioPart,
+  zernioConfigured,
+  isCardLevelZernio,
+} from './src/publish/zernio.js';
 import { slotsFor, assign as assignSlate, israelDate } from './src/slate/plan.js';
 import { newSlate, approveAll as approveAllSlate, skipItem as skipSlateItem, dueItems as slateDue, markOutcome as markSlateOutcome, expire as expireSlate } from './src/slate/state.js';
 import { digestMessage } from './src/slate/digest.js';
-import { readInbox, placeInbox, markUsed as markInboxUsed } from './src/slate/inbox.js';
-import { buildSlateDecks } from './src/slate/build.js';
+import { readInbox, placeInbox, markUsed as markInboxUsed, addToInbox, waitingIds as inboxIds } from './src/slate/inbox.js';
+import { buildSlateDecks, buildSlateVideos } from './src/slate/build.js';
+import { planLeftovers, readLeftoversPlan, markLeftoversApplied, leftoversReport } from './src/slate/leftovers.js';
+import { soundOf, tracks as declaredTracks } from './src/video/tracks.js';
 import { rampFor, lastTemplates, recentPlacesFor, recentOpeningsFor, digestTimeFor, recentFormatPicks } from './src/slate/runner.js';
 import { openTrends } from './src/trends/store.js';
 import { ensureOwnFormats, formatPicker, credit as creditFormats, judge as judgeFormats } from './src/trends/mix.js';
@@ -345,7 +354,42 @@ async function attachTikTok(cand) {
   }
 }
 
+/**
+ * Where a post built by a command waits while the slate is on: the next digest.
+ *
+ * THE OWNER'S ORDER, 12 OCT 2026: one pipeline, the 08:00 digest and then Zernio.
+ * So nothing gets an approval card of its own any more. The post goes into the
+ * slate inbox (src/slate/inbox.js), the next slate takes it into its earliest
+ * slots, and it is approved with the rest of the day in one tap. Said in the chat
+ * now, because the command that built it is waiting for an answer.
+ *
+ * Returns the inbox file, or null with the reason said when it cannot go (a video
+ * without licensed sound, a slideshow with no slides for any platform).
+ */
+async function toNextDigest(cand, { note = null } = {}) {
+  const allowed = allowedForKind(cand.kind);
+  const platforms = (cand.publishTargets?.length ? cand.publishTargets : allowed).filter((p) => {
+    if (!allowed.includes(p) || !['tiktok', 'instagram'].includes(p)) return false;
+    if (cand.kind === 'clip') return true;
+    if (cand.kind === 'card') return p === 'instagram';
+    const n = cand.deck?.urls?.[p]?.length || 0;
+    return n >= 2 && (p !== 'instagram' || n <= 10);
+  });
+  try {
+    if (!platforms.length) throw new Error('אין לפוסט הזה פלטפורמה שהוא יכול לצאת אליה');
+    const file = addToInbox({ cand, platforms, note: note || '📥 נבנה בפקודה' });
+    await notify
+      .send(bot.telegram, staging, `📥 נכנס לתוכנית היומית הבאה (${postConfig().slate.digestAt}): ${cand.headline}`)
+      .catch(() => {});
+    return file;
+  } catch (e) {
+    await notify.send(bot.telegram, staging, `⛔ לא נכנס לתוכנית: ${cand.headline}\n${e.message.replace(/^slate inbox: /, '')}`).catch(() => {});
+    return null;
+  }
+}
+
 async function stage(candidate) {
+  if (postConfig().slate.on) return toNextDigest(candidate);
   const cand = await attachTikTok(candidate);
   const key = store.addStaging(cand);
   try {
@@ -425,33 +469,15 @@ function approveStaged(key, { by = null } = {}) {
   if (!cand) return { ok: false, said: 'כבר טופל' };
   store.clearPendingEdit(key);
 
-  // A draft is a handoff, not a publish, so there is nothing for the drip to
-  // pace. It goes to your TikTok inbox now and waits there for you; the
-  // interval exists so the FEED does not arrive in bursts, and an inbox is not
-  // a feed. Holding a draft in a queue for four hours delays only the moment
-  // you could have started working on it.
-  //
-  // Instagram is a real post and keeps its place in the queue.
+  // Every destination is a real post now and the drip paces it. This used to
+  // send the TikTok half to the inbox as a draft the moment you tapped; since 12
+  // Oct 2026 TikTok posts publicly through Zernio and a draft is only Zernio's
+  // fallback (src/publish/tiktokRoute.js). And with the slate on, nothing is
+  // staged for a tap like this at all (see stage), so only a card from before
+  // the slate, or the slate switched off, comes through here.
   const targets = cand.pendingTargets?.length ? cand.pendingTargets : cand.publishTargets || [];
-  const draftNow = Boolean(cand.tiktokDraft) && targets.includes('tiktok');
-  const queued = draftNow ? targets.filter((t) => t !== 'tiktok') : targets;
-
-  if (queued.length) store.enqueue({ ...cand, pendingTargets: queued });
-  const pos = store.queueSize();
-  const said = draftNow
-    ? queued.length
-      ? `✅ טיוטה לטיקטוק · ${pos} בתור לאינסטגרם`
-      : '✅ נשלח לטיוטות בטיקטוק'
-    : `✅ אושר - ${pos} בתור`;
-
-  // Detached rather than awaited, so a slow upload cannot leave the caller
-  // hanging — a button tap that does not answer inside a few seconds shows
-  // Telegram's spinner forever, and an HTTP request that does not answer looks
-  // to the browser exactly like a server that has died.
-  if (draftNow) {
-    detach('טיוטה לטיקטוק', () => publishNext({ ...cand, pendingTargets: ['tiktok'] }), staging);
-  }
-  return { ok: true, said, cand, by, draftNow };
+  if (targets.length) store.enqueue({ ...cand, pendingTargets: targets });
+  return { ok: true, said: `✅ אושר - ${store.queueSize()} בתור`, cand, by };
 }
 
 function rejectStaged(key, { by = null } = {}) {
@@ -585,8 +611,6 @@ bot.action(/^db:(.+):(instagram|tiktok|both)$/, async (ctx) => {
   // previewing the crop that needs no further action from you is the useful
   // way round.
   const targets = choice === 'both' ? ['instagram', 'tiktok'] : [choice];
-  // Reaching TikTok always means a draft. See the button.
-  const draft = targets.includes('tiktok');
   if (!store.getProposal(key)) return ctx.answerCbQuery('כבר טופל');
 
   // Said at the tap, not after the build. Choosing a destination that is not
@@ -595,13 +619,7 @@ bot.action(/^db:(.+):(instagram|tiktok|both)$/, async (ctx) => {
   // to find it out in.
   const configured = targetsForKind('deck');
   const missing = targets.filter((t) => !configured.includes(t));
-  await ctx.answerCbQuery(
-    missing.length
-      ? `⏳ בונה - ${targetsHe(missing)} עוד לא מחובר, הפוסט ימתין`
-      : draft
-        ? '⏳ בונה - טיקטוק יחכה לך בטיוטות'
-        : '⏳ בונה'
-  );
+  await ctx.answerCbQuery(missing.length ? `⏳ בונה - ${targetsHe(missing)} עוד לא מחובר, הפוסט ימתין` : '⏳ בונה');
   await ctx.editMessageReplyMarkup(undefined).catch(() => {});
 
   // Detached for the same reason the command was: a build is minutes of work
@@ -613,7 +631,7 @@ bot.action(/^db:(.+):(instagram|tiktok|both)$/, async (ctx) => {
   const messageId = ctx.callbackQuery.message.message_id;
   detach(
     'בניית מצגת',
-    () => runOverridden('/deck', () => buildProposal(key, chatId, messageId, targets, draft)),
+    () => runOverridden('/deck', () => buildProposal(key, chatId, messageId, targets)),
     chatId
   );
 });
@@ -1084,8 +1102,9 @@ async function publishNext(item = null) {
       cand.kind === 'deck' || cand.kind === 'plan' || cand.kind === 'post'
         ? publishTelegramDeck(bot.telegram, CHANNEL_ID, cand)
         : publishTelegram(bot.telegram, CHANNEL_ID, cand),
+    // A clip is a Reel through Zernio, anything else the Instagram API (the router).
     instagram: async () => {
-      const res = await publishInstagram(cand);
+      const res = await publishInstagramRouted(cand);
       // REMEMBERED HERE, AFTER THE PUBLISH SUCCEEDED, because this is the only
       // moment both halves exist: Instagram has just handed back the media id,
       // and the candidate that knows which page the post was about is still in
@@ -1104,19 +1123,20 @@ async function publishNext(item = null) {
       }
       return res;
     },
-    // Through the router: a slate post goes publicly through Zernio when
-    // publish.tiktok.via says so, everything else is the inbox draft it always
-    // was, and a Zernio failure that is not a limit falls back to that draft.
+    // Through the router: every TikTok post goes publicly through Zernio, a
+    // slideshow as a carousel and a clip as a video, and only a Zernio failure
+    // that is not a limit falls back to the inbox draft.
     tiktok: () => publishTikTokRouted(cand),
   };
   const errorText = {
-    instagram: describeError,
+    instagram: describeInstagramAny,
     tiktok: describeTikTokAny,
   };
   // Per destination, because only the destination's own client knows which of
   // its error codes mean "this card" rather than "this service".
   const cardLevel = {
     tiktok: isCardLevelTikTokAny,
+    instagram: isCardLevelZernio,
   };
   // Same shape, different question: is this destination refusing everyone
   // right now, rather than refusing this card or being broken?
@@ -1125,10 +1145,12 @@ async function publishNext(item = null) {
     // Graph throttles clear by themselves. Retried as failures they cost three
     // attempts each and then degrade Instagram, which is the wrong answer to a
     // busy afternoon.
-    instagram: isPlatformLimitInstagram,
+    instagram: isPlatformLimitInstagramAny,
   };
   // And a fourth: is this destination refusing everything until somebody goes
   // and fixes the connection?
+  // Not Instagram: its photos and its Reels leave by different doors, and a broken
+  // Zernio connection standing the whole destination down would hold the photos too.
   const configProblem = {
     tiktok: isConfigProblemTikTokAny,
   };
@@ -1422,6 +1444,61 @@ async function publishNext(item = null) {
 // store, Telegram, the builder and the clock. Approve and skip are single
 // functions that Telegram and the admin site both call.
 
+/**
+ * The leftovers of the per-post approvals, moved into the digest or cancelled, once.
+ *
+ * data/old-flow.json names each one (src/slate/leftovers.js); this is the half that
+ * touches the store, the inbox and the old cards, and it runs at boot because only
+ * this process may write the store. Each Telegram card it ends is closed in place,
+ * saying where its post went, and the owner gets one message listing all of them.
+ */
+async function applyLeftovers() {
+  if (!postConfig().slate.on) return;
+  let plan;
+  try {
+    plan = readLeftoversPlan();
+  } catch (e) {
+    console.error(`leftovers: ${e.message}`);
+    await notify.send(bot.telegram, staging, `⚠️ data/old-flow.json לא נקרא: ${e.message}`).catch(() => {});
+    return;
+  }
+  if (!plan) return;
+
+  const { moves, cancels } = planLeftovers({ staged: store.stagingItems(), queued: store.queuedItems(), proposals: store.proposalItems() }, plan);
+  const take = (x) => {
+    if (x.from === 'staging') return store.takeStaging(x.key);
+    if (x.from === 'queue') return store.takeQueuedById(x.cand.id);
+    return store.clearProposal(x.key);
+  };
+  const moved = [];
+  const cancelled = [];
+  for (const m of moves) {
+    try {
+      addToInbox({ cand: m.cand, platforms: m.platforms, notBefore: m.notBefore, note: m.note });
+    } catch (e) {
+      // A post the inbox refuses (a video without licensed sound, a slide gone) is
+      // cancelled with the inbox's reason rather than left where it was.
+      cancels.push({ ...m, why: e.message.replace(/^slate inbox: /, '') });
+      continue;
+    }
+    take(m);
+    if (m.from === 'staging') await closeCardElsewhere(m.cand, '📥 עבר לתוכנית היומית');
+    moved.push(m);
+  }
+  for (const c of cancels) {
+    take(c);
+    if (c.from === 'staging') await closeCardElsewhere(c.cand, `🗑 בוטל: ${c.why}`);
+    cancelled.push(c);
+  }
+
+  const seen = new Set([...moved, ...cancelled].map((x) => x.cand?.id));
+  const gone = [...(plan.move || []), ...(plan.cancel || [])].map((x) => x.id).filter((id) => !seen.has(id));
+  const row = (x) => ({ id: x.cand?.id, from: x.from, headline: x.cand?.headline || null, platforms: x.platforms, notBefore: x.notBefore, why: x.why });
+  markLeftoversApplied({ at: new Date().toISOString(), moved: moved.map(row), cancelled: cancelled.map(row), gone });
+  console.log(`leftovers: ${moved.length} moved to the digest, ${cancelled.length} cancelled, ${gone.length} already gone`);
+  await notify.send(bot.telegram, staging, leftoversReport({ moved, cancelled, gone })).catch(() => {});
+}
+
 let slateBuilding = false;
 let slatePublishing = false;
 
@@ -1467,7 +1544,11 @@ function skipInSlate(date, n, { by = 'telegram' } = {}) {
 async function sendSlateDigest(slate) {
   const { media, text, keyboard } = digestMessage(slate);
   if (media.length >= 2) await bot.telegram.sendMediaGroup(staging, media).catch((e) => console.error('slate album:', e.message));
-  else if (media.length === 1) await bot.telegram.sendPhoto(staging, media[0].media, { caption: media[0].caption }).catch(() => {});
+  else if (media.length === 1) {
+    const [m] = media;
+    const send = m.type === 'video' ? bot.telegram.sendVideo.bind(bot.telegram) : bot.telegram.sendPhoto.bind(bot.telegram);
+    await send(staging, m.media, { caption: m.caption }).catch(() => {});
+  }
   const msg = await bot.telegram.sendMessage(staging, text, keyboard.length ? { reply_markup: { inline_keyboard: keyboard } } : {});
   slate.digest = { chatId: staging, messageId: msg.message_id };
   store.putSlate(slate);
@@ -1482,13 +1563,99 @@ async function refreshSlateDigest(slate) {
     .catch(() => {});
 }
 
+/**
+ * Which clip formats can be built today with sound, and why not when none can.
+ *
+ * The owner's rule (12 Oct 2026): a video goes out only with a voiceover or an
+ * embedded track licensed for commercial use. The guide speaks, so it needs a
+ * voice (src/video/speech.js); every other format needs a declared track
+ * (assets/audio/tracks.json). Asked BEFORE building, because a reel is a footage
+ * search, a vision call and an encode, and one that cannot be posted is all cost.
+ */
+async function videoFormatsWithSound() {
+  const clipFormats = postConfig().formats.mix.filter((f) => f.kind === 'clip' && f.weight > 0).map((f) => f.id);
+  const ok = [];
+  let why = null;
+  for (const id of clipFormats) {
+    const blocked = await videoSoundBlocked(id);
+    if (blocked) why = why || blocked;
+    else ok.push(id);
+  }
+  return { ok, why };
+}
+
+/**
+ * Why a video of this format cannot carry sound today, or null when it can.
+ *
+ * The guide speaks, so it needs a voice (src/video/speech.js); every other format
+ * needs a declared track (assets/audio/tracks.json). Also asked by the commands that
+ * build one video, so /gems does not spend a build on a reel that cannot be posted.
+ */
+async function videoSoundBlocked(id) {
+  if (id === 'guide') {
+    const { speechReady } = await import('./src/video/speech.js');
+    const voice = speechReady();
+    return voice.ok ? null : `למדריך אין קול (${voice.why}), וסרטון בלי סאונד לא מתפרסם`;
+  }
+  try {
+    if (declaredTracks().length) return null;
+  } catch (e) {
+    return `assets/audio/tracks.json: ${e.message}`;
+  }
+  return 'אין שיר ברישיון לשימוש מסחרי ב-assets/audio/tracks.json, וסרטון בלי סאונד לא מתפרסם';
+}
+
+/** For a video command: a reply when the slate is on and the format cannot carry sound. */
+async function videoCommandBlocked(ctx, id) {
+  if (!postConfig().slate.on) return false;
+  const why = await videoSoundBlocked(id);
+  if (!why) return false;
+  await ctx.reply(`⛔ לא נבנה: ${why}`);
+  return true;
+}
+
+/**
+ * `count` videos for the slate, built and checked. Returns { videos, warnings }.
+ *
+ * The format is the rotation's weighted draw over the clip formats that can
+ * carry sound today, and each one built is checked twice: the candidate names a
+ * voice or a declared commercial track (soundOf), and the file has an audio
+ * stream in it (audioStreamIn). Either missing and the video is dropped.
+ */
+async function slateVideos(count) {
+  if (!count) return { videos: [], warnings: [] };
+  const usable = await videoFormatsWithSound();
+  if (!usable.ok.length) return { videos: [], warnings: [`🔇 אין היום סרטון: ${usable.why}`] };
+  const { audioStreamIn } = await import('./src/video/overlay.js');
+  const unusable = postConfig().formats.mix.filter((f) => !usable.ok.includes(f.id)).map((f) => f.id);
+  const { videos, failures } = await buildSlateVideos({
+    count,
+    pick: (tried) => {
+      const f = pickFormat({ exclude: [...unusable, ...benchedFormats(), ...tried] });
+      if (f) store.noteFormat(f.id);
+      return f?.id || null;
+    },
+    buildOne: (id) => forKind('clip', () => makeVideo(id)),
+    check: async (cand) => {
+      const sound = soundOf(cand);
+      if (!sound.ok) return sound;
+      if (!(await audioStreamIn(cand.clip.file))) return { ok: false, why: 'בקובץ עצמו אין ערוץ שמע' };
+      return { ok: true };
+    },
+    onProgress: (t) => console.log(t),
+  });
+  return { videos, warnings: failures };
+}
+
 /** Build, plan and send one day's slate. */
 async function buildSlateFor(date) {
   const cfg = postConfig().slate;
   const slates = store.allSlates();
   const slots = slotsFor(date, cfg, { rampTiktok: rampFor(cfg, slates, date), notBefore: Date.now() });
-  if (!slots.tiktok.length) {
-    const empty = newSlate({ date, items: [], dropped: slots.dropped, warnings: ['אין היום שעות פרסום פנויות'] });
+  // The clips' own slots (slate.videos), on the same clock and the same rules.
+  const videoSlots = slotsFor(date, cfg.videos, { notBefore: Date.now(), label: 'סרטון ' });
+  if (!slots.tiktok.length && !videoSlots.tiktok.length) {
+    const empty = newSlate({ date, items: [], dropped: [...slots.dropped, ...videoSlots.dropped], warnings: ['אין היום שעות פרסום פנויות'] });
     store.putSlate(empty);
     await sendSlateDigest(empty);
     return empty;
@@ -1497,7 +1664,7 @@ async function buildSlateFor(date) {
   // Posts waiting in data/slate-inbox/ take the day's earliest slots on their
   // platforms, and the slate builds its own posts for the slots left (src/slate/inbox.js).
   const inbox = readInbox();
-  const fromInbox = placeInbox(inbox.entries, slots, { date });
+  const fromInbox = placeInbox(inbox.entries, slots, { date, videoSlots });
   const lastInboxIg = fromInbox.items.filter((it) => it.instagramAt).at(-1);
 
   const { buildPost } = await import('./src/posts/index.js');
@@ -1551,25 +1718,39 @@ async function buildSlateFor(date) {
     fromInbox.slots,
     { gapMs: cfg.sameDeckGapMinutes * 60_000, last: lastInboxIg ? { ...last, instagram: lastInboxIg.template } : last }
   );
+
+  // THE DAY'S VIDEOS, for the video slots the inbox left. See slateVideos.
+  const vids = await slateVideos(fromInbox.videoSlots.tiktok.length);
+  const placedVideos = assignSlate(
+    vids.videos.map((v) => ({ template: v.template })),
+    fromInbox.videoSlots,
+    { gapMs: cfg.sameDeckGapMinutes * 60_000 }
+  );
+
   const slate = newSlate({
     date,
-    items: [...fromInbox.items, ...items.map((it) => {
-      const d = decks[it.deck];
-      return {
-        key: d.cand.id,
-        // tiktokVia marks the post for the router; tiktokDraft stays true so that
-        // with publish.tiktok.via unset the post is the same inbox draft as before.
-        cand: { ...d.cand, tiktokVia: 'zernio' },
-        template: d.template,
-        formatId: d.formatId,
-        formatKind: d.formatKind,
-        tiktokAt: it.tiktokAt,
-        instagramAt: it.instagramAt,
-      };
-    })],
+    items: [
+      ...fromInbox.items,
+      ...items.map((it) => {
+        const d = decks[it.deck];
+        return {
+          key: d.cand.id,
+          cand: d.cand,
+          template: d.template,
+          formatId: d.formatId,
+          formatKind: d.formatKind,
+          tiktokAt: it.tiktokAt,
+          instagramAt: it.instagramAt,
+        };
+      }),
+      ...placedVideos.items.map((it) => {
+        const v = vids.videos[it.deck];
+        return { key: v.cand.id, cand: v.cand, template: v.template, formatId: v.formatId, tiktokAt: it.tiktokAt, instagramAt: it.instagramAt };
+      }),
+    ],
     autoApprove: cfg.autoApprove,
-    warnings: [...inbox.warnings, ...warnings, ...failures],
-    dropped: slots.dropped,
+    warnings: [...inbox.warnings, ...warnings, ...failures, ...vids.warnings, ...placedVideos.warnings],
+    dropped: [...slots.dropped, ...videoSlots.dropped],
   });
   store.putSlate(slate);
   fromInbox.files.forEach(markInboxUsed);
@@ -1578,9 +1759,14 @@ async function buildSlateFor(date) {
 }
 
 /**
- * A TikTok post published through Zernio is recorded under Zernio's id until
- * TikTok resolves its public URL. Swap in TikTok's own post id when it exists, so
- * the metrics join can match it. A private post has no URL until it is public.
+ * A post published through Zernio is recorded under Zernio's id until the
+ * platform resolves its own (TikTok's public URL, Instagram's media id). Swap the
+ * platform's id in when it exists, so the metrics join can match it. A private
+ * TikTok post has no URL until it is public.
+ *
+ * And a post Zernio was still processing when the publish gave up waiting (see
+ * createAndWait in src/publish/zernio.js) is checked here: if it failed after all,
+ * the owner is told once, because nothing else will retry it.
  */
 async function resolveZernioPosts() {
   if (!zernioConfigured()) return 0;
@@ -1588,16 +1774,25 @@ async function resolveZernioPosts() {
   let n = 0;
   const week = Date.now() - 7 * 86_400_000;
   for (const row of metricsStore.allRows()) {
-    const id = row.media?.tiktok;
-    if (!/^[0-9a-f]{24}$/.test(String(id || '')) || Date.parse(row.at || 0) < week) continue;
-    try {
-      const part = zernioTikTokPart(await getZernioPost(id));
-      if (part.postId) {
-        metricsStore.notePublished(row.id, { platform: 'tiktok', mediaId: part.postId, shape: { zernioId: id, tiktokUrl: part.url } });
-        n++;
+    if (Date.parse(row.at || 0) < week) continue;
+    for (const platform of ['tiktok', 'instagram']) {
+      const id = row.media?.[platform];
+      if (!/^[0-9a-f]{24}$/.test(String(id || '')) || row.shape?.[`zernioFailed_${platform}`]) continue;
+      try {
+        const part = zernioPart(await getZernioPost(id), platform);
+        if (part.postId) {
+          const url = platform === 'tiktok' ? { tiktokUrl: part.url } : { instagramUrl: part.url };
+          metricsStore.notePublished(row.id, { platform, mediaId: part.postId, shape: { zernioId: id, ...url } });
+          n++;
+        } else if (['failed', 'cancelled'].includes(part.status)) {
+          metricsStore.notePublished(row.id, { platform, mediaId: id, shape: { [`zernioFailed_${platform}`]: part.error || part.status } });
+          await notify
+            .send(bot.telegram, staging, `🔴 ${TARGET_HE[platform]}: הפוסט שנשלח דרך Zernio נכשל אחרי שנשלח (${id}): ${part.error || part.status}`)
+            .catch(() => {});
+        }
+      } catch (e) {
+        console.error(`zernio resolve ${id}: ${e.message}`);
       }
-    } catch (e) {
-      console.error(`zernio resolve ${id}: ${e.message}`);
     }
   }
   return n;
@@ -2067,11 +2262,7 @@ bot.command('queue', (ctx) => {
     );
     const where = targetsHe(owed);
     const kind = kindIcon(c.kind);
-    // Only when TikTok is still owed. Approval sends the draft immediately and
-    // queues the rest, so the remainder is Instagram-only — and calling that
-    // "draft" describes a handoff that already happened.
-    const draft = c.tiktokDraft && owed.includes('tiktok') ? ' · טיוטה' : '';
-    return `${i + 1}. ${kind} ${c.headline}\n   ${where || 'אין יעד'}${draft}`;
+    return `${i + 1}. ${kind} ${c.headline}\n   ${where || 'אין יעד'}`;
   });
 
   ctx.reply(
@@ -2163,70 +2354,6 @@ bot.command('post', async (ctx) => {
  */
 bot.command('next', async (ctx) => {
   const res = await publishQueued(null);
-  await ctx.reply(res.said);
-});
-
-/**
- * Send a queued post to TikTok drafts now, without waiting for the drip.
- *
- * The same act approval performs automatically, available for anything already
- * in the queue — a post approved before this existed, or one whose TikTok half
- * was requeued after a failure. Numbered against /queue, like /post.
- *
- * Only the TikTok half moves. Anything else the post still owes goes back on
- * the queue and keeps its turn, because that half is a real publish and the
- * drip exists for it.
- */
-async function draftQueued(n) {
-  if (!Number.isInteger(n) || n < 1) return { ok: false, said: 'שימוש: /draft 2 - המספר מהרשימה ב-/queue' };
-
-  const item = store.takeQueuedAt(n);
-  if (!item) return { ok: false, said: `אין פריט ${n} בתור - /queue לרשימה` };
-
-  const targets = item.pendingTargets?.length ? item.pendingTargets : item.publishTargets || [];
-
-  // A RE-SEND is allowed, and it is as much the point of this command as the
-  // first send is.
-  //
-  // Approving a deck hands TikTok its draft immediately and leaves only
-  // Instagram in the queue, so the tiktok target is spent within a second of
-  // the tap. That made a draft unrepeatable: the one case where you most want
-  // to send it again is after the file it was made from has been fixed, which
-  // is exactly what `npm run redraw` is for, and the answer was "this item is
-  // not meant for TikTok" about a deck that had just been sent there.
-  //
-  // The question is therefore whether this KIND belongs on TikTok, not whether
-  // this copy still owes it one. A card does not (targets.js: card is Instagram
-  // alone) and is still refused by name.
-  //
-  // What it cannot do is withdraw the first draft. TikTok downloaded the image
-  // when it was delivered, so the old one sits in the inbox until it is deleted
-  // in the app, and this puts a second one beside it.
-  const belongs = targetsForKind(item.kind).includes('tiktok');
-  if (!targets.includes('tiktok') && !belongs) {
-    // Put it back exactly as it was. Taking a post out of the queue to tell you
-    // it was the wrong one would be a worse answer than the error.
-    store.enqueue(item);
-    return { ok: false, said: `הפריט הזה לא מיועד לטיקטוק (${targetsHe(targets) || 'אין יעד'})` };
-  }
-  const again = !targets.includes('tiktok');
-
-  const rest = targets.filter((t) => t !== 'tiktok');
-  if (rest.length) store.enqueue({ ...item, pendingTargets: rest });
-
-  detach('טיוטה לטיקטוק', () => publishNext({ ...item, pendingTargets: ['tiktok'] }), staging);
-  return {
-    ok: true,
-    said: again
-      ? `⏳ שולח טיוטה נוספת: ${item.headline}\n   מחקו את הקודמת בטיקטוק - היא נשארת עם התמונה הישנה`
-      : `⏳ שולח לטיוטות: ${item.headline}`,
-    headline: item.headline,
-  };
-}
-
-bot.command('draft', async (ctx) => {
-  const arg = (ctx.message.text || '').replace(/^\/draft(@\S+)?\s*/, '').trim();
-  const res = await draftQueued(Number(arg));
   await ctx.reply(res.said);
 });
 
@@ -2628,6 +2755,7 @@ const placeMemoryNow = () => holdPlaces(store.placesNamedSince(postConfig().gems
  * destination argument that means nothing to the other three.
  */
 bot.command('postcard', async (ctx) => {
+  if (await videoCommandBlocked(ctx, 'postcard')) return;
   const { buildPostcardCandidate, postcardApprovalMessage } = await import('./src/video/postcard.js');
 
   // NO DESTINATION ARGUMENT, and that is the format rather than a limitation. The reel's
@@ -2658,6 +2786,7 @@ bot.command('postcard', async (ctx) => {
  * see on a box that has one.
  */
 bot.command('gems', async (ctx) => {
+  if (await videoCommandBlocked(ctx, 'hidden_gems_video')) return;
   const arg = (ctx.message.text || '').replace(/^\/gems(@\S+)?\s*/, '').trim();
   const write = !/nohook|ללא\s*פתיח/i.test(arg);
   const { buildHiddenGemsCandidate, hiddenGemsApprovalMessage } = await import('./src/video/hiddenGems.js');
@@ -2682,6 +2811,7 @@ bot.command('gems', async (ctx) => {
  * src/video/before.js.
  */
 bot.command('before', async (ctx) => {
+  if (await videoCommandBlocked(ctx, 'before_video')) return;
   const asked = (ctx.message.text || '').replace(/^\/before(@\S+)?\s*/, '').trim() || null;
   await ctx.reply(`⏳ בונה לפני שמזמינים${asked ? ` · ${asked}` : ''}...`);
   detach('לפני שמזמינים', () => runOverridden('/before', () => suggestBefore(asked, ctx.chat.id)), ctx.chat.id);
@@ -2698,6 +2828,7 @@ bot.command('before', async (ctx) => {
  * src/video/speech.js for what a voice needs.
  */
 bot.command('guide', async (ctx) => {
+  if (await videoCommandBlocked(ctx, 'guide')) return;
   const asked = (ctx.message.text || '').replace(/^\/guide(@\S+)?\s*/, '').trim();
   const { buildNarratedCandidate } = await import('./src/video/narrated.js');
   const { speechReady } = await import('./src/video/speech.js');
@@ -2731,6 +2862,7 @@ bot.command('guide', async (ctx) => {
 });
 
 bot.command('clip', async (ctx) => {
+  if (await videoCommandBlocked(ctx, 'clip')) return;
   const arg = (ctx.message.text || '').replace(/^\/clip(@\S+)?\s*/, '').trim();
   const { clipShapeArg, buildClips } = await import('./src/video/clip.js');
   const { postConfig } = await import('./src/postConfig.js');
@@ -3474,13 +3606,8 @@ const proposalButtons = (key) =>
   Markup.inlineKeyboard([
     [
       Markup.button.callback('📸 אינסטגרם', `db:${key}:instagram`),
-      // TikTok is ALWAYS a draft now. There were two buttons and the direct one
-      // had nothing to recommend it: the API cannot name a sound, so a direct
-      // post gets whatever TikTok picks and can never be changed afterwards —
-      // sound is the one thing not editable after publishing. A draft costs one
-      // tap in the app and buys the sound, the cover and the caption. It is
-      // also not subject to the audit, which the direct path is.
-      Markup.button.callback('🎵 טיקטוק (טיוטה)', `db:${key}:tiktok`),
+      // A real post through Zernio, from the next digest, like everything else.
+      Markup.button.callback('🎵 טיקטוק', `db:${key}:tiktok`),
     ],
     [Markup.button.callback('📸🎵 שניהם', `db:${key}:both`)],
     [Markup.button.callback('🤖 שנה בהוראה', `dr:${key}`), Markup.button.callback('❌ דחה', `dx:${key}`)],
@@ -3648,8 +3775,8 @@ let lastGemsAt = 0;
  * The places are whatever the vision judge could name AND no post has named in the
  * last fortnight. See src/video/hiddenGems.js.
  */
-const suggestGems = billed('clip', async function suggestGemsJob(chatId = staging) {
-  const { buildHiddenGemsCandidate, hiddenGemsApprovalMessage } = await import('./src/video/hiddenGems.js');
+async function makeGems() {
+  const { buildHiddenGemsCandidate } = await import('./src/video/hiddenGems.js');
   const cand = await buildHiddenGemsCandidate({ seen: clipFootageSeen() });
   spendClipFootage([cand]);
   // WHICH HOOK IT OPENED ON, so the next reel does not open on the same one. The
@@ -3658,6 +3785,12 @@ const suggestGems = billed('clip', async function suggestGemsJob(chatId = stagin
   // the places (both in spendClipFootage), because all three are the same fact: this
   // reel has been built.
   store.noteGemHook(cand.clip.hookTemplate);
+  return cand;
+}
+
+const suggestGems = billed('clip', async function suggestGemsJob(chatId = staging) {
+  const { hiddenGemsApprovalMessage } = await import('./src/video/hiddenGems.js');
+  const cand = await makeGems();
   await stage(cand);
   await notify.send(bot.telegram, chatId, hiddenGemsApprovalMessage(cand)).catch(() => {});
   return cand;
@@ -3676,8 +3809,8 @@ const pagedDestinations = () =>
  * and three tries is enough to say the day had nothing rather than to keep paying.
  */
 const suggestBefore = billed('clip', async function suggestBeforeJob(asked = null, chatId = staging) {
-  const { buildBeforeCandidate, beforeApprovalMessage } = await import('./src/video/before.js');
-  const { resolveDestination, pickDestination } = await import('./src/plan/write.js');
+  const { beforeApprovalMessage } = await import('./src/video/before.js');
+  const { resolveDestination } = await import('./src/plan/write.js');
 
   const recent = [...store.recentPublished().slice(0, 12).map((p) => p.place), ...store.recentSuggested()];
   const found = asked ? await resolveDestination(asked, { recent }) : null;
@@ -3685,7 +3818,17 @@ const suggestBefore = billed('clip', async function suggestBeforeJob(asked = nul
     await notify.send(bot.telegram, chatId, `❌ לא הצלחתי להבין איזה יעד זה: ${asked}`).catch(() => {});
     return null;
   }
+  const cand = await makeBefore(found);
+  await stage(cand);
+  await notify.send(bot.telegram, chatId, beforeApprovalMessage(cand)).catch(() => {});
+  return cand;
+});
 
+/** One "before you book" reel, built and spent: `found` names the destination, else the rotation's pick. */
+async function makeBefore(found = null) {
+  const { buildBeforeCandidate } = await import('./src/video/before.js');
+  const { pickDestination } = await import('./src/plan/write.js');
+  const recent = [...store.recentPublished().slice(0, 12).map((p) => p.place), ...store.recentSuggested()];
   const tried = [];
   const why = [];
   for (let i = 0; i < (found ? 1 : 3); i++) {
@@ -3701,21 +3844,25 @@ const suggestBefore = billed('clip', async function suggestBeforeJob(asked = nul
       const cand = await buildBeforeCandidate(dest, { seen: clipFootageSeen() });
       spendClipFootage([cand]);
       store.noteSuggestedPlace(dest.he);
-      await stage(cand);
-      await notify.send(bot.telegram, chatId, beforeApprovalMessage(cand)).catch(() => {});
       return cand;
     } catch (e) {
       why.push(`${dest.he}: ${e.message}`);
     }
   }
   throw new Error(`no destination could be built - ${why.join('; ')}`);
-});
+}
 
 /** One postcard reel, staged for approval. Its places are whatever the judge could name. */
-const suggestPostcard = billed('clip', async function suggestPostcardJob(chatId = staging) {
-  const { buildPostcardCandidate, postcardApprovalMessage } = await import('./src/video/postcard.js');
+async function makePostcard() {
+  const { buildPostcardCandidate } = await import('./src/video/postcard.js');
   const cand = await buildPostcardCandidate({ seen: clipFootageSeen(), places: placeMemoryNow() });
   spendClipFootage([cand]);
+  return cand;
+}
+
+const suggestPostcard = billed('clip', async function suggestPostcardJob(chatId = staging) {
+  const { postcardApprovalMessage } = await import('./src/video/postcard.js');
+  const cand = await makePostcard();
   await stage(cand);
   await notify.send(bot.telegram, chatId, postcardApprovalMessage(cand)).catch(() => {});
   return cand;
@@ -3739,15 +3886,18 @@ let guideDay = null;
 let lastGuideAt = 0;
 
 /** One narrated guide, staged for approval. Silent when no voice is configured. */
-const suggestGuide = billed('clip', async function suggestGuideJob(chatId = staging) {
+async function makeGuide() {
   const { buildNarratedCandidate } = await import('./src/video/narrated.js');
   const { pickDestination } = await import('./src/plan/write.js');
 
   const recent = [...store.recentPublished().slice(0, 12).map((p) => p.place), ...store.recentSuggested()];
   const dest = pickDestination(recent, { from: pagedDestinations() });
   if (!dest?.siteSlug) throw new Error('no destination with a page to narrate');
+  return buildNarratedCandidate(dest);
+}
 
-  const cand = await buildNarratedCandidate(dest);
+const suggestGuide = billed('clip', async function suggestGuideJob(chatId = staging) {
+  const cand = await makeGuide();
   await stage(cand);
   const head = `🎙️ מדריך · ${cand.place} · ${cand.clip.seconds} שניות${cand.clip.narrated ? '' : ' · ללא קול'}`;
   await notify.send(bot.telegram, chatId, `${head}\n\n${cand.clip.script}`).catch(() => {});
@@ -3852,6 +4002,13 @@ function buildFormat(id) {
  */
 const suggestClip = billed('clip', suggestClipJob);
 async function suggestClipJob() {
+  const cand = await makeStockClip();
+  await stage(cand);
+  return [cand];
+}
+
+/** One stock clip (held, cuts or montage, alternating), built and spent. Throws when none could be. */
+async function makeStockClip() {
   const { buildClips } = await import('./src/video/clip.js');
   const { clips, considered, nowhere, written } = await buildClips({
     count: 1,
@@ -3875,13 +4032,35 @@ async function suggestClipJob() {
     throw new Error(`nothing to suggest - ${why}`);
   }
 
-  for (const clip of clips) await stage(clip);
   if (!written) {
     await notify
       .send(bot.telegram, staging, '⚠️ שורת הקליפ נלקחה מהמאגר ולא נכתבה - בדוק את ANTHROPIC_API_KEY')
       .catch(() => {});
   }
-  return clips;
+  return clips[0];
+}
+
+/**
+ * One video by its formats.mix id, built and spent but not staged.
+ *
+ * THE ONE BUILDER PER FORMAT for the slate and for the commands, so a reel built
+ * for the morning digest and one asked for with /gems are the same reel.
+ */
+function makeVideo(id) {
+  switch (id) {
+    case 'hidden_gems_video':
+      return makeGems();
+    case 'postcard':
+      return makePostcard();
+    case 'before_video':
+      return makeBefore();
+    case 'guide':
+      return makeGuide();
+    case 'clip':
+      return makeStockClip();
+    default:
+      return Promise.reject(new Error(`formats.mix names "${id}", which is not a video format`));
+  }
 }
 
 /**
@@ -3946,6 +4125,7 @@ const DECK_TAKEN = {
   queued: 'המצגת הזו כבר בתור לפרסום',
   staged: 'המצגת הזו כבר ממתינה לאישור',
   held: 'המצגת הזו כבר מוחזקת (/held)',
+  inbox: 'המצגת הזו כבר ממתינה לתוכנית היומית',
 };
 
 /**
@@ -3958,7 +4138,7 @@ const DECK_TAKEN = {
  * for you to tap a button.
  */
 const buildProposal = billed('deck', buildProposalJob);
-async function buildProposalJob(key, chatId, messageId = null, targets = ['instagram'], draft = false) {
+async function buildProposalJob(key, chatId, messageId = null, targets = ['instagram']) {
   const say = (text) => notify.send(bot.telegram, chatId, text).catch(() => {});
   const proposal = store.getProposal(key);
   if (!proposal) return say('ההצעה הזו כבר לא ממתינה');
@@ -4028,11 +4208,12 @@ ${done}/${of} · ${ok ? '📷' : '✗'} ${name}`),
     // the queue. Queued, staged and held all count as taken: their slides are on disk
     // waiting to be published.
     const id = deckId(built);
-    const taken = store.idInUse(id);
+    // The slate inbox counts too: a deck waiting there for the next digest has its slides on disk.
+    const taken = store.idInUse(id) || (inboxIds().has(id) ? 'inbox' : null);
     if (taken) return say(`⏭️ ${DECK_TAKEN[taken]} (${id}) - /deck שוב לרעיון אחר`);
 
     // Rendered for the chosen destination only, and staged owing just that one.
-    const cand = await toDeckCandidate(built, { targets, tiktokDraft: draft });
+    const cand = await toDeckCandidate(built, { targets });
 
     // The proposal message has done its job. Removing it means the deck arrives
     // as one album and one approval card, with no stale "⏳ building" line left
@@ -4237,6 +4418,8 @@ bot.command('formats', (ctx) => {
 bot.command('help', (ctx) =>
   ctx.reply(
     [
+      'מסלול אחד: התוכנית היומית ב-08:00, אישור אחד, ואז Zernio מפרסם. כל מה שנבנה בפקודה נכנס לתוכנית של הבוקר הבא.',
+      '',
       'פקודות:',
       '/run - סבב איסוף עכשיו',
       '/run <מספר> - סבב עם יעד גדול יותר, עוקף מכסות (מדווח מה נעקף)',
@@ -4248,7 +4431,6 @@ bot.command('help', (ctx) =>
       '/queue - מה בתור, לפי הסדר, ממוספר',
       '/next - מפרסם את הבא בתור',
       '/post <מספר> - מפרסם אחד מסוים מהתור, מדלג על הסדר',
-      '/draft <מספר> - שולח את החצי של טיקטוק לטיוטות עכשיו',
       '/held - פוסטים מאושרים שממתינים ליעד שנפל',
       '/retry - אחרי שתיקנת: מחזיר אותם לתור',
       '/clear_held - מוותר על המוחזקים ומסמן את היעדים כתקינים',
@@ -4459,6 +4641,22 @@ function tick() {
   const remaining = remainingToday(day);
   const due = Date.now() - lastGatherAt >= gatherIntervalMs;
 
+  // WITH THE SLATE ON, IT IS THE ONLY THING THAT MAKES POSTS. The owner's order of
+  // 12 Oct 2026: one pipeline, the 08:00 digest and then Zernio. Every timer below
+  // made posts that arrived as approval cards of their own (deck ideas, the format
+  // rotation's reels, the news gather), so with the slate on none of them runs: the
+  // slate builds the day's slideshows and videos, and anything built by a command
+  // waits for the next digest (see stage). Switch the slate off and they all come back.
+  const slateOn = postConfig().slate.on;
+
+  // The tokens are refreshed once a day whatever else runs. This used to ride on
+  // the day's first gather, which does not happen while the slate is on.
+  if (inHours && day !== lastRunDay) {
+    lastRunDay = day;
+    maybeRefreshIgToken().catch(() => {});
+    maybeRefreshTikTokToken().catch(() => {});
+  }
+
   // Deck ideas, on the same rhythm as cards and in the same hours. Only the
   // idea — nothing is built until you tap. Spaced by the gather interval so
   // they arrive through the day rather than three at once at 08:00.
@@ -4467,6 +4665,7 @@ function tick() {
     decksToday = 0;
   }
   if (
+    !slateOn &&
     inHours &&
     DECKS_PER_DAY > 0 &&
     decksToday < DECKS_PER_DAY &&
@@ -4494,16 +4693,14 @@ function tick() {
   // ones each kind already had, and the slot is left for the next tick rather than
   // spent on a format that cannot be staged: three reels standing unapproved is a
   // queue somebody has stopped reading, which is exactly what CLIP_BACKLOG_MAX means.
-  if (rotationOn()) {
+  if (rotationOn() && !slateOn) {
     if (slotDay !== day) {
       slotDay = day;
       slotsToday = 0;
     }
     const slots = slotsPerDay();
     if (inHours && slots > 0 && slotsToday < slots && Date.now() >= nextSlotAt) {
-      // With the daily slate on, the slideshows come from the slate, and a
-      // rotation slot that also built one would be a second post nobody planned.
-      const format = pickFormat({ exclude: [...benchedFormats(), ...(postConfig().slate.on ? ['post'] : [])] });
+      const format = pickFormat({ exclude: benchedFormats() });
       const room =
         !format ? false : format.kind === 'post' ? postsWaiting() < POST_BACKLOG_MAX : clipsWaiting() < CLIP_BACKLOG_MAX;
       if (format && room) {
@@ -4563,6 +4760,7 @@ function tick() {
   }
   if (
     !rotationOn() &&
+    !slateOn &&
     inHours &&
     POSTS_PER_DAY > 0 &&
     postsToday < POSTS_PER_DAY &&
@@ -4582,6 +4780,7 @@ function tick() {
   }
   if (
     !rotationOn() &&
+    !slateOn &&
     inHours &&
     GEMS_PER_DAY > 0 &&
     gemsToday < GEMS_PER_DAY &&
@@ -4602,6 +4801,7 @@ function tick() {
   }
   if (
     !rotationOn() &&
+    !slateOn &&
     inHours &&
     CLIPS_PER_DAY > 0 &&
     clipsToday < CLIPS_PER_DAY &&
@@ -4626,6 +4826,7 @@ function tick() {
   }
   if (
     !rotationOn() &&
+    !slateOn &&
     inHours &&
     POSTCARDS_PER_DAY > 0 &&
     postcardsToday < POSTCARDS_PER_DAY &&
@@ -4646,6 +4847,7 @@ function tick() {
   }
   if (
     !rotationOn() &&
+    !slateOn &&
     inHours &&
     GUIDES_PER_DAY > 0 &&
     guidesToday < GUIDES_PER_DAY &&
@@ -4657,13 +4859,8 @@ function tick() {
     suggestGuide().catch((e) => console.error('guide suggestion failed:', e.message));
   }
 
-  if (inHours && remaining > 0 && due) {
+  if (!slateOn && inHours && remaining > 0 && due) {
     lastGatherAt = Date.now();
-    if (day !== lastRunDay) {
-      lastRunDay = day;
-      maybeRefreshIgToken().catch(() => {});
-      maybeRefreshTikTokToken().catch(() => {});
-    }
     // THE TIMER NEVER ANNOUNCES. It used to report the first pass of each day,
     // on the reasoning that the later ones were routine; the first one is
     // routine too. A gather that produced cards announces itself perfectly well
@@ -4862,7 +5059,6 @@ const adminOps = {
     const want = Array.isArray(targets) && targets.length ? targets : ['instagram'];
     const legal = want.filter((t) => t === 'instagram' || t === 'tiktok');
     if (!legal.length) return { ok: false, said: 'יעד לא חוקי' };
-    const draft = legal.includes('tiktok');
 
     await notify
       .send(bot.telegram, staging, `🌐 ${by} אישר בנייה באתר: ${proposal.idea?.titleHe || key}`)
@@ -4870,7 +5066,7 @@ const adminOps = {
     // runOverridden for the same reason the button does it: an override does not
     // survive the wait for a decision, and a deck asked for by name must not be
     // judged by the repeat guards it was meant to step over.
-    detach('בניית מצגת', () => runOverridden('/deck', () => buildProposal(key, staging, null, legal, draft)));
+    detach('בניית מצגת', () => runOverridden('/deck', () => buildProposal(key, staging, null, legal)));
     return { ok: true, said: `⏳ בונה · ${targetsHe(legal)}` };
   },
 
@@ -4886,14 +5082,6 @@ const adminOps = {
     const res = await publishQueued(n == null ? null : Number(n), { background: true });
     if (res.ok) {
       await notify.send(bot.telegram, staging, `🌐 ${by} פרסם באתר${res.headline ? `: ${res.headline}` : ''}`).catch(() => {});
-    }
-    return res;
-  },
-
-  async draft(n, { by }) {
-    const res = await draftQueued(Number(n));
-    if (res.ok) {
-      await notify.send(bot.telegram, staging, `🌐 ${by} שלח טיוטה באתר: ${res.headline}`).catch(() => {});
     }
     return res;
   },
@@ -5055,7 +5243,12 @@ async function main() {
   // guide format switched off in formats.mix still announced "1 guides" at boot, and
   // the only way to know better was to read the config. A status line that disagrees
   // with the program is worse than no status line.
-  if (rotationOn()) {
+  if (postConfig().slate.on) {
+    const v = postConfig().slate.videos.slots;
+    console.log(`   daily slate: the only path - digest at ${postConfig().slate.digestAt}, then Zernio`);
+    console.log(`   videos: ${v.tiktok.length} TikTok + ${v.instagram.length} Reels a day, only with licensed sound`);
+    console.log('   (format rotation, deck ideas and the news gather are off while the slate is on)');
+  } else if (rotationOn()) {
     const mix = mixShares()
       .map((s) => `${s.id} ${(s.share * 100).toFixed(0)}%`)
       .join(' · ');
@@ -5137,7 +5330,7 @@ async function main() {
         console.log(`   audio: ${found.length} track(s) declared in ${audioDir()}`);
       } else {
         console.log(
-          `   ⚠️ audio: clips.audio.on is true but no tracks are declared in ${audioDir()}/tracks.json`
+          `   ⚠️ audio: no track declared in ${audioDir()}/tracks.json - no video can be posted until one licensed for commercial use is`
         );
       }
     } catch (e) {
@@ -5164,6 +5357,9 @@ async function main() {
   await maybeRefreshIgToken();
   await maybeRefreshTikTokToken();
   await probeInstagram();
+
+  // Once, the first time this code boots with data/old-flow.json present. See applyLeftovers.
+  await applyLeftovers().catch((e) => console.error('leftovers failed:', e.message));
 
   // THE DRIP, ON THE CLOCK. It was a bare setInterval of POST_INTERVAL_MINUTES
   // counted from boot, so the hour a post went out was set by the last restart

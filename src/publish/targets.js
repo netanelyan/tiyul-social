@@ -39,30 +39,21 @@ const ALLOWED_BY_KIND = {
   // Same words, same photographs, two designs. Instagram first, because it is
   // the one that has worked for months.
   deck: ['instagram', 'tiktok'],
-  // A clip is PUBLISHED to TikTok and HANDED to the owner for Instagram.
+  // A clip is PUBLISHED to both: a TikTok video and an Instagram Reel.
   //
-  // Instagram's Content Publishing API has no draft state: a container is
-  // published or it expires after 24 hours, so the only two things this code can
-  // do to Instagram are publish a reel now or not call it, and a reel's audio
-  // cannot be changed after posting. The owner chooses the sound in each app by
-  // hand, so the Instagram copy is a hand-off (MANUAL_BY_KIND below): the
-  // notification carries the mp4's URL and the description follows it, ready to
-  // paste.
+  // It was TikTok alone from 5 Oct 2026, with the Instagram copy handed to the
+  // owner to post by hand with a sound picked in the app, because no licensed
+  // track was declared and a reel published from here would have gone up silent.
+  // A reel is still the one Instagram format that reaches people who do not follow
+  // the account (85 accounts against 1 to 9 for every photo, on the numbers read
+  // that day).
   //
-  // DECIDED TWICE ON 5 OCT 2026, and both halves are worth keeping. The account's
-  // own numbers, read off the Graph API that day: 6 followers, 88 posts, one of
-  // them a reel; every photograph and carousel reached 1 to 9 accounts and the
-  // reel reached 85. A reel is the one format Instagram offers to people who do
-  // not already follow the account, so the owner asked for videos on Instagram,
-  // and automatic publishing was built (`clip: ['instagram', 'tiktok']`, with the
-  // approval card saying when a reel would go up silent). With no licensed track
-  // declared, every one would have gone up silent, and the owner chose to post the
-  // Instagram reels by hand with a sound picked in the app instead.
-  //
-  // So the reels reach Instagram through the owner, and the number that says
-  // whether they do is the reel count on the profile. To publish them from here
-  // instead: `clip: ['instagram', 'tiktok']` and an empty MANUAL_BY_KIND.
-  clip: ['tiktok'],
+  // 12 OCT 2026, the owner's order: every post goes through the morning digest and
+  // out through Zernio, videos included, on TikTok and as Reels, and a video goes
+  // out only with a voiceover or a track licensed for commercial use. That rule is
+  // enforced at publish now (soundOf in src/video/tracks.js), so the hand-off,
+  // which existed only to keep silent reels off the feed, is gone.
+  clip: ['instagram', 'tiktok'],
   // An AI-written itinerary, drawn as slides. Both places, like a deck, and for
   // a reason the deck's note does not cover: this is the one kind whose content
   // is worth SAVING rather than watching, and a saved carousel is an Instagram
@@ -83,22 +74,14 @@ const ALLOWED_BY_KIND = {
 };
 
 /**
- * Where a kind belongs that this program cannot deliver it.
+ * Where a kind belongs that this program cannot deliver it, so you post it by hand.
  *
- * Kept here, next to ALLOWED_BY_KIND, rather than as a line in a notification,
- * because it is the same editorial decision and it has to stay visible. Delete
- * it and the knowledge that a clip should reach Instagram disappears from the
- * codebase entirely, and in a month somebody reads targets.js, sees a clip
- * going to TikTok alone, and concludes that was the intent.
- *
- * It is NOT a publish target and must never be added to one. Nothing here is
- * called, nothing here can fail, and nothing here is recorded as published. The
- * only thing it produces is a line in the notification telling you the copy is
- * yours to make, with the file's URL on it.
+ * Empty since 12 Oct 2026, when the one thing ever here, a clip's Instagram copy,
+ * started publishing as a Reel through Zernio. Kept as the place such a rule
+ * would go. It is NOT a publish target: nothing here is called or recorded as
+ * published, it only adds a line to the publish notice.
  */
-const MANUAL_BY_KIND = {
-  clip: ['instagram'],
-};
+const MANUAL_BY_KIND = {};
 
 /** Destinations for this kind that you post by hand. Never published to. */
 export const manualForKind = (kind = 'card') => [...(MANUAL_BY_KIND[kind] || [])];

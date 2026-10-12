@@ -6,7 +6,7 @@ import { burnClip, burnCuts, burnMontage, download, clipOutputDir, ffmpegReady }
 import { clipHook, postConfig } from '../postConfig.js';
 import { writeHook, hasApiKey, namesOtherCountry, trailsOff } from './hooks.js';
 import { pickCuts, cutLabel, cutsReason, writeCutsHook, beatCountMismatch, pickMontage, montageReason } from './cuts.js';
-import { pickTrack, audioConfigured, silentSoundLine } from './tracks.js';
+import { pickTrack, audioConfigured, soundLine } from './tracks.js';
 import { assertNoUrl } from '../format.js';
 import { clipCaption, captionFollow, clipPlaceLabel } from '../hashtags.js';
 import { preferFresh } from './placeMemory.js';
@@ -954,14 +954,8 @@ export async function buildClips({ count = 5, seen = new Set(), outDir = clipOut
  *
  * Printed on every clip, including when there is no track, because a silent
  * file and a sounded one are indistinguishable in a Telegram video preview
- * unless you happen to have the volume up, and which one you are looking at
- * changes what you have to do next.
- *
- * NO TRACK MEANS SOMETHING DIFFERENT PER DESTINATION. Where the sound is picked
- * in the app, which is TikTok's draft and the Instagram copy you post yourself,
- * a silent file is the plan. Where this program publishes the reel, the file's
- * silence is the post's silence for good. silentSoundLine in ./tracks.js says
- * which, from the candidate's own destinations, for every reel format.
+ * unless you happen to have the volume up. A silent one is not posted at all
+ * (soundOf in ./tracks.js), and the line says so.
  */
 /**
  * The closing line, for an approval card.
@@ -991,7 +985,7 @@ export function followFrameLine(cand) {
 
 export function audioLine(cand) {
   const a = cand.clip?.audio;
-  if (!a) return silentSoundLine(cand.publishTargets || []);
+  if (!a) return soundLine(cand);
   // TWO SHAPES OF THE SAME FIELD, and the boolean one is not a mistake to fix at the
   // writer's end. The three shapes here record the whole track entry, because the
   // card has to be able to state the licence of anything it mixed in. The postcard

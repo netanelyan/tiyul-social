@@ -83,7 +83,6 @@ export function stagedView({ key, cand }, opts = {}) {
     images:
       cand.kind === 'clip' ? [] : slides.length ? slides : [mediaName(cand.card?.file, opts)].filter(Boolean),
     targets: owed(cand),
-    draft: Boolean(cand.tiktokDraft),
     // Which controls to draw. The same rules stagingButtons applies, answered
     // once here rather than guessed at in the browser — a page that offers a
     // button the server refuses is a page that looks broken.
@@ -113,10 +112,6 @@ export function queuedView(c, i, opts = {}) {
     video: c.kind === 'clip' ? mediaName(c.clip?.file, opts) : null,
     images: c.kind === 'clip' ? [] : slides.length ? [slides[0]] : [mediaName(c.card?.file, opts)].filter(Boolean),
     targets,
-    // Only when TikTok is still owed. Approval sends the draft immediately and
-    // queues the rest, so calling the remainder "draft" describes a handoff that
-    // already happened.
-    draft: Boolean(c.tiktokDraft) && targets.includes('tiktok'),
   };
 }
 

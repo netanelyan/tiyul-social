@@ -20,6 +20,9 @@
 // stripped), TikTok's two consent flags, and `publishNow`, without which Zernio
 // schedules the post instead of publishing it.
 
+import { soundOf } from '../video/tracks.js';
+import { clipPublicUrl } from './imageHosts.js';
+
 const BASE = (process.env.ZERNIO_BASE || 'https://zernio.com/api/v1').replace(/\/$/, '');
 
 export const zernioConfigured = (env = process.env) => Boolean(String(env.ZERNIO_API_KEY || '').trim());
@@ -66,21 +69,28 @@ async function call(path, { method = 'GET', body = null, env = process.env, fetc
 }
 
 /**
- * The connected TikTok account's Zernio id.
+ * The connected account's Zernio id, for 'tiktok' or 'instagram'.
  *
- * ZERNIO_TIKTOK_ACCOUNT_ID wins when set; otherwise the one connected, active
- * TikTok account. Two of them is a question for the owner, not a guess.
+ * ZERNIO_TIKTOK_ACCOUNT_ID or ZERNIO_INSTAGRAM_ACCOUNT_ID wins when set; otherwise
+ * the one connected, active account on that platform. Two of them is a question
+ * for the owner, not a guess.
  */
-export async function tiktokAccountId({ env = process.env, fetchImpl } = {}) {
-  if (String(env.ZERNIO_TIKTOK_ACCOUNT_ID || '').trim()) return env.ZERNIO_TIKTOK_ACCOUNT_ID.trim();
-  const { accounts = [] } = await call('/accounts?platform=tiktok&status=connected', { env, fetchImpl, step: 'accounts' });
-  const live = accounts.filter((a) => a.platform === 'tiktok' && a.isActive !== false && !a.needsReconnection);
-  if (!live.length) throw new ZernioError('no connected TikTok account in Zernio - connect it in the Zernio dashboard', { step: 'config', code: 'no_account' });
+export async function accountIdFor(platform, { env = process.env, fetchImpl } = {}) {
+  const pinned = String(env[`ZERNIO_${platform.toUpperCase()}_ACCOUNT_ID`] || '').trim();
+  if (pinned) return pinned;
+  const { accounts = [] } = await call(`/accounts?platform=${platform}&status=connected`, { env, fetchImpl, step: 'accounts' });
+  const live = accounts.filter((a) => a.platform === platform && a.isActive !== false && !a.needsReconnection);
+  if (!live.length) throw new ZernioError(`no connected ${platform} account in Zernio - connect it in the Zernio dashboard`, { step: 'config', code: 'no_account' });
   if (live.length > 1) {
-    throw new ZernioError(`${live.length} TikTok accounts in Zernio - set ZERNIO_TIKTOK_ACCOUNT_ID to the one to post to`, { step: 'config', code: 'ambiguous_account' });
+    throw new ZernioError(`${live.length} ${platform} accounts in Zernio - set ZERNIO_${platform.toUpperCase()}_ACCOUNT_ID to the one to post to`, {
+      step: 'config',
+      code: 'ambiguous_account',
+    });
   }
   return live[0]._id;
 }
+
+export const tiktokAccountId = (opts = {}) => accountIdFor('tiktok', opts);
 
 /** The request body for one carousel. Pure, so the tests can read it. */
 export function carouselBody(cand, { accountId, privacy, autoAddMusic }) {
@@ -110,22 +120,51 @@ export function carouselBody(cand, { accountId, privacy, autoAddMusic }) {
 /** The TikTok post id inside a public URL (…/video/<id> or …/photo/<id>), or null. */
 export const postIdFromUrl = (url) => /\/(?:video|photo)\/(\d{8,25})/.exec(String(url || ''))?.[1] || null;
 
-/** The TikTok half of a Zernio post, as { status, url, postId, error }. */
-export function tiktokPart(post) {
-  const p = (post?.platforms || []).find((x) => x.platform === 'tiktok') || {};
+/** One platform's half of a Zernio post, as { status, url, postId, error, category }. */
+export function platformPart(post, platform) {
+  const p = (post?.platforms || []).find((x) => x.platform === platform) || {};
   const url = p.platformPostUrl || null;
   return {
     status: p.status || post?.status || null,
     url,
-    postId: p.platformPostId ? String(p.platformPostId) : postIdFromUrl(url),
+    postId: p.platformPostId ? String(p.platformPostId) : platform === 'tiktok' ? postIdFromUrl(url) : null,
     error: p.errorMessage || null,
     category: p.errorCategory || null,
   };
 }
 
+export const tiktokPart = (post) => platformPart(post, 'tiktok');
+
 export async function getPost(id, { env = process.env, fetchImpl } = {}) {
   const { post } = await call(`/posts/${encodeURIComponent(id)}`, { env, fetchImpl, step: 'status' });
   return post || null;
+}
+
+/**
+ * Create one Zernio post and wait until the platform has it.
+ *
+ * A post Zernio accepted and is still working on when the wait runs out is NOT an
+ * error: it may well go out, and treating it as a failure is what would post it
+ * twice (a retry, or the TikTok draft fallback, on top of the post Zernio still
+ * finishes). It comes back `pending`, recorded under Zernio's id, and
+ * resolveZernioPosts in bot.js asks again and says if it failed after all.
+ */
+async function createAndWait(body, platform, { env, fetchImpl, pollMs, timeoutMs }) {
+  const created = await call('/posts', { method: 'POST', body, env, fetchImpl, step: 'create' });
+  const id = created?.post?._id;
+  if (!id) throw new ZernioError('Zernio accepted the post but returned no id', { step: 'create', code: 'no_id' });
+
+  let part = platformPart(created.post, platform);
+  const deadline = Date.now() + timeoutMs;
+  while (!['published', 'failed', 'cancelled'].includes(part.status) && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, pollMs));
+    part = platformPart(await getPost(id, { env, fetchImpl }), platform);
+  }
+  if (part.status === 'failed' || part.status === 'cancelled') {
+    const who = platform === 'tiktok' ? 'TikTok' : 'Instagram';
+    throw new ZernioError(`${who} refused the post: ${part.error || part.status}`, { step: 'status', code: part.category || part.status, category: part.category });
+  }
+  return { id, part, pending: part.status !== 'published' };
 }
 
 /**
@@ -144,26 +183,13 @@ export async function publishZernioTikTok(cand, { privacy, autoAddMusic = true, 
   if (images.length > 35) throw new ZernioError(`TikTok takes at most 35 images, this one has ${images.length}`, { step: 'config', code: 'card_images' });
 
   const account = accountId || (await tiktokAccountId({ env, fetchImpl }));
-  const created = await call('/posts', { method: 'POST', body: carouselBody(cand, { accountId: account, privacy, autoAddMusic }), env, fetchImpl, step: 'create' });
-  const id = created?.post?._id;
-  if (!id) throw new ZernioError('Zernio accepted the post but returned no id', { step: 'create', code: 'no_id' });
-
-  let part = tiktokPart(created.post);
-  const deadline = Date.now() + timeoutMs;
-  while (!['published', 'failed', 'cancelled'].includes(part.status) && Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, pollMs));
-    part = tiktokPart(await getPost(id, { env, fetchImpl }));
-  }
-  if (part.status === 'failed' || part.status === 'cancelled') {
-    throw new ZernioError(`TikTok refused the post: ${part.error || part.status}`, { step: 'status', code: part.category || part.status, category: part.category });
-  }
-  if (part.status !== 'published') {
-    throw new ZernioError(`still ${part.status || 'unknown'} after ${Math.round(timeoutMs / 1000)}s - Zernio may still finish it (post ${id})`, { step: 'status', code: 'status_timeout' });
-  }
+  const body = carouselBody(cand, { accountId: account, privacy, autoAddMusic });
+  const { id, part, pending } = await createAndWait(body, 'tiktok', { env, fetchImpl, pollMs, timeoutMs });
 
   const notes = [];
   if (!autoAddMusic) notes.push('בלי מוזיקה אוטומטית');
-  if (!part.url) notes.push(privacy === 'SELF_ONLY' ? 'פרטי: אין כתובת ציבורית עד שהופכים לציבורי' : 'הכתובת הציבורית תגיע בהמשך');
+  if (pending) notes.push(`Zernio עדיין מעבד את הפוסט (${id}), אבדוק שוב ואגיד אם נכשל`);
+  else if (!part.url) notes.push(privacy === 'SELF_ONLY' ? 'פרטי: אין כתובת ציבורית עד שהופכים לציבורי' : 'הכתובת הציבורית תגיע בהמשך');
   return {
     publishId: id,
     zernioId: id,
@@ -178,7 +204,88 @@ export async function publishZernioTikTok(cand, { privacy, autoAddMusic = true, 
     music: Boolean(autoAddMusic),
     via: 'zernio',
     status: part.status,
+    pending,
     resolveLater: !part.url,
+  };
+}
+
+/* ------------------------------------------------------------------ videos */
+
+// A clip goes out the same way: one Zernio post per platform, at that platform's
+// slot. TikTok takes it as a video post, Instagram as a Reel. `content` is the
+// caption on both (2,200 characters); TikTok's `description` and its auto music
+// are photo-only fields, which is why a video has to carry its own sound.
+
+/**
+ * Refuse a video the owner's sound rule does not let out (soundOf in
+ * src/video/tracks.js). Both routes check it BEFORE Zernio and outside any
+ * fallback: a silent video is not a post Zernio failed to make, it is a post that
+ * must not be made, so it must not reach the TikTok inbox as a draft either.
+ */
+export function assertVideoSound(cand) {
+  const sound = soundOf(cand);
+  if (!sound.ok) {
+    throw new ZernioError(`not posted: ${sound.why} (a video needs a voiceover or a track licensed for commercial use)`, { step: 'config', code: 'no_sound' });
+  }
+  return sound;
+}
+
+/** The request body for one video, to TikTok or as an Instagram Reel. Pure. */
+export function videoBody(cand, { platform, accountId, privacy, videoUrl }) {
+  const caption = platform === 'instagram' ? cand.instagramCaption || cand.tiktokCaption : cand.tiktokCaption;
+  const body = {
+    content: String(caption || '').slice(0, 2200),
+    mediaItems: [{ type: 'video', url: videoUrl }],
+    platforms: [{ platform, accountId, ...(platform === 'instagram' ? { platformSpecificData: { shareToFeed: true } } : {}) }],
+    publishNow: true,
+  };
+  if (platform === 'tiktok') {
+    body.tiktokSettings = {
+      privacy_level: privacy,
+      allow_comment: true,
+      allow_duet: true,
+      allow_stitch: true,
+      content_preview_confirmed: true,
+      express_consent_given: true,
+    };
+  }
+  return body;
+}
+
+/**
+ * Publish one clip to TikTok or as an Instagram Reel, and wait for it.
+ *
+ * Longer waits than a carousel's, because both platforms transcode a video
+ * before it is live. Returns the carousel's shape, plus `mediaId` for Instagram,
+ * which the comment replies and the metrics join key on.
+ */
+export async function publishZernioVideo(cand, { platform, privacy = 'SELF_ONLY', env = process.env, fetchImpl, pollMs = 10_000, timeoutMs = 600_000, accountId = null } = {}) {
+  if (!zernioConfigured(env)) throw new ZernioError('ZERNIO_API_KEY is not set', { step: 'config', code: 'not_configured' });
+  const sound = assertVideoSound(cand);
+  const videoUrl = clipPublicUrl(cand, env);
+  if (!String(videoUrl || '').startsWith('https://')) {
+    throw new ZernioError('the clip has no https URL - Zernio pulls the video by URL', { step: 'config', code: 'no_video_url' });
+  }
+
+  const account = accountId || (await accountIdFor(platform, { env, fetchImpl }));
+  const body = videoBody(cand, { platform, accountId: account, privacy, videoUrl });
+  const { id, part, pending } = await createAndWait(body, platform, { env, fetchImpl, pollMs, timeoutMs });
+
+  return {
+    publishId: id,
+    zernioId: id,
+    postId: part.postId,
+    mediaId: platform === 'instagram' ? part.postId : null,
+    url: part.url,
+    videoUrl,
+    privacy: platform === 'tiktok' ? privacy : null,
+    notes: pending ? [`Zernio עדיין מעבד את הסרטון (${id}), אבדוק שוב ואגיד אם נכשל`] : [],
+    draft: false,
+    sound: sound.label,
+    via: 'zernio',
+    status: part.status,
+    pending,
+    resolveLater: !part.postId,
   };
 }
 

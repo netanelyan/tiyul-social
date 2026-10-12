@@ -71,6 +71,12 @@ export function tracks() {
         throw new Error(`${file}: "${name}" has no ${field} - a track must say what it is and what it is licensed under`);
       }
     }
+    // The account is a business, so a track is usable only when its licence
+    // covers commercial use, and the manifest says so in a field of its own
+    // rather than leaving it to be read out of the licence string.
+    if (t.commercial !== true) {
+      throw new Error(`${file}: "${name}" is not marked "commercial": true - only a track licensed for commercial use goes under a post`);
+    }
 
     const path = join(audioDir(), name);
     if (!existsSync(path)) {
@@ -84,6 +90,7 @@ export function tracks() {
       credit: String(t.credit).trim(),
       licence: String(t.licence).trim(),
       source: String(t.source).trim(),
+      commercial: true,
       mood: String(t.mood || '').trim() || null,
     });
   }
@@ -100,23 +107,33 @@ export const forgetTracks = () => {
 export const audioConfigured = () => tracks().length > 0;
 
 /**
- * What a reel with no sound in the file means, for the approval card.
+ * Whether a video may be posted, and what it sounds like.
  *
- * Two different facts depending on where it is going, which is why it takes the
- * destinations. TikTok gets an inbox draft and the sound is picked in the app,
- * which is the plan rather than a fault. Instagram publishes the file as it is
- * and a reel's audio cannot be changed afterwards, so the card says the reel
- * will be silent while that can still be refused.
+ * THE OWNER'S RULE, 12 OCT 2026: a video goes out only with sound of its own, a
+ * voiceover or an embedded track licensed for commercial use, because the account
+ * is a business. A video without either is not posted at all: nobody picks a
+ * sound in an app any more, so a silent file would be a silent post.
  *
- * One function for every reel format, so the five cards cannot disagree about it.
+ * A track counts only while the manifest still declares it, so taking a track
+ * out of tracks.json also stops the videos already built on it.
+ *
+ * Returns { ok: true, kind: 'voice' | 'track', label } or { ok: false, why }.
  */
-export function silentSoundLine(targets = []) {
-  if (targets.includes('instagram')) {
-    return targets.includes('tiktok')
-      ? '🔇 ללא סאונד: באינסטגרם הרילס יעלה שקט, בטיקטוק בוחרים סאונד באפליקציה'
-      : '🔇 ללא סאונד: באינסטגרם הרילס יעלה שקט';
-  }
-  return '🎵 הסאונד נבחר באפליקציה';
+export function soundOf(cand) {
+  const c = cand?.clip || {};
+  if (c.narrated === true) return { ok: true, kind: 'voice', label: 'קריינות' };
+  const name = c.track || c.audio?.name || null;
+  if (!name) return { ok: false, why: 'אין בסרטון סאונד' };
+  const t = tracks().find((x) => x.name === name);
+  if (!t?.commercial) return { ok: false, why: `השיר ${name} לא מוצהר ב-tracks.json כמורשה לשימוש מסחרי` };
+  return { ok: true, kind: 'track', label: `${t.title} · ${t.licence}` };
+}
+
+/** The one line every reel's card prints about its sound. */
+export function soundLine(cand) {
+  const s = soundOf(cand);
+  if (!s.ok) return `🔇 ${s.why}: הסרטון לא יפורסם`;
+  return s.kind === 'voice' ? '🎙️ קריינות' : `🎵 ${s.label}`;
 }
 
 /**

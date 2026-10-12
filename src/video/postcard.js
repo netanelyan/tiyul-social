@@ -5,7 +5,7 @@ import { ffmpegPath, clipOutputDir, download, measureClip, pickWindow } from './
 import { getBrowser } from '../render/index.js';
 import { assistantDataUri, escapeHtml } from '../render/theme.js';
 import { postConfig } from '../postConfig.js';
-import { pickTrack, silentSoundLine } from './tracks.js';
+import { pickTrack, soundLine } from './tracks.js';
 import { findClips } from './pexels.js';
 import { clipPlaceLabel, gemsCaption } from '../hashtags.js';
 import { targetsForKind } from '../publish/targets.js';
@@ -120,7 +120,7 @@ export async function buildPostcardClip(shots, { hookHe, hookClip = null, id = '
       pngs.push({ file: png, from: at[i], to: at[i] + holdOf(shot) });
     }
 
-    const chosen = track ? { file: track } : pickTrack(new Set());
+    const chosen = track ? { file: track, name: path.basename(track) } : pickTrack(new Set());
     const bed = chosen?.file || null;
     const seconds = clock;
 
@@ -157,7 +157,7 @@ export async function buildPostcardClip(shots, { hookHe, hookClip = null, id = '
     args.push('-c:v', 'libx264', '-preset', preset, '-crf', String(crf), '-pix_fmt', 'yuv420p', '-r', String(fps), '-t', String(seconds), file);
 
     await run(ffmpegPath(), args);
-    return { file, seconds, shots: places.length, audio: Boolean(bed) };
+    return { file, seconds, shots: places.length, audio: Boolean(bed), track: bed ? chosen.name : null };
   } finally {
     for (const p of pngs) rmSync(p.file, { force: true });
     for (const f of files) rmSync(f, { force: true });
@@ -435,6 +435,7 @@ async function finishPostcard({ placed, spare, outDir, gems }) {
       shape: 'postcard',
       file: built.file,
       audio: built.audio,
+      track: built.track || null,
       seconds: built.seconds,
       follow: captionFollow(),
       followAt: null,
@@ -499,6 +500,6 @@ export function postcardApprovalMessage(cand) {
     lines.push('', `⏱️ חיתוך ראשון ${c.firstCutAt}ש׳ · פתיח גדול עד ${c.hookFullUntil}ש׳ ואז כותרת`);
   }
   if (c.questionHe) lines.push(`💬 בסוף ובכיתוב: ${c.questionHe}`);
-  if (!c.audio) lines.push('', silentSoundLine(cand.publishTargets || []));
+  lines.push('', soundLine(cand));
   return lines.join('\n');
 }

@@ -1297,17 +1297,15 @@ const intIn = (v, lo, hi, fallback) => {
 export const TIKTOK_PRIVACY_LEVELS = ['PUBLIC_TO_EVERYONE', 'MUTUAL_FOLLOW_FRIENDS', 'FOLLOWER_OF_CREATOR', 'SELF_ONLY'];
 
 /**
- * How a TikTok post leaves.
+ * How a TikTok post leaves: publicly through Zernio, always (src/publish/tiktokRoute.js).
  *
- * `via: "zernio"` posts publicly through the service; anything else keeps today's
- * inbox drafts. An unset or unknown privacy is SELF_ONLY, never public: a missing
- * line in this file must not be the thing that publishes something.
+ * An unset or unknown privacy is SELF_ONLY, never public: a missing line in this
+ * file must not be the thing that publishes something.
  */
 function publishCfg(raw) {
   const t = raw.tiktok || {};
   return {
     tiktok: {
-      via: t.via === 'zernio' ? 'zernio' : 'draft',
       privacy: TIKTOK_PRIVACY_LEVELS.includes(t.privacy) ? t.privacy : 'SELF_ONLY',
       autoAddMusic: t.autoAddMusic !== false,
       fallback: t.fallback === 'none' ? 'none' : 'draft',
@@ -1326,11 +1324,18 @@ function publishCfg(raw) {
  */
 function slateCfg(raw) {
   const slots = raw.slots || {};
-  const byDay = {};
-  for (const [d, s] of Object.entries(raw.slotsByDay || {})) {
-    if (!/^[0-6]$/.test(d) || !s || typeof s !== 'object') continue;
-    byDay[d] = { tiktok: clockTimes(s.tiktok, []), instagram: clockTimes(s.instagram, []) };
-  }
+  const byDayOf = (table) => {
+    const byDay = {};
+    for (const [d, s] of Object.entries(table || {})) {
+      if (!/^[0-6]$/.test(d) || !s || typeof s !== 'object') continue;
+      byDay[d] = { tiktok: clockTimes(s.tiktok, []), instagram: clockTimes(s.instagram, []) };
+    }
+    return byDay;
+  };
+  const byDay = byDayOf(raw.slotsByDay);
+  // The clips' own slots, read like the slideshows' and handed to the same slotsFor.
+  // None configured means no videos, never a default time.
+  const videos = raw.videos || {};
   return {
     on: raw.on === true,
     autoApprove: raw.autoApprove === true,
@@ -1340,6 +1345,10 @@ function slateCfg(raw) {
       instagram: clockTimes(slots.instagram, ['13:15', '20:30']),
     },
     slotsByDay: byDay,
+    videos: {
+      slots: { tiktok: clockTimes(videos.slots?.tiktok, []), instagram: clockTimes(videos.slots?.instagram, []) },
+      slotsByDay: byDayOf(videos.slotsByDay),
+    },
     rampDays: intIn(raw.rampDays, 0, 60, 7),
     rampTiktokPerDay: intIn(raw.rampTiktokPerDay, 1, 15, 2),
     sameDeckGapMinutes: intIn(raw.sameDeckGapMinutes, 0, 600, 60),

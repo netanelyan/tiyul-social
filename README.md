@@ -31,12 +31,18 @@ cards   sources → rank → draft (Claude) → verify → render → Telegram �
 
 decks   idea (Claude) → you tap בנה → places → facts → photographs → render ×2 → ✅ → TikTok + Instagram
 
-clips   destinations → Pexels → vision judge → one line → trim + burn in → ✅ → TikTok drafts
+clips   destinations → Pexels → vision judge → one line → trim + burn in + licensed track → ✅ → TikTok + Reels
 
 shoots  rotation → angle + destination → hook + beats + caption (Claude) → Telegram → YOU FILM IT
 
-plans   destination → itinerary (the site, or Claude) → render ×2 → ✅ → TikTok drafts + Instagram
+plans   destination → itinerary (the site, or Claude) → render ×2 → ✅ → TikTok + Instagram
 ```
+
+**Since 12 Oct 2026 there is one path to the feed** while `slate.on` is true: the
+08:00 digest, one tap, and then every TikTok post and every Reel goes out publicly
+through Zernio (see "One tap a day" below). The ✅ in each line above is that tap;
+nothing arrives as an approval card of its own, and a TikTok inbox draft happens
+only when Zernio fails.
 
 Two of these are not like the other three. A **shoot** is a shot list, and
 nothing publishes it because the video does not exist until somebody films it. A
@@ -404,9 +410,17 @@ the pin under the post already prints and the country hashtag is already
 generated from. The only written line is the hook, and `beatCountMismatch`
 refuses one that promises five places over four cuts.
 
-A clip belongs on **both** platforms, and only one of them can be reached from
-here. TikTok gets it through the API, as a draft. **The Instagram copy is one you
-post yourself**, and the notification hands you the mp4's URL to do it with.
+**Since 12 Oct 2026 a clip publishes to both, through Zernio**: a TikTok video and
+the same file as an Instagram Reel, from the morning digest, and **only with its
+own sound**: a voiceover, or a track from `assets/audio/tracks.json` marked
+`"commercial": true` (the account is a business). A clip without either is not
+posted (`soundOf` in `src/video/tracks.js`, checked at the inbox, at the slate
+build, against the file's audio stream, and again at publish). The rest of this
+section is how it was until then, and why.
+
+A clip belongs on **both** platforms, and only one of them could be reached from
+here. TikTok got it through the API, as a draft. **The Instagram copy was one you
+posted yourself**, and the notification handed you the mp4's URL to do it with.
 
 That split is what the two APIs offer, not a preference. The sound is chosen by
 hand in each app, which is the one part of a post this pipeline was never going
@@ -871,18 +885,37 @@ owner's whole job is one tap. `src/slate/` plans the day at once:
 - **The ramp**: the first `rampDays` (7) after the first slate post carry
   `rampTiktokPerDay` (2) TikTok posts, then every TikTok slot is used.
 
-While the slate is on, the ordinary format rotation builds no slideshows of its
-own; videos keep their per-item approval.
+**The slate is the only path** (12 Oct 2026, the owner's order). While it is on,
+the format rotation, the deck ideas and the news gather do not run, and anything a
+command builds (`/make`, `/gems`, `/deck`, `/run`...) goes into the next digest
+through the slate inbox (`src/slate/inbox.js`) instead of an approval card.
 
-### Public TikTok posts, through Zernio
+- **Videos** have slots of their own (`slate.videos`: one TikTok video and the
+  same file as a Reel a day), drawn from the clip formats in `formats.mix` by
+  weight. A format is built only if it can carry sound today (a declared
+  commercial track, or a voice for the guide); each video built is checked for its
+  sound and for an audio stream in the file. With no track declared the digest
+  says no video was built, and why.
+- **The leftovers** of the per-post approvals (cards waiting for a tap, approved
+  posts queued for the drip, deck ideas) were moved into the digest or cancelled
+  once, at the first boot of this code, from `data/old-flow.json`
+  (`src/slate/leftovers.js`); the owner got the list in Telegram.
 
-The slate's TikTok posts leave through [Zernio](https://zernio.com) (Late, renamed),
-which is free for one TikTok and one Instagram account and can publish photo
-carousels publicly with TikTok's own auto music. `src/publish/tiktokRoute.js`
-decides per post:
+### Public posts, through Zernio
 
-- **Only a slate post goes through Zernio**, and only with `publish.tiktok.via:
-  "zernio"`. Everything else stays the inbox draft described below.
+Every TikTok post leaves through [Zernio](https://zernio.com) (Late, renamed),
+which is free for one TikTok and one Instagram account: slideshows as photo
+carousels with TikTok's own auto music, clips as videos. A clip's Instagram half
+is a Reel through Zernio too; Instagram photos and carousels keep the Instagram
+API. `src/publish/tiktokRoute.js` decides per post:
+
+- **There is no other way out to TikTok.** The `publish.tiktok.via` switch and the
+  per-candidate flag that kept everything outside the slate a draft are gone, and
+  so are `/draft` and the admin site's draft button.
+- **A post Zernio is still processing when the wait runs out is not a failure**:
+  it is recorded under Zernio's id and checked again every 15 minutes, and the
+  owner is told if it failed after all. Retrying it, or drafting it, would post
+  it twice.
 - **Privacy is `SELF_ONLY` unless set otherwise**: an unset or unknown value in
   post-config is never public.
 - **Caps**: `publish.tiktok.dailyCap` (3), under Zernio's 15 photo posts a day
