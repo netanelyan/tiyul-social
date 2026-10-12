@@ -140,6 +140,12 @@ export function instagramPost(result) {
   return { id: m[3], kind: m[2] === 'p' ? 'post' : 'reel', handle, url: `https://www.instagram.com/${m[2] === 'reels' ? 'reel' : m[2]}/${m[3]}/` };
 }
 
+/** The handle of an Instagram profile URL (instagram.com/<handle>/), or null. */
+export function instagramProfile(url) {
+  const m = /^https?:\/\/(?:www\.)?instagram\.com\/([A-Za-z0-9._]{2,30})\/?(?:[?#].*)?$/.exec(String(url || ''));
+  return m && !RESERVED_IG.has(m[1].toLowerCase()) ? m[1] : null;
+}
+
 /** "12.5K Followers", "1,234 עוקבים" and friends, as a number. */
 export function parseFollowers(text) {
   const m = /([\d][\d.,]*)\s*([KkMm]|אלף|מיליון)?\s*(?:Followers|followers|עוקבים)/.exec(String(text || ''));

@@ -114,6 +114,13 @@ much shorter you make them, and the words you cut and add most.
   When nothing they sell is in our catalog, the closest page, with the reason.
 - **Questions**: a post asking how to plan a trip -> one reply, from our site's
   data, with a link only if they asked for a route. Never a DM.
+- **Instagram handles for the trend watcher**: every Hebrew travel creator the
+  sorter meets, lead or not, from an Instagram link or "Instagram: @handle" in a
+  YouTube channel's or Short's description, the Linktree page it links, or
+  Brave's instagram.com results (a post too old for a lead, or a profile, is
+  sorted for its author alone, 20 a run). Kept in `igHandles` in growth.json,
+  where the bot's trend watcher reads them; never a lead, never contacted. The
+  run details on Today say how many were added.
 
 [Not for us] and [Not interested] are stored against every key the person has
 (handle, phone, website, place) and checked before anything new is created.
@@ -225,8 +232,9 @@ store.js      data/growth.json (never the posting store), and its migrations
 rules.js      caps, warm-up, one message + one follow-up, do-not-contact, dedupe
 claude.js     every Claude call, budget-checked, with the refusal fallback
 links.js      every link: plain for people, tagged for GA4
-find/         discovery: queries, Places, sorting, scoring, thumbnails, and a
-              video's description and comments (videoContext.js)
+find/         discovery: queries, Places, sorting, scoring, thumbnails, a
+              video's description and comments (videoContext.js), and the
+              trend watcher's Instagram handles (igHandles.js)
 ../clients/   shared with the trend watcher: the network door and its allowlist,
               Brave, YouTube, TikTok oEmbed, the monthly ledger, the model prices,
               the stop

@@ -47,6 +47,13 @@ export const emptyState = () => ({
   // sent, and whether they differ. Few-shot examples and the weekly edits
   // report read it (prepare/learn.js).
   sentLog: [],
+  // Instagram handles of Hebrew travel creators, for the bot's trend watcher, which
+  // reads them from this file (find/igHandles.js). Never a lead, never contacted.
+  // handle -> { at, via, from, name }. Handles the sorter turned down: handle ->
+  // { at, why }. Linktree pages read: url -> { at, handle }.
+  igHandles: {},
+  igNot: {},
+  linktrees: {},
   // One-time changes migrate() has made to this file, by name. A new desk starts
   // with all of them, so none applies to it.
   applied: ['agency-pause-2026-10-11'],

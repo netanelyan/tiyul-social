@@ -40,6 +40,9 @@ export const RULES = [
   // Discovery). Reads only, and nothing on graph.instagram.com.
   { method: 'GET', host: 'graph.facebook.com', path: /^\/v\d+\.\d+\/(ig_hashtag_search|\d+\/(top_media|recently_searched_hashtags)|\d+)$/, why: "Instagram hashtag top posts and other accounts' public posts, read only" },
   { method: 'GET', suffix: 'cdninstagram.com', why: 'thumbnails' },
+  // A creator's public Linktree page, linked from their YouTube description, for
+  // the Instagram handle on it (src/growth/find/igHandles.js). One page, no deeper.
+  { method: 'GET', host: 'linktr.ee', path: /^\/[A-Za-z0-9._-]{1,50}\/?$/, why: "a creator's public link page, for the Instagram on it" },
   { method: 'GET', suffix: 'fbcdn.net', why: 'thumbnails' },
   { method: 'POST', host: 'places.googleapis.com', path: /^\/v1\/places:searchText$/, why: 'finding agencies' },
   { method: 'GET', host: 'www.googleapis.com', path: /^\/youtube\/v3\/(search|channels|videos|commentThreads)$/, why: 'YouTube search and a video\'s top comments, read only' },

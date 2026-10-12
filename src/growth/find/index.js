@@ -3,13 +3,15 @@ import { BudgetError, guard, marginal, monthSpend, record } from '../../clients/
 import { claudeConfigured } from '../claude.js';
 import { destinationSupported, normHe, postDestination, refreshSite } from '../prepare/site.js';
 import { blockedBy, leadFor, markSeen, personKeys, postKey } from '../rules.js';
-import { braveConfigured, braveSearch, IG_BOILERPLATE, instagramPost, instagramTime, stripIgCounts, parseEngagement, parseFollowers, tiktokPost, tiktokProfile, tiktokTime } from '../../clients/brave.js';
+import { braveConfigured, braveSearch, IG_BOILERPLATE, instagramPost, instagramProfile, instagramTime, stripIgCounts, parseEngagement, parseFollowers, tiktokPost, tiktokProfile, tiktokTime } from '../../clients/brave.js';
 import { classify, classifyAgencies } from './classify.js';
 import { enrichAgency, placesConfigured, searchAgencies } from './places.js';
 import { destinations, fillDest, todaysSearches } from './queries.js';
 import { scoreAgency, scoreCreator, scoreCustomer } from './score.js';
 import { oembed, saveThumb } from './tiktok.js';
-import { channelStats, hebrewLetters, searchShorts, youtubeConfigured } from '../../clients/youtube.js';
+import { channelStats, contactsIn, hebrewLetters, searchShorts, youtubeConfigured } from '../../clients/youtube.js';
+import { harvestHandles, knownHandle, normHandle, readLinktree, sortOldInstagram } from './igHandles.js';
+import { descriptions } from './videoContext.js';
 
 // One discovery run: search, dedupe, sort, score, store.
 //
@@ -34,10 +36,16 @@ export const DEFAULT_DEPS = {
   enrichAgency,
   searchShorts,
   channelStats,
+  descriptions,
+  linktree: readLinktree,
   sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
 };
 
 const PLATFORM_KEY = { tiktok: 'tt', instagram: 'ig', youtube: 'yt' };
+
+/** An Instagram result's own words, without the counter line and the login wall. */
+const igText = (r) => stripIgCounts([r.title, IG_BOILERPLATE.test(r.description) ? '' : r.description].filter(Boolean).join('\n'));
+
 const iso = (t) => new Date(t).toISOString();
 const ageDaysOf = (publishedAt, now) => {
   const t = Date.parse(publishedAt || '');
@@ -49,8 +57,9 @@ const preferredSlugs = () => destinations().map(siteSlugFor).filter(Boolean);
 
 export async function runDiscovery({ store, settings, trigger = 'button', now = Date.now(), deps = DEFAULT_DEPS, env = process.env } = {}) {
   const state = store.data;
-  const run = { at: iso(now), trigger, queries: 0, candidates: 0, found: { creator: 0, customer: 0, agency: 0 }, attached: 0, rejected: 0, skipped: [], errors: [], stopped: null };
+  const run = { at: iso(now), trigger, queries: 0, candidates: 0, found: { creator: 0, customer: 0, agency: 0 }, attached: 0, rejected: 0, igHandles: 0, skipped: [], errors: [], stopped: null };
   const finish = () => {
+    run.igHandlesTotal = Object.keys(state.igHandles || {}).length;
     run.spentUsd = Number(monthSpend(state, settings, now).billable.toFixed(4));
     run.ms = Date.now() - now;
     state.runs.unshift(run);
@@ -94,6 +103,13 @@ async function findSocial({ state, settings, plan, run, now, deps, env }) {
 
   const cands = new Map();
   const followers = new Map();
+  // Authors of Instagram finds that cannot be leads (too old, a profile page), for
+  // the trend watcher's list of handles (igHandles.js). Each handle judged once.
+  const oldIg = new Map();
+  const rememberIg = (handle, url, r) => {
+    const h = normHandle(handle);
+    if (h && !oldIg.has(h) && !knownHandle(state, h) && !blockedBy(state, personKeys({ platform: 'ig', handle: h }))) oldIg.set(h, { handle: h, url, text: igText(r) });
+  };
   for (const [i, q] of plan.brave.entries()) {
     try {
       guard(state, settings, 'brave', marginal(state, settings, 'brave', now), now);
@@ -125,7 +141,10 @@ async function findSocial({ state, settings, plan, run, now, deps, env }) {
         continue;
       }
       const post = q.platform === 'tiktok' ? tiktokPost(r.url) : instagramPost(r);
-      if (!post) continue;
+      if (!post) {
+        if (q.platform === 'instagram') rememberIg(instagramProfile(r.url), r.url, r);
+        continue;
+      }
       // Instagram's indexed snippet often carries the account's own counts
       // ("19K Followers, 2,192 Following"), which is public and free.
       if (q.platform === 'instagram' && post.handle) {
@@ -140,6 +159,7 @@ async function findSocial({ state, settings, plan, run, now, deps, env }) {
       const born = q.platform === 'tiktok' ? tiktokTime(post.id) : instagramTime(post.id);
       if (born && ageDaysOf(born, now) > Math.max(settings.maxPostAgeDays, settings.maxCustomerAgeDays)) {
         run.tooOld = (run.tooOld || 0) + 1;
+        if (q.platform === 'instagram') rememberIg(post.handle, post.url, r);
         continue;
       }
       const keys = personKeys({ platform: PLATFORM_KEY[q.platform], handle: post.handle });
@@ -154,7 +174,7 @@ async function findSocial({ state, settings, plan, run, now, deps, env }) {
         id: post.id,
         url: post.url,
         handle: post.handle,
-        text: q.platform === 'instagram' ? stripIgCounts([r.title, IG_BOILERPLATE.test(r.description) ? '' : r.description].filter(Boolean).join('\n')) : r.description,
+        text: q.platform === 'instagram' ? igText(r) : r.description,
         thumbUrl: r.thumb,
         publishedAt: q.platform === 'tiktok' ? tiktokTime(post.id) : instagramTime(post.id) || r.pageAge,
         likes: eng.likes ?? null,
@@ -190,6 +210,9 @@ async function findSocial({ state, settings, plan, run, now, deps, env }) {
   }
 
   await judge({ state, settings, cands: [...cands.values()], followers, run, now, deps });
+  // After the leads, which matter more if the budget runs out in between.
+  for (const c of cands.values()) oldIg.delete(normHandle(c.handle));
+  await sortOldInstagram({ state, settings, old: oldIg, run, now, deps });
 }
 
 /* ------------------------------------------------------------ YouTube */
@@ -243,11 +266,26 @@ async function findYoutube({ state, settings, plan, run, now, deps, env }) {
         if (s?.handle) c.handle = s.handle;
         c.profileUrl = s?.handle ? `https://www.youtube.com/@${s.handle}` : `https://www.youtube.com/channel/${c.channelId}`;
         c.socials = s?.socials || [];
+        c.linktree = s?.linktree || [];
         c.email = s?.email || null;
         if (s?.subscribers) followers.set(`yt:${String(c.handle || c.channelId).toLowerCase()}`, s.subscribers);
       }
     } catch (e) {
       run.errors.push(`YouTube stats: ${e.message}`);
+    }
+    // A creator names their Instagram (or a Linktree) under the Short more often
+    // than in the channel's own description, and search gives only 160 characters
+    // of it. videos.list, one unit for 50, from the general quota.
+    try {
+      const full = await deps.descriptions([...cands.values()].map((c) => c.id), { env });
+      record(state, 'youtube', { units: Math.ceil(cands.size / 50), now });
+      for (const c of cands.values()) {
+        const more = contactsIn(full.get(c.id));
+        c.socials = [...(c.socials || []), ...more.socials.filter((u) => !(c.socials || []).some((s) => s.toLowerCase() === u.toLowerCase()))].slice(0, 4);
+        c.linktree = [...new Set([...(c.linktree || []), ...more.linktree])];
+      }
+    } catch (e) {
+      run.errors.push(`YouTube descriptions: ${e.message}`);
     }
   }
   await judge({ state, settings, cands: [...cands.values()], followers, run, now, deps });
@@ -265,6 +303,7 @@ async function judge({ state, settings, cands, followers, run, now, deps }) {
     cands.map((c) => ({ text: c.text, author: c.name || c.handle, platform: c.platform })),
     { state, settings, destinations: options.map((o) => o.name) }
   );
+  await harvestHandles({ state, cands, verdicts, run, now, deps });
   const preferred = preferredSlugs();
 
   // THE SORTER'S CHOICE IS CHECKED, NOT TRUSTED. On the first live runs it

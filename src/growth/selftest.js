@@ -11,7 +11,8 @@ import { setClient } from './claude.js';
 import { growthSwitch, mergeSettings, TEMPLATE_NAMES } from './config.js';
 import { createOps } from './desk.js';
 import { runDiscovery } from './find/index.js';
-import { cleanText, instagramPost, instagramTime, parseFollowers, stripIgCounts, tiktokPost, tiktokTime } from '../clients/brave.js';
+import { cleanText, instagramPost, instagramProfile, instagramTime, parseFollowers, stripIgCounts, tiktokPost, tiktokTime } from '../clients/brave.js';
+import { instagramOnLinktree } from './find/igHandles.js';
 import { todaysSearches } from './find/queries.js';
 import { scoreAgency, scoreCreator } from './find/score.js';
 import { assertAllowed, isSocial, RULES } from '../clients/http.js';
@@ -190,6 +191,8 @@ function fakeDeps(over = {}) {
     enrichAgency: async () => ({ email: null, whatsapp: null, socials: [], kosher: null, siteError: null }),
     searchShorts: async () => [],
     channelStats: async () => new Map(),
+    descriptions: async () => new Map(),
+    linktree: async () => null,
     sleep: async () => {},
     ...over,
   };
@@ -505,6 +508,83 @@ export async function growthSelftest({ ok, eq }) {
     ok('a Short with no Hebrew is dropped before it is sorted', run2.notHebrew > 0 && foreign.calls.classify === 0);
     ok('and only the Short: its channel is not judged on one title', Boolean(store2.data.seen['yt:post:vidRu']) && !store2.data.seen['yt:channel:chanRu']);
     ok('Settings refuse more YouTube searches than the free 100 a day', Boolean((await createOps({ store: memStore(), env: {}, clock: () => NOW, deps: { runDiscovery: async () => {}, prepareToday: async () => {} } }).post('/api/settings', { settings: { youtubeDestinationsPerDay: 30 } })).error));
+  }
+
+  /* ---------------------------------------------------------- Instagram handles for the trend watcher */
+
+  {
+    const named = contactsIn('כל הטיפים בפרופיל. אינסטגרם: @Maya.Goes | linktr.ee/maya_trips. מייל: noa@trips.co.il');
+    ok('a description names an Instagram with an @ beside the word, and a Linktree', named.socials.includes('https://www.instagram.com/Maya.Goes/') && named.linktree.join() === 'https://linktr.ee/maya_trips', JSON.stringify(named));
+    ok('an email is not an Instagram handle', contactsIn('כתבו לי noa@trips.co.il').socials.length === 0);
+    eq('an Instagram profile URL gives its handle; a post or a reserved path does not', [instagramProfile('https://www.instagram.com/roni.abroad/'), instagramProfile('https://www.instagram.com/explore/'), instagramProfile('https://www.instagram.com/p/AbCdEf123/')].join(','), 'roni.abroad,,');
+    const lt = '<script id="__NEXT_DATA__">{"socialLinks":[{"type":"TIKTOK","url":"https://tiktok.com/@x"},{"type":"INSTAGRAM","url":"https://instagram.com/Tom.Abroad","position":1}]}</script>';
+    eq("a Linktree page's own Instagram icon gives the handle", instagramOnLinktree(lt), 'tom.abroad');
+    eq('else its first Instagram link', instagramOnLinktree('<a href="https:\\/\\/www.instagram.com\\/dana.trips">'), 'dana.trips');
+    ok("and Linktree's own account is none of them", instagramOnLinktree('<a href="https://instagram.com/linktree_">') === null);
+    ok('a Linktree page may be read, one level deep, and never written', Boolean(assertAllowed('GET', 'https://linktr.ee/maya_trips')) && (() => { try { assertAllowed('GET', 'https://linktr.ee/s/abc/def'); return false; } catch { return true; } })() && (() => { try { assertAllowed('POST', 'https://linktr.ee/maya_trips'); return false; } catch { return true; } })());
+
+    // Brave's instagram.com finds that cannot be leads: a post a year old, a profile.
+    const IGA = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+    const igCode = (daysAgo) => {
+      let id = BigInt(NOW - daysAgo * DAY - 1314220021721) << 23n;
+      let s = '';
+      while (id > 0n) {
+        s = IGA[Number(id % 64n)] + s;
+        id /= 64n;
+      }
+      return s;
+    };
+    ok('the test shortcode decodes to its age', Math.round((NOW - Date.parse(instagramTime(igCode(400)))) / DAY) === 400);
+    const store = memStore();
+    store.data.dnc['ig:user:blocked.one'] = { at: new Date(NOW).toISOString(), why: 'asked' };
+    const igResults = [
+      { url: `https://www.instagram.com/p/${igCode(400)}/`, title: 'Dana (@dana.abroad) on Instagram: "טיול לאתונה, כל הטיפים"', description: '', extra: [], thumb: null },
+      { url: 'https://www.instagram.com/roni.abroad/', title: 'Roni (@roni.abroad) • Instagram photos and videos', description: 'מטיילת בעולם, מסלולים וטיפים', extra: [], thumb: null },
+      { url: `https://www.instagram.com/p/${igCode(300)}/`, title: 'Blocked (@blocked.one) on Instagram: "טיול"', description: '', extra: [], thumb: null },
+      { url: `https://www.instagram.com/p/${igCode(200)}/`, title: 'Airline (@airline.il) on Instagram: "מבצע טיסות"', description: '', extra: [], thumb: null },
+    ];
+    const sorted = [];
+    const deps = fakeDeps({
+      brave: async (text, site) => (site === 'instagram.com' ? igResults : []),
+      classify: async (posts) => {
+        deps.calls.classify++;
+        sorted.push(...posts.map((p) => p.author));
+        return posts.map((p) => (p.author === 'airline.il' ? { hebrew: true, kind: 'other', reason: 'פרסומת של חברת תעופה' } : { hebrew: true, kind: 'creator', reason: 'מספרת על הטיול שלה' }));
+      },
+    });
+    const run1 = await runDiscovery({ store, settings: S, now: NOW, deps, env: ENV });
+    eq('the authors of Instagram finds too old to be leads, and of profiles, are sorted for their handle alone, once each', sorted.sort().join(','), 'airline.il,dana.abroad,roni.abroad');
+    ok('the creators go on the list for the trend watcher, from Brave', store.data.igHandles['dana.abroad']?.via === 'brave' && Boolean(store.data.igHandles['roni.abroad']));
+    ok('one the sorter turned down is set aside with its reason, not listed', !store.data.igHandles['airline.il'] && /תעופה/.test(store.data.igNot['airline.il']?.why || ''));
+    ok('a handle on the do-not-contact list is never sorted or listed', !sorted.includes('blocked.one') && !store.data.igHandles['blocked.one']);
+    ok('none of them becomes a lead', !Object.keys(store.data.leads).some((k) => /dana|roni|airline/.test(k)));
+    ok('the run counts what it added, for the Today page', run1.igHandles === 2 && run1.igHandlesTotal === 2);
+    const before = deps.calls.classify;
+    await runDiscovery({ store, settings: S, now: NOW + 1000, deps, env: ENV });
+    eq('a handle already judged is not sorted again', deps.calls.classify, before);
+
+    // YouTube: the Short's full description, and a Linktree.
+    const ytStore = memStore();
+    const short = (id, channelId) => ({ id, url: `https://www.youtube.com/shorts/${id}`, title: 'טיול לאתונה ב-3 ימים', description: '', channelId, channelTitle: channelId, publishedAt: new Date(NOW - 3 * DAY).toISOString(), thumb: null });
+    const pages = [];
+    const ytDeps = fakeDeps({
+      brave: async () => [],
+      searchShorts: async () => [short('vidC', 'chanC'), short('vidD', 'chanD'), short('vidE', 'chanE')],
+      channelStats: async () =>
+        new Map([
+          ['chanC', { subscribers: 5200, handle: 'maya.yt', socials: [], email: null, linktree: [] }],
+          ['chanD', { subscribers: 4100, handle: 'tom.yt', socials: [], email: null, linktree: ['https://linktr.ee/tom.trips'] }],
+          ['chanE', { subscribers: 3000, handle: 'shop.yt', socials: [], email: null, linktree: [] }],
+        ]),
+      descriptions: async () => new Map([['vidC', 'כל הטיפים בפרופיל. Instagram: @maya.goes'], ['vidE', 'instagram.com/shop.il']]),
+      linktree: async (url) => (pages.push(url), 'tom.abroad'),
+      classify: async (posts) => posts.map((p) => (p.author === 'chanE' ? { hebrew: true, kind: 'other', reason: 'חנות' } : { hebrew: true, kind: 'creator', destination: 'אתונה', places: ['האקרופוליס'], routeDemand: true, asksForRoute: false, days: 4, gender: 'f', reason: '' })),
+    });
+    await runDiscovery({ store: ytStore, settings: S, now: NOW, deps: ytDeps, env: { ...ENV, YOUTUBE_API_KEY: 'test' } });
+    eq("an Instagram named under a creator's Short goes on the list", ytStore.data.igHandles['maya.goes']?.via, 'youtube');
+    ok("and becomes the lead's DM target too", ytStore.data.leads['yt:@maya.yt']?.socials?.includes('https://www.instagram.com/maya.goes/'));
+    ok('a channel that links only a Linktree: the page is read once, for its Instagram', pages.join() === 'https://linktr.ee/tom.trips' && ytStore.data.igHandles['tom.abroad']?.via === 'linktree' && ytStore.data.linktrees['https://linktr.ee/tom.trips']?.handle === 'tom.abroad');
+    ok('a channel the sorter did not call a travel creator adds nothing', !ytStore.data.igHandles['shop.il']);
   }
 
   /* ---------------------------------------------------------- publishing */

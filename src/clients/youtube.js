@@ -56,19 +56,26 @@ export async function searchShorts(text, { env = process.env, now = Date.now(), 
     }));
 }
 
-/** The public contacts a channel description lists. */
+/**
+ * The public contacts a channel or video description lists: Instagram and TikTok
+ * links, an Instagram handle named beside the word ("Instagram: @noa.trips",
+ * "אינסטגרם - @noa.trips", only with the @), an email, and Linktree pages, which
+ * the growth desk reads for the Instagram on them (src/growth/find/igHandles.js).
+ */
 export function contactsIn(description) {
   const d = String(description || '');
   const socials = [];
   const add = (url) => {
-    if (!socials.includes(url)) socials.push(url);
+    if (!socials.some((s) => s.toLowerCase() === url.toLowerCase())) socials.push(url);
   };
   for (const m of d.matchAll(/(?:https?:\/\/)?(?:www\.)?instagram\.com\/([A-Za-z0-9._]{2,30})/gi)) {
     if (!/^(p|reel|reels|explore|stories)$/i.test(m[1])) add(`https://www.instagram.com/${m[1].replace(/\.$/, '')}/`);
   }
+  for (const m of d.matchAll(/(?:instagram|insta|אינסטגרם|אינסטה)\s*[:|-]?\s*@([A-Za-z0-9._]{2,30})/gi)) add(`https://www.instagram.com/${m[1].replace(/\.+$/, '')}/`);
   for (const m of d.matchAll(/(?:https?:\/\/)?(?:www\.)?tiktok\.com\/@([A-Za-z0-9._]{2,30})/gi)) add(`https://www.tiktok.com/@${m[1].replace(/\.$/, '')}`);
   const email = /([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})/.exec(d)?.[1] || null;
-  return { socials: socials.slice(0, 4), email };
+  const linktree = [...new Set([...d.matchAll(/(?:https?:\/\/)?(?:www\.)?linktr\.ee\/([A-Za-z0-9._-]{1,50})/gi)].map((m) => `https://linktr.ee/${m[1].replace(/[._-]+$/, '')}`))].slice(0, 2);
+  return { socials: socials.slice(0, 4), email, linktree };
 }
 
 /** channelId -> { subscribers, handle, socials, email }, up to 50 channels a unit. */

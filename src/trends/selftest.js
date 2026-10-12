@@ -363,9 +363,10 @@ export async function trendsSelftest({ ok, eq }) {
         'ag:x': { type: 'agency', source: 'places', handle: null, socials: ['https://www.instagram.com/agency/'] },
       },
       dnc: { 'ig:user:asked': { at: 'x', why: 'asked' } },
+      igHandles: { 'roni.abroad': { at: 'x', via: 'brave' }, asked: { at: 'x', via: 'brave' } },
     });
     const desk = deskCreators({ env: { GROWTH_STORE_PATH: '/x/growth.json' }, exists: () => true, read: () => deskFile });
-    eq("the desk's creators: its Instagram ones and Instagram links on others; never an irrelevant one, an agency or a do-not-contact", desk.handles.sort().join(','), 'maya.travels,trips.il');
+    eq("the desk's creators: its Instagram ones, Instagram links on others and its list for the watcher; never an irrelevant one, an agency or a do-not-contact", desk.handles.sort().join(','), 'maya.travels,roni.abroad,trips.il');
     ok('no desk file is a note, not a failure', /GROWTH_STORE_PATH/.test(deskCreators({ env: {}, exists: () => false }).note || ''));
 
     const rot = emptyTrends();

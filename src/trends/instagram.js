@@ -53,8 +53,9 @@ const median = (xs) => {
 
 /**
  * Instagram handles of the travel creators the growth desk found: its Instagram
- * creators, and any Instagram link on another creator's profile. A creator the
- * owner marked irrelevant, or one on the do-not-contact list, is left out.
+ * creators, any Instagram link on another creator's profile, and its list of
+ * handles kept for this watcher (`igHandles`). A creator the owner marked
+ * irrelevant, or one on the do-not-contact list, is left out.
  * Returns { handles, note }.
  */
 export function deskCreators({ env = process.env, read = readFileSync, exists = existsSync } = {}) {
@@ -77,6 +78,9 @@ export function deskCreators({ env = process.env, read = readFileSync, exists = 
     if (lead.source === 'instagram') add(lead.handle);
     for (const s of lead.socials || []) add(/instagram\.com\/([A-Za-z0-9._]{1,30})/i.exec(String(s))?.[1]);
   }
+  // The list the desk keeps for this watcher alone (src/growth/find/igHandles.js):
+  // every Hebrew travel creator it came across, lead or not.
+  for (const h of Object.keys(data.igHandles || {})) add(h);
   return { handles: [...out], note: null };
 }
 
