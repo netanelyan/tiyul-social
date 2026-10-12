@@ -2280,7 +2280,18 @@ eq('reconnecting with both clears it', missingScopes({ draft: true }).length, 0)
   const tkSrc = readFileSync(new URL('../src/publish/tiktok.js', import.meta.url), 'utf8');
   ok('the publisher returns the post id beside the publish id', /postId: status\?\.publicaly_available_post_id\?\.\[0\]/.test(tkSrc));
   const botSrc2 = readFileSync(new URL('../bot.js', import.meta.url), 'utf8');
-  ok('and the metrics row records it first', /const mediaId = done\[target\]\?\.postId \|\|/.test(botSrc2));
+  ok('and the metrics row records it through metricsIdFor', /const mediaId = metricsIdFor\(done\[target\]\);/.test(botSrc2));
+  const { metricsIdFor } = await import('../src/publish/zernio.js');
+  eq('the metrics row records the post id first', metricsIdFor({ publishId: 'v_pub_url~v2.1', postId: '7412345678901234567' }), '7412345678901234567');
+  eq('and the publish id only when there is nothing else', metricsIdFor({ publishId: 'v_inbox_url~v2.1' }), 'v_inbox_url~v2.1');
+  // The Lisbon plan post, 12 Oct 2026: Zernio returned while TikTok still had only
+  // its publish id, the row kept that id, and the resolver never looked at it again.
+  const unresolved = { publishId: '6acca53ff0c76557fd37f2a9', zernioId: '6acca53ff0c76557fd37f2a9', postId: 'p_pub_url~v2.7695707445034289204', url: null };
+  eq('a Zernio post TikTok has not resolved yet is recorded under Zernio\'s id', metricsIdFor(unresolved), '6acca53ff0c76557fd37f2a9');
+  ok('which is the shape the resolver looks for', /^[0-9a-f]{24}$/.test(metricsIdFor(unresolved)) && /\[0-9a-f\]\{24\}/.test(botSrc2));
+  eq('a resolved one under TikTok\'s video id', metricsIdFor({ ...unresolved, postId: '7695707380239043846', url: 'https://www.tiktok.com/@tiyulplus/video/7695707380239043846' }), '7695707380239043846');
+  eq('a Zernio Reel still processing under Zernio\'s id too', metricsIdFor({ zernioId: '6acca53ff0c76557fd37f2aa', postId: null, mediaId: null, url: null }), '6acca53ff0c76557fd37f2aa');
+  eq('and no result records nothing', metricsIdFor(null), null);
 }
 
 // No token is "not connected", which is a different message reported elsewhere.

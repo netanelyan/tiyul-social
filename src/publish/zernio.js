@@ -135,6 +135,22 @@ export function platformPart(post, platform) {
 
 export const tiktokPart = (post) => platformPart(post, 'tiktok');
 
+/**
+ * The id a publish result is recorded under in the metrics row.
+ *
+ * A Zernio post whose platform has not resolved yet is recorded under Zernio's own
+ * id. TikTok first hands back its publish id (p_pub_url~...), which matches nothing,
+ * and the video id and URL arrive a minute later; resolveZernioPosts in bot.js only
+ * looks up rows that hold a Zernio id, so recording the publish id left the row on it
+ * for good (the Lisbon plan post, 12 Oct 2026). Everything else as before: the
+ * platform's own post id first.
+ */
+export function metricsIdFor(res) {
+  if (!res) return null;
+  if (res.zernioId && !res.url) return String(res.zernioId);
+  return res.postId || res.mediaId || res.publishId || res.id || null;
+}
+
 export async function getPost(id, { env = process.env, fetchImpl } = {}) {
   const { post } = await call(`/posts/${encodeURIComponent(id)}`, { env, fetchImpl, step: 'status' });
   return post || null;

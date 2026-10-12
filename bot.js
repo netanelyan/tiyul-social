@@ -86,6 +86,7 @@ import {
   platformPart as zernioPart,
   zernioConfigured,
   isCardLevelZernio,
+  metricsIdFor,
 } from './src/publish/zernio.js';
 import { slotsFor, assign as assignSlate, israelDate } from './src/slate/plan.js';
 import { newSlate, approveAll as approveAllSlate, skipItem as skipSlateItem, dueItems as slateDue, markOutcome as markSlateOutcome, expire as expireSlate } from './src/slate/state.js';
@@ -1173,8 +1174,9 @@ async function publishNext(item = null) {
       // publish it twice.
       try {
         // A TikTok post's own id first: the metrics join matches the account's video
-        // list on it, and the publishId it used to record matches nothing there.
-        const mediaId = done[target]?.postId || done[target]?.mediaId || done[target]?.publishId || done[target]?.id || null;
+        // list on it, and the publishId it used to record matches nothing there. A
+        // Zernio post not resolved yet goes under Zernio's id until it is (metricsIdFor).
+        const mediaId = metricsIdFor(done[target]);
         // CLIPS ARE RECORDED NOW TOO, and their absence was the gap that made the
         // owner's own comparison impossible to make from inside this program.
         //
