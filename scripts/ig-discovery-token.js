@@ -15,10 +15,11 @@ import { businessDiscovery, discoveryConfigured, graphCode, hashtagId, notAllowe
 // It never touches the publisher's Instagram Login token (IG_ACCESS_TOKEN) or the
 // bot's store: it prints two lines for .env and nothing else is written.
 //
-// THE CHECK ASKS META THREE THINGS: Business Discovery on our own account, the
-// hashtags this account searched this week, and one Hashtag Search, for the first
-// of trends.instagram.hashtags. That search counts as one of the 30 a week, the
-// same one the watcher's next run would spend on that hashtag anyway.
+// THE CHECK ASKS META: Business Discovery on our own account and, only while
+// trends.instagram.hashtagSearch is on, the hashtags this account searched this
+// week and one Hashtag Search, for the first of trends.instagram.hashtags. That
+// search counts as one of the 30 a week, the same one the watcher's next run would
+// spend on that hashtag anyway.
 
 const V = process.env.GRAPH_API_VERSION || 'v21.0';
 const FB = `https://graph.facebook.com/${V}`;
@@ -52,7 +53,12 @@ async function probe(env, username) {
   } catch (e) {
     out.discovery = why(e);
   }
-  const tag = postConfig().trends.instagram.hashtags[0];
+  const { hashtagSearch, hashtags } = postConfig().trends.instagram;
+  const tag = hashtags[0];
+  if (!hashtagSearch) {
+    out.week = out.hashtags = 'parked (trends.instagram.hashtagSearch is off), not asked';
+    return out;
+  }
   try {
     const recent = await recentHashtags({ env });
     out.week = `ok: ${recent.length} of 30 hashtags used this week`;

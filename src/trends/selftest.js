@@ -7,6 +7,7 @@ import { DROPPED, mapCard } from './formats.js';
 import { fairOrder, findWinners, sourceNumbers, youtubeId } from './find.js';
 import { deskCreators, findInstagram, interactions } from './instagram.js';
 import { toPost } from '../clients/instagramGraph.js';
+import { postConfig } from '../postConfig.js';
 import { assertAllowed } from '../clients/http.js';
 import { credit, ensureOwnFormats, formatOf, formatPicker, judge, pickFormat, postScore } from './mix.js';
 import { describeRun, promoteCardsToTrials, recheckCards, runWatcher, watcherDue } from './run.js';
@@ -286,7 +287,7 @@ export async function trendsSelftest({ ok, eq }) {
     ok('and nothing else there: no write, no other edge, nothing on graph.instagram.com or instagram.com', refused('POST', 'https://graph.facebook.com/v21.0/178414/media') && refused('GET', 'https://graph.facebook.com/v21.0/178414/conversations') && refused('GET', 'https://graph.instagram.com/v21.0/ig_hashtag_search') && refused('GET', 'https://www.instagram.com/explore/tags/x/'));
 
     const igPost = (id, likes, comments, { days = 3, type = 'CAROUSEL_ALBUM', cover = `https://scontent.cdninstagram.com/${id}.jpg` } = {}) => ({ id, url: `https://www.instagram.com/p/${id}/`, caption: `caption ${id}`, mediaType: type, likes, comments, publishedAt: new Date(NOW - days * DAY).toISOString(), cover });
-    const igCfg = (over = {}) => ({ windowDays: 30, instagram: { hashtags: ['טיוללחול', 'טיפיםלטיול'], hashtagsPerWeek: 30, perHashtag: 25, creators: [], creatorsPerRun: 0, minInteractions: 200, creatorLift: 1.5, ...over } });
+    const igCfg = (over = {}) => ({ windowDays: 30, instagram: { hashtagSearch: true, hashtags: ['טיוללחול', 'טיפיםלטיול'], hashtagsPerWeek: 30, perHashtag: 25, creators: [], creatorsPerRun: 0, minInteractions: 200, creatorLift: 1.5, ...over } });
     const graphErr = (code, msg) => Object.assign(new Error(msg), { status: 400, body: { error: { code, message: msg } } });
     const fakeGraph = (over = {}) => {
       const calls = [];
@@ -305,6 +306,10 @@ export async function trendsSelftest({ ok, eq }) {
     const noDesk = { exists: () => false };
     const run = (cfgOver, state, graph, now = NOW) => findInstagram(igCfg(cfgOver), { state, env: {}, now, deps: { instagram: graph, desk: noDesk } });
 
+    const parked = fakeGraph();
+    const p0 = await run({ hashtagSearch: false, creators: ['someone'], creatorsPerRun: 5 }, emptyTrends(), { ...parked.graph, businessDiscovery: async (u) => (parked.calls.push(`bd:${u}`), { username: u, followers: 1, posts: [] }) });
+    ok('Hashtag Search parked: no hashtag is asked and no note says so, the creators still run', parked.calls.join() === 'bd:someone' && !p0.notes.some((n) => /האשטג|App Review/.test(n)));
+    eq('and parked is the default in the config', postConfig().trends.instagram.hashtagSearch, false);
     const none = await run({}, emptyTrends(), { discoveryConfigured: () => false });
     ok('without a Facebook Login token Instagram is not asked, and the run says why', none.found.length === 0 && none.notes.some((n) => /IG_DISCOVERY_TOKEN/.test(n)));
 

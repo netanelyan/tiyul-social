@@ -6,7 +6,9 @@ import * as graphReal from '../clients/instagramGraph.js';
 // Instagram as a source for the watcher, on Instagram's own numbers.
 //
 // Two ways in, both through the official Graph API (src/clients/instagramGraph.js):
-//   HASHTAGS: the top posts of a few Hebrew travel hashtags (trends.instagram.hashtags).
+//   HASHTAGS: the top posts of a few Hebrew travel hashtags (trends.instagram.hashtags),
+//       only with trends.instagram.hashtagSearch on. PARKED since 2026-10-12: it
+//       needs Meta's App Review and Business Verification, which the owner put off.
 //   CREATORS: the latest posts of the Israeli travel creators the growth desk has
 //       found, and any named by hand (trends.instagram.creators), by Business Discovery.
 //
@@ -107,7 +109,10 @@ export async function findInstagram(cfg, { state, env = process.env, now = Date.
   const graph = { ...graphReal, ...(deps.instagram || {}) };
   const found = [];
   const notes = [];
-  if (!(ig.hashtags?.length || ig.creatorsPerRun)) return { found, notes };
+  // Parked (hashtagSearch false) asks Meta nothing about hashtags and says nothing:
+  // the owner chose it, so it is not news on every run.
+  const tags = ig.hashtagSearch ? ig.hashtags || [] : [];
+  if (!(tags.length || ig.creatorsPerRun)) return { found, notes };
   if (!graph.discoveryConfigured(env)) {
     notes.push('אין IG_DISCOVERY_TOKEN: אינסטגרם לא נבדק (צריך חיבור Facebook Login, npm run ig-discovery)');
     return { found, notes };
@@ -122,7 +127,7 @@ export async function findInstagram(cfg, { state, env = process.env, now = Date.
   let skippedVideo = 0;
 
   /* ---- hashtags ---- */
-  if (ig.hashtags?.length) {
+  if (tags.length) {
     const h = (state.igHashtags ??= { ids: {}, log: [] });
     h.log = h.log.filter((x) => now - Date.parse(x.at) < WEEK);
     const ours = new Set(h.log.map((x) => x.tag));
@@ -134,7 +139,7 @@ export async function findInstagram(cfg, { state, env = process.env, now = Date.
     const recent = new Set(metas || []);
     let used = Math.max(ours.size, recent.size);
     let full = 0;
-    for (const tag of ig.hashtags) {
+    for (const tag of tags) {
       const free = ours.has(tag) || (h.ids[tag] && recent.has(String(h.ids[tag])));
       if (!free && used >= ig.hashtagsPerWeek) {
         full++;

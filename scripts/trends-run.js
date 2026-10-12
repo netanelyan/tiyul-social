@@ -143,7 +143,7 @@ try {
     console.log(`נבדקו מחדש: ${gone.length} ירדו${started.length ? `, ${started.length} נכנסו לניסיון במקומם` : ''}`);
     for (const g of gone) console.log(`  ✗ ${g.id}: ${g.why}`);
   } else if (!has('cards')) {
-    console.log(`צייד הפורמטים: ${cfg.queries.he.length} חיפושים בעברית, ${cfg.queries.en.length} באנגלית, ${cfg.tiktokQueries.length} בטיקטוק, ${cfg.instagram.hashtags.length} האשטגים ועד ${cfg.instagram.creatorsPerRun} יוצרים באינסטגרם · עד ${cfg.perRun} כרטיסים`);
+    console.log(`צייד הפורמטים: ${cfg.queries.he.length} חיפושים בעברית, ${cfg.queries.en.length} באנגלית, ${cfg.tiktokQueries.length} בטיקטוק, ${cfg.instagram.hashtagSearch ? `${cfg.instagram.hashtags.length} האשטגים ו` : ''}עד ${cfg.instagram.creatorsPerRun} יוצרים באינסטגרם · עד ${cfg.perRun} כרטיסים`);
     const run = await runWatcher(cfg, { trends: t.data, onProgress: (x) => console.log(`  ${x}`) });
     t.save();
     console.log(`\n${describeRun(run, t.data)}`);

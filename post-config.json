@@ -3194,7 +3194,9 @@
     "`minInteractions` or more, and a creator's only at `creatorLift` times their",
     "own median too. Needs a Facebook Login token (IG_DISCOVERY_TOKEN, made by",
     "`npm run ig-discovery`); the publisher's Instagram Login token cannot do it.",
-    "Hashtag Search also needs Meta's App Review; until then the run says so.",
+    "Hashtag Search also needs Meta's App Review and Business Verification, so it",
+    "is PARKED (`hashtagSearch` false, the owner's call of 12 Oct 2026); the list",
+    "of hashtags waits for the day it is turned on.",
     "The `queries` aim at the five formats our builders can fill (know before,",
     "N days, a day's cost, places to see, worth it or not): generic travel searches",
     "return food clips, news and \"hidden gems\", which are all dropped.",
@@ -3243,6 +3245,7 @@
     },
     "tiktokQueries": ["טיפים לטיול", "travel tips slideshow"],
     "instagram": {
+      "hashtagSearch": false,
       "hashtags": ["טיוללחול", "טיפיםלטיול", "המלצותלטיול", "טיולבאירופה", "חופשהבחול", "מטיילים", "תרמילאים", "טיולים"],
       "hashtagsPerWeek": 30,
       "perHashtag": 25,

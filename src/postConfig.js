@@ -1394,11 +1394,13 @@ function trendsCfg(raw) {
 /**
  * The watcher's Instagram source (src/trends/instagram.js). `hashtagsPerWeek` can
  * never pass Meta's 30 unique hashtags in 7 days, and a hashtag or handle is kept
- * bare (no # or @), as the Graph API takes it.
+ * bare (no # or @), as the Graph API takes it. Hashtag Search is off unless
+ * `hashtagSearch` is true: it needs Meta's App Review, parked by the owner.
  */
 function trendsInstagramCfg(raw) {
   const lift = num(raw.creatorLift, 1.5);
   return {
+    hashtagSearch: raw.hashtagSearch === true,
     hashtags: [...new Set(list(raw.hashtags).map((t) => t.replace(/^#/, '')))].slice(0, 30),
     hashtagsPerWeek: intIn(raw.hashtagsPerWeek, 0, 30, 30),
     perHashtag: intIn(raw.perHashtag, 1, 50, 25),
