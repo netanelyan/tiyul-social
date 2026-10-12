@@ -35,6 +35,12 @@ export const RULES = [
   { method: 'GET', suffix: 'tiktokcdn-us.com', why: 'thumbnails' },
   { method: 'GET', host: 'imgs.search.brave.com', why: 'thumbnails' },
   { method: 'GET', host: 'i.ytimg.com', why: 'thumbnails' },
+  // Instagram's official Graph API, Facebook Login side, for the trend watcher:
+  // a hashtag's id and top posts, and other accounts' public posts (Business
+  // Discovery). Reads only, and nothing on graph.instagram.com.
+  { method: 'GET', host: 'graph.facebook.com', path: /^\/v\d+\.\d+\/(ig_hashtag_search|\d+\/(top_media|recently_searched_hashtags)|\d+)$/, why: "Instagram hashtag top posts and other accounts' public posts, read only" },
+  { method: 'GET', suffix: 'cdninstagram.com', why: 'thumbnails' },
+  { method: 'GET', suffix: 'fbcdn.net', why: 'thumbnails' },
   { method: 'POST', host: 'places.googleapis.com', path: /^\/v1\/places:searchText$/, why: 'finding agencies' },
   { method: 'GET', host: 'www.googleapis.com', path: /^\/youtube\/v3\/(search|channels|videos|commentThreads)$/, why: 'YouTube search and a video\'s top comments, read only' },
   { method: 'POST', host: 'oauth2.googleapis.com', path: /^\/token$/, why: 'a GA4 access token' },

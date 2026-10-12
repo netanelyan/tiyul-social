@@ -3185,6 +3185,16 @@
     "desk), Brave finds the videos and YouTube still gives the numbers, inside",
     "`fallbackWindowDays`: Brave's index is months old, so the evidence is older,",
     "and every card shows its source's upload date.",
+    "",
+    "INSTAGRAM (`instagram`), official Graph API only, on likes plus comments:",
+    "the top posts of `hashtags` (Hashtag Search, at most `hashtagsPerWeek`",
+    "unique hashtags in 7 days, Meta's limit is 30) and the latest posts of the",
+    "creators the growth desk found plus `creators` (Business Discovery, up to",
+    "`creatorsPerRun` a run, least recently looked at first). A post is kept at",
+    "`minInteractions` or more, and a creator's only at `creatorLift` times their",
+    "own median too. Needs a Facebook Login token (IG_DISCOVERY_TOKEN, made by",
+    "`npm run ig-discovery`); the publisher's Instagram Login token cannot do it.",
+    "Hashtag Search also needs Meta's App Review; until then the run says so.",
     "The `queries` aim at the five formats our builders can fill (know before,",
     "N days, a day's cost, places to see, worth it or not): generic travel searches",
     "return food clips, news and \"hidden gems\", which are all dropped.",
@@ -3207,7 +3217,7 @@
     "listicle (know) and the day's cost (budget).",
     "",
     "`budgetUsd` is the watcher's own monthly cap (the vision calls and Brave), kept",
-    "in data/trends.json apart from the growth desk's. YouTube costs nothing.",
+    "in data/trends.json apart from the growth desk's. YouTube and Instagram cost nothing.",
     "OFF until the owner turns it on; `npm run trends` runs it once by hand."
   ],
   "trends": {
@@ -3231,6 +3241,15 @@
       "he": ["דברים שחשוב לדעת לפני טיול", "מסלול 3 ימים באירופה", "כמה עולה יום בחופשה", "מקומות שחייבים לראות באירופה", "שווה לטוס ל"],
       "en": ["things to know before traveling to", "3 day itinerary europe", "how much does a day cost in europe", "places you must visit in europe", "is it worth visiting europe"]
     },
-    "tiktokQueries": ["טיפים לטיול", "travel tips slideshow"]
+    "tiktokQueries": ["טיפים לטיול", "travel tips slideshow"],
+    "instagram": {
+      "hashtags": ["טיוללחול", "טיפיםלטיול", "המלצותלטיול", "טיולבאירופה", "חופשהבחול", "מטיילים", "תרמילאים", "טיולים"],
+      "hashtagsPerWeek": 30,
+      "perHashtag": 25,
+      "creators": [],
+      "creatorsPerRun": 10,
+      "minInteractions": 200,
+      "creatorLift": 1.5
+    }
   }
 }

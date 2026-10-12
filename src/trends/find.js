@@ -2,6 +2,7 @@ import { braveConfigured, braveSearch, tiktokPost, tiktokTime } from '../clients
 import { guard, marginal, record } from '../clients/budget.js';
 import { oembed } from '../clients/oembed.js';
 import { searchTop, videoDetails, videoStats, youtubeConfigured } from '../clients/youtube.js';
+import { findInstagram as findInstagramReal } from './instagram.js';
 
 // Where formats that work right now are found.
 //
@@ -20,8 +21,45 @@ import { searchTop, videoDetails, videoStats, youtubeConfigured } from '../clien
 // nothing invents a figure for it. Brave's index of TikTok was also measured at
 // months to years old (src/clients/brave.js), so most of what it returns falls
 // outside the 30 days and is dropped by its own upload date.
+//
+// INSTAGRAM CARRIES A SIGNAL TOO, ON LIKES AND COMMENTS (./instagram.js): the
+// official Graph API's own counts, so `signal: 'strong'` with `views: null`.
+// Views and likes are not one scale, so the strong sources are not ranked against
+// each other: each platform is ranked by its own number and they take turns
+// (fairOrder), or YouTube's view counts would push every Instagram post past
+// `perRun` forever.
 
 const DAY = 86_400_000;
+
+/** A source's own number: views where the platform gives them, else likes plus comments. */
+const ownNumber = (s) => s.views ?? (s.likes == null && s.comments == null ? 0 : (s.likes || 0) + (s.comments || 0));
+
+/**
+ * Strong sources first, the platforms taking turns, each ranked by its own
+ * number; weak ones after, in the order given. `sourceOf` reads the source off
+ * an item (a found post is its own source; a card has `.source`).
+ */
+export function fairOrder(items, sourceOf = (x) => x) {
+  const groups = new Map();
+  const weak = [];
+  for (const it of items) {
+    const s = sourceOf(it) || {};
+    if (s.signal !== 'strong') weak.push(it);
+    else groups.set(s.platform, [...(groups.get(s.platform) || []), it]);
+  }
+  for (const g of groups.values()) g.sort((a, b) => ownNumber(sourceOf(b)) - ownNumber(sourceOf(a)));
+  const out = [];
+  for (let i = 0; groups.size && out.length + weak.length < items.length; i++) for (const g of groups.values()) if (g[i]) out.push(g[i]);
+  return [...out, ...weak];
+}
+
+/** A source's numbers as one Hebrew phrase, naming only what the platform gave. */
+export function sourceNumbers(s = {}) {
+  const n = (x) => Number(x).toLocaleString('en-US');
+  if (s.views != null) return `${n(s.views)} צפיות`;
+  const parts = [s.likes != null && `${n(s.likes)} לייקים`, s.comments != null && `${n(s.comments)} תגובות`].filter(Boolean);
+  return parts.length ? parts.join(', ') : 'אות חלש בלי מספרים';
+}
 
 /** A YouTube video id from a Shorts or watch URL, or null. */
 export const youtubeId = (url) => /youtube\.com\/(?:shorts\/|watch\?v=)([\w-]{11})/.exec(String(url || ''))?.[1] || null;
@@ -117,7 +155,9 @@ export async function findWinners(cfg, { state, settings, env = process.env, now
     }
   }
 
-  // Strong signals first, by views; weak ones after, in the order found.
-  found.sort((a, b) => (b.signal === 'strong') - (a.signal === 'strong') || (b.views || 0) - (a.views || 0));
-  return { found, notes };
+  const ig = await (deps.findInstagram || findInstagramReal)(cfg, { state, env, now, deps });
+  found.push(...ig.found);
+  notes.push(...ig.notes);
+
+  return { found: fairOrder(found), notes };
 }

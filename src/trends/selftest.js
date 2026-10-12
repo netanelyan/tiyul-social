@@ -4,7 +4,10 @@ import { join } from 'node:path';
 import { emptyTrends, openTrends } from './store.js';
 import { checkPromise, DELIVERS, extractCard, setClient, sourceLeak } from './extract.js';
 import { DROPPED, mapCard } from './formats.js';
-import { findWinners, youtubeId } from './find.js';
+import { fairOrder, findWinners, sourceNumbers, youtubeId } from './find.js';
+import { deskCreators, findInstagram, interactions } from './instagram.js';
+import { toPost } from '../clients/instagramGraph.js';
+import { assertAllowed } from '../clients/http.js';
 import { credit, ensureOwnFormats, formatOf, formatPicker, judge, pickFormat, postScore } from './mix.js';
 import { describeRun, promoteCardsToTrials, recheckCards, runWatcher, watcherDue } from './run.js';
 import { weeklyTrendsReport } from './report.js';
@@ -262,6 +265,149 @@ export async function trendsSelftest({ ok, eq }) {
   ok('the fallback window holds, by the upload date YouTube reports', !fallback.found.some((f) => f.url.endsWith('bbbbbbbbbbb')));
   ok('and the upload date travels with the source, so the age of the evidence shows', fallback.found.find((f) => f.url.endsWith('aaaaaaaaaaa'))?.publishedAt === new Date(NOW - 3 * DAY).toISOString());
   ok('the note says why the run went through Brave', fallback.notes.some((n) => /מכסת החיפוש/.test(n)));
+
+  /* ---- Instagram: the Graph API only, likes and comments as the signal ---- */
+  {
+    const album = toPost({ id: '1', media_type: 'CAROUSEL_ALBUM', permalink: 'https://www.instagram.com/p/A/', caption: 'x', like_count: 900, comments_count: 40, timestamp: '2026-10-05T10:00:00+0000', children: { data: [{ media_type: 'VIDEO', media_url: 'v.mp4' }, { media_type: 'IMAGE', media_url: 'https://scontent.cdninstagram.com/a.jpg' }] } });
+    ok("an album's cover is its first image, and its counts are Meta's", album.cover === 'https://scontent.cdninstagram.com/a.jpg' && album.likes === 900 && album.comments === 40);
+    const hidden = toPost({ id: '2', media_type: 'IMAGE', media_url: 'i.jpg', comments_count: 12 });
+    ok('a hidden like count is no number, never a zero', hidden.likes === null && interactions(hidden) === 12);
+    ok('a hashtag video has no cover to read a format from', toPost({ id: '3', media_type: 'VIDEO', media_url: 'v.mp4' }).cover === null);
+
+    const refused = (m, u) => {
+      try {
+        assertAllowed(m, u);
+        return false;
+      } catch {
+        return true;
+      }
+    };
+    ok('the watcher may read Hashtag Search and Business Discovery on graph.facebook.com', ['https://graph.facebook.com/v21.0/ig_hashtag_search?q=x', 'https://graph.facebook.com/v21.0/178414/top_media', 'https://graph.facebook.com/v21.0/178414/recently_searched_hashtags', 'https://graph.facebook.com/v21.0/178414?fields=business_discovery', 'https://scontent-fra5-1.cdninstagram.com/v/a.jpg'].every((u) => assertAllowed('GET', u)));
+    ok('and nothing else there: no write, no other edge, nothing on graph.instagram.com or instagram.com', refused('POST', 'https://graph.facebook.com/v21.0/178414/media') && refused('GET', 'https://graph.facebook.com/v21.0/178414/conversations') && refused('GET', 'https://graph.instagram.com/v21.0/ig_hashtag_search') && refused('GET', 'https://www.instagram.com/explore/tags/x/'));
+
+    const igPost = (id, likes, comments, { days = 3, type = 'CAROUSEL_ALBUM', cover = `https://scontent.cdninstagram.com/${id}.jpg` } = {}) => ({ id, url: `https://www.instagram.com/p/${id}/`, caption: `caption ${id}`, mediaType: type, likes, comments, publishedAt: new Date(NOW - days * DAY).toISOString(), cover });
+    const igCfg = (over = {}) => ({ windowDays: 30, instagram: { hashtags: ['טיוללחול', 'טיפיםלטיול'], hashtagsPerWeek: 30, perHashtag: 25, creators: [], creatorsPerRun: 0, minInteractions: 200, creatorLift: 1.5, ...over } });
+    const graphErr = (code, msg) => Object.assign(new Error(msg), { status: 400, body: { error: { code, message: msg } } });
+    const fakeGraph = (over = {}) => {
+      const calls = [];
+      const graph = {
+        discoveryConfigured: () => true,
+        recentHashtags: async () => (calls.push('recent'), []),
+        hashtagId: async (tag) => (calls.push(`search:${tag}`), `id-${tag}`),
+        topMedia: async (id) => (calls.push(`top:${id}`), [igPost(`${id}-hit`, 800, 30), igPost(`${id}-low`, 90, 5), igPost(`${id}-old`, 5000, 100, { days: 45 }), igPost(`${id}-vid`, 9000, 300, { type: 'VIDEO', cover: null })]),
+        businessDiscovery: async () => {
+          throw new Error('not asked in this test');
+        },
+        ...over,
+      };
+      return { calls, graph };
+    };
+    const noDesk = { exists: () => false };
+    const run = (cfgOver, state, graph, now = NOW) => findInstagram(igCfg(cfgOver), { state, env: {}, now, deps: { instagram: graph, desk: noDesk } });
+
+    const none = await run({}, emptyTrends(), { discoveryConfigured: () => false });
+    ok('without a Facebook Login token Instagram is not asked, and the run says why', none.found.length === 0 && none.notes.some((n) => /IG_DISCOVERY_TOKEN/.test(n)));
+
+    const st = emptyTrends();
+    const f1 = fakeGraph();
+    const got = await run({}, st, f1.graph);
+    eq("a hashtag's top posts are kept on likes plus comments over the floor, inside the window, with a cover", got.found.map((x) => x.url.split('/')[4]).join(','), 'id-טיוללחול-hit,id-טיפיםלטיול-hit');
+    const one = got.found[0];
+    ok('an Instagram find is a strong signal on likes and comments, with no views made up', one.platform === 'instagram' && one.signal === 'strong' && one.views === null && one.likes === 800 && one.comments === 30);
+    ok('a video Meta gives no cover for is passed over, and counted', got.notes.some((n) => /2 סרטונים/.test(n)));
+    ok("every Graph call is on the watcher's ledger, at no cost", Object.values(st.spend)[0]?.instagram?.units === f1.calls.length && Object.values(st.spend)[0].instagram.usd === 0);
+    const f2 = fakeGraph();
+    await run({}, st, f2.graph, NOW + DAY);
+    ok("a hashtag's id is asked once and kept", !f2.calls.some((c) => c.startsWith('search:')) && f2.calls.filter((c) => c.startsWith('top:')).length === 2);
+
+    // The 30 unique hashtags a week.
+    const capped = emptyTrends();
+    capped.igHashtags = { ids: {}, log: Array.from({ length: 29 }, (_, i) => ({ tag: `t${i}`, at: new Date(NOW - 2 * DAY).toISOString() })) };
+    const f3 = fakeGraph();
+    const r3 = await run({ hashtags: ['t0', 'new1', 'new2'] }, capped, f3.graph);
+    ok('at 29 of 30 this week: a hashtag already used is free, one new one is asked, the next waits', f3.calls.includes('search:t0') && f3.calls.includes('search:new1') && !f3.calls.includes('search:new2') && r3.notes.some((n) => /30 מתוך 30/.test(n)));
+    const f4 = fakeGraph({ recentHashtags: async () => Array.from({ length: 30 }, (_, i) => `other${i}`) });
+    await run({}, emptyTrends(), f4.graph);
+    ok("Meta's own count of the week wins when it is higher: searches made anywhere count", !f4.calls.some((c) => c.startsWith('search:')));
+    const aged = emptyTrends();
+    aged.igHashtags = { ids: {}, log: Array.from({ length: 30 }, (_, i) => ({ tag: `t${i}`, at: new Date(NOW - 8 * DAY).toISOString() })) };
+    const f5 = fakeGraph();
+    await run({}, aged, f5.graph);
+    ok('a hashtag searched more than 7 days ago no longer counts', f5.calls.filter((c) => c.startsWith('search:')).length === 2 && aged.igHashtags.log.length === 2);
+
+    // No App Review yet: hashtags refused, Business Discovery still runs.
+    const unreviewed = emptyTrends();
+    let searches = 0;
+    const f6 = fakeGraph({
+      hashtagId: async () => {
+        searches++;
+        throw graphErr(10, '(#10) Application does not have permission for this action');
+      },
+      businessDiscovery: async (u) => ({ username: u, followers: 5000, posts: [igPost('c1', 900, 50), igPost('c2', 200, 10), igPost('c3', 210, 8), igPost('c4', 190, 6)] }),
+    });
+    const r6 = await run({ creators: ['someone'], creatorsPerRun: 5 }, unreviewed, f6.graph);
+    ok('Hashtag Search refused for want of App Review: one note, no second try, nothing counted against the week', searches === 1 && r6.notes.filter((n) => /App Review/.test(n)).length === 1 && unreviewed.igHashtags.log.length === 0);
+    eq('and from a creator, only the post well above their own median is kept (950 against a median of 214)', r6.found.map((x) => x.url.split('/')[4]).join(','), 'c1');
+
+    const deskFile = JSON.stringify({
+      leads: {
+        'ig:@maya.travels': { type: 'creator', source: 'instagram', handle: 'Maya.Travels', closed: null, socials: [] },
+        'yt:@trips': { type: 'creator', source: 'youtube', handle: 'trips', closed: 'not-interested', socials: ['https://www.instagram.com/trips.il/'] },
+        'ig:@spam': { type: 'creator', source: 'instagram', handle: 'spam', closed: 'irrelevant', socials: [] },
+        'ig:@asked': { type: 'creator', source: 'instagram', handle: 'asked', closed: null, socials: [] },
+        'ag:x': { type: 'agency', source: 'places', handle: null, socials: ['https://www.instagram.com/agency/'] },
+      },
+      dnc: { 'ig:user:asked': { at: 'x', why: 'asked' } },
+    });
+    const desk = deskCreators({ env: { GROWTH_STORE_PATH: '/x/growth.json' }, exists: () => true, read: () => deskFile });
+    eq("the desk's creators: its Instagram ones and Instagram links on others; never an irrelevant one, an agency or a do-not-contact", desk.handles.sort().join(','), 'maya.travels,trips.il');
+    ok('no desk file is a note, not a failure', /GROWTH_STORE_PATH/.test(deskCreators({ env: {}, exists: () => false }).note || ''));
+
+    const rot = emptyTrends();
+    rot.igCreators = { a: { at: new Date(NOW - DAY).toISOString() }, b: { at: new Date(NOW - 5 * DAY).toISOString() }, gone: { at: new Date(NOW - 3 * DAY).toISOString(), refused: 'Invalid user id' } };
+    const asked = [];
+    const f7 = fakeGraph({
+      businessDiscovery: async (u) => {
+        asked.push(u);
+        if (u === 'personal') throw graphErr(110, 'Invalid user id');
+        return { username: u, followers: 100, posts: [] };
+      },
+    });
+    await run({ hashtags: [], creators: ['a', 'b', 'gone', 'fresh', 'personal'], creatorsPerRun: 3 }, rot, f7.graph);
+    eq('creators are asked least recently looked at first, up to creatorsPerRun; a refused one rests 30 days', asked.join(','), 'fresh,personal,b');
+    ok('a personal account is set aside and the run goes on', Boolean(rot.igCreators.personal?.refused) && rot.igCreators.b.at === new Date(NOW).toISOString());
+    const slow = emptyTrends();
+    const asked2 = [];
+    const f8 = fakeGraph({
+      businessDiscovery: async (u) => {
+        asked2.push(u);
+        throw graphErr(4, 'Application request limit reached');
+      },
+    });
+    const r8 = await run({ hashtags: [], creators: ['x1', 'x2'], creatorsPerRun: 5 }, slow, f8.graph);
+    ok('a throttle stops the creators for this run and marks nobody refused', asked2.length === 1 && r8.notes.some((n) => /נעצר/.test(n)) && !Object.keys(slow.igCreators).length);
+
+    // Views and likes are not one scale.
+    const yt = (url, views) => ({ platform: 'youtube', url, signal: 'strong', views });
+    const igx = (url, likes) => ({ platform: 'instagram', url, signal: 'strong', views: null, likes, comments: 0 });
+    const ttx = (url) => ({ platform: 'tiktok', url, signal: 'weak', views: null });
+    eq('strong sources take turns by platform, each ranked by its own number; weak ones last', fairOrder([ttx('t1'), yt('y1', 5000), yt('y2', 90000), igx('i1', 300), igx('i2', 4000), yt('y3', 1000)]).map((x) => x.url).join(','), 'y2,i2,y1,i1,y3,t1');
+    const mixed = await findWinners(cfg, { state: emptyTrends(), settings, env, now: NOW, deps: { ...findDeps, findInstagram: async () => ({ found: [igx('https://www.instagram.com/p/Z/', 900)], notes: ['ig note'] }) } });
+    eq('Instagram finds join the run and take their turn after the top YouTube one', mixed.found.map((x) => x.platform).join(','), 'youtube,instagram,youtube,tiktok');
+    ok('and their notes come with them', mixed.notes.includes('ig note'));
+    const pq = emptyTrends();
+    pq.cards.ya = { id: 'ya', type: 'know', hook: { he: 'x' }, source: { platform: 'youtube', signal: 'strong', views: 500000 } };
+    pq.cards.yb = { id: 'yb', type: 'know', hook: { he: 'x' }, source: { platform: 'youtube', signal: 'strong', views: 200000 } };
+    pq.cards.ia = { id: 'ia', type: 'know', hook: { he: 'x' }, source: { platform: 'instagram', signal: 'strong', views: null, likes: 700, comments: 20 } };
+    eq('an Instagram card takes its turn for a trial, not behind every YouTube view count', promoteCardsToTrials(pq, { maxTrials: 2 }, NOW).join(','), 'trend:ya,trend:ia');
+
+    eq('an Instagram source reads as its likes and comments', sourceNumbers({ platform: 'instagram', views: null, likes: 1200, comments: 45 }), '1,200 לייקים, 45 תגובות');
+    eq('a hidden like count is left out, not shown as zero', sourceNumbers({ views: null, likes: null, comments: 45 }), '45 תגובות');
+    const igRun = { found: 3, strong: 3, weak: 0, instagram: 1, looked: 1, cards: [{ id: 'g1' }], rejected: [], trials: [], waiting: [], notes: [] };
+    const igTrends = { cards: { g1: { hookShapeHe: 'כמה עולה יום ב{dest}?', topicType: 'budget', look: 'native_text', type: 'budget', source: { platform: 'instagram', likes: 800, comments: 30, views: null, publishedAt: '2026-10-08T10:00:00.000Z' } } } };
+    const said = describeRun(igRun, igTrends);
+    ok('the run report counts Instagram apart and shows its likes and comments, never "weak"', /2 עם מספרים מיוטיוב, 1 עם לייקים ותגובות מאינסטגרם/.test(said) && /instagram, 800 לייקים, 30 תגובות/.test(said) && !/instagram, אות חלש/.test(said));
+  }
 
   const dir = mkdtempSync(join(tmpdir(), 'trends-'));
   try {

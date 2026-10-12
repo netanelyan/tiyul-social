@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { checkPromise as checkPromiseReal, extractCard as extractCardReal } from './extract.js';
-import { findWinners as findWinnersReal } from './find.js';
+import { fairOrder, findWinners as findWinnersReal, sourceNumbers } from './find.js';
 import { mapCard } from './formats.js';
 
 // One watcher run: find what works, take its format, keep what we can fill.
@@ -37,6 +37,7 @@ export async function runWatcher(cfg, { trends, env = process.env, now = Date.no
   run.found = found.length;
   run.strong = found.filter((f) => f.signal === 'strong').length;
   run.weak = run.found - run.strong;
+  run.instagram = found.filter((f) => f.platform === 'instagram').length;
 
   const fresh = found.filter((f) => !state.seen[f.url]).slice(0, cfg.perRun);
   const byShape = new Map(Object.values(state.cards).map((c) => [shapeKey(c.hookShapeHe), c]));
@@ -141,14 +142,16 @@ export async function recheckCards(state, { now = Date.now(), settings, deps = {
 
 /**
  * Cards that can be built become trial formats, up to `maxTrials` at once,
- * strongest source first. The rest wait for a trial to finish.
+ * strongest source first, the platforms taking turns (fairOrder in find.js). The
+ * rest wait for a trial to finish.
  */
 export function promoteCardsToTrials(state, cfg, now = Date.now()) {
   const active = Object.values(state.formats).filter((f) => f.kind === 'trial' && f.status === 'active').length;
   const room = Math.max(0, cfg.maxTrials - active);
-  const waiting = Object.values(state.cards)
-    .filter((c) => c.type && !c.formatId)
-    .sort((a, b) => (b.source?.signal === 'strong') - (a.source?.signal === 'strong') || (b.source?.views || 0) - (a.source?.views || 0));
+  const waiting = fairOrder(
+    Object.values(state.cards).filter((c) => c.type && !c.formatId),
+    (c) => c.source
+  );
   const started = [];
   for (const c of waiting.slice(0, room)) {
     const fid = `trend:${c.id}`;
@@ -176,13 +179,14 @@ export function watcherDue(cfg, { now = Date.now(), lastRunAt = null, timeZone =
 
 /** A run as a few Hebrew lines for Telegram and the script. */
 export function describeRun(run, trends) {
+  const ig = run.instagram || 0;
   const lines = [
-    `🔎 צייד הפורמטים: ${run.found} מועמדים (${run.strong} עם מספרים מיוטיוב, ${run.weak} אות חלש מטיקטוק), נבדקו ${run.looked}`,
+    `🔎 צייד הפורמטים: ${run.found} מועמדים (${run.strong - ig} עם מספרים מיוטיוב${ig ? `, ${ig} עם לייקים ותגובות מאינסטגרם` : ''}, ${run.weak} אות חלש מטיקטוק), נבדקו ${run.looked}`,
   ];
   const kept = run.cards.filter((c) => !c.again).map((c) => trends.cards[c.id]).filter(Boolean);
   for (const c of kept) {
     const when = c.source.publishedAt ? `, ${c.source.publishedAt.slice(0, 10)}` : '';
-    const src = c.source.views != null ? `${c.source.platform}, ${c.source.views.toLocaleString('en-US')} צפיות${when}` : `${c.source.platform}, אות חלש בלי מספרים${when}`;
+    const src = `${c.source.platform}, ${sourceNumbers(c.source)}${when}`;
     lines.push(`• "${c.hookShapeHe}" · ${c.topicType} · ${c.look}${c.dropped ? ` · ירד: ${c.dropped}` : ` → ${c.type}`} (${src})`);
   }
   const again = run.cards.filter((c) => c.again).length;
@@ -190,6 +194,6 @@ export function describeRun(run, trends) {
   if (run.rejected.length) lines.push(`✋ נדחו ${run.rejected.length}: ${run.rejected.slice(0, 3).map((r) => r.why).join(' | ')}`);
   if (run.trials.length) lines.push(`🧪 התחילו בניסיון: ${run.trials.length}`);
   if (run.waiting.length) lines.push(`⏳ ממתינים לתור: ${run.waiting.length}`);
-  for (const n of run.notes.slice(0, 4)) lines.push(`⚠️ ${n}`);
+  for (const n of run.notes.slice(0, 6)) lines.push(`⚠️ ${n}`);
   return lines.join('\n');
 }

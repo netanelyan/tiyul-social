@@ -41,10 +41,14 @@ const storePath = flag('store') ? path.resolve(flag('store')) : undefined;
 const t = openTrends(storePath);
 ensureOwnFormats(t.data, postConfig().posts.types, { seedTrials: cfg.seedTrials });
 
-const sourceLine = (s) =>
-  s.views != null
-    ? `${s.platform} · ${s.views.toLocaleString('en-US')} צפיות · ${s.likes ?? '?'} לייקים · ${s.comments ?? '?'} תגובות · ${s.lang}${s.publishedAt ? ` · עלה ${s.publishedAt.slice(0, 10)}` : ''}`
-    : `${s.platform} · אות חלש, בלי מספרים · ${s.lang}${s.publishedAt ? ` · עלה ${s.publishedAt.slice(0, 10)}` : ''}`;
+// Views where the platform gives them (YouTube), likes and comments where they are
+// the whole signal (Instagram), and a weak signal said as one (TikTok).
+const sourceLine = (s) => {
+  const when = `${s.lang}${s.publishedAt ? ` · עלה ${s.publishedAt.slice(0, 10)}` : ''}`;
+  if (s.views != null) return `${s.platform} · ${s.views.toLocaleString('en-US')} צפיות · ${s.likes ?? '?'} לייקים · ${s.comments ?? '?'} תגובות · ${when}`;
+  if (s.likes != null || s.comments != null) return `${s.platform} · ${s.likes ?? '?'} לייקים · ${s.comments ?? '?'} תגובות · ${when}`;
+  return `${s.platform} · אות חלש, בלי מספרים · ${when}`;
+};
 
 function printCards() {
   const cards = Object.values(t.data.cards);
@@ -139,7 +143,7 @@ try {
     console.log(`נבדקו מחדש: ${gone.length} ירדו${started.length ? `, ${started.length} נכנסו לניסיון במקומם` : ''}`);
     for (const g of gone) console.log(`  ✗ ${g.id}: ${g.why}`);
   } else if (!has('cards')) {
-    console.log(`צייד הפורמטים: ${cfg.queries.he.length} חיפושים בעברית, ${cfg.queries.en.length} באנגלית, ${cfg.tiktokQueries.length} בטיקטוק · עד ${cfg.perRun} כרטיסים`);
+    console.log(`צייד הפורמטים: ${cfg.queries.he.length} חיפושים בעברית, ${cfg.queries.en.length} באנגלית, ${cfg.tiktokQueries.length} בטיקטוק, ${cfg.instagram.hashtags.length} האשטגים ועד ${cfg.instagram.creatorsPerRun} יוצרים באינסטגרם · עד ${cfg.perRun} כרטיסים`);
     const run = await runWatcher(cfg, { trends: t.data, onProgress: (x) => console.log(`  ${x}`) });
     t.save();
     console.log(`\n${describeRun(run, t.data)}`);

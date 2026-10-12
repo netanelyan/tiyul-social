@@ -54,6 +54,7 @@ export const API_PRICES = {
   claude: { label: 'Claude', usdPerUnit: 0 },
   oembed: { label: 'TikTok oEmbed', usdPerUnit: 0 },
   youtube: { label: 'YouTube', usdPerUnit: 0 },
+  instagram: { label: 'Instagram Graph', usdPerUnit: 0 },
   ga4: { label: 'GA4', usdPerUnit: 0 },
 };
 

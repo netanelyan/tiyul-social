@@ -1387,6 +1387,25 @@ function trendsCfg(raw) {
     queries: { he: list(raw.queries?.he), en: list(raw.queries?.en) },
     tiktokQueries: list(raw.tiktokQueries),
     seedTrials: raw.seedTrials === undefined ? ['know', 'budget'] : list2(raw.seedTrials),
+    instagram: trendsInstagramCfg(raw.instagram || {}),
+  };
+}
+
+/**
+ * The watcher's Instagram source (src/trends/instagram.js). `hashtagsPerWeek` can
+ * never pass Meta's 30 unique hashtags in 7 days, and a hashtag or handle is kept
+ * bare (no # or @), as the Graph API takes it.
+ */
+function trendsInstagramCfg(raw) {
+  const lift = num(raw.creatorLift, 1.5);
+  return {
+    hashtags: [...new Set(list(raw.hashtags).map((t) => t.replace(/^#/, '')))].slice(0, 30),
+    hashtagsPerWeek: intIn(raw.hashtagsPerWeek, 0, 30, 30),
+    perHashtag: intIn(raw.perHashtag, 1, 50, 25),
+    creators: [...new Set(list(raw.creators).map((h) => h.replace(/^@/, '').toLowerCase()))],
+    creatorsPerRun: intIn(raw.creatorsPerRun, 0, 50, 10),
+    minInteractions: intIn(raw.minInteractions, 0, 1e9, 200),
+    creatorLift: lift >= 1 && lift <= 10 ? lift : 1.5,
   };
 }
 

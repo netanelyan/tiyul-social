@@ -1,3 +1,4 @@
+import { sourceNumbers } from './find.js';
 import { formatOf, postScore } from './mix.js';
 
 // The weekly Telegram report: the top three formats by saves, the new formats on
@@ -48,7 +49,7 @@ export function weeklyTrendsReport(trends, rows, { now = Date.now() } = {}) {
   lines.push('', `🧪 בניסיון (${trials.length}):`);
   for (const f of trials.slice(0, 6)) {
     const card = trends.cards[f.from];
-    lines.push(`   ${label(f)} · ${f.results.length} תוצאות${card?.source ? ` · מקור: ${card.source.platform}${card.source.views ? `, ${card.source.views.toLocaleString('en-US')} צפיות` : ', אות חלש בלי מספרים'}` : ''}`);
+    lines.push(`   ${label(f)} · ${f.results.length} תוצאות${card?.source ? ` · מקור: ${card.source.platform}, ${sourceNumbers(card.source)}` : ''}`);
   }
 
   const dropped = Object.values(trends.formats).filter((f) => f.status === 'dropped' && Date.parse(f.droppedAt || 0) >= since);
