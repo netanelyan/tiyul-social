@@ -49,6 +49,12 @@ const SOURCES = {
 
 const CHECK_KIND = { comment: 'comment', reply: 'reply', agency: 'message', creator: 'message' };
 
+/**
+ * Does a creator's message need a subject line? By email, yes; and when the
+ * channel is not known yet, since the owner may well end up emailing them.
+ */
+export const wantsSubject = (channel) => Boolean(channel) && (channel.channel === 'Email' || !channel.known);
+
 // How a creator's first message reaches them (links.js creatorContact), for the prompt.
 const CHANNEL_LINE = {
   Instagram: 'an Instagram direct message.',
@@ -67,6 +73,8 @@ const schemaFor = (kind) => ({
         type: 'object',
         properties: {
           text: { type: 'string' },
+          // A creator's message may go by email, which needs a subject line.
+          ...(kind === 'creator' ? { subject: { type: 'string' } } : {}),
           specific: {
             type: 'object',
             properties: { quote: { type: 'string' }, source: { type: 'string', enum: SOURCES[kind] } },
@@ -74,7 +82,7 @@ const schemaFor = (kind) => ({
             additionalProperties: false,
           },
         },
-        required: ['text', 'specific'],
+        required: kind === 'creator' ? ['text', 'subject', 'specific'] : ['text', 'specific'],
         additionalProperties: false,
       },
     },
@@ -171,7 +179,14 @@ export function contextFor(kind, { lead, post = null, site = '', extra = {} }) {
       ...r.days.map((d, i) => `Day ${i + 1}: ${(d.names || []).join(', ')}`)
     );
   }
-  if (kind === 'creator' && extra.channel) blocks.push('', `HOW IT REACHES THEM: ${CHANNEL_LINE[extra.channel.known ? extra.channel.channel : 'none'] || CHANNEL_LINE.none}`, extra.commented ? 'Netanel commented on this video from @tiyulplus.' : 'Netanel has not commented on this video and has never written to them.');
+  if (kind === 'creator' && extra.channel) {
+    blocks.push(
+      '',
+      `HOW IT REACHES THEM: ${CHANNEL_LINE[extra.channel.known ? extra.channel.channel : 'none'] || CHANNEL_LINE.none}`,
+      wantsSubject(extra.channel) ? 'A subject line is needed, in "subject".' : 'No subject line is needed: "subject" is an empty string.',
+      extra.commented ? 'Netanel commented on this video from @tiyulplus.' : 'Netanel has not commented on this video and has never written to them.'
+    );
+  }
   if (extra.exampleHe) blocks.push(`The example destination, to name in the message: ${extra.exampleHe}`);
   if (extra.offer) blocks.push(`Offer that may be mentioned once: ${extra.offer}`);
   const text = blocks.filter((b) => b !== '').join('\n');
@@ -191,18 +206,26 @@ export async function draftItem(kind, { state, settings, lead, post = null, site
   const checkGender = kind === 'agency' ? 'unknown' : gender;
   const nameHint = kind === 'creator' ? `Their display name: ${lead.name || '(none)'}. Handle: ${lead.handle || '(none)'}. Return the first name to greet them with in "firstName" only if the display name clearly has one (in Hebrew if it is written in Hebrew); else an empty string. Never guess a name from a handle.` : 'Return an empty "firstName".';
 
+  const subjectWanted = kind === 'creator' && wantsSubject(extra.channel);
   const check = (v, firstName) => {
     const text = clean(v?.text);
     const problems = checkDraft(text, { kind: CHECK_KIND[kind], sources: ctx.numbers, gender: checkGender });
     const sp = specificProblem(text, v?.specific, ctx.sources);
     if (sp) problems.push(sp);
+    // The subject goes through the same checks as any text, at its own length.
+    const subject = subjectWanted ? clean(v?.subject) : '';
+    if (subjectWanted) {
+      if (!subject) problems.push('no subject line for the email');
+      else if (/\[קישור\]/.test(subject)) problems.push('a link in the subject');
+      else for (const p of checkDraft(subject, { kind: 'subject', sources: ctx.numbers, gender: checkGender })) problems.push(`in the subject, ${p}`);
+    }
     if (!firstName) {
       // A name the model did not return may still be in the text: only one that
       // is really in their display name may greet them.
       const greet = /^היי\s+([א-תA-Za-z]{2,})/.exec(text)?.[1];
       if (kind === 'creator' && greet && !String(lead.name || '').includes(greet)) problems.push(`greets them as "${greet}", which is not in their display name`);
     }
-    return { text, specific: v?.specific ? { quote: flat(v.specific.quote), source: v.specific.source } : null, problems };
+    return { text, ...(subject ? { subject } : {}), specific: v?.specific ? { quote: flat(v.specific.quote), source: v.specific.source } : null, problems };
   };
 
   const ask = async (want, feedback) => {
@@ -265,7 +288,7 @@ export async function draftItem(kind, { state, settings, lead, post = null, site
   const rewritten = [];
   for (const [i, r] of reviews.entries()) {
     if (r.botScore < REWRITE_AT || !r.rewrite) continue;
-    const c = check({ text: r.rewrite, specific: variants[i].specific }, firstName);
+    const c = check({ text: r.rewrite, subject: variants[i].subject, specific: variants[i].specific }, firstName);
     if (c.problems.length) {
       variants[i].rewriteRefused = c.problems.slice(0, 3);
       continue;

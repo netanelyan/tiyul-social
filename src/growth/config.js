@@ -79,6 +79,8 @@ export const LIMITS = Object.freeze({
   // A first message to an agency or a creator, on WhatsApp or in a DM.
   message: { target: 350, max: 380, sentences: 5, links: 1 },
   followup: { target: 120, max: 140, sentences: 2 },
+  // The subject line of an email to a creator: a few words, one sentence.
+  subject: { target: 40, max: 60, sentences: 1 },
   linkChars: 25,
 });
 

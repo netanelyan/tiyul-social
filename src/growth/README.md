@@ -33,7 +33,7 @@ leads].
 | Variable | Needed for | Where |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | sorting posts, reading agency sites, drafting, the bot-score review | already in `.env` |
-| `BRAVE_API_KEY` | finding TikTok and Instagram posts | brave.com/search/api, the Search plan ($5 per 1,000, with a monthly $5 credit) |
+| `BRAVE_API_KEY` | finding TikTok and Instagram posts, and a YouTube creator's Instagram (at most one search per creator on Today) | brave.com/search/api, the Search plan ($5 per 1,000, with a monthly $5 credit) |
 | `GOOGLE_MAPS_KEY` | finding agencies (Places API (New) Text Search) | Google Cloud console; usage stays in the free 1,000 a month |
 | `GROWTH_PUBLISH_TOKEN` | publishing route pages on tiyulplus.com | the same value as on Vercel, at least 32 characters |
 | `YOUTUBE_API_KEY` | finding creators on YouTube Shorts, and reading a video's description and top comments | a key restricted to "YouTube Data API v3" |
@@ -109,10 +109,22 @@ much shorter you make them, and the words you cut and add most.
   No comment first and no day's wait. Where it goes: a TikTok or Instagram
   creator's own profile; for a YouTube creator (YouTube has no DMs) the
   Instagram their channel or video lists, else the business email there, else
-  a TikTok. With none of those, the card says so and [Copy & open] opens the
-  channel's About page, where YouTube shows the business email behind "View
-  email address"; those creators come after the ones with a known channel.
+  their Instagram found by search (below), else a TikTok. With none of those,
+  the card says so and [Copy & open] opens the channel's About page, where
+  YouTube shows the business email behind "View email address"; those
+  creators come after the ones with a known channel. An email carries a subject
+  line, shown on the card and filled in where [Copy & open] opens the mail (it
+  is drafted too when the channel is not known, in case you email them).
   [Not for us] drops the creator for good.
+- **A YouTube creator's Instagram, by search** (`prepare/igLookup.js`): when
+  they list no Instagram and no email and their handle is in Latin letters,
+  one Brave search for the handle on instagram.com, once, only for a creator
+  on Today, before the message is written. A handle match alone is not
+  trusted: the account needs the same handle (dots and underscores aside) AND
+  their name, or a link to their YouTube channel, in its name or bio. The card
+  links it, says "found via search, check before sending" and why it was
+  taken, and [Not them] drops it, after which the message is written again on
+  the next pass for wherever it goes then. Nothing is fetched from Instagram.
 - **Comments** (optional): a TikTok or Instagram creator's video also shows in
   Comments, three options, for a comment from @tiyulplus before or after the
   message. It gates nothing, and a message written after it may mention it.
@@ -247,7 +259,8 @@ find/         discovery: queries, Places, sorting, scoring, thumbnails, a
 ../clients/   shared with the trend watcher: the network door and its allowlist,
               Brave, YouTube, TikTok oEmbed, the monthly ledger, the model prices,
               the stop
-prepare/      site data, routes, the agency's profile and example, the voice, the
+prepare/      site data, routes, the agency's profile and example, a YouTube
+              creator's Instagram by search (igLookup.js), the voice, the
               tells, drafting, the review, learning from edits, short links,
               composing, publishing
 report/       stage counts, week over week, GA4

@@ -162,13 +162,18 @@ function variantBlock({ lead, what, i, postId = null, ctx, idBase, target, block
   const id = `${idBase}-v${i}`;
   const field = what === 'comment' ? `comment:${postId}:${i}` : what === 'followup' ? 'followup' : `${what}:${i}`;
   const warnings = c.edited ? editWarnings(lead, what, c.text, { state: ctx.state }) : [];
+  // An email's subject is filled in where [Copy & open] opens the mail; the body is pasted, as always.
+  const mail = /^mailto:/.test(target || '');
+  const href = c.subject && mail ? `${target}?subject=${encodeURIComponent(c.subject)}` : target;
+  const subject = c.subject ? `<p class="small">Subject${mail ? ', filled in for you' : ', if you email them'}: ${heIn(c.subject)}</p>` : '';
   return `<div class="variant">
   <div class="vhead">${what === 'followup' ? '' : `<b>Option ${i + 1}</b> `}${c.edited ? '<span class="tag">your edit</span>' : scoreLine(c.variant)}</div>
+  ${subject}
   ${textBox(id, c.text, { rows })}
   ${c.edited ? '' : specificLine(c.variant)}
   ${warnings.length ? `<p class="note warn">Reads like a bot here: ${warnings.map(mixed).join('; ')}</p>` : ''}
   <div class="mini">
-    ${noSend ? '' : button('Copy &amp; open', { 'copy-open': `#${id}`, href: target, lead: lead.id, what, post: postId, variant: what === 'followup' ? null : i, disabled: blocked || !target ? 'disabled' : null }, i === 0 ? 'primary' : '')}
+    ${noSend ? '' : button('Copy &amp; open', { 'copy-open': `#${id}`, href, lead: lead.id, what, post: postId, variant: what === 'followup' ? null : i, disabled: blocked || !target ? 'disabled' : null }, i === 0 ? 'primary' : '')}
     ${button('Edit', { edit: `#${id}`, lead: lead.id, field })}
     ${c.edited ? button('Undo edit', { act: 'unedit', lead: lead.id, field }) : ''}
   </div>
@@ -329,15 +334,31 @@ function creatorWhere(lead) {
   const c = creatorContact(lead);
   if (!c.known) return null;
   if (c.channel === 'Email') return `email, <bdi>${esc(lead.email)}</bdi>`;
-  return `${esc(c.channel)} DM, <a href="${attr(c.url)}" target="_blank" rel="noopener noreferrer"><bdi>${esc(c.url.replace(/^https?:\/\/(www\.|m\.)?/, '').replace(/\/$/, ''))}</bdi></a>`;
+  const link = `<a href="${attr(c.url)}" target="_blank" rel="noopener noreferrer"><bdi>${esc(c.url.replace(/^https?:\/\/(www\.|m\.)?/, '').replace(/\/$/, ''))}</bdi></a>`;
+  // Found by a search, not listed by them (prepare/igLookup.js): the owner checks it first.
+  if (c.found) return `${esc(c.channel)} DM, ${link} <span class="tag bad">found via search, check before sending</span> <span class="small">(${mixed(c.found)})</span>`;
+  return `${esc(c.channel)} DM, ${link}`;
 }
 
 const NO_CONTACT = 'No Instagram, email or TikTok in their channel or video descriptions, and YouTube has no direct messages. [Copy & open] opens their channel\'s About page: YouTube shows a business email there behind "View email address", and the links the desk cannot read.';
 
+/** What the Instagram search said, for a creator it did not find a channel for. */
+function lookupNote(lead) {
+  const l = lead.igLookup;
+  if (!l) return '';
+  if (l.wrong) return ` You marked @${l.handle}, the Instagram the search found, as not them.`;
+  if (l.status === 'rejected') return ` A search found @${l.handle} on Instagram, but it was not taken: ${l.why}.`;
+  if (l.status === 'none') return ` A search for their handle on Instagram found no account with it.`;
+  if (l.status === 'error') return ` The search for their Instagram failed (${l.error}); it runs again tomorrow.`;
+  return '';
+}
+
 /** The line on a creator's card that says where the message goes. */
 function creatorContactLine(lead) {
   const where = creatorWhere(lead);
-  return where ? `<p class="contact">Goes by ${where}</p>` : `<p class="note">${esc(NO_CONTACT)}</p>`;
+  if (!where) return `<p class="note">${mixed(NO_CONTACT + lookupNote(lead))}</p>`;
+  const notThem = creatorContact(lead).found && !lead.messagedAt ? ` ${button('Not them', { act: 'ig-wrong', lead: lead.id, title: 'Drop this Instagram; the message is written again for where it goes then' }, 'quiet small-btn')}` : '';
+  return `<p class="contact">Goes by ${where}${notThem}</p>`;
 }
 
 // Each piece in its own <bdi>: a phone number, an email and a domain are
@@ -740,7 +761,9 @@ export function reportsPage({ state, settings, token, now = Date.now(), ga4, log
   const perType = types
     .map((t) => {
       const fn = funnel(leads, t);
-      const steps = t === 'agency' ? ['found', 'messaged', 'replied', 'yes', 'using'] : t === 'customer' ? ['found', 'commented'] : ['found', 'commented', 'messaged', 'replied', 'yes', 'using'];
+      // A creator goes from found to messaged since 2026-10-14; a comment is an extra, not a step.
+      // For a question, "commented" is the reply.
+      const steps = t === 'customer' ? ['found', 'commented'] : ['found', 'messaged', 'replied', 'yes', 'using'];
       const w = wow[t];
       const searches = bySearch(leads, t).slice(0, 12);
       return `<section class="panel"><h2>${TYPE_LABEL[t]}</h2>

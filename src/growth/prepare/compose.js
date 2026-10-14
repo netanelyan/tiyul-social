@@ -91,9 +91,10 @@ function linkMissing(lead, what) {
  *
  * what: 'dm' | 'followup' | 'message' | 'reply' | 'comment' (with postId)
  * i:    the variant
- * Returns { text, link, edited, missing, variant } where `missing` names
- * anything that keeps the text from being sendable, and `variant` is the
- * stored variant (its score, tells and specific detail) or null.
+ * Returns { text, link, edited, missing, variant, subject } where `missing`
+ * names anything that keeps the text from being sendable, `variant` is the
+ * stored variant (its score, tells and specific detail) or null, and `subject`
+ * is an email's subject line, or ''.
  */
 export function compose(lead, what, { templates, settings, state, i = 0, postId = null } = {}) {
   const field = fieldFor(lead, what, i, postId);
@@ -125,8 +126,9 @@ export function compose(lead, what, { templates, settings, state, i = 0, postId 
     }
   }
 
-  if (edited != null) return { text: edited, link, edited: true, missing: missing.filter((m) => m !== 'Not drafted yet.'), variant };
-  return { text, link, edited: false, missing, variant };
+  const subject = variant?.subject || '';
+  if (edited != null) return { text: edited, link, edited: true, missing: missing.filter((m) => m !== 'Not drafted yet.'), variant, subject };
+  return { text, link, edited: false, missing, variant, subject };
 }
 
 /**

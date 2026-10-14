@@ -20,7 +20,8 @@ import { campaignFor, channelOf, creatorContact, hasUtm, openTarget, plainLink, 
 import { contactsIn } from '../clients/youtube.js';
 import { chooseExample, tripLinks } from './prepare/agencyProfile.js';
 import { compose, linkFor } from './prepare/compose.js';
-import { contextFor, draftItem, specificProblem } from './prepare/draft.js';
+import { contextFor, draftItem, specificProblem, wantsSubject } from './prepare/draft.js';
+import { judgeProfile, nameBefore, namesMatch, profilesIn } from './prepare/igLookup.js';
 import { examplesFor, noteCopied, recordSent, weeklyEdits } from './prepare/learn.js';
 import { shortLinkFor } from './prepare/short.js';
 import { CONNECTIVES, FORMAL, lengthOf, PRAISE, tellsIn } from './prepare/tells.js';
@@ -443,6 +444,110 @@ export async function growthSelftest({ ok, eq }) {
     ok('with the route on the site and the video it was written about kept', withIg.trip?.status === 'published' && withIg.drafts.dm.postId === 'v1');
     ok('and the text carries that page', compose(withIg, 'dm', { templates: readTemplates(), settings: S, state }).text.includes('tiyulplus.com/trips/yt1'));
     eq('no comment was drafted for either', asked.filter((a) => a.kind === 'comment').length, 0);
+  }
+
+  /* ---------------------------------------------------------- a YouTube creator's Instagram, by search */
+
+  {
+    const dana = (extra = {}) =>
+      creator(5, { id: 'yt:@dana_trips', source: 'youtube', name: 'Dana Cohen', handle: 'dana_trips', channelId: 'UCdana', profileUrl: 'https://www.youtube.com/@dana_trips', socials: [], email: null, gender: 'unknown', posts: [{ ...creator(5).posts[0], id: 'vd', platform: 'youtube', url: 'https://www.youtube.com/shorts/vd' }], ...extra });
+    const profile = (handle, name, bio = '') => ({ url: `https://www.instagram.com/${handle}/`, title: `${name} (@${handle}) • Instagram photos and videos`, description: `5,200 Followers, 300 Following, 120 Posts - See Instagram photos and videos from ${name} (@${handle})${bio ? `. ${bio}` : ''}`, extra: [] });
+
+    eq('the name comes from the profile\'s own title', nameBefore(profile('dana.trips', 'Dana Cohen ✈️').title, 'dana.trips'), 'Dana Cohen ✈️');
+    ok('a name matches with an emoji or a word more', namesMatch('Dana Cohen ✈️', 'Dana Cohen') && namesMatch('Touring Tom Israel', 'Touring Tom'));
+    ok('but not on a short first name alone, nor a different one', !namesMatch('Tom', 'Tom Levi') && !namesMatch('Dana Levi', 'Dana Cohen'));
+    const lead = dana();
+    const judge = (r) => judgeProfile(lead, profilesIn([r])[0]);
+    eq('the same handle, dots and underscores aside, with their name: taken', judge(profile('dana.trips', 'Dana Cohen')).ok, true);
+    eq('the same handle with a different name: a handle match alone is not trusted', judge(profile('dana.trips', 'Dana Levi')).ok, false);
+    ok('the same handle whose bio links their YouTube: taken', judge(profile('danatrips', 'דנה', 'youtube.com/@dana_trips')).ok && /links their YouTube/.test(judge(profile('danatrips', 'דנה', 'youtube.com/@dana_trips')).why));
+    eq('a link to another channel is not theirs', judge(profile('danatrips', 'דנה', 'youtube.com/@dana_trips2')).ok, false);
+    eq('their name on a different handle: not taken', judge(profile('dana.cohen.photo', 'Dana Cohen')).ok, false);
+
+    // Through the prepare pass: one search, only for the creator on Today, before the message is drafted.
+    const run = async (state, results, extraDeps = {}) => {
+      const searched = [];
+      const asked = [];
+      await prepareToday({
+        store: memStore(state),
+        settings: S,
+        now: NOW,
+        env: ENV,
+        deps: {
+          cityFor: async () => CITY,
+          draftItem: async (kind, args) => (asked.push({ kind, ...args }), { variants: [{ text: 'היי, בניתי לכם מסלול: [קישור]', subject: wantsSubject(args.extra?.channel) ? 'מסלול לאתונה מהסרטון' : undefined, score: 1, tells: [] }] }),
+          fillVideoContext: async () => 0,
+          shortLink: async () => null,
+          publishRoute: async (l) => ({ status: 'published', url: `https://www.tiyulplus.com/trips/${l.handle}`, slug: l.handle, externalId: externalIdFor(l), publishedAt: new Date(NOW).toISOString() }),
+          brave: async (q, site) => (searched.push(`${site} ${q}`), results),
+          ...extraDeps,
+        },
+      });
+      return { searched, asked };
+    };
+    const state = emptyState();
+    const l = (state.leads[lead.id] = lead);
+    const first = await run(state, [profile('dana.trips', 'Dana Cohen ✈️'), profile('other', 'Someone')]);
+    eq('one search, their handle on instagram.com', first.searched.join(), 'instagram.com "dana_trips"');
+    ok('the account that passed is their contact, marked as found by search', creatorContact(l).url === 'https://www.instagram.com/dana.trips/' && /name matches/.test(creatorContact(l).found));
+    ok('and the message was written for an Instagram DM, with no subject line', first.asked[0]?.extra.channel.channel === 'Instagram' && !wantsSubject(first.asked[0].extra.channel));
+    eq('the search is in the ledger', monthSpend(state, S, NOW).rows.brave?.units, 1);
+    const html = todayPage({ state, settings: S, token: 't', now: NOW, day: pickToday(state, S, NOW), templates: readTemplates(), env: {} });
+    ok('the card links it and says to check it before sending', html.includes('found via search, check before sending') && html.includes('href="https://www.instagram.com/dana.trips/"') && html.includes('data-act="ig-wrong"'));
+    eq('it is searched once', (await run(state, [])).searched.length, 0);
+
+    applyAction(state, l, 'ig-wrong', {}, { now: NOW, settings: S });
+    ok('[Not them] drops it: the card goes back to the About page', !creatorContact(l).known && !l.drafts.dm);
+    const again = await run(state, []);
+    ok('and the message is written again, for a DM or an email, with a subject line', again.searched.length === 0 && again.asked[0]?.kind === 'creator' && wantsSubject(again.asked[0].extra.channel) && l.drafts.dm.variants[0].subject);
+    ok('the card says what was dropped', todayPage({ state, settings: S, token: 't', now: NOW, day: pickToday(state, S, NOW), templates: readTemplates(), env: {} }).includes('as not them'));
+
+    const s2 = emptyState();
+    const near = (s2.leads[lead.id] = dana());
+    await run(s2, [profile('dana.trips', 'Dana Levi')]);
+    ok('a same-handle account with another name is not taken, and the card says why', near.igLookup.status === 'rejected' && !creatorContact(near).known && todayPage({ state: s2, settings: S, token: 't', now: NOW, day: pickToday(s2, S, NOW), templates: readTemplates(), env: {} }).includes('was not taken'));
+    const s3 = emptyState();
+    s3.leads['yt:@a'] = dana({ id: 'yt:@a', email: 'dana@trips.co.il' });
+    s3.leads['yt:@b'] = dana({ id: 'yt:@b', handle: 'דנה_טיולים' });
+    s3.leads['yt:@c'] = dana({ id: 'yt:@c', socials: ['https://www.instagram.com/dana.trips/'] });
+    eq('no search for one who lists an email or an Instagram, or whose handle is in Hebrew', (await run(s3, [])).searched.length, 0);
+  }
+
+  /* ---------------------------------------------------------- an email to a creator has a subject line */
+
+  {
+    const lead = creator(9, { source: 'youtube', name: 'נועה טיולים', handle: 'noa', gender: 'unknown', email: 'noa@trips.co.il', socials: [] });
+    const post = { ...lead.posts[0], platform: 'youtube', title: 'שקיעה בליקבטוס עם כל העיר מתחת', description: '', topComments: [] };
+    const v = (text, subject) => ({ text, subject, specific: { quote: 'שקיעה בליקבטוס', source: 'title' } });
+    const answers = [
+      { firstName: '', variants: [v('היי, ראיתי ביוטיוב את הסרטון על השקיעה בליקבטוס. בניתי לכם מסלול לאתונה מהסרטון: [קישור]', 'מסלול לאתונה מהסרטון שלכם'), v('היי, הסרטון על השקיעה בליקבטוס ממש יפה. הכנתי ממנו מסלול לאתונה: [קישור]', ''), v('היי, ראיתי את השקיעה בליקבטוס אצלכם ביוטיוב. יש לכם מסלול לאתונה מוכן: [קישור]', 'מסלול!!! לא תאמינו')] },
+      { firstName: '', variants: [v('היי, ראיתי ביוטיוב את השקיעה בליקבטוס. בניתי לכם ממנה מסלול לאתונה: [קישור]', 'המסלול מהסרטון על אתונה'), v('היי, השקיעה בליקבטוס בסרטון שלכם יפה. הנה המסלול לאתונה שבניתי ממנו: [קישור]', 'מסלול לאתונה בעקבות הסרטון')] },
+      { reviews: [0, 1, 2].map((index) => ({ index, botScore: 2, tells: [], factProblem: '', rewrite: '' })) },
+    ];
+    const calls = [];
+    setClient({ messages: { create: async (body) => (calls.push(body), { model: body.model, stop_reason: 'end_turn', usage: {}, content: [{ type: 'text', text: JSON.stringify(answers.shift()) }] }) } });
+    const out = await draftItem('creator', { state: emptyState(), settings: S, lead, post, site: 'יעד: אתונה', extra: { channel: creatorContact(lead), commented: false, route: null } });
+    setClient(null);
+    ok('the model is told a subject line is needed', calls[0].messages[0].content.includes('A subject line is needed'));
+    ok('a draft with no subject, or a shouting one, is sent back with the reason', /no subject line/.test(calls[1].messages[0].content) && /in the subject, an exclamation mark/.test(calls[1].messages[0].content));
+    ok('every variant kept has its subject', out.variants.length === 3 && out.variants.every((x) => x.subject && x.subject.length <= 60), JSON.stringify(out.variants.map((x) => x.subject)));
+    const live = { ...lead, trip: { status: 'published', url: 'https://www.tiyulplus.com/trips/noa' }, drafts: { dm: out } };
+    const st = emptyState();
+    st.leads[live.id] = live;
+    const html = leadPage({ state: st, settings: S, token: 't', now: NOW, lead: live, templates: readTemplates() });
+    ok('the card shows it, and [Copy & open] opens the mail with it filled in', html.includes('Subject, filled in for you') && html.includes(`data-href="mailto:noa@trips.co.il?subject=${encodeURIComponent(out.variants[0].subject)}"`));
+    eq('compose hands it over beside the body, which never carries it', compose(live, 'dm', { templates: readTemplates(), settings: S, state: st }).subject, out.variants[0].subject);
+  }
+
+  /* ---------------------------------------------------------- Reports: a creator goes from found to messaged */
+
+  {
+    const state = emptyState();
+    state.leads['tt:@maker1'] = creator(1, { messagedAt: new Date(NOW).toISOString(), stage: 'messaged' });
+    const html = reportsPage({ state, settings: S, token: 't', now: NOW, ga4: null });
+    const creators = html.split('<h2>Creators</h2>')[1]?.split('</section>')[0] || '';
+    const steps = [...creators.split('<details>')[0].matchAll(/<span>([^<]+)<\/span>/g)].map((m) => m[1]);
+    eq('the creators\' funnel has no "Commented" step', steps.join(', '), 'Found, Messaged, Replied, Interested, Using');
   }
 
   /* ---------------------------------------------------------- do-not-contact, dedupe */

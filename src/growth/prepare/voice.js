@@ -78,7 +78,7 @@ const KIND = {
 - That he built the site, and built their route from the video on it, free: the link written exactly as [קישור] once.
 - What they can do with it, in a few words (put it in the bio, send it to whoever asks).
 - If an offer is given below, it may be mentioned once, plainly.
-- By email, the same short message: no subject line, no formal opening or signature block.
+- By email, the same short message, with no formal opening and no signature block, and a subject line in "subject": a few Hebrew words about their video and the route, about ${LIMITS.subject.target} characters, the way a person titles an email to someone they do not know. No exclamation mark, no colon, no link, no clickbait. When the context says no subject is needed, "subject" is an empty string.
 - About ${LIMITS.message.target} characters, exactly one [קישור], no other link.`,
 };
 

@@ -394,6 +394,17 @@ export function applyAction(state, lead, action, payload = {}, { now = Date.now(
       post.status = 'skipped';
       break;
     }
+    // The Instagram a search found for a YouTube creator is not them (the
+    // card's [Not them]). The message was written for it, so it is written
+    // again on the next pass for wherever it goes now.
+    case 'ig-wrong':
+      if (lead.igLookup?.status !== 'found') throw new RuleError('bad', 'This lead has no Instagram found by search.');
+      lead.igLookup.wrong = true;
+      if (!lead.messagedAt && lead.drafts?.dm) {
+        delete lead.drafts.dm;
+        for (const key of Object.keys(lead.edits || {})) if (key.startsWith('dm:')) delete lead.edits[key];
+      }
+      break;
     case 'irrelevant':
       lead.closed = 'irrelevant';
       addDnc(state, leadKeys(lead), 'irrelevant', now);

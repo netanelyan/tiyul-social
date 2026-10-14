@@ -9,6 +9,7 @@ import { ilDate, itemDone, nextInLine, parseItem, pickToday } from '../rules.js'
 import { chooseExample, extractProfile, readAgencySite } from './agencyProfile.js';
 import { draftItem } from './draft.js';
 import { messagePost, targetFor } from './compose.js';
+import { lookupInstagram } from './igLookup.js';
 import { examplesFor } from './learn.js';
 import { canPublishNew, publishRoute } from './publish.js';
 import { shortLinkFor } from './short.js';
@@ -41,6 +42,7 @@ export const DEFAULT_DEPS = {
   extractProfile,
   shortLink: shortLinkFor,
   checkRoute,
+  lookupInstagram,
 };
 
 /** Ask the site for this item's short link once; the card reads it from the lead. */
@@ -147,6 +149,9 @@ async function doPrepare({ store, settings, now = Date.now(), deps = DEFAULT_DEP
         delete post.draftError;
         report.drafted++;
       } else if (col === 'creator' && what === 'dm') {
+        // A YouTube creator listing no Instagram and no email: one search for
+        // their Instagram first (igLookup.js), so the message is written for it.
+        await deps.lookupInstagram({ state, settings, lead, now, brave: deps.brave, env });
         // The DM is about one video (messagePost), so its destination decides
         // the route and the destination in the message.
         const post = messagePost(lead);

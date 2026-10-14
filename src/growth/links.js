@@ -91,7 +91,9 @@ export function destinationPage(itineraries, slug, days) {
  * Where [העתק ופתח] goes: the person's profile, their WhatsApp, their email, or the post.
  *
  * Never a link with the message in it. The message goes to the clipboard and
- * the owner pastes and sends it, which is the whole contract.
+ * the owner pastes and sends it, which is the whole contract. (An email's
+ * subject line is filled into the mailto link by the card, pages.js; the body
+ * never is.)
  */
 export function openTarget(lead, what) {
   if (lead.type === 'customer' || what === 'comment') {
@@ -113,10 +115,12 @@ export function openTarget(lead, what) {
  * no direct messages, so a YouTube creator's message goes to the Instagram
  * their channel or video lists, else the business email there, else a TikTok
  * (the owner's order, 2026-10-14: an Instagram DM or the business email; a
- * TikTok DM may not reach someone who does not follow back). With none of
- * those, `known` is false and the url is the channel's About page, where
- * YouTube shows the business email behind "View email address" and the links
- * the API does not return.
+ * TikTok DM may not reach someone who does not follow back). Listing neither
+ * Instagram nor email, the Instagram a search found for them comes next
+ * (prepare/igLookup.js), with `found` saying why it was taken, unless the owner
+ * marked it not them. With none of those, `known` is false and the url is the
+ * channel's About page, where YouTube shows the business email behind "View
+ * email address" and the links the API does not return.
  */
 export function creatorContact(lead) {
   if (lead.source === 'youtube') {
@@ -124,6 +128,8 @@ export function creatorContact(lead) {
     const ig = socials.find((s) => /instagram\.com/.test(s));
     if (ig) return { channel: 'Instagram', url: ig, known: true };
     if (lead.email) return { channel: 'Email', url: `mailto:${lead.email}`, known: true };
+    const found = lead.igLookup?.status === 'found' && !lead.igLookup.wrong ? lead.igLookup : null;
+    if (found) return { channel: 'Instagram', url: found.url, known: true, found: found.why };
     const tt = socials.find((s) => /tiktok\.com/.test(s));
     if (tt) return { channel: 'TikTok', url: tt, known: true };
     const page = lead.profileUrl ? `${lead.profileUrl.replace(/\/+$/, '')}/about` : lead.posts?.[0]?.url || null;
