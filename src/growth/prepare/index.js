@@ -4,11 +4,11 @@ import { destinations } from '../find/queries.js';
 import { fillVideoContext } from '../find/videoContext.js';
 import { BudgetError, guard, marginal, record } from '../../clients/budget.js';
 import { claudeConfigured } from '../claude.js';
-import { itineraryPath } from '../links.js';
+import { creatorContact, itineraryPath } from '../links.js';
 import { ilDate, itemDone, nextInLine, parseItem, pickToday } from '../rules.js';
 import { chooseExample, extractProfile, readAgencySite } from './agencyProfile.js';
 import { draftItem } from './draft.js';
-import { targetFor } from './compose.js';
+import { messagePost, targetFor } from './compose.js';
 import { examplesFor } from './learn.js';
 import { canPublishNew, publishRoute } from './publish.js';
 import { shortLinkFor } from './short.js';
@@ -26,9 +26,10 @@ import { cityFor, siteContext } from './site.js';
 // comments, and an agency's own site, are read only for what is on Today.
 //
 // TWO THINGS GO PUBLIC HERE, AND NOWHERE ELSE: a creator's route, the day they
-// reach the Creators column, and an agency's sample route, the day it is picked
-// for a message. Both go through the site's trips endpoint, and both count
-// against the one daily limit the site sets for new pages (canPublishNew).
+// reach the Creators column (the day they are found, when the cap has room),
+// and an agency's sample route, the day it is picked for a message. Both go
+// through the site's trips endpoint, and both count against the one daily
+// limit the site sets for new pages (canPublishNew).
 
 export const DEFAULT_DEPS = {
   cityFor,
@@ -112,7 +113,8 @@ async function doPrepare({ store, settings, now = Date.now(), deps = DEFAULT_DEP
     report.stopped = 'budget';
   }
 
-  const items = [...day.comment, ...day.creator, ...day.agency, ...day.customer].filter((k) => !itemDone(state, k));
+  // The optional comments last: if the budget runs out mid-pass, it runs out on them.
+  const items = [...day.creator, ...day.agency, ...day.customer, ...day.comment].filter((k) => !itemDone(state, k));
 
   // The videos' descriptions and top comments, for every video today's items
   // will write about, in one batch.
@@ -122,7 +124,7 @@ async function doPrepare({ store, settings, now = Date.now(), deps = DEFAULT_DEP
     const lead = state.leads[leadId];
     if (!lead) continue;
     if (col === 'comment') videos.push(...lead.posts.filter((p) => p.id === what));
-    if (col === 'creator' && what === 'dm') videos.push(lead.posts.find((p) => p.status === 'commented') || lead.posts[0]);
+    if (col === 'creator' && what === 'dm') videos.push(messagePost(lead));
   }
   try {
     await deps.fillVideoContext(state, videos.filter(Boolean), { env, now });
@@ -145,19 +147,16 @@ async function doPrepare({ store, settings, now = Date.now(), deps = DEFAULT_DEP
         delete post.draftError;
         report.drafted++;
       } else if (col === 'creator' && what === 'dm') {
-        // The DM is about the video that was commented on, so its destination
-        // decides the route and the destination in the message.
-        const post = lead.posts.find((p) => p.status === 'commented') || lead.posts[0];
+        // The DM is about one video (messagePost), so its destination decides
+        // the route and the destination in the message.
+        const post = messagePost(lead);
         if (post?.dest) lead.dest = post.dest;
         const c = await city(lead.dest?.slug);
         if (!lead.route && c) lead.route = buildRoute(c, { places: post?.places, days: post?.days });
         lead.trip = await publishWithin({ state, settings, lead, now, deps, env, report });
         await linkUp({ state, lead, what: 'dm', deps, env, now });
         if (!lead.drafts?.dm?.variants?.length && canDraft && post) {
-          lead.drafts = {
-            ...lead.drafts,
-            dm: await deps.draftItem('creator', { state, settings, lead, post, site: siteContext(c), extra: { route: lead.route, offer: settings.offers.creator }, examples: examplesFor(state, 'creator') }),
-          };
+          lead.drafts = { ...lead.drafts, dm: await draftDm(deps.draftItem, { state, settings, lead, post, c }) };
           report.drafted++;
         }
       } else if (col === 'agency' && what === 'message') {
@@ -188,6 +187,17 @@ async function doPrepare({ store, settings, now = Date.now(), deps = DEFAULT_DEP
   }
   store.save();
   return { date: ilDate(now), ...report };
+}
+
+/**
+ * A creator's first message, written for the channel it goes out on, about
+ * `post`, with the route built from it. The video it was written about is kept
+ * on the record, so the card and a later redraft stay on the same one.
+ */
+export async function draftDm(draftItem, { state, settings, lead, post, c }) {
+  const extra = { route: lead.route, offer: settings.offers.creator, channel: creatorContact(lead), commented: post.status === 'commented' };
+  const dm = await draftItem('creator', { state, settings, lead, post, site: siteContext(c), extra, examples: examplesFor(state, 'creator') });
+  return { ...dm, postId: post.id };
 }
 
 /**

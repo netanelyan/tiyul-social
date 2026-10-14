@@ -24,8 +24,20 @@ export const fieldFor = (lead, what, i = 0, postId = null) => {
   return `${what}:${i}`;
 };
 
-const messagePost = (lead) =>
-  (lead.posts || []).find((p) => p.status === 'commented') || (lead.posts || [])[0] || null;
+/**
+ * The video a creator's first message is about: the one it was drafted from,
+ * else the one the owner commented on, else their best-scored video that was
+ * not skipped. The route is built from it and the card shows it.
+ */
+export function messagePost(lead) {
+  const posts = lead.posts || [];
+  const drafted = lead.drafts?.dm?.postId && posts.find((p) => p.id === lead.drafts.dm.postId);
+  if (drafted) return drafted;
+  const commented = posts.find((p) => p.status === 'commented');
+  if (commented) return commented;
+  const usable = posts.filter((p) => p.status !== 'skipped');
+  return [...(usable.length ? usable : posts)].sort((a, b) => (b.score || 0) - (a.score || 0))[0] || null;
+}
 
 /** The drafts record for an item, in today's shape (old records had no variants). */
 export function draftsFor(lead, what, postId = null) {
@@ -134,5 +146,3 @@ export function editWarnings(lead, what, text, { state } = {}) {
   const kind = what === 'comment' ? 'comment' : what === 'reply' ? 'reply' : what === 'followup' ? 'followup' : 'message';
   return checkDraft(text, { kind, link, sources: [String(text)], gender: lead.type === 'agency' ? 'unknown' : lead.gender }).filter((p) => !/number that is not/.test(p));
 }
-
-export { messagePost };

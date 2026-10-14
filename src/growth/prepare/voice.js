@@ -71,12 +71,14 @@ const KIND = {
 - The example, as a link written exactly as [קישור] once, with the destination named ("הנה דוגמה לסמרקנד: [קישור]").
 - One easy ask: if they want, they send him a real client's request and he makes the plan for free.
 - About ${LIMITS.message.target} characters, exactly one [קישור], no other link.`,
-  creator: `What you are writing: the first direct message to a travel creator whose video Netanel commented on yesterday.
+  creator: `What you are writing: the first message to a travel creator Netanel has never spoken to, about one of their videos. Below it says how it reaches them (an Instagram DM, a TikTok DM, or an email), and whether he commented on the video. Unless it says he commented, this is the first they hear of him: never say or suggest he commented, or that they spoke before.
 - A greeting, with their first name if one is given below.
+- When the message goes somewhere other than the platform the video is on, where he saw it, in a few words ("ראיתי ביוטיוב את הסרטון על ...").
 - The one specific thing about their video, said as a reaction.
 - That he built the site, and built their route from the video on it, free: the link written exactly as [קישור] once.
 - What they can do with it, in a few words (put it in the bio, send it to whoever asks).
 - If an offer is given below, it may be mentioned once, plainly.
+- By email, the same short message: no subject line, no formal opening or signature block.
 - About ${LIMITS.message.target} characters, exactly one [קישור], no other link.`,
 };
 

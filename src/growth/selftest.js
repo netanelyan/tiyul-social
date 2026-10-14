@@ -16,11 +16,11 @@ import { instagramOnLinktree } from './find/igHandles.js';
 import { todaysSearches } from './find/queries.js';
 import { scoreAgency, scoreCreator } from './find/score.js';
 import { assertAllowed, isSocial, RULES } from '../clients/http.js';
-import { campaignFor, channelOf, hasUtm, openTarget, plainLink, tagged } from './links.js';
+import { campaignFor, channelOf, creatorContact, hasUtm, openTarget, plainLink, tagged } from './links.js';
 import { contactsIn } from '../clients/youtube.js';
 import { chooseExample, tripLinks } from './prepare/agencyProfile.js';
 import { compose, linkFor } from './prepare/compose.js';
-import { draftItem, specificProblem } from './prepare/draft.js';
+import { contextFor, draftItem, specificProblem } from './prepare/draft.js';
 import { examplesFor, noteCopied, recordSent, weeklyEdits } from './prepare/learn.js';
 import { shortLinkFor } from './prepare/short.js';
 import { CONNECTIVES, FORMAL, lengthOf, PRAISE, tellsIn } from './prepare/tells.js';
@@ -352,26 +352,27 @@ export async function growthSelftest({ ok, eq }) {
     ok('follow-ups come first and count inside the cap', d2.creator.length === 5 && d2.creator.every((k) => k.endsWith(':followup')), d2.creator.join(' '));
   }
 
-  /* ---------------------------------------------------------- warm-up, one follow-up */
+  /* ---------------------------------------------------------- the message right away, one follow-up */
 
   {
+    // The owner, 2026-10-14: no comment first and no day's wait.
     const state = emptyState();
     const l = (state.leads['tt:@maker1'] = creator(1));
-    applyAction(state, l, 'commented', { postId: l.posts[0].id }, { now: NOW, settings: S });
-    eq('commenting moves the creator to "commented"', l.stage, 'commented');
-    eq('no DM on the day of the comment', dmReady(l, { now: NOW, warmupDays: 1 }), false);
-    let threw = null;
-    try {
-      applyAction(state, l, 'sent', {}, { now: NOW, settings: S });
-    } catch (e) {
-      threw = e;
-    }
-    ok('and [נשלח] that day is refused', threw instanceof RuleError && threw.code === 'not-warm');
-    eq('the DM is ready the next Israel day', dmReady(l, { now: NOW + DAY, warmupDays: 1 }), true);
+    eq('a creator found today is owed the message today, with no comment first', dmReady(l), true);
+    const day = pickToday(state, S, NOW);
+    ok('so it is on today\'s Creators list', day.creator.includes('creator:tt:@maker1:dm'), day.creator.join(' '));
+    ok('and their TikTok video is still in Comments, as an extra', day.comment.some((k) => k.startsWith('comment:tt:@maker1:')));
+    eq('the warm-up setting is gone', 'warmupDays' in mergeSettings({ warmupDays: 3 }), false);
 
-    const t0 = NOW + DAY;
+    const w = (state.leads['tt:@maker3'] = creator(3));
+    applyAction(state, w, 'commented', { postId: w.posts[0].id }, { now: NOW, settings: S });
+    eq('commenting still moves a creator to "commented"', w.stage, 'commented');
+    applyAction(state, w, 'sent', {}, { now: NOW, settings: S });
+    eq('and the message can go the same day', w.stage, 'messaged');
+
+    const t0 = NOW;
     applyAction(state, l, 'sent', {}, { now: t0, settings: S });
-    eq('the message is recorded', l.stage, 'messaged');
+    eq('the message is recorded without any comment', l.stage, 'messaged');
     const sendAt = (t) => {
       try {
         applyAction(state, l, 'sent', {}, { now: t, settings: S });
@@ -391,6 +392,57 @@ export async function growthSelftest({ ok, eq }) {
     const r = (state.leads['tt:@maker2'] = creator(2, { warmedAt: new Date(NOW - 9 * DAY).toISOString(), messagedAt: new Date(NOW - 6 * DAY).toISOString(), stage: 'messaged' }));
     applyAction(state, r, 'replied', {}, { now: NOW, settings: S });
     eq('a reply cancels the follow-up', followupDue(r, { now: NOW, followupDays: 4 }), false);
+  }
+
+  /* ---------------------------------------------------------- YouTube creators: straight to the message */
+
+  {
+    const yt = (n, extra = {}) =>
+      creator(n, { id: `yt:@yt${n}`, source: 'youtube', handle: `yt${n}`, profileUrl: `https://www.youtube.com/@yt${n}`, socials: [], email: null, posts: [{ ...creator(n).posts[0], id: `v${n}`, platform: 'youtube', url: `https://www.youtube.com/shorts/v${n}` }], ...extra });
+    const state = emptyState();
+    const none = (state.leads['yt:@yt4'] = yt(4));
+    const withIg = (state.leads['yt:@yt1'] = yt(1, { socials: ['https://www.tiktok.com/@yt1', 'https://www.instagram.com/yt1.trips/'] }));
+    const day = pickToday(state, S, NOW);
+    eq('a YouTube creator is never offered in Comments', day.comment.length, 0);
+    eq('both go straight to Creators, one with a channel that takes a message first, whatever the score', day.creator.join(), 'creator:yt:@yt1:dm,creator:yt:@yt4:dm');
+
+    eq('the message goes to the Instagram they list, before a TikTok', creatorContact(withIg).url, 'https://www.instagram.com/yt1.trips/');
+    eq('else to the business email, before a TikTok', creatorContact({ ...none, email: 'yt4@gmail.com', socials: ['https://www.tiktok.com/@yt4'] }).channel, 'Email');
+    eq('else to a TikTok', creatorContact({ ...none, socials: ['https://www.tiktok.com/@yt4'] }).channel, 'TikTok');
+    const about = creatorContact(none);
+    ok('with none, the channel\'s About page, marked as no known channel', !about.known && about.url === 'https://www.youtube.com/@yt4/about' && openTarget(none, 'dm') === about.url);
+
+    const told = contextFor('creator', { lead: withIg, post: withIg.posts[0], extra: { channel: creatorContact(withIg), commented: false } }).text;
+    ok('the draft is told where it goes and that there was no comment', told.includes('an Instagram direct message') && told.includes('has not commented'), told);
+    const unknown = contextFor('creator', { lead: none, post: none.posts[0], extra: { channel: about, commented: false } }).text;
+    ok('and, with no known channel, to read right as a DM or an email', unknown.includes('reads right as either'));
+    const html = todayPage({ state, settings: S, token: 't', now: NOW, day, templates: readTemplates(), env: {} });
+    ok('the card says where it goes', html.includes('Goes by Instagram DM') && html.includes('View email address'));
+    const page = leadPage({ state, settings: S, token: 't', now: NOW, lead: none, templates: readTemplates() });
+    ok('and the lead page offers no comment for a YouTube creator', !page.includes('Comment on the video') && !page.includes('data-act="commented"'));
+
+    // Prepared on the first pass: route from the video, published, the message drafted for its channel.
+    const store = memStore(state);
+    const asked = [];
+    await prepareToday({
+      store,
+      settings: S,
+      now: NOW,
+      env: ENV,
+      deps: {
+        cityFor: async () => CITY,
+        draftItem: async (kind, args) => (asked.push({ kind, ...args }), { variants: [{ text: 'היי, ראיתי ביוטיוב את הסרטון. בניתי לכם מסלול: [קישור]', score: 1, tells: [] }] }),
+        fillVideoContext: async () => 0,
+        shortLink: async () => null,
+        publishRoute: async (l) => ({ status: 'published', url: `https://www.tiyulplus.com/trips/${l.handle}`, slug: l.handle, externalId: externalIdFor(l), publishedAt: new Date(NOW).toISOString() }),
+        brave: async () => [],
+      },
+    });
+    const dm = asked.find((a) => a.kind === 'creator' && a.lead.id === 'yt:@yt1');
+    ok('the message is drafted the day they are found, about their video, for their Instagram', dm && dm.post.id === 'v1' && dm.extra.channel.channel === 'Instagram' && dm.extra.commented === false && dm.extra.route);
+    ok('with the route on the site and the video it was written about kept', withIg.trip?.status === 'published' && withIg.drafts.dm.postId === 'v1');
+    ok('and the text carries that page', compose(withIg, 'dm', { templates: readTemplates(), settings: S, state }).text.includes('tiyulplus.com/trips/yt1'));
+    eq('no comment was drafted for either', asked.filter((a) => a.kind === 'comment').length, 0);
   }
 
   /* ---------------------------------------------------------- do-not-contact, dedupe */
@@ -495,7 +547,7 @@ export async function growthSelftest({ ok, eq }) {
     ok('a channel with 120K subscribers is left out for good', !store.data.leads['yt:@big.channel'] && Boolean(store.data.seen['yt:channel:chanB']?.rejected));
     eq('YouTube has no DMs: [העתק ופתח] opens the Instagram the channel lists', openTarget(yt, 'dm'), 'https://www.instagram.com/noa.trips/');
     eq('or its email', openTarget({ ...yt, socials: [], email: 'noa@trips.co.il' }, 'dm'), 'mailto:noa@trips.co.il');
-    eq('or, listing neither, the channel', openTarget({ ...yt, socials: [], email: null }, 'dm'), 'https://www.youtube.com/@noa.trips');
+    eq('or, listing neither, the channel\'s About page, where YouTube shows the business email', openTarget({ ...yt, socials: [], email: null }, 'dm'), 'https://www.youtube.com/@noa.trips/about');
 
     // What "טיול לקורפו" really returned on 2026-10-10: Shorts in other languages.
     const store2 = memStore();
@@ -632,7 +684,7 @@ export async function growthSelftest({ ok, eq }) {
     st.leads[lead.id] = { ...lead, closed: 'skipped', trip: stuck };
     eq('and the timer takes it down on the next pass', await withdrawClosed(st, { env: TOKEN, del, now: NOW }), 1);
 
-    // Public only when shown: the Creators column, the day after the warm-up.
+    // Public only when shown: the Creators column, inside its cap (one here).
     const store = memStore();
     store.data.leads['tt:@maker1'] = creator(1);
     store.data.leads['tt:@maker2'] = creator(2, { warmedAt: new Date(NOW - DAY).toISOString(), stage: 'commented', posts: [{ ...creator(2).posts[0], status: 'commented' }] });
@@ -648,9 +700,10 @@ export async function growthSelftest({ ok, eq }) {
       },
       brave: async () => [],
     };
-    await prepareToday({ store, settings: S, now: NOW, deps, env: {} });
+    const one = mergeSettings({ caps: { creator: 1 } });
+    await prepareToday({ store, settings: one, now: NOW, deps, env: {} });
     eq('a route goes public only for the creator shown in the Creators column', published.join(), 'tt:@maker2');
-    await prepareToday({ store, settings: S, now: NOW + 60_000, deps, env: {} });
+    await prepareToday({ store, settings: one, now: NOW + 60_000, deps, env: {} });
     eq('and once: the next pass does not publish it again', published.length, 1);
 
     const withdrawn = [];
@@ -859,7 +912,7 @@ export async function growthSelftest({ ok, eq }) {
     for (let i = 1; i <= 16; i++) s1.leads[`ag:place${i}`] = agency(i);
     const day = pickToday(s1, S, NOW);
     const words = todaySummary(s1, day, S, NOW);
-    ok('the summary leads with what is ready and says why nothing new was looked for', /No videos to comment on today\./.test(words) && /16 agencies are still waiting for you, so I didn't look for more\./.test(words), words);
+    ok('the summary leads with what is ready and says why nothing new was looked for', /^No new creators today\./.test(words) && /16 agencies are still waiting for you, so I didn't look for more\./.test(words), words);
 
     const tmp = join(REPO, 'data', '.selftest-growth.json');
     rmSync(tmp, { force: true });

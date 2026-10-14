@@ -88,7 +88,7 @@ export function destinationPage(itineraries, slug, days) {
 }
 
 /**
- * Where [העתק ופתח] goes: the person's profile, their WhatsApp, or the post.
+ * Where [העתק ופתח] goes: the person's profile, their WhatsApp, their email, or the post.
  *
  * Never a link with the message in it. The message goes to the clipboard and
  * the owner pastes and sends it, which is the whole contract.
@@ -103,14 +103,34 @@ export function openTarget(lead, what) {
     if (lead.email) return `mailto:${lead.email}`;
     return lead.website || lead.mapsUrl || null;
   }
-  // YouTube has no direct messages: the DM goes to the Instagram or TikTok the
-  // channel lists, or its business email, and only failing those to the channel.
+  return creatorContact(lead).url;
+}
+
+/**
+ * Where a creator's first message goes: { channel, url, known }.
+ *
+ * A TikTok or Instagram creator is written to on their own profile. YouTube has
+ * no direct messages, so a YouTube creator's message goes to the Instagram
+ * their channel or video lists, else the business email there, else a TikTok
+ * (the owner's order, 2026-10-14: an Instagram DM or the business email; a
+ * TikTok DM may not reach someone who does not follow back). With none of
+ * those, `known` is false and the url is the channel's About page, where
+ * YouTube shows the business email behind "View email address" and the links
+ * the API does not return.
+ */
+export function creatorContact(lead) {
   if (lead.source === 'youtube') {
-    const social = (lead.socials || []).find((s) => /instagram\.com/.test(s)) || (lead.socials || []).find((s) => /tiktok\.com/.test(s));
-    if (social) return social;
-    if (lead.email) return `mailto:${lead.email}`;
+    const socials = lead.socials || [];
+    const ig = socials.find((s) => /instagram\.com/.test(s));
+    if (ig) return { channel: 'Instagram', url: ig, known: true };
+    if (lead.email) return { channel: 'Email', url: `mailto:${lead.email}`, known: true };
+    const tt = socials.find((s) => /tiktok\.com/.test(s));
+    if (tt) return { channel: 'TikTok', url: tt, known: true };
+    const page = lead.profileUrl ? `${lead.profileUrl.replace(/\/+$/, '')}/about` : lead.posts?.[0]?.url || null;
+    return { channel: 'YouTube', url: page, known: false };
   }
-  return lead.profileUrl || lead.posts?.[0]?.url || null;
+  const url = lead.profileUrl || lead.posts?.[0]?.url || null;
+  return { channel: channelOf(url) || 'Unknown', url, known: Boolean(url) };
 }
 
 /** Where a message went, from the address it was opened at: WhatsApp, Email, Instagram... */

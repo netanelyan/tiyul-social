@@ -5,9 +5,9 @@ import { runDiscovery } from './find/index.js';
 import { fillVideoContext } from './find/videoContext.js';
 import { foldInbox, inboxDir } from './ledgerInbox.js';
 import { channelOf, openTarget } from './links.js';
-import { checkEdit, draftsFor } from './prepare/compose.js';
+import { checkEdit, draftsFor, messagePost } from './prepare/compose.js';
 import { draftItem, DraftError } from './prepare/draft.js';
-import { prepareToday } from './prepare/index.js';
+import { draftDm, prepareToday } from './prepare/index.js';
 import { examplesFor, noteCopied, recordSent } from './prepare/learn.js';
 import { withdrawClosed, withdrawRoute } from './prepare/publish.js';
 import { cityFor, siteContext } from './prepare/site.js';
@@ -101,8 +101,9 @@ export function createOps({ store, env = process.env, clock = () => Date.now(), 
       for (const key of Object.keys(lead.edits || {})) if (key.startsWith(`comment:${post.id}:`)) delete lead.edits[key];
       delete post.draftError;
     } else if (body.what === 'dm') {
-      const post = lead.posts.find((p) => p.status === 'commented') || lead.posts[0];
-      lead.drafts = { ...lead.drafts, dm: await draft('creator', { state, settings: s, lead, post, site: await site(lead.dest?.slug), extra: { route: lead.route, offer: s.offers.creator }, examples: examplesFor(state, 'creator') }) };
+      const post = messagePost(lead);
+      if (!post) throw new RuleError('no-post', 'This creator has no video to write about.');
+      lead.drafts = { ...lead.drafts, dm: await draftDm(draft, { state, settings: s, lead, post, c: await cityFor(lead.dest?.slug).catch(() => null) }) };
       for (const key of Object.keys(lead.edits || {})) if (key.startsWith('dm:')) delete lead.edits[key];
     } else if (body.what === 'message') {
       const ex = lead.example;
@@ -128,7 +129,6 @@ export function createOps({ store, env = process.env, clock = () => Date.now(), 
     if (!(s.braveCreditUsd >= 0 && s.braveCreditUsd <= 100)) bad.push('The Brave credit is between $0 and $100');
     if (!(Number.isInteger(s.publishPerDay) && s.publishPerDay >= 0 && s.publishPerDay <= 20)) bad.push('Route pages a day are between 0 and 20, the site\'s own limit');
     if (!(Number.isInteger(s.runHour) && s.runHour >= 0 && s.runHour <= 23)) bad.push('The run hour is between 0 and 23');
-    if (!(s.warmupDays >= 1)) bad.push('At least one day from the comment to the message');
     if (!(s.followupDays >= 1)) bad.push('At least one day before the follow-up');
     if (!(s.followers.min < s.followers.max)) bad.push('The follower minimum is below the maximum');
     for (const m of Object.values(s.models)) if (!/^claude-[a-z0-9.-]+$/.test(m)) bad.push(`Not a model name: ${m}`);

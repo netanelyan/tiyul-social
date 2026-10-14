@@ -102,15 +102,24 @@ much shorter you make them, and the words you cut and add most.
 
 ## The flows
 
-- **Creators**: found -> a comment on their video (three options) -> you
-  comment from @tiyulplus and press [Commented] -> the next day they appear
-  under Creators with their route, published on the site, and the message ->
-  [Copy & open] -> [Sent] -> if nothing is logged in 4 days, the one follow-up
-  appears -> then never again. [Skip] on a comment skips only that video; [Not
-  for us] drops the creator for good.
+- **Creators** (since 2026-10-14): found -> straight onto Creators, 5 a day,
+  with a route built from their video, published on the site, and the message
+  about that video, written for where it goes -> [Copy & open] -> [Sent] -> if
+  nothing is logged in 5 days, the one follow-up appears -> then never again.
+  No comment first and no day's wait. Where it goes: a TikTok or Instagram
+  creator's own profile; for a YouTube creator (YouTube has no DMs) the
+  Instagram their channel or video lists, else the business email there, else
+  a TikTok. With none of those, the card says so and [Copy & open] opens the
+  channel's About page, where YouTube shows the business email behind "View
+  email address"; those creators come after the ones with a known channel.
+  [Not for us] drops the creator for good.
+- **Comments** (optional): a TikTok or Instagram creator's video also shows in
+  Comments, three options, for a comment from @tiyulplus before or after the
+  message. It gates nothing, and a message written after it may mention it.
+  YouTube videos are not offered. [Skip] skips only that video.
 - **Agencies**: found -> picked for today -> their site is read, a sample route
   on a city they sell is published, and the card shows it (days, places, link)
-  beside the message -> [Copy & open] -> [Sent] -> one follow-up after 4 days.
+  beside the message -> [Copy & open] -> [Sent] -> one follow-up after 5 days.
   When nothing they sell is in our catalog, the closest page, with the reason.
 - **Questions**: a post asking how to plan a trip -> one reply, from our site's
   data, with a link only if they asked for a route. Never a DM.

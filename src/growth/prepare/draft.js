@@ -8,8 +8,8 @@ import { addressLine, fewShotBlock, systemFor } from './voice.js';
 
 // Everything a model writes for the desk, in four kinds:
 //
-//   comment   a reaction to a creator's video, with one tip (the warm-up)
-//   creator   the first DM to that creator, with their route's link
+//   comment   a reaction to a creator's video, with one tip (optional, TikTok and Instagram)
+//   creator   the first DM or email to that creator, with their route's link
 //   agency    the first WhatsApp or email to an agency, with its sample route
 //   reply     an answer to somebody asking how to plan a trip
 //
@@ -48,6 +48,14 @@ const SOURCES = {
 };
 
 const CHECK_KIND = { comment: 'comment', reply: 'reply', agency: 'message', creator: 'message' };
+
+// How a creator's first message reaches them (links.js creatorContact), for the prompt.
+const CHANNEL_LINE = {
+  Instagram: 'an Instagram direct message.',
+  TikTok: 'a TikTok direct message.',
+  Email: 'an email to the business address they list.',
+  none: 'not known yet. YouTube has no direct messages, so Netanel will send it as an Instagram DM or an email, whichever their channel page lists. Write it so it reads right as either.',
+};
 
 const schemaFor = (kind) => ({
   type: 'object',
@@ -116,7 +124,9 @@ export function specificProblem(text, specific, sources) {
  *
  * kind   'comment' | 'creator' | 'agency' | 'reply'
  * lead   the lead; post: the video or question; site: our destination text
- * extra  { route, link, exampleNote, offer } for the messages
+ * extra  { route, link, exampleNote, offer } for the messages; for a creator's,
+ *        also { channel, commented }: how it reaches them, and whether the
+ *        owner commented on the video
  */
 export function contextFor(kind, { lead, post = null, site = '', extra = {} }) {
   const sources = {};
@@ -161,6 +171,7 @@ export function contextFor(kind, { lead, post = null, site = '', extra = {} }) {
       ...r.days.map((d, i) => `Day ${i + 1}: ${(d.names || []).join(', ')}`)
     );
   }
+  if (kind === 'creator' && extra.channel) blocks.push('', `HOW IT REACHES THEM: ${CHANNEL_LINE[extra.channel.known ? extra.channel.channel : 'none'] || CHANNEL_LINE.none}`, extra.commented ? 'Netanel commented on this video from @tiyulplus.' : 'Netanel has not commented on this video and has never written to them.');
   if (extra.exampleHe) blocks.push(`The example destination, to name in the message: ${extra.exampleHe}`);
   if (extra.offer) blocks.push(`Offer that may be mentioned once: ${extra.offer}`);
   const text = blocks.filter((b) => b !== '').join('\n');

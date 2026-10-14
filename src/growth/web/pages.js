@@ -1,7 +1,7 @@
 import { keyStatus, LIMITS, TEMPLATE_LABELS, TEMPLATE_NAMES } from '../config.js';
 import { API_PRICES, monthSpend } from '../../clients/budget.js';
-import { leadChannel, openTarget } from '../links.js';
-import { compose, draftsFor, editWarnings, VARIANT_COUNT } from '../prepare/compose.js';
+import { creatorContact, leadChannel, openTarget } from '../links.js';
+import { compose, draftsFor, editWarnings, messagePost, VARIANT_COUNT } from '../prepare/compose.js';
 import { weeklyEdits } from '../prepare/learn.js';
 import { fill } from '../prepare/templates.js';
 import { CONNECTIVES, FAKE_EXPERIENCE, FORMAL, PRAISE } from '../prepare/tells.js';
@@ -280,10 +280,10 @@ function cardMessage(state, key, ctx) {
   // No send button at all, rather than a greyed one, for a route that has not passed.
   const noSend = col === 'agency' && what !== 'followup' && Boolean(routeProblem(lead));
   const label = what === 'followup' ? 'The one follow-up' : col === 'agency' ? 'First message' : 'First message';
-  const agency = col === 'agency' ? `<p class="contact">${lead.kosher ? '<span class="tag kosher">kosher audience</span>' : ''}${contactLine(lead)}</p>` : '';
+  const agency = col === 'agency' ? `<p class="contact">${lead.kosher ? '<span class="tag kosher">kosher audience</span>' : ''}${contactLine(lead)}</p>` : creatorContactLine(lead);
   const body = variants({ lead, what, ctx, idBase: id, target, blocked, noSend, rows: what === 'followup' ? 2 : 5 });
   return `<article class="card${done ? ' done' : ''}" id="${id}">
-  <div class="row">${col === 'creator' ? thumb(lead.posts.find((p) => p.status === 'commented') || lead.posts[0]) : ''}<div class="meta">${whoLine(lead)}${agency}</div></div>
+  <div class="row">${col === 'creator' ? thumb(messagePost(lead)) : ''}<div class="meta">${whoLine(lead)}${agency}</div></div>
   ${what === 'followup' ? '' : routeBox(lead)}
   <p class="label">${label}</p>
   ${done ? '' : missingNote(first.missing.filter((m) => m !== 'Not drafted yet.' || !lead.draftError))}
@@ -324,6 +324,22 @@ function cardCustomer(state, key, ctx) {
 </article>`;
 }
 
+/** Where a creator's message goes, inline ("Instagram DM, instagram.com/x"), or null when the desk knows nowhere. */
+function creatorWhere(lead) {
+  const c = creatorContact(lead);
+  if (!c.known) return null;
+  if (c.channel === 'Email') return `email, <bdi>${esc(lead.email)}</bdi>`;
+  return `${esc(c.channel)} DM, <a href="${attr(c.url)}" target="_blank" rel="noopener noreferrer"><bdi>${esc(c.url.replace(/^https?:\/\/(www\.|m\.)?/, '').replace(/\/$/, ''))}</bdi></a>`;
+}
+
+const NO_CONTACT = 'No Instagram, email or TikTok in their channel or video descriptions, and YouTube has no direct messages. [Copy & open] opens their channel\'s About page: YouTube shows a business email there behind "View email address", and the links the desk cannot read.';
+
+/** The line on a creator's card that says where the message goes. */
+function creatorContactLine(lead) {
+  const where = creatorWhere(lead);
+  return where ? `<p class="contact">Goes by ${where}</p>` : `<p class="note">${esc(NO_CONTACT)}</p>`;
+}
+
 // Each piece in its own <bdi>: a phone number, an email and a domain are
 // left-to-right runs that must not be reordered around Hebrew next to them.
 function contactLine(lead) {
@@ -350,11 +366,8 @@ export function todaySummary(state, day, settings, now = Date.now()) {
     return w === 'followup' || Boolean(draftsFor(lead, what || w)?.variants?.length);
   });
   const lines = [];
-  const c = ready('comment');
-  lines.push(c.length ? `${plural(c.length, 'comment')} ready.` : open('comment').length ? `${plural(open('comment').length, 'comment')} being written.` : 'No videos to comment on today.');
   const cr = ready('creator', 'dm');
-  const warmTomorrow = Object.values(state.leads).filter((l) => l.type === 'creator' && l.warmedAt && !l.messagedAt && !l.closed && !dmReady(l, { now, warmupDays: settings.warmupDays })).length;
-  lines.push(cr.length ? `${plural(cr.length, 'creator message')} ready.` : warmTomorrow ? `No creators to message today; ${warmTomorrow} tomorrow, the day after your comment.` : 'No new creators today.');
+  lines.push(cr.length ? `${plural(cr.length, 'creator message')} ready.` : open('creator').length ? `${plural(open('creator').length, 'creator message')} being written.` : 'No new creators today.');
   const ag = ready('agency', 'message');
   const waiting = Object.values(state.leads).filter((l) => l.type === 'agency' && !l.closed && l.stage === 'found' && !l.messagedAt && !l.routeSetAside).length;
   const backlog = waiting >= settings.caps.agency * 5;
@@ -371,6 +384,10 @@ export function todaySummary(state, day, settings, now = Date.now()) {
   );
   const q = ready('customer');
   if (q.length) lines.push(`${plural(q.length, 'question')} to answer.`);
+  // Last: a comment is an extra now, never the way to a creator's message.
+  const c = ready('comment');
+  if (c.length) lines.push(`${plural(c.length, 'optional comment')} ready.`);
+  else if (open('comment').length) lines.push(`${plural(open('comment').length, 'optional comment')} being written.`);
   return lines.join(' ');
 }
 
@@ -468,18 +485,16 @@ function emptyText(col, state, settings, now, day = {}) {
   // A column whose day is full says so: "no agencies today" read as none left.
   const cap = Number(settings.caps?.[col]) || 0;
   if ((col === 'agency' || col === 'creator') && cap && (day[col] || []).length >= cap) {
-    const waiting = leads.filter((l) => l.type === col && !l.closed && l.stage === 'found' && !l.messagedAt && !l.routeSetAside && (col === 'agency' || l.warmedAt)).length;
+    const waiting = leads.filter((l) => l.type === col && (col === 'creator' ? dmReady(l) : !l.closed && l.stage === 'found' && !l.messagedAt && !l.routeSetAside)).length;
     const what = col === 'agency' ? 'agency message' : 'creator message';
     return `Today's ${plural(cap, what)} are done: ${cap} a day is the cap in Settings. ${waiting ? `${plural(waiting, col === 'agency' ? 'agency' : 'creator', col === 'agency' ? 'agencies' : 'creators')} still waiting; the next ${Math.min(cap, waiting)} come tomorrow, after any follow-ups that are due.` : 'Nobody else is waiting.'}`;
   }
-  if (col === 'creator') {
-    const warm = leads.filter((l) => l.type === 'creator' && l.warmedAt && !l.messagedAt && !l.closed && !dmReady(l, { now, warmupDays: settings.warmupDays })).length;
-    return warm ? `${plural(warm, 'creator')} will be here tomorrow, the day after your comment.` : 'A creator shows up here the day after you mark a comment on their video.';
-  }
+  const next = `The next search is tomorrow at ${String(settings.runHour).padStart(2, '0')}:00, or press "Look for new leads".`;
+  if (col === 'creator') return `A creator's message shows up here as soon as a search finds them. ${next}`;
   if (col === 'comment') {
     const last = state.runs[0];
     if (last?.tooOld && !last.candidates) return `Everything today's search found was older than ${settings.maxPostAgeDays} days. The next search is tomorrow at ${String(settings.runHour).padStart(2, '0')}:00.`;
-    return `No new videos. The next search is tomorrow at ${String(settings.runHour).padStart(2, '0')}:00, or press "Look for new leads".`;
+    return `No TikTok or Instagram videos to comment on. YouTube creators go straight to a message. ${next}`;
   }
   if (col === 'agency' && settings.agencyPaused) {
     const waiting = leads.filter((l) => l.type === 'agency' && !l.closed && l.stage === 'found' && !l.messagedAt && !l.routeSetAside).length;
@@ -523,6 +538,7 @@ export function leadPage({ state, settings, token, now = Date.now(), lead, templ
 
   const facts = [];
   if (lead.profileUrl) facts.push(['Profile', `<a href="${attr(lead.profileUrl)}" target="_blank" rel="noopener noreferrer">${esc(lead.profileUrl)}</a>`]);
+  if (lead.type === 'creator') facts.push(['Message goes by', creatorWhere(lead) || 'nowhere the desk found; their channel\'s About page may show an email']);
   if (Number.isFinite(lead.followers)) facts.push(['Followers', `${k(lead.followers)}${lead.followersFrom === 'search' ? ' (from a search result)' : ''}`]);
   if (lead.dest) facts.push(['Destination', heIn(lead.dest.he)]);
   if (lead.phone) facts.push(['Phone', `<bdi>${esc(lead.phone)}</bdi>`]);
@@ -543,7 +559,7 @@ export function leadPage({ state, settings, token, now = Date.now(), lead, templ
     sections.push(`<section class="panel"><h2>${lead.type === 'agency' ? 'The example' : 'The route'}</h2>${
       r || lead.example
         ? `${routeBox(lead)}${r?.matched?.length ? `<p class="small">Put first because the video names them: ${r.matched.map((m) => heIn(m.name)).join(', ')}.</p>` : ''}${r?.unmatched?.length ? `<p class="small">Not in our catalog: ${r.unmatched.map(heIn).join(', ')}.</p>` : ''}`
-        : `<p class="small">${lead.type === 'agency' ? 'The example is chosen when the agency is picked for a message.' : 'The route is built when the creator reaches the Creators column, the day after your comment.'}</p>`
+        : `<p class="small">${lead.type === 'agency' ? 'The example is chosen when the agency is picked for a message.' : 'The route is built when the creator is picked for the Creators column.'}</p>`
     }${tripNote(lead.trip)}</section>`);
   }
 
@@ -564,7 +580,8 @@ export function leadPage({ state, settings, token, now = Date.now(), lead, templ
   };
   if (lead.type === 'creator') {
     const p = openPost(lead, { now, maxAgeDays: settings.maxPostAgeDays });
-    if (p && !lead.warmedAt) material.push(block('Comment on the video', 'comment', { postId: p.id }));
+    // No comment for a YouTube creator: their message goes first (the owner, 2026-10-14).
+    if (p && !lead.warmedAt && lead.source !== 'youtube') material.push(block('Comment on the video (optional)', 'comment', { postId: p.id }));
     material.push(block('First message', 'dm'));
     if (lead.messagedAt) material.push(block('The one follow-up', 'followup'));
   } else if (lead.type === 'agency') {
@@ -578,16 +595,15 @@ export function leadPage({ state, settings, token, now = Date.now(), lead, templ
   sections.push(`<section class="panel"><h2>Ready to send</h2>${lead.type === 'agency' ? '' : toggle}${material.join('')}</section>`);
 
   const acts = [];
-  if (lead.type === 'creator' && !lead.warmedAt) {
+  if (lead.type === 'creator' && !lead.warmedAt && lead.source !== 'youtube') {
     const p = openPost(lead, { now, maxAgeDays: settings.maxPostAgeDays });
     if (p) acts.push(button('Commented', { act: 'commented', lead: lead.id, post: p.id }, 'primary'), button('Followed', { act: 'followed', lead: lead.id, post: p.id }, lead.followedAt ? 'on' : ''), button('Skip this video', { act: 'skip-post', lead: lead.id, post: p.id }));
   }
   if (lead.type !== 'customer') {
     if (!lead.messagedAt) {
       const first = lead.type === 'agency' ? 'message' : 'dm';
-      const notWarm = lead.type === 'creator' && !dmReady(lead, { now, warmupDays: settings.warmupDays });
       const missing = compose(lead, first, ctx).missing.length > 0;
-      if (!(lead.type === 'agency' && routeProblem(lead))) acts.push(button('Sent', { act: 'sent', lead: lead.id, disabled: notWarm || missing, title: notWarm ? 'The message goes the day after your comment' : missing ? 'The message is not ready yet' : null }));
+      if (!(lead.type === 'agency' && routeProblem(lead))) acts.push(button('Sent', { act: 'sent', lead: lead.id, disabled: missing, title: missing ? 'The message is not ready yet' : null }));
     } else if (followupDue(lead, { now, followupDays: settings.followupDays })) {
       acts.push(button('Follow-up sent', { act: 'sent', lead: lead.id }, 'primary'));
     } else {
@@ -790,7 +806,6 @@ ${num('publishPerDay', 'New route pages a day', settings.publishPerDay, 1, 'Crea
 ${num('budgetUsd', 'Monthly budget ($)', settings.budgetUsd, 1, 'Searching and drafting stop when it is reached.')}
 ${num('braveCreditUsd', 'Brave\'s monthly credit ($)', settings.braveCreditUsd, 1, '0 if the account does not get it.')}
 ${num('runHour', 'Daily search hour', settings.runHour, 1, 'Israel time.')}
-${num('warmupDays', 'Days from comment to message', settings.warmupDays)}
 ${num('followupDays', 'Days before the follow-up', settings.followupDays)}
 </fieldset>
 <fieldset><legend>The gifts</legend>

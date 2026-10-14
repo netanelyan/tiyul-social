@@ -10,7 +10,8 @@ import { SITE } from '../links.js';
 // lead, so a re-send is an edit that keeps the slug, never a second page.
 //
 // WHEN, AND ONLY WHEN. A creator's route goes public when the creator is shown
-// in the Creators column, the day after the owner marked the warm-up comment.
+// in the Creators column, which since 2026-10-14 is the day they are found
+// when the day's cap has room (no warm-up comment first).
 // An agency's sample route goes public when the agency is picked for today's
 // messages, on a city it sells (the owner's answer of 2026-10-11), and the card
 // shows the route before anything is sent. prepare/index.js publishes in those

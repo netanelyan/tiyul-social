@@ -101,7 +101,9 @@ export const DEFAULT_SETTINGS = Object.freeze({
   // not to get it, set this to 0 and the ledger stops subtracting it.
   braveCreditUsd: 5,
   runHour: 8,
-  warmupDays: 1,
+  // No warm-up setting: since 2026-10-14 a creator's message is offered the day
+  // they are found, with no comment first (rules.js dmReady). A stored
+  // `warmupDays` is dropped by mergeSettings like any unknown key.
   // Days without a reply before the one follow-up comes back on Today, and again
   // after it before the lead closes as "no reply" (the owner, 2026-10-11: 5).
   followupDays: 5,

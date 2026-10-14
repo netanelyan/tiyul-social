@@ -1,15 +1,15 @@
 // The rules, as pure functions over the state.
 //
 // Everything the brief calls a hard rule that is about PEOPLE rather than about
-// the network lives here: the daily caps, the warm-up gate, one message and one
-// follow-up, do-not-contact, and dedupe. Pure on purpose. Each of these is the
+// the network lives here: the daily caps, one message and one follow-up,
+// do-not-contact, and dedupe. Pure on purpose. Each of these is the
 // kind of rule that is wrong quietly: a second follow-up looks exactly like a
 // first one on the screen, and the only place it can be caught is a test that
 // feeds the function a lead that already had one.
 //
 // A LEAD is a person or a business: a creator, an agency, or a customer. A
-// creator carries POSTS (each video found for them), because the comment queue
-// is about one video while the DM is about the person:
+// creator carries POSTS (each video found for them), because a comment is about
+// one video while the DM is about the person:
 //
 //   {
 //     id, type: 'creator' | 'agency' | 'customer', source, foundAt,
@@ -24,6 +24,8 @@
 //     warmedAt, followedAt, messagedAt, followupSentAt, repliedAt, decidedAt,
 //     route, trip, link, drafts: {}, edits: {}, history: []
 //   }
+
+import { creatorContact } from './links.js';
 
 export const STAGES = ['found', 'commented', 'messaged', 'replied', 'yes', 'no', 'using'];
 
@@ -54,7 +56,7 @@ export const STAGE_LABEL = {
 
 export const TYPE_LABEL = { creator: 'Creators', agency: 'Agencies', customer: 'People planning trips' };
 export const COLUMNS = ['comment', 'creator', 'agency', 'customer'];
-export const COLUMN_LABEL = { comment: 'Comments', creator: 'Creators', agency: 'Agencies', customer: 'Questions' };
+export const COLUMN_LABEL = { comment: 'Comments (optional)', creator: 'Creators', agency: 'Agencies', customer: 'Questions' };
 
 const rank = (stage) => STAGES.indexOf(stage);
 
@@ -172,10 +174,13 @@ export function postAgeDays(post, now = Date.now()) {
   return Number.isFinite(t) ? Math.max(0, (now - t) / 86_400_000) : 0;
 }
 
-/** Has the warm-up happened, on an earlier Israel day by at least `warmupDays`? */
-export function dmReady(lead, { now = Date.now(), warmupDays = 1 } = {}) {
-  if (lead.type !== 'creator' || lead.closed || lead.messagedAt || !lead.warmedAt) return false;
-  return dayDiff(ilDate(lead.warmedAt), ilDate(now)) >= warmupDays;
+/**
+ * Is a creator's first message owed? From the moment they are found (the owner,
+ * 2026-10-14): no comment first and no day's wait. A comment on a TikTok or
+ * Instagram video is still offered, as an extra, never a gate.
+ */
+export function dmReady(lead) {
+  return lead.type === 'creator' && !lead.closed && !lead.messagedAt && ['found', 'commented'].includes(lead.stage);
 }
 
 /** Is the one follow-up owed today? */
@@ -225,8 +230,10 @@ export function candidates(state, column, settings, now = Date.now()) {
   const s = settings;
 
   if (column === 'comment') {
+    // TikTok and Instagram only: a YouTube creator goes straight to the message
+    // (the owner, 2026-10-14), and the comment there would be drafted for nobody.
     return leads
-      .filter((l) => l.type === 'creator' && l.stage === 'found' && !l.warmedAt)
+      .filter((l) => l.type === 'creator' && l.source !== 'youtube' && l.stage === 'found' && !l.warmedAt)
       .map((l) => ({ l, p: openPost(l, { now, maxAgeDays: s.maxPostAgeDays }) }))
       .filter((x) => x.p)
       .sort((a, b) => (b.p.score || b.l.score || 0) - (a.p.score || a.l.score || 0))
@@ -235,9 +242,13 @@ export function candidates(state, column, settings, now = Date.now()) {
   if (column === 'creator' || column === 'agency') {
     const mine = leads.filter((l) => l.type === column);
     const followups = mine.filter((l) => followupDue(l, { now, followupDays: s.followupDays })).sort(byScore).map((l) => `${column}:${l.id}:followup`);
+    // A creator with a channel that takes a message comes before one whose
+    // YouTube channel lists none, whatever the score: that card can only send
+    // the owner to look for an email by hand.
+    const reachable = (l) => (creatorContact(l).known ? 1 : 0);
     const fresh =
       column === 'creator'
-        ? mine.filter((l) => dmReady(l, { now, warmupDays: s.warmupDays })).sort(byScore).map((l) => `creator:${l.id}:dm`)
+        ? mine.filter(dmReady).sort((a, b) => reachable(b) - reachable(a) || byScore(a, b)).map((l) => `creator:${l.id}:dm`)
         : // Paused in Settings: only the follow-ups owed to agencies already messaged.
           s.agencyPaused
           ? []
@@ -394,9 +405,6 @@ export function applyAction(state, lead, action, payload = {}, { now = Date.now(
       if (lead.type === 'customer') throw new RuleError('no-dm', 'People asking questions get a reply comment, never a message.');
       if (lead.closed) throw new RuleError('closed', 'This lead is closed.');
       if (!lead.messagedAt) {
-        if (lead.type === 'creator' && !dmReady(lead, { now, warmupDays: s.warmupDays ?? 1 })) {
-          throw new RuleError('not-warm', 'A creator gets the message the day after you mark the comment, not before.');
-        }
         // The card offers no send button then; this is the same rule for any other caller.
         if (lead.type === 'agency' && routeProblem(lead)) throw new RuleError('route', routeProblem(lead));
         lead.messagedAt = at;
