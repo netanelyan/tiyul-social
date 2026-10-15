@@ -931,8 +931,9 @@ API. `src/publish/tiktokRoute.js` decides per post:
   so Zernio returns the post rather than making a second one. A status that
   cannot be read after the post has an id leaves it pending, and Zernio's 409
   duplicate means the post exists.
-- Zernio fetches the slides by URL and has no upload endpoint, so a slate post
-  can only leave from where the card host serves files (the VPS).
+- Zernio fetches the slides by URL. It also takes uploads (`POST
+  /v1/media/presign`, then a PUT of the file), which this bot does not use: a
+  slate post leaves from where the card host serves files (the VPS).
 
 `npm run zernio-test -- private` builds one real post and publishes it
 `SELF_ONLY` with music; `prepare-public` builds one and stops; `publish-public

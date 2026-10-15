@@ -33,8 +33,9 @@ loadEnv();
 //       the same post (same id, same words, same photographs). Posts nothing itself.
 //
 // RUN WHERE THE CARD HOST SERVES THE FILES (the VPS: CARD_OUTPUT_DIR is the folder
-// Caddy serves at CARD_PUBLIC_BASE_URL). Zernio fetches the images by URL and has no
-// upload endpoint; a slide rendered on a laptop is a URL nobody can fetch.
+// Caddy serves at CARD_PUBLIC_BASE_URL). Zernio fetches the images by URL, and this
+// script does not use its upload endpoint (POST /v1/media/presign), so a slide
+// rendered on a laptop is a URL nobody can fetch.
 //
 // It never imports bot.js and never touches the bot's queue or approvals.
 //
