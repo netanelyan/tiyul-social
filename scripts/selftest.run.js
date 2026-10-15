@@ -10571,6 +10571,99 @@ group('the daily slate - one tap a day, and nothing goes out unapproved');
 }
 
 /* -------------------------------------------------------------------------- */
+group('a Zernio create call with no answer is looked up before any draft is made');
+
+{
+  const z = await import('../src/publish/zernio.js');
+  const { publishTikTokRouted } = await import('../src/publish/tiktokRoute.js');
+
+  const zenv = { ZERNIO_API_KEY: 'test-key', ZERNIO_TIKTOK_ACCOUNT_ID: 'acc_tiktok_1' };
+  const cand = { id: 'dup1', headline: 'h', tiktokCaption: 'c', deck: { urls: { tiktok: ['https://c/1.jpg', 'https://c/2.jpg'] } } };
+
+  // Zernio, where the create call never answers. `listed` is what a lookup
+  // finds: the post the create call made after all, nothing, or an error.
+  const zernio = ({ listed, statusFails = false, createAnswers = false }) => {
+    const seen = { keys: [], lookups: 0 };
+    const fetchImpl = async (url, opts = {}) => {
+      const u = String(url);
+      if (opts.method === 'POST' && u.endsWith('/posts')) {
+        seen.keys.push(opts.headers['idempotency-key']);
+        seen.metaKey = JSON.parse(opts.body).metadata?.idempotencyKey;
+        if (createAnswers) return { ok: true, status: 201, json: async () => ({ post: { _id: 'zp-made', status: 'publishing', platforms: [{ platform: 'tiktok', status: 'processing' }] } }) };
+        throw new Error('The operation was aborted due to timeout');
+      }
+      if (u.includes('/posts?')) {
+        seen.lookups++;
+        if (listed === 'error') throw new Error('getaddrinfo ENOTFOUND zernio.com');
+        const posts =
+          listed === 'made'
+            ? [{ _id: 'zp-other', metadata: { idempotencyKey: 'someone-else' } }, { _id: 'zp-made', status: 'published', metadata: { idempotencyKey: seen.keys.at(-1) }, platforms: [{ platform: 'tiktok', status: 'published', platformPostUrl: 'https://www.tiktok.com/@t/photo/7300000000000000009' }] }]
+            : [];
+        return { ok: true, status: 200, json: async () => ({ posts, pagination: { pages: 1 } }) };
+      }
+      if (u.includes('/posts/')) {
+        if (statusFails) throw new Error('socket hang up');
+        return { ok: true, status: 200, json: async () => ({ post: { _id: 'zp-made', status: 'published', platforms: [{ platform: 'tiktok', status: 'published' }] } }) };
+      }
+      throw new Error(`unexpected ${u}`);
+    };
+    return { fetchImpl, seen };
+  };
+  const cfg = { privacy: 'SELF_ONLY', autoAddMusic: true, fallback: 'draft', dailyCap: 3 };
+  const run = async (z0, c = cand) => {
+    let drafted = 0;
+    let result = null;
+    let error = null;
+    let keyPassed;
+    try {
+      result = await publishTikTokRouted(c, {
+        cfg,
+        deps: {
+          zernio: (cc, o) => ((keyPassed = o.idempotencyKey), z.publishZernioTikTok(cc, { ...o, env: zenv, fetchImpl: z0.fetchImpl, pollMs: 1, timeoutMs: 20 })),
+          draft: async () => (drafted++, { draft: true, notes: [] }),
+          usedLast24h: () => 0,
+          cap: () => 3,
+        },
+      });
+    } catch (e) {
+      error = e;
+    }
+    return { drafted, result, error, keyPassed };
+  };
+
+  const made = zernio({ listed: 'made' });
+  const a = await run(made);
+  eq('timeout but the post was created: no draft', a.drafted, 0);
+  eq('the post found by its key is the result', a.result?.zernioId, 'zp-made');
+  ok('and the notice says it was found', a.result?.notes?.some((n) => /zp-made/.test(n)));
+  ok('the key went out as the Idempotency-Key and on the metadata both', made.seen.keys[0] && made.seen.metaKey === made.seen.keys[0]);
+
+  const none = zernio({ listed: 'none' });
+  const b = await run(none);
+  eq('timeout and no post with that key: the draft fallback, as before', b.drafted, 1);
+  ok('after looking more than once, because a post being saved may not be listed yet', none.seen.lookups > 1);
+
+  const blind = zernio({ listed: 'error' });
+  const c = await run(blind);
+  eq('timeout and the lookup failing too: no draft', c.drafted, 0);
+  ok('the error says the post may exist', c.error?.unconfirmed === true);
+  eq('and carries the key for the retry', c.error?.idempotencyKey, blind.seen.keys[0]);
+
+  const again = await run(zernio({ listed: 'made' }), { ...cand, zernioKeys: { tiktok: blind.seen.keys[0] } });
+  eq('a retry hands Zernio the key the unconfirmed attempt left', again.keyPassed, blind.seen.keys[0]);
+
+  const polled = zernio({ createAnswers: true, statusFails: true });
+  const d = await run(polled);
+  ok('a status that cannot be read after the post was made is pending, not a failure', d.result?.pending === true && d.drafted === 0);
+
+  const dupe = await run({
+    fetchImpl: async () => ({ ok: false, status: 409, json: async () => ({ error: 'Duplicate content detected.', code: 'content_duplicate', existingPostId: 'zp-old' }) }),
+  });
+  ok("Zernio's 409 duplicate means the post exists: no draft", dupe.drafted === 0 && dupe.error?.exists === true);
+  ok('and it is not retried', z.isCardLevelZernio(dupe.error));
+}
+
+/* -------------------------------------------------------------------------- */
 group('the growth desk - it prepares, it never sends');
 
 // Its own group, its own file: the tests live in src/growth/selftest.js beside

@@ -1241,6 +1241,11 @@ async function publishNext(item = null) {
       // the retry can ask "is this already live?" with, and without it the retry
       // posts a second copy of a post that went out fine.
       if (target === 'instagram' && e?.creationId) cand.instagramCreationId = e.creationId;
+      // Zernio's version of the same problem, for either destination it posts
+      // to. A create call nobody could confirm either way leaves its
+      // idempotency key on the card, and the retry sends it again: Zernio
+      // returns the post if it was made rather than making a second one.
+      if (e?.unconfirmed && e.idempotencyKey) cand.zernioKeys = { ...(cand.zernioKeys || {}), [target]: e.idempotencyKey };
 
       // A card this destination can NEVER accept is not an outage, and scoring
       // it as one does real damage.

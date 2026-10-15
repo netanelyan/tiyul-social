@@ -923,6 +923,14 @@ API. `src/publish/tiktokRoute.js` decides per post:
   a failure and makes no draft.
 - **Any other Zernio failure falls back to the inbox draft**, with a note saying
   so, so a bad day at the service still leaves the post one tap from live.
+- **But never when the post may exist.** Every post carries a key, sent as
+  Zernio's Idempotency-Key and stored on its metadata. A create call that times
+  out or fails with no clear answer is followed by a lookup for that key: found,
+  it is the result and no draft is made; absent, the draft goes ahead; and if the
+  lookup cannot run either, nothing is drafted and the retry sends the same key,
+  so Zernio returns the post rather than making a second one. A status that
+  cannot be read after the post has an id leaves it pending, and Zernio's 409
+  duplicate means the post exists.
 - Zernio fetches the slides by URL and has no upload endpoint, so a slate post
   can only leave from where the card host serves files (the VPS).
 

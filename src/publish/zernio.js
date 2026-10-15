@@ -20,6 +20,7 @@
 // stripped), TikTok's two consent flags, and `publishNow`, without which Zernio
 // schedules the post instead of publishing it.
 
+import { randomUUID } from 'node:crypto';
 import { soundOf } from '../video/tracks.js';
 import { clipPublicUrl } from './imageHosts.js';
 
@@ -28,7 +29,7 @@ const BASE = (process.env.ZERNIO_BASE || 'https://zernio.com/api/v1').replace(/\
 export const zernioConfigured = (env = process.env) => Boolean(String(env.ZERNIO_API_KEY || '').trim());
 
 export class ZernioError extends Error {
-  constructor(message, { step, code = null, status = null, category = null } = {}) {
+  constructor(message, { step, code = null, status = null, category = null, unconfirmed = false, exists = false, idempotencyKey = null } = {}) {
     super(message);
     this.name = 'ZernioError';
     this.step = step;
@@ -36,11 +37,18 @@ export class ZernioError extends Error {
     this.status = status;
     // Zernio's own errorCategory: user_content, auth_expired, platform_error.
     this.category = category;
+    // The create call ended without a clear answer and the lookup could not
+    // settle it either: the post may exist. Never followed by a draft, and a
+    // retry sends `idempotencyKey` again so Zernio returns the post if it does.
+    this.unconfirmed = unconfirmed;
+    // Zernio says this content is already a post (409 content_duplicate).
+    this.exists = exists;
+    this.idempotencyKey = idempotencyKey;
   }
 }
 
 /** One request. `fetchImpl` is the selftest's door; production uses fetch. */
-async function call(path, { method = 'GET', body = null, env = process.env, fetchImpl = fetch, step = 'request' } = {}) {
+async function call(path, { method = 'GET', body = null, env = process.env, fetchImpl = fetch, step = 'request', headers = {} } = {}) {
   let res;
   try {
     res = await fetchImpl(`${BASE}${path}`, {
@@ -49,6 +57,7 @@ async function call(path, { method = 'GET', body = null, env = process.env, fetc
         authorization: `Bearer ${String(env.ZERNIO_API_KEY || '').trim()}`,
         'content-type': 'application/json',
         accept: 'application/json',
+        ...headers,
       },
       body: body ? JSON.stringify(body) : undefined,
       signal: AbortSignal.timeout(30_000),
@@ -159,28 +168,112 @@ export async function getPost(id, { env = process.env, fetchImpl } = {}) {
 /**
  * Create one Zernio post and wait until the platform has it.
  *
+ * When the create call ends without a clear answer, the post is looked up by
+ * its idempotency key before anything else happens; see the catch below.
+ *
  * A post Zernio accepted and is still working on when the wait runs out is NOT an
  * error: it may well go out, and treating it as a failure is what would post it
  * twice (a retry, or the TikTok draft fallback, on top of the post Zernio still
  * finishes). It comes back `pending`, recorded under Zernio's id, and
  * resolveZernioPosts in bot.js asks again and says if it failed after all.
  */
-async function createAndWait(body, platform, { env, fetchImpl, pollMs, timeoutMs }) {
-  const created = await call('/posts', { method: 'POST', body, env, fetchImpl, step: 'create' });
-  const id = created?.post?._id;
-  if (!id) throw new ZernioError('Zernio accepted the post but returned no id', { step: 'create', code: 'no_id' });
+async function createAndWait(body, platform, { env, fetchImpl, pollMs, timeoutMs, idempotencyKey = null, lookups = 3 }) {
+  // One key per post, sent as Zernio's Idempotency-Key and stored on the post's
+  // metadata, where a read returns it. A retry that sends the same key gets the
+  // original post back instead of a second one; the lookup below finds the post
+  // by it when the create call did not say whether it made one.
+  const key = idempotencyKey || `zernio-${randomUUID()}`;
+  const sent = { ...body, metadata: { ...(body.metadata || {}), idempotencyKey: key } };
+
+  let created;
+  try {
+    created = await call('/posts', { method: 'POST', body: sent, env, fetchImpl, step: 'create', headers: { 'idempotency-key': key } });
+    if (!created?.post?._id) throw new ZernioError('Zernio accepted the post but returned no id', { step: 'create', code: 'no_id' });
+  } catch (e) {
+    // Zernio's content dedup: this content is already a post. A draft of it
+    // would be the duplicate the dedup exists to stop.
+    if (e instanceof ZernioError && e.status === 409 && /duplicate/i.test(`${e.code} ${e.message}`)) {
+      e.exists = true;
+      throw e;
+    }
+    if (!createUncertain(e)) throw e;
+
+    // No clear answer: a timeout, a dropped connection, a 5xx. The post may
+    // well exist, and falling back to a draft now is how a deck became a public
+    // post AND a draft. So look for it first, a few times, because a post that
+    // is still being saved may not be listed yet.
+    let found = null;
+    let lookupError = null;
+    for (let i = 0; i < lookups && !found; i++) {
+      if (i) await new Promise((r) => setTimeout(r, pollMs));
+      try {
+        found = await findPostByKey(key, { accountId: body.platforms?.[0]?.accountId, env, fetchImpl });
+        lookupError = null;
+      } catch (le) {
+        lookupError = le;
+      }
+    }
+    if (!found && lookupError) {
+      throw new ZernioError(`${e.message}; the lookup failed too (${lookupError.message}), so whether the post exists is unknown`, {
+        step: 'create',
+        code: e.code,
+        status: e.status,
+        unconfirmed: true,
+        idempotencyKey: key,
+      });
+    }
+    // Looked for and not there: nothing was made, and a fallback is safe.
+    if (!found) throw e;
+    created = { post: found, recovered: true };
+  }
+  const id = created.post._id;
 
   let part = platformPart(created.post, platform);
   const deadline = Date.now() + timeoutMs;
   while (!['published', 'failed', 'cancelled'].includes(part.status) && Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, pollMs));
-    part = platformPart(await getPost(id, { env, fetchImpl }), platform);
+    // The post exists: Zernio gave it an id. A status that could not be read
+    // leaves it pending, the same as one the wait ran out on, and never a
+    // failure a draft would follow.
+    let post;
+    try {
+      post = await getPost(id, { env, fetchImpl });
+    } catch {
+      break;
+    }
+    part = platformPart(post, platform);
   }
   if (part.status === 'failed' || part.status === 'cancelled') {
     const who = platform === 'tiktok' ? 'TikTok' : 'Instagram';
     throw new ZernioError(`${who} refused the post: ${part.error || part.status}`, { step: 'status', code: part.category || part.status, category: part.category });
   }
-  return { id, part, pending: part.status !== 'published' };
+  return { id, part, pending: part.status !== 'published', key, recovered: Boolean(created.recovered) };
+}
+
+/**
+ * Whether a create call that failed may still have made the post: no answer,
+ * a server error, or Zernio still working on the first request. A clear
+ * rejection (a 4xx) made nothing.
+ */
+export const createUncertain = (e) =>
+  e instanceof ZernioError &&
+  (e.code === 'network' || e.code === 'no_id' || e.status === 408 || e.status >= 500 || (e.status === 409 && /idempotency/i.test(`${e.code} ${e.message}`)));
+
+/**
+ * The post this bot created with `key`, or null. Lists the account's posts from
+ * the last two days and matches the key stored on each post's metadata.
+ */
+export async function findPostByKey(key, { accountId, env = process.env, fetchImpl } = {}) {
+  const fromDate = new Date(Date.now() - 2 * 86_400_000).toISOString().slice(0, 10);
+  for (let page = 1; page <= 3; page++) {
+    const q = new URLSearchParams({ fromDate, limit: '50', page: String(page) });
+    if (accountId) q.set('accountId', accountId);
+    const json = await call(`/posts?${q}`, { env, fetchImpl, step: 'lookup' });
+    const hit = (json?.posts || []).find((p) => p?.metadata?.idempotencyKey === key);
+    if (hit) return hit;
+    if (page >= (Number(json?.pagination?.pages) || 1) || !(json?.posts || []).length) break;
+  }
+  return null;
 }
 
 /**
@@ -192,7 +285,7 @@ async function createAndWait(body, platform, { env, fetchImpl, pollMs, timeoutMs
  * later (TikTok resolves it asynchronously, and a SELF_ONLY post has none until
  * it is made public); resolveLater says so, and the timer in bot.js asks again.
  */
-export async function publishZernioTikTok(cand, { privacy, autoAddMusic = true, env = process.env, fetchImpl, pollMs = 5_000, timeoutMs = 180_000, accountId = null } = {}) {
+export async function publishZernioTikTok(cand, { privacy, autoAddMusic = true, env = process.env, fetchImpl, pollMs = 5_000, timeoutMs = 180_000, accountId = null, idempotencyKey = null } = {}) {
   if (!zernioConfigured(env)) throw new ZernioError('ZERNIO_API_KEY is not set', { step: 'config', code: 'not_configured' });
   const images = cand.deck?.urls?.tiktok || [];
   if (images.length < 2) throw new ZernioError(`a TikTok carousel needs 2 to 35 images, this one has ${images.length}`, { step: 'config', code: 'card_images' });
@@ -200,10 +293,11 @@ export async function publishZernioTikTok(cand, { privacy, autoAddMusic = true, 
 
   const account = accountId || (await tiktokAccountId({ env, fetchImpl }));
   const body = carouselBody(cand, { accountId: account, privacy, autoAddMusic });
-  const { id, part, pending } = await createAndWait(body, 'tiktok', { env, fetchImpl, pollMs, timeoutMs });
+  const { id, part, pending, recovered } = await createAndWait(body, 'tiktok', { env, fetchImpl, pollMs, timeoutMs, idempotencyKey });
 
   const notes = [];
   if (!autoAddMusic) notes.push('בלי מוזיקה אוטומטית');
+  if (recovered) notes.push(`הקריאה ל-Zernio לא ענתה, אבל הפוסט נמצא לפי המפתח שלו (${id})`);
   if (pending) notes.push(`Zernio עדיין מעבד את הפוסט (${id}), אבדוק שוב ואגיד אם נכשל`);
   else if (!part.url) notes.push(privacy === 'SELF_ONLY' ? 'פרטי: אין כתובת ציבורית עד שהופכים לציבורי' : 'הכתובת הציבורית תגיע בהמשך');
   return {
@@ -275,7 +369,7 @@ export function videoBody(cand, { platform, accountId, privacy, videoUrl }) {
  * before it is live. Returns the carousel's shape, plus `mediaId` for Instagram,
  * which the comment replies and the metrics join key on.
  */
-export async function publishZernioVideo(cand, { platform, privacy = 'SELF_ONLY', env = process.env, fetchImpl, pollMs = 10_000, timeoutMs = 600_000, accountId = null } = {}) {
+export async function publishZernioVideo(cand, { platform, privacy = 'SELF_ONLY', env = process.env, fetchImpl, pollMs = 10_000, timeoutMs = 600_000, accountId = null, idempotencyKey = null } = {}) {
   if (!zernioConfigured(env)) throw new ZernioError('ZERNIO_API_KEY is not set', { step: 'config', code: 'not_configured' });
   const sound = assertVideoSound(cand);
   const videoUrl = clipPublicUrl(cand, env);
@@ -285,7 +379,7 @@ export async function publishZernioVideo(cand, { platform, privacy = 'SELF_ONLY'
 
   const account = accountId || (await accountIdFor(platform, { env, fetchImpl }));
   const body = videoBody(cand, { platform, accountId: account, privacy, videoUrl });
-  const { id, part, pending } = await createAndWait(body, platform, { env, fetchImpl, pollMs, timeoutMs });
+  const { id, part, pending } = await createAndWait(body, platform, { env, fetchImpl, pollMs, timeoutMs, idempotencyKey });
 
   return {
     publishId: id,
@@ -319,6 +413,6 @@ export const isConfigProblemZernio = (e) =>
   (e.status === 401 || e.status === 403 || e.category === 'auth_expired' || ['not_configured', 'no_account', 'ambiguous_account'].includes(e.code));
 
 /** This post can never go: its images, its content. */
-export const isCardLevelZernio = (e) => e instanceof ZernioError && (e.category === 'user_content' || e.code === 'card_images');
+export const isCardLevelZernio = (e) => e instanceof ZernioError && (e.category === 'user_content' || e.code === 'card_images' || e.exists);
 
 export const describeZernioError = (e) => `Zernio${e?.step ? ` (${e.step})` : ''}: ${e?.message || e}`;

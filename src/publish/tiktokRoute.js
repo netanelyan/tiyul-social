@@ -35,6 +35,11 @@ import {
 // fallback runs only after Zernio said no, never while Zernio is still working on
 // it (see createAndWait in zernio.js).
 //
+// AND NEVER WHEN THE POST MAY EXIST. A create call that timed out or failed with
+// no clear answer is looked up by its idempotency key first (zernio.js); a post
+// found that way is the result, and a lookup that could not run either leaves
+// the post to be retried with the same key, not drafted.
+//
 // A VIDEO WITHOUT SOUND IS NOT A FAILURE TO FALL BACK FROM. The owner's rule is that
 // a video goes out only with a voiceover or a track licensed for commercial use, so
 // a silent one is refused before Zernio is asked and does not become a draft.
@@ -61,11 +66,17 @@ export async function publishTikTokRouted(cand, { cfg = postConfig().publish.tik
   // A post may carry its own privacy (the first test was SELF_ONLY); otherwise the config's.
   const privacy = privacyLevel(cand.tiktokPrivacy || cfg.privacy);
   try {
+    // The key an earlier attempt left when it could not tell whether it had made
+    // the post. Sent again, Zernio returns that post if it exists.
+    const idempotencyKey = cand.zernioKeys?.tiktok || null;
     return video
-      ? await (deps.zernioVideo || publishZernioVideo)(cand, { platform: 'tiktok', privacy, env })
-      : await (deps.zernio || publishZernioTikTok)(cand, { privacy, autoAddMusic: cfg.autoAddMusic, env });
+      ? await (deps.zernioVideo || publishZernioVideo)(cand, { platform: 'tiktok', privacy, env, idempotencyKey })
+      : await (deps.zernio || publishZernioTikTok)(cand, { privacy, autoAddMusic: cfg.autoAddMusic, env, idempotencyKey });
   } catch (e) {
     if (isPlatformLimitZernio(e) || cfg.fallback !== 'draft') throw e;
+    // The post may exist (unconfirmed), or Zernio says it does (exists). A draft
+    // on top of either is the duplicate this route promises never to make.
+    if (e.unconfirmed || e.exists) throw e;
     const res = await draft({ ...cand, tiktokDraft: true });
     return {
       ...res,
@@ -84,7 +95,7 @@ export async function publishTikTokRouted(cand, { cfg = postConfig().publish.tik
 export async function publishInstagramRouted(cand, { deps = {}, env = process.env } = {}) {
   if (cand.kind !== 'clip') return (deps.graph || publishInstagram)(cand);
   assertVideoSound(cand);
-  return (deps.zernioVideo || publishZernioVideo)(cand, { platform: 'instagram', env });
+  return (deps.zernioVideo || publishZernioVideo)(cand, { platform: 'instagram', env, idempotencyKey: cand.zernioKeys?.instagram || null });
 }
 
 /* ---------------------------------------------- the four questions, for every door */
