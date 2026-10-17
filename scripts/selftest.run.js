@@ -10687,6 +10687,130 @@ group('the trend watcher - the format, never the content, and our own numbers de
 }
 
 /* -------------------------------------------------------------------------- */
+group('the cover test - one huge hook from the page, two styles, and its own report');
+
+// The owner's brief of 17 Oct 2026: only covers and hooks change for 14 days.
+{
+  const cover = await import('../src/posts/cover.js');
+  const fx = await import('../src/fx.js');
+  const { renderHookCoverHtml } = await import('../src/render/postSlides.js');
+  const { scoreClosePhoto } = await import('../src/images/pexels.js');
+  const { coverReport, coverStopRule } = await import('../src/metrics/report.js');
+
+  // --- the lines ---------------------------------------------------------------
+  eq('two lines when two fit comfortably', cover.splitLines('רומא: הקיץ לוהט וצפוף')?.length, 2);
+  eq('three when two would be too wide', cover.splitLines('פראג העתיקה עמוסה כמעט כל השנה')?.length, 3);
+  eq('a sentence too long for three huge lines is refused', cover.splitLines('ומחירי המרכז והאטרקציות התייקרו משמעותית בשנים האחרונות'), null);
+  ok('a number keeps its ₪ on its own line', (cover.splitLines('אתונה ב-180 ₪ ליום') || []).some((l) => /180 ₪/.test(l)));
+
+  // --- shortening a drawback ----------------------------------------------------
+  eq('"העיר העתיקה" becomes the city', cover.shortFact('העיר העתיקה עמוסה מאוד כמעט כל השנה', 'פראג'), 'פראג העתיקה עמוסה כמעט כל השנה');
+  eq('otherwise the city leads with a colon', cover.shortFact('הקיץ לוהט וצפוף מאוד', 'רומא'), 'רומא: הקיץ לוהט וצפוף');
+  eq('a one-word remnant is refused', cover.shortFact('הרכיבה - פשוט נמחק', 'קופנהגן'), null);
+  eq('a clause cut inside a number is refused', cover.shortFact('400 מ׳ דורש יומיים התאקלמות', 'קוסקו'), null);
+  eq('a clause naming the city past its start is refused', cover.shortFact('לא יעד לחופשה עצמאית בלי קופנהגן כבסיס', 'קופנהגן'), null);
+  eq('a clause leaning on "גם" is refused', cover.shortFact('מיקונוס גם יקרה במיוחד', 'סנטוריני'), null);
+
+  // --- the owner's banned list --------------------------------------------------
+  for (const [what, lines] of [
+    ['our rating', ['רומא 4.5/5', 'וזה למה']],
+    ['"שווה או לא?"', ['רומא:', 'שווה או לא?']],
+    ['"ככה היינו עושים את זה"', ['3 ימים ברומא', 'ככה היינו עושים את זה']],
+    ['"שתי דקות"', ['לפני רומא,', 'שתי דקות']],
+    ['a generic "X מקומות"', ['20 מקומות', 'ברומא']],
+  ]) {
+    throws(`a cover saying ${what} is refused`, () => cover.assertCoverHook(lines), 'banned_cover');
+  }
+
+  // --- the five shapes, off a fixture page ---------------------------------------
+  const rome = {
+    name: 'רומא',
+    tagline: 'עיר-מוזיאון פתוחה',
+    editorialRating: { score: 4.5, verdict: 'עיר-מוזיאון פתוחה עם קולוסיאום. חסרונות: הקיץ לוהט וצפוף מאוד, והתורים לאתרים ארוכים.' },
+    bestSeason: 'מרץ-מאי, ספטמבר-נובמבר (הקיץ חם ועמוס)',
+    dailyCost: { currency: 'EUR', budget: { transport: 8, food: 33, activities: 13 }, mid: { food: 84 }, source: { checked: '2026-07-29' } },
+    practical: {},
+    itinerary: [{ day: 1, notes: 'למוזיאוני הוותיקן חובה להזמין כרטיס לשעה מראש. בערב טרסטוורה.' }],
+    places: [],
+  };
+  const rates = fx.parseEcb(`<Cube time='2026-10-16'><Cube currency='USD' rate='1.1253'/><Cube currency='ILS' rate='3.4822'/></Cube>`);
+  eq('the ECB file parses to its date', rates?.date, '2026-10-16');
+  eq('a euro in shekels is the ILS rate', fx.toShekels(1, 'EUR', rates), 3.4822);
+  eq('a currency the ECB does not quote has no shekel figure', fx.toShekels(10, 'GEL', rates), null);
+
+  const hooks = cover.coverHooks(rome, { dest: { id: 'rome', he: 'רומא', lat: 41.9, lon: 12.5 }, rates, month: 9 });
+  const by = Object.fromEntries(hooks.map((h) => [h.shape, h]));
+  ok('a page with a drawback offers the fact shape', Boolean(by.fact));
+  eq('the money shape is the low-budget day at the ECB rate, rounded', by.money?.lines[0], 'רומא ב-190 ₪');
+  ok('and its payoff dates both the figures and the rate', /29\.7\.2026/.test(by.money?.payoff.lines.join(' ')) && /16\.10\.2026/.test(by.money?.payoff.lines.join(' ')));
+  ok('"כרטיס" is a ticket, not a flight: the mistake shape survives it', Boolean(by.mistake));
+  eq('in October, a season to November is "עד סוף נובמבר"', by.season?.lines[0], 'עד סוף נובמבר:');
+  ok('and the hot summer in its parenthesis is the reason', by.season?.lines.join(' ').includes('חום הקיץ'));
+  ok('no rates, no money shape', !cover.coverHooks(rome, { dest: { he: 'רומא' }, rates: null, month: 9 }).some((h) => h.shape === 'money'));
+  ok('in July the season shape is not offered', !cover.coverHooks(rome, { dest: { he: 'רומא' }, rates, month: 6 }).some((h) => h.shape === 'season'));
+
+  const budapest = { name: 'בודפשט', tagline: 'מרחצאות', editorialRating: { verdict: 'ערך תמורת כסף מהטובים באירופה, מחירים נמוכים. חסרונות: התחבורה לא ידידותית.' }, places: [], itinerary: [] };
+  const vienna = { name: 'וינה', editorialRating: { verdict: 'עיר אלגנטית. חסרונות: יקרה יחסית לשכנותיה במזרח אירופה.' }, places: [], itinerary: [] };
+  const swap = cover
+    .coverHooks(budapest, { dest: { id: 'budapest', he: 'בודפשט', lat: 47.5, lon: 19.04 }, neighbours: [{ row: { id: 'vienna', he: 'וינה', lat: 48.2, lon: 16.37 }, city: vienna }], month: 0 })
+    .find((h) => h.shape === 'swap');
+  eq('a swap names the popular neighbour and this page', swap?.lines.join(' '), 'כולם טסים לוינה. תטוסו לבודפשט');
+  ok('and its payoff quotes both pages', swap?.payoff.lines[0] === 'וינה: יקרה יחסית לשכנותיה במזרח אירופה' && /מהטובים באירופה/.test(swap?.payoff.lines[1]));
+  ok('no swap with a neighbour too far away', !cover
+    .coverHooks(budapest, { dest: { id: 'budapest', he: 'בודפשט', lat: 47.5, lon: 19.04 }, neighbours: [{ row: { id: 'vienna', he: 'וינה', lat: 13.7, lon: 100.5 }, city: vienna }], month: 0 })
+    .some((h) => h.shape === 'swap'));
+
+  // --- the draws --------------------------------------------------------------
+  eq('the style alternates from the last cover', cover.nextCoverStyle([{ coverStyle: 'bars' }]), 'outline');
+  eq('and starts on the bars', cover.nextCoverStyle([]), 'bars');
+  eq('the last shapes are not drawn again while another is on offer', cover.pickCoverHook([{ shape: 'fact' }, { shape: 'money' }], { history: [{ coverHook: 'fact' }], rand: () => 0 })?.shape, 'money');
+
+  // --- onto the post ------------------------------------------------------------
+  const builtSlides = [
+    { look: 'label', cover: true, titleHe: 'רומא: שווה או לא?', badgeHe: '4.5/5', noteHe: 'קצר', image: { src: 'a' } },
+    { look: 'sheet', titleHe: 'מה פחות', lines: [{ text: 'הקיץ לוהט וצפוף מאוד, והתורים לאתרים ארוכים' }], image: { src: 'b' } },
+  ];
+  const out = cover.withCover(builtSlides, by.money, { style: 'bars', image: { src: 'close' } });
+  ok('the builder\'s cover goes, with its rating badge and its note', out[0].look === 'hook' && !out[0].badgeHe && !out[0].noteHe);
+  ok('the cover carries the close photograph', out[0].image.src === 'close');
+  ok('a payoff the post does not say goes on slide two', out[1].payoff === true && /אוכל/.test(out[1].lines[0].text));
+  eq('a payoff the post already says adds no slide', cover.withCover(builtSlides, by.fact, { style: 'outline' }).length, 2);
+
+  // --- the render -----------------------------------------------------------------
+  const html = renderHookCoverHtml({ hookLines: ['כולם טסים', 'לוינה.', 'תטוסו לבודפשט'], coverStyle: 'outline', image: null });
+  ok('the cover is drawn one line per hook line', (html.match(/class="ln"/g) || []).length === 3);
+  ok('in the style asked for', html.includes('class="wrap outline"'));
+  ok('with no badge on it', !html.includes('class="badge"'));
+  ok('and fitted in the page after the fonts load', html.includes('window.__mapReady = document.fonts.ready'));
+
+  // --- the photograph ---------------------------------------------------------------
+  const big = { width: 3000, height: 4500 };
+  eq('a close photo that names the place scores', scoreClosePhoto({ ...big, alt: 'Bustling street in Athens' }, { must: 'Athens' }) > 0, true);
+  eq('one that names another city is refused, the Warsaw gyros', scoreClosePhoto({ ...big, alt: 'Two delicious gyros with fries enjoyed outdoors in vibrant Warsaw.' }, { must: 'Athens' }), -Infinity);
+  ok('an aerial scores below a street', scoreClosePhoto({ ...big, alt: 'Aerial view of Athens skyline' }, { must: 'Athens' }) < scoreClosePhoto({ ...big, alt: 'Athens street market' }, { must: 'Athens' }));
+
+  // --- the report and the stop rule ----------------------------------------------
+  const start = postConfig().posts.cover.startedAt;
+  ok('the test has a start date in post-config.json', /^\d{4}-\d{2}-\d{2}$/.test(String(start)));
+  const t0 = Date.parse(`${start}T12:00:00+03:00`);
+  const r = (id, d, hook, style, views) => ({ id, at: new Date(t0 + d * 86_400_000).toISOString(), shape: { coverHook: hook, coverStyle: style }, media: {}, stats: views == null ? {} : { tiktok: { views, likes: 10, by: 'hand' } } });
+  const rowsPass = [r('a', 0, 'fact', 'bars', 1200), r('b', 1, 'fact', 'outline', 1500), r('c', 2, 'money', 'bars', 500)];
+  const report = coverReport({ days: 7, rows: rowsPass, now: t0 + 5 * 86_400_000 });
+  ok('the weekly table gives the share past 1,000 views', report.includes('66.7% עברו 1,000'));
+  ok('by cover style and by hook shape', report.includes('פסים צהובים') && report.includes('עובדה מפתיעה'));
+  ok('and likes per 1,000 views', report.includes('לייקים'));
+  eq('before day 14 the stop rule is not due', coverStopRule({ rows: rowsPass, now: t0 + 5 * 86_400_000 }).due, false);
+  eq('a shape past 1,000 twice keeps the test alive', coverStopRule({ rows: rowsPass, now: t0 + 15 * 86_400_000 }).triggered, false);
+  eq('no shape past 1,000 twice stops it', coverStopRule({ rows: rowsPass.slice(1), now: t0 + 15 * 86_400_000 }).triggered, true);
+  ok('and no TikTok numbers at all is said as such, not as a failed test', coverStopRule({ rows: [r('x', 1, 'fact', 'bars', null)], now: t0 + 15 * 86_400_000 }).blind === true);
+
+  const botSrc5 = readFileSync(new URL('../bot.js', import.meta.url), 'utf8');
+  ok('the publish row records the cover style and hook', botSrc5.includes('coverStyle: cand.deck?.coverStyle || null'));
+  ok('/report covers exists', botSrc5.includes('coverReport({ days })'));
+  ok('the stop rule is told after a metrics pass', botSrc5.includes('.then(() => tellCoverStopRule())'));
+}
+
+/* -------------------------------------------------------------------------- */
 console.log(`\n${'─'.repeat(56)}`);
 if (fail) {
   console.log(`${pass} passed, ${fail} FAILED\n`);

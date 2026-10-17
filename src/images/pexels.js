@@ -237,6 +237,74 @@ export function scorePhoto(photo, query) {
   return score;
 }
 
+/**
+ * The cover test's photograph: close and real-looking, the opposite of a postcard.
+ *
+ * The owner's brief of 17 Oct 2026 asks for a street, food, people or a detail
+ * rather than the wide shot scorePhoto exists to find, so this inverts it: people
+ * and food count FOR a photograph, aerials and skylines against. Posed shots stay
+ * out (a model, a bride, a selfie), and so does anything that is not a photograph
+ * of a place at all.
+ *
+ * `must` is the destination's English name, and its absence from the description
+ * refuses the photograph. Without that a query for "Athens street food" returned a
+ * gyros described as "enjoyed outdoors in vibrant Warsaw".
+ */
+const CLOSE =
+  /\b(?:street|streets|alley|market|food|dish|cafe|café|restaurant|bakery|people|crowd|crowds|bustling|pedestrians|locals|tram|shop|shops|stall|vendor|cobblestone|terrace|souvlaki|gyros|pasta|pizza|tapas|noodles|coffee)\b/i;
+const WIDE = /\b(?:aerial|drone|skyline|panorama|panoramic|cityscape|landscape|from above|bird's eye)\b/i;
+const POSED = /\b(?:model|selfie|posing|poses|bride|groom|wedding|fashion|bikini|portrait of)\b/i;
+const NOT_A_PHOTO = /\b(?:logo|screenshot|illustration|drawing|render|3d|map|flag|mockup|abstract|texture|pattern|background|product)\b/i;
+
+export function scoreClosePhoto(photo, { must = '' } = {}) {
+  const alt = String(photo.alt || '').toLowerCase();
+  const w = Number(photo.width) || 0;
+  const h = Number(photo.height) || 0;
+  if (w < MIN_WIDTH || h < CARD_H) return -Infinity;
+  if (must && !alt.includes(String(must).toLowerCase())) return -Infinity;
+  if (POSED.test(alt) || NOT_A_PHOTO.test(alt)) return -Infinity;
+  let score = 0;
+  const ratio = h / w;
+  if (ratio >= 1.15) score += 0.6;
+  else if (ratio < 0.9) score -= 0.8;
+  if (CLOSE.test(alt)) score += 1;
+  if (WIDE.test(alt)) score -= 1.2;
+  if (/black and white|monochrome/.test(alt)) score -= 0.8;
+  return score;
+}
+
+/** One close photograph for `query`, or null. Same return shape as search(). */
+export async function searchClose(query, { must = '', avoid = [], timeoutMs = 15_000, rand = Math.random } = {}) {
+  const q = String(query || '').trim();
+  if (!q || !configured()) return null;
+  const params = new URLSearchParams({ query: q, per_page: '30', orientation: 'portrait' });
+  const res = await fetch(`${API}?${params}`, { headers: { Authorization: process.env.PEXELS_API_KEY }, signal: AbortSignal.timeout(timeoutMs) });
+  if (!res.ok) throw new Error(`Pexels search failed: HTTP ${res.status}`);
+  const photos = ((await res.json()).photos || []).filter((p) => !avoid.includes(p.id));
+  // Not always the top scorer: the same query every week would give every Rome
+  // cover the same picture. One of the best three.
+  const ranked = photos
+    .map((p) => ({ p, s: scoreClosePhoto(p, { must }) }))
+    .filter((x) => x.s >= 0.5)
+    .sort((a, b) => b.s - a.s)
+    .slice(0, 3);
+  if (!ranked.length) return null;
+  const photo = ranked[Math.floor(rand() * ranked.length)].p;
+  // The tall frame's size: the 4:5 card size would be upscaled by 40% on TikTok.
+  const href = cropUrl(photo, { w: 1080, h: 1920 });
+  const bytes = href && (await download(href, timeoutMs));
+  if (!bytes) return null;
+  return {
+    src: `data:${bytes.type};base64,${bytes.buf.toString('base64')}`,
+    provenance: 'stock',
+    credit: photo.photographer ? `Pexels / ${photo.photographer}` : 'Pexels',
+    sourceUrl: photo.url || null,
+    alt: photo.alt || '',
+    query: q,
+    pexelsId: photo.id,
+  };
+}
+
 export function pickBest(photos, query) {
   let best = null;
   let bestScore = -Infinity;

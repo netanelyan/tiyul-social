@@ -7,7 +7,7 @@ import { cardOutputDir } from '../render/index.js';
 import { renderPost, fitsInstagram, fitTo, IG_MAX } from '../render/post.js';
 import { notePostShape } from '../store.js';
 import { loadCity, verdictOf, firstClause, hasFlightClaim } from './source.js';
-import { nextShape, canBuild, platformsFor, hooksToAvoid } from './types.js';
+import { nextShape, canBuild, platformsFor, hooksToAvoid, recentShapes } from './types.js';
 import { hookShape, fill, assertPostVoice, questionFor, VoiceError } from './voice.js';
 import { assertDelivers } from './deliver.js';
 import { buildSlideReel, reelable } from '../video/slideReel.js';
@@ -21,6 +21,11 @@ import { buildRollPost } from './roll.js';
 import { buildMapPost } from './mapPost.js';
 import { buildKnowPost } from './know.js';
 import { buildBudgetPost } from './budget.js';
+import { coverHooks, insteadHook, pickCoverHook, nextCoverStyle, withCover, closeCoverPhoto, loadNeighbours, israelMonth } from './cover.js';
+import { ecbRates } from '../fx.js';
+import { searchClose } from '../images/pexels.js';
+import { isNude } from '../images/nudity.js';
+import { readFileSync } from 'node:fs';
 
 // One post, from a destination, through whichever of the five types the rotation
 // chose.
@@ -174,6 +179,27 @@ export async function buildPost({
     if (!check.ok) throw new Error(`a ${shape.type} post cannot be built from ${slug}: ${check.why}`);
   }
 
+  // THE COVER TEST (./cover.js): which of the five hook shapes this page can carry,
+  // asked here for the same reason canBuild is, before the photographs are spent. A
+  // page with none of them is refused, and the slate tries another destination.
+  const coverOn = postConfig().posts.cover.on;
+  const seen = recentShapes(history);
+  const coverStyle = coverOn ? nextCoverStyle(seen) : null;
+  let coverHook = null;
+  if (coverOn && needsPage) {
+    const rows = JSON.parse(readFileSync(new URL('../../destinations.json', import.meta.url), 'utf8')).destinations;
+    const row = rows.find((r) => r.id === dest?.id) || dest;
+    const hooks = coverHooks(city, {
+      dest: row,
+      rates: await ecbRates(),
+      neighbours: await loadNeighbours(row, { rows, loadCity }),
+      month: israelMonth(),
+    });
+    coverHook = pickCoverHook(hooks, { history: seen, rand });
+    if (!coverHook) throw new Error(`the cover test: ${slug}'s page supplies none of the five hook shapes`);
+    say(`cover: ${coverHook.shape} in ${coverStyle}, "${coverHook.lines.join(' ')}"`);
+  }
+
   // The hook shape, excluding whatever the last post of this type used: from the
   // store when no history is passed, which is every production call.
   const hook = hookOverride?.he ? hookOverride : hookShape(shape.type, { rand, avoid: hooksToAvoid(shape.type, history) });
@@ -222,6 +248,10 @@ export async function buildPost({
       alts.push(c);
     }
     if (alts.length < 3) throw new Error(`only ${alts.length} alternative page(s) loaded, and this post needs 3`);
+    if (coverOn) {
+      coverHook = insteadHook({ defaultHe: defaultHe || dest?.he, alts });
+      if (!coverHook) throw new Error('the cover test: no swap line fits this instead post');
+    }
   }
 
   const built = buildFor(shape.type, city, {
@@ -240,6 +270,27 @@ export async function buildPost({
     ctaAt: [...`${slug}${hook.id}`].reduce((a, c) => a + c.charCodeAt(0), 0) % 2 === 0 ? 'mid' : 'end',
   });
 
+  // The test's cover replaces the builder's, with a close photograph where one can be
+  // found. The builder's own picture moves to the payoff slide if there is one.
+  if (coverHook) {
+    const en =
+      shape.type === 'instead'
+        ? (alternatives || []).find((r) => (r.siteSlug || r.id) === alts[0]?.slug)?.en
+        : dest?.en || city.nameLocal;
+    // On `photos` alone, not `search`: one Pexels query and no model, so the labs'
+    // fast path still shows the cover the post will actually have.
+    const close = photos ? await closeCoverPhoto(coverHook.shape, en, { search: searchClose, isNude, rand }) : null;
+    built.slides = withCover(built.slides, coverHook, {
+      style: coverStyle,
+      image: close,
+      payoffImage: close ? built.slides[0].image : built.slides[1]?.image,
+      where: `cover/${dest?.he || slug}`,
+    });
+    // A plan's first slide carries no photograph, so its payoff slide would be black.
+    const payoff = built.slides[1]?.payoff ? built.slides[1] : null;
+    if (payoff && !payoff.image) payoff.image = await coverPhoto(city, built.slides.slice(2)).catch(() => null);
+  }
+
   // The cover's photograph, if the builder did not claim one. A cover that shows the
   // same picture as slide two reads as running out of material before it started.
   if (!built.slides[0].image) {
@@ -252,6 +303,9 @@ export async function buildPost({
     look: shape.look,
     frame: shape.frame,
     hook: hook.id,
+    // The cover test's two dimensions, which /report covers groups by.
+    coverHook: coverHook?.shape || null,
+    coverStyle: coverHook ? coverStyle : null,
     // Which trend format this post was built from, if any, so its numbers can be
     // credited to the format 72 hours later (src/trends/mix.js).
     trendFormat: trendFormat || null,
@@ -383,7 +437,15 @@ export async function buildPost({
   //
   // Unless this is a lab run. See `remember` above.
   if (remember) {
-    notePostShape({ type: shape.type, look: shape.look, hook: hook.id, frame: shape.frame, caption: shape.caption });
+    notePostShape({
+      type: shape.type,
+      look: shape.look,
+      hook: hook.id,
+      frame: shape.frame,
+      caption: shape.caption,
+      coverHook: post.coverHook,
+      coverStyle: post.coverStyle,
+    });
   }
 
   return {

@@ -396,3 +396,131 @@ function describe(row) {
   const from = row.on === 'tiktok' ? 'טיקטוק' : 'אינסטגרם';
   return `${bits.join(' · ')} · ${num(row.best.views)} צפיות ב${from}${row.byHand ? ' (הוזן ביד)' : ''}`;
 }
+
+/* -------------------------------------------------------------------------- */
+/* the cover test                                                              */
+/* -------------------------------------------------------------------------- */
+
+// The owner's measure for the two weeks of the cover test (src/posts/cover.js): how
+// many posts get out of TikTok's first test pool, which this account never leaves at
+// 420-570 views, and what the ones shown do per thousand views. TIKTOK NUMBERS ONLY:
+// the test is about TikTok's feed, and an Instagram reach beside them would be a
+// different question answered in the same column. They are typed in with /views,
+// because the API cannot see a carousel (src/metrics/tiktok.js).
+
+const HOOKS_HE = { fact: 'עובדה מפתיעה', money: 'כסף', mistake: 'טעות', swap: 'החלפה', season: 'עונה' };
+const STYLES_HE = { bars: 'פסים צהובים', outline: 'קו מתאר לבן' };
+
+/** The cover-test rows since the test started, or in the last `days`, whichever is shorter. */
+function coverRows({ days, rows, now }) {
+  const start = Date.parse(`${postConfig().posts.cover.startedAt || '1970-01-01'}T00:00:00+03:00`);
+  const since = Math.max(start, now - days * 86_400_000);
+  return window(Math.ceil((now - since) / 86_400_000) || 1, { rows, now }).filter((r) => r.shape?.coverHook && Date.parse(r.at) >= since);
+}
+
+/** One group: posts, how many have TikTok views, the 1,000 pass rate and the rates per 1,000. */
+export function coverGroup(entries) {
+  const { passViews } = postConfig().posts.cover;
+  const seen = entries.filter((e) => e.tt.views != null);
+  const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+  const per1k = (field) => {
+    const xs = seen.map((e) => e.tt[field]).filter((n) => n != null);
+    return xs.length ? mean(xs) * 1000 : null;
+  };
+  const passed = seen.filter((e) => e.tt.views >= passViews).length;
+  return {
+    posts: entries.length,
+    measured: seen.length,
+    passed,
+    passRate: seen.length ? passed / seen.length : null,
+    likes: per1k('likeRate'),
+    saves: per1k('saveRate'),
+    shares: per1k('shareRate'),
+    views: mean(seen.map((e) => e.tt.views)),
+  };
+}
+
+const per = (n) => (n == null ? '-' : n.toFixed(1));
+
+/**
+ * The weekly table: % of posts past 1,000 views, and likes, saves and shares per
+ * 1,000 views, by cover style and by hook shape. Then the stop rule's state.
+ */
+export function coverReport({ days = 7, rows = null, now = Date.now() } = {}) {
+  const cfg = postConfig().posts.cover;
+  const entries = coverRows({ days, rows, now });
+  const lines = [`🖼️ מבחן הקאברים · ${days} ימים · ${posts(entries.length)}`];
+  if (!entries.length) {
+    lines.push('', 'עוד לא פורסם פוסט עם הקאבר החדש בחלון הזה.');
+    return lines.join('\n');
+  }
+  const measured = entries.filter((e) => e.tt.views != null).length;
+  lines.push(`   ${measured} מהם עם מספרים מטיקטוק${measured < entries.length ? ' · השאר: /views' : ''}`);
+
+  const row = (label, g) =>
+    `   ${label}: ${g.passRate == null ? '-' : pct(g.passRate)} עברו ${cfg.passViews.toLocaleString('en-US')} (${g.passed}/${g.measured})` +
+    ` · ל-1,000 צפיות: ${per(g.likes)} לייקים, ${per(g.saves)} שמירות, ${per(g.shares)} שיתופים` +
+    (g.measured < 2 ? ' · מעט מדי למסקנה' : '');
+
+  lines.push('', row('✅ כולם', coverGroup(entries)).trim());
+  for (const [field, title, names] of [
+    ['coverStyle', '🎨 לפי סגנון', STYLES_HE],
+    ['coverHook', '🪝 לפי סוג פתיח', HOOKS_HE],
+  ]) {
+    const keys = [...new Set(entries.map((e) => e.shape[field]).filter(Boolean))];
+    lines.push('', title);
+    for (const k of keys) lines.push(row(names[k] || k, coverGroup(entries.filter((e) => e.shape[field] === k))));
+  }
+
+  const stop = coverStopRule({ rows, now });
+  lines.push('', stop.text);
+  return lines.join('\n');
+}
+
+/**
+ * The owner's stop rule: after `testDays`, if no hook shape has passed `passViews` on
+ * TikTok at least `passTimes` times, say so and rethink the content type.
+ *
+ * Returns { due, triggered, passes, text }. `due` is whether the window has closed;
+ * before that the text says how far in the test is and what has passed so far.
+ */
+export function coverStopRule({ rows = null, now = Date.now() } = {}) {
+  const cfg = postConfig().posts.cover;
+  if (!cfg.startedAt) return { due: false, triggered: false, passes: {}, text: '⏱️ מבחן הקאברים: אין תאריך התחלה בקובץ.' };
+  const start = Date.parse(`${cfg.startedAt}T00:00:00+03:00`);
+  const end = start + cfg.testDays * 86_400_000;
+  const entries = window(Math.ceil((now - start) / 86_400_000) + 1, { rows, now }).filter(
+    (r) => r.shape?.coverHook && Date.parse(r.at) >= start && Date.parse(r.at) < end
+  );
+  const passes = {};
+  for (const e of entries) if (e.tt.views != null && e.tt.views >= cfg.passViews) passes[e.shape.coverHook] = (passes[e.shape.coverHook] || 0) + 1;
+  const winners = Object.entries(passes).filter(([, n]) => n >= cfg.passTimes);
+  const due = now >= end;
+  const said = Object.entries(passes)
+    .map(([k, n]) => `${HOOKS_HE[k] || k} ${n}`)
+    .join(', ') || 'אף אחד';
+  const day = Math.min(cfg.testDays, Math.floor((now - start) / 86_400_000) + 1);
+  if (!due) {
+    return {
+      due,
+      triggered: false,
+      passes,
+      text: `⏱️ יום ${day} מתוך ${cfg.testDays}. עברו ${cfg.passViews.toLocaleString('en-US')} צפיות עד עכשיו: ${said}. הכלל: סוג פתיח אחד לפחות ${cfg.passTimes} פעמים.`,
+    };
+  }
+  // NO NUMBERS IS NOT A FAILED TEST. TikTok's views are typed in by hand, and a
+  // fortnight with none typed would otherwise read as "nothing passed".
+  const measured = entries.filter((e) => e.tt.views != null).length;
+  if (!measured) {
+    return { due, triggered: false, blind: true, passes, text: `⚠️ עברו ${cfg.testDays} ימים ואין אף מספר מטיקטוק לפוסטים של המבחן, אז אי אפשר להכריע. להזין עם /views ואז /report covers.` };
+  }
+  const triggered = !winners.length;
+  return {
+    due,
+    triggered,
+    passes,
+    text: triggered
+      ? `🛑 עברו ${cfg.testDays} ימים ואף סוג פתיח לא עבר ${cfg.passViews.toLocaleString('en-US')} צפיות ${cfg.passTimes} פעמים (${said}). לפי הכלל שקבעת, הגיע הזמן לחשוב מחדש על סוג התוכן.`
+      : `✅ עברו ${cfg.testDays} ימים. עברו ${cfg.passViews.toLocaleString('en-US')} צפיות לפחות ${cfg.passTimes} פעמים: ${winners.map(([k, n]) => `${HOOKS_HE[k] || k} (${n})`).join(', ')}.`,
+  };
+}

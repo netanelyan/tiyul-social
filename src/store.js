@@ -1262,6 +1262,9 @@ export function recordPublished({
   // publishedFacts in bot.js.
   format = null,
   hookCategory = null,
+  // The cover test's two dimensions (src/posts/cover.js), so /views can group by them.
+  coverHook = null,
+  coverStyle = null,
   // The video's own length and which open loop it opened on, for the watch ratio and
   // for the grouping that answers whether the loop held anybody. See publishedFacts.
   seconds = null,
@@ -1336,6 +1339,8 @@ export function recordPublished({
       place,
       format,
       hookCategory,
+      coverHook,
+      coverStyle,
       seconds,
       openLoopId,
       // Which stock video this was, for clips. The field the /clip dedupe was

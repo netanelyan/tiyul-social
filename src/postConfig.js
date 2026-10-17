@@ -999,6 +999,23 @@ function posts(raw) {
       // nothing else.
       minSpecifics: Math.max(0, count(raw.deliver?.minSpecifics, 2)),
     },
+    // THE COVER TEST of 17 Oct 2026: one huge hook from the page, two alternating
+    // styles. See ./posts/cover.js. `on: false` is the builders' own covers again.
+    cover: {
+      on: raw.cover?.on !== false,
+      startedAt: /^\d{4}-\d{2}-\d{2}$/.test(String(raw.cover?.startedAt || '')) ? raw.cover.startedAt : null,
+      testDays: Math.max(1, count(raw.cover?.testDays, 14)),
+      shapes: Object.fromEntries(
+        ['fact', 'money', 'mistake', 'swap', 'season'].map((s) => [s, Math.max(0, num(raw.cover?.shapes?.[s], 1))])
+      ),
+      shapeMemory: Math.max(0, count(raw.cover?.shapeMemory, 2)),
+      maxLineChars: Math.max(6, count(raw.cover?.maxLineChars, 13)),
+      twoLineChars: Math.max(6, count(raw.cover?.twoLineChars, 11)),
+      swapFrom: list(raw.cover?.swapFrom),
+      swapMaxKm: Math.max(0, num(raw.cover?.swapMaxKm, 1500)),
+      passViews: Math.max(1, count(raw.cover?.passViews, 1000)),
+      passTimes: Math.max(1, count(raw.cover?.passTimes, 2)),
+    },
     // THE OPTIONAL VIDEO VARIANT of the list-style types. Off by default: see the
     // note at the top of src/video/slideReel.js for why a pan over a still is not
     // the format that wins, and why it is still worth being able to test.

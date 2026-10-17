@@ -28,6 +28,8 @@ import {
   describeCollection,
   weeklyReport,
   hookReport,
+  coverReport,
+  coverStopRule,
   allRows as metricsRows,
 } from './src/metrics/index.js';
 import { clipPublicUrl } from './src/publish/imageHosts.js';
@@ -907,6 +909,9 @@ const publishedFacts = (cand) => ({
   // at all, which is the one grouping the owner's own comparison needs.
   format: cand.clip?.format || cand.clip?.shape || cand.deck?.type || cand.kind || null,
   hookCategory: cand.clip?.hookCategory || null,
+  // The cover test's style and hook shape, for /views and /report covers.
+  coverHook: cand.deck?.coverHook || null,
+  coverStyle: cand.deck?.coverStyle || null,
   // HOW LONG THE VIDEO WAS, so `/views` can compute a watch RATIO from a watch time
   // without anybody typing the denominator. It is the one number in the whole
   // measurement that the program already knows and a person would have to look up.
@@ -1207,6 +1212,9 @@ async function publishNext(item = null) {
               // group by. See src/hooks/gems.js.
               hookText: cand.clip?.format ? cand.hook || null : cand.deck?.titleHe || cand.hook || null,
               hookCategory: cand.clip?.hookCategory || null,
+              // THE COVER TEST'S TWO DIMENSIONS, which /report covers groups by.
+              coverHook: cand.deck?.coverHook || null,
+              coverStyle: cand.deck?.coverStyle || null,
               // The trend format a slate post was built from, so src/trends/mix.js
               // can credit its numbers to the format. Null for everything else.
               trendFormat: cand.deck?.trendFormat || null,
@@ -1775,6 +1783,24 @@ async function buildSlateFor(date) {
  * createAndWait in src/publish/zernio.js) is checked here: if it failed after all,
  * the owner is told once, because nothing else will retry it.
  */
+/**
+ * The cover test's stop rule, said once when the 14 days are up (coverStopRule in
+ * src/metrics/report.js): passed, failed, or "no TikTok numbers to judge by", because
+ * the owner asked to be told either way. Only in the week after the window closes, so
+ * a forgotten config does not keep announcing a test from months ago.
+ */
+async function tellCoverStopRule(now = Date.now()) {
+  const cfg = postConfig().posts.cover;
+  if (!cfg.on || !cfg.startedAt) return;
+  const key = `cover-stop:${cfg.startedAt}`;
+  const end = Date.parse(`${cfg.startedAt}T00:00:00+03:00`) + cfg.testDays * 86_400_000;
+  if (now < end || now > end + 7 * 86_400_000 || store.hasSeen(key)) return;
+  const rule = coverStopRule({ now });
+  if (!rule.due) return;
+  await notify.send(bot.telegram, staging, rule.text);
+  store.markSeen(key);
+}
+
 async function resolveZernioPosts() {
   if (!zernioConfigured()) return 0;
   const { metricsStore } = await import('./src/metrics/index.js');
@@ -3323,6 +3349,8 @@ bot.command('views', async (ctx) => {
         // From the ledger, so the report can group a hand-typed reading by whether the
         // post had an open loop on it. That grouping is the whole experiment.
         openLoopId: post.openLoopId || null,
+        // Only when the ledger has them, so a reading never blanks the publish-time ones.
+        ...(post.coverHook ? { coverHook: post.coverHook, coverStyle: post.coverStyle || null } : {}),
       },
       at: post.ts ? new Date(post.ts).toISOString() : null,
     }
@@ -3380,6 +3408,10 @@ bot.command('report', async (ctx) => {
   if (/hooks?|פתיח/i.test(arg)) {
     return ctx.reply(hookReport({ days: Math.max(1, Math.min(90, Number(arg.match(/\d+/)?.[0]) || 14)) }));
   }
+
+  // The cover test's table (src/posts/cover.js): % past 1,000 views and the rates per
+  // 1,000, by cover style and by hook shape, and where the 14-day stop rule stands.
+  if (/covers?|קאבר/i.test(arg)) return ctx.reply(coverReport({ days }));
 
   await ctx.reply(weeklyReport({ days }));
 });
@@ -4446,6 +4478,7 @@ bot.command('help', (ctx) =>
       '/report - דירוג הפורמטים לפי שמירות ושיתופים ביחס לצפיות, לא לפי לייקים',
       '/report 30 - חלון ארוך יותר · /report fetch - מושך מספרים לפני',
       '/report hooks - דירוג פתיחים ופורמטים לפי לייקים לצפייה, עם הצפיות לידם',
+      '/report covers - מבחן הקאברים: כמה עברו 1,000 צפיות, ולייקים/שמירות/שיתופים ל-1,000, לפי סגנון וסוג פתיח',
       '   שני הדירוגים נכונים ומודדים דברים שונים: שמירות אומרות אם הפוסט כלי,',
       '   לייקים לצפייה אומרים אם הוא קיים את ההבטחה שבזכותה הוא הוצג',
       '/views - מה פורסם לאחרונה, ממוספר, עם המספרים שכבר נרשמו',
@@ -5402,7 +5435,9 @@ async function main() {
       .then((got) => console.log(`metrics: ${describeCollection(got)}`))
       .catch((e) => console.error('metrics error:', e.message))
       .then(() => scoreTrends())
-      .catch((e) => console.error('trends scoring error:', e.message));
+      .catch((e) => console.error('trends scoring error:', e.message))
+      .then(() => tellCoverStopRule())
+      .catch((e) => console.error('cover stop rule error:', e.message));
   }, Math.max(1, Number(process.env.METRICS_EVERY_HOURS || 6)) * 3_600_000);
 
   // THE WEEKLY REPORT, on a timer rather than a weekday, because a bot that has been
@@ -5413,6 +5448,7 @@ async function main() {
     setInterval(() => {
       try {
         notify.send(bot.telegram, staging, weeklyReport({ days: 7 })).catch(() => {});
+        if (postConfig().posts.cover.on) notify.send(bot.telegram, staging, coverReport({ days: 7 })).catch(() => {});
         // The formats' own week: top three by saves, trials, drops, the best post.
         if (postConfig().trends.on) notify.send(bot.telegram, staging, weeklyTrendsReport(trendsStore().data, metricsRows())).catch(() => {});
       } catch (e) {
