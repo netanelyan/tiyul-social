@@ -1,6 +1,7 @@
-import { heeboDataUri, assistantDataUri, frankRuhlDataUri, escapeHtml } from './theme.js';
+import { heeboDataUri, assistantDataUri, frankRuhlDataUri, tiktokSansDataUri, arimoDataUri, escapeHtml } from './theme.js';
 import { emojiHtml } from './emojiArt.js';
-import { SIZES } from './deckTemplates.js';
+import { SIZES, FACES, typeScale } from './deckTemplates.js';
+import { postConfig } from '../postConfig.js';
 import { fitPoints, cityVectors, scaleBar, pinMapHtml } from './map.js';
 
 // The four looks the new post types are drawn in.
@@ -926,7 +927,7 @@ ${photo(slide.image)}
 /* -------------------------------------------------------------------------- */
 
 /**
- * A cover that is nothing but the hook, huge, near the top.
+ * A cover that is nothing but the hook, near the top.
  *
  * THE OWNER'S COVER TEST (17 Oct 2026). 36 posts sat at 420-570 views, TikTok's first
  * test pool, with the concept judged fine and the covers judged invisible: an 11%
@@ -934,42 +935,52 @@ ${photo(slide.image)}
  * with a rating pill and a subtitle competing for the half second. This look keeps
  * only the hook:
  *
- *   - 2 or 3 lines, `slide.hookLines`, each set as large as the widest line allows,
- *     aiming at 10% of the frame height and never below `floor` (the render says
- *     so in `data-fit` rather than shrinking quietly into a caption again)
+ *   - 2 or 3 lines, `slide.hookLines`, one line each
  *   - placed from just under TikTok's top furniture, which is the top third
  *   - no badge, no note, no emoji row: a slide with those set is drawn without them
  *
- * Two treatments, `slide.coverStyle`, alternated by the caller:
- *   'bars'     black type on yellow bars, one bar per line, like a news post
- *   'outline'  TikTok's own white type with a thick black outline
+ * THE SIZE, SECOND ROUND (18 Oct 2026). The first version aimed every line at 10% of
+ * the frame height in Heebo Black - about 178px - and the owner's verdict on the
+ * first proposal was "text is too big". The reference they pointed at is the
+ * Scandinavia northern-lights deck, which is the minimal style's cover: TikTok Sans
+ * over Arimo, typeScale's `cover` size (5.1% of the width, 55px), a semibold, plain
+ * white with a soft shadow. So the hook is set exactly as that cover is, and only
+ * steps down through the cover's own length steps when a line will not fit.
+ *
+ * Two treatments, `slide.coverStyle`, alternated by the caller and reported on by
+ * /report covers, so the names stay:
+ *   'bars'     black type on a yellow bar per line, TikTok's own background-text look
+ *   'outline'  white type with the reference's soft shadow (the thick outline went with
+ *              the size: at 55px it closes the counters)
  *
  * The fit runs in the page, after the fonts load, because a character count cannot
- * tell "ב-200 ₪" from "בודפשט" and the line that overflows is the one that loses
- * the post. The renderer waits on __mapReady, which every self-drawing page uses.
+ * tell "ב-200 ₪" from "בודפשט". The renderer waits on __mapReady, which every
+ * self-drawing page uses.
  */
 export function renderHookCoverHtml(slide, { size = 'tiktok', frame = 'tall' } = {}) {
   const geo = geometryFor(size, frame);
   const style = slide.coverStyle === 'outline' ? 'outline' : 'bars';
   const lines = (slide.hookLines?.length ? slide.hookLines : [slide.titleHe || '']).slice(0, 3);
-  // A line box of 10% of the height is a font of 10% / line-height.
-  const aim = Math.round((geo.h * 0.1) / 1.08);
-  const floor = Math.round(aim * 0.72);
-  const maxW = Math.round(geo.w * 0.9);
+  const t = typeScale(geo);
+  const aim = t.cover;
+  const floor = t.coverXlong;
+  const weight = FACES.minimal.cover;
+  const maxW = Math.round(geo.w * 0.86);
   const top = safeTop(geo, 0.01);
 
   return `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><style>${base(geo)}
-/* The top of the frame only. A light shade behind the outline treatment, because
-   a white line over a white sky is the one photograph an outline cannot rescue. */
-.shade { position: absolute; inset-inline: 0; top: 0; height: ${Math.round(geo.h * 0.5)}px;
-         background: linear-gradient(180deg, rgba(0,0,0,.42) 0%, rgba(0,0,0,.22) 60%, rgba(0,0,0,0)); }
+@font-face { font-family: 'TikTok Sans'; src: url(${tiktokSansDataUri()}) format('truetype'); font-weight: 100 900; font-display: block; }
+@font-face { font-family: 'Arimo'; src: url(${arimoDataUri()}) format('truetype'); font-weight: 100 900; font-display: block; }
+/* The top of the frame only, and light: the shadow on the letters does most of it. */
+.shade { position: absolute; inset-inline: 0; top: 0; height: ${Math.round(geo.h * 0.4)}px;
+         background: linear-gradient(180deg, rgba(0,0,0,.30) 0%, rgba(0,0,0,.14) 60%, rgba(0,0,0,0)); }
 .wrap { position: absolute; top: ${top}px; inset-inline: 0; display: flex; flex-direction: column;
         align-items: center; text-align: center; gap: 0; }
-.ln { display: block; white-space: nowrap; font-family: 'Heebo', sans-serif; font-weight: 900;
-      line-height: 1.08; letter-spacing: -0.01em; }
-.bars .ln { color: #0b0b0b; background: #FFE600; padding: .02em .22em .06em; margin-bottom: .1em;
-            border-radius: .08em; box-shadow: 0 .05em .18em rgba(0,0,0,.35); }
-.outline .ln { color: #fff; paint-order: stroke fill; }
+.ln { display: block; white-space: nowrap; font-family: 'TikTok Sans', 'Arimo', 'Assistant', 'Heebo', sans-serif;
+      font-weight: ${weight}; font-size: ${aim}px; line-height: 1.16; letter-spacing: 0; }
+.bars .ln { color: #0b0b0b; background: #FFE600; padding: .06em .32em .1em; margin-bottom: .14em;
+            border-radius: .16em; }
+.outline .ln { color: #fff; text-shadow: ${postConfig().overlay.shadow}, 0 2px 12px rgba(0,0,0,.35); }
 img.emoji { display: inline-block; vertical-align: -0.1em; }
 </style></head><body>
 ${PROBE}
@@ -983,13 +994,10 @@ window.__mapReady = document.fonts.ready.then(() => {
   const wrap = document.getElementById('hook');
   const els = [...wrap.querySelectorAll('.ln')];
   let f = ${aim};
-  const set = (n) => els.forEach((e) => {
-    e.style.fontSize = n + 'px';
-    if (${style === 'outline'}) e.style.webkitTextStroke = Math.max(6, Math.round(n * 0.085)) + 'px #000';
-  });
+  const set = (n) => els.forEach((e) => { e.style.fontSize = n + 'px'; });
   set(f);
-  while (f > 40 && Math.max(...els.map((e) => e.getBoundingClientRect().width)) > ${maxW}) set(--f);
-  document.body.dataset.fit = f >= ${floor} ? 'ok' : 'small';
+  while (f > ${floor} && Math.max(...els.map((e) => e.getBoundingClientRect().width)) > ${maxW}) set(--f);
+  document.body.dataset.fit = Math.max(...els.map((e) => e.getBoundingClientRect().width)) <= ${maxW} ? 'ok' : 'small';
   document.body.dataset.fontPx = String(f);
   document.body.dataset.bottom = String(Math.round(wrap.getBoundingClientRect().bottom));
 });
