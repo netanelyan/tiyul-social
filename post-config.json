@@ -3124,12 +3124,14 @@
   "_publish_comment": [
     "HOW A TIKTOK POST LEAVES. Our own TikTok app is unaudited, so TikTok lets it",
     "post only privately, and every TikTok post until 2026-10-11 was a draft in the",
-    "inbox. Every TikTok post now goes publicly through Zernio",
+    "inbox. From 2026-10-12 every TikTok post went publicly through Zernio",
     "(src/publish/zernio.js), whose app posts publicly and is free for one TikTok",
     "and one Instagram account: slideshows as photo carousels, clips as videos.",
-    "Clips also go to Instagram as Reels through Zernio. There is no other way out",
-    "(the `via` switch that kept everything outside the slate a draft was removed",
-    "on 2026-10-12); the inbox draft is only the fallback below.",
+    "On 2026-10-20 the owner moved TikTok back to inbox drafts, because the sound",
+    "TikTok attached to the Zernio posts was bad; in a draft the owner picks the",
+    "sound in the app. `via: \"draft\"` (also the default) does that, and `via:",
+    "\"zernio\"` goes back to public posts through Zernio, where the rest of this",
+    "comment applies. Clips still go to Instagram as Reels through Zernio.",
     "",
     "`privacy` was SELF_ONLY until the owner had seen the private test and then one",
     "public post approved by hand (Florence, 2026-10-11); it is PUBLIC_TO_EVERYONE",
@@ -3144,6 +3146,7 @@
   ],
   "publish": {
     "tiktok": {
+      "via": "draft",
       "privacy": "PUBLIC_TO_EVERYONE",
       "autoAddMusic": true,
       "fallback": "draft",

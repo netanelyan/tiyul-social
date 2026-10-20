@@ -23,12 +23,19 @@ import {
 // Which door a post leaves by, and what happens when that door fails.
 //
 // ONE PATH, SINCE 12 OCT 2026. Everything reaches here from the daily slate, which
-// the owner approves in the 08:00 digest, and every TikTok post leaves publicly
-// through Zernio: a slideshow as a photo carousel, a clip as a video. A clip's
-// Instagram half is a Reel, also through Zernio. Instagram photos and carousels
-// keep the Instagram API they have published through for months.
+// the owner approves in the 08:00 digest. A clip's Instagram half is a Reel through
+// Zernio; Instagram photos and carousels keep the Instagram API they have published
+// through for months.
 //
-// THE TIKTOK INBOX DRAFT IS ONLY THE FALLBACK. When Zernio fails for any reason
+// TIKTOK GOES TO THE INBOX AS A DRAFT, SINCE 20 OCT 2026 (`publish.tiktok.via`).
+// The owner's call: the sound TikTok attached to Zernio's public posts was bad, and
+// in a draft the owner picks the sound in the app before posting. With `via:
+// "zernio"` every TikTok post leaves publicly through Zernio instead, a slideshow as
+// a photo carousel and a clip as a video. A post an earlier Zernio attempt may have
+// made (it carries a Zernio key) still goes back to Zernio, so the lookup by that
+// key finds it rather than a draft duplicating it.
+//
+// ON THE ZERNIO PATH THE INBOX DRAFT IS THE FALLBACK. When Zernio fails for any reason
 // that is not a limit (a limit clears by itself, and the post waits for it), the
 // same post goes to the TikTok inbox as a draft and the publish notice says it fell
 // back and why. A post is never lost to the new route, and never posted twice: the
@@ -56,6 +63,9 @@ export async function publishTikTokRouted(cand, { cfg = postConfig().publish.tik
   const video = cand.kind === 'clip';
   if (video) assertVideoSound(cand);
   const draft = deps.draft || ((c) => publishTikTok(c, { draft: true }));
+  // A draft publishes nothing, so the cap below is not charged for one;
+  // publishTikTok skips TikTok's own cap for a draft for the same reason.
+  if (cfg.via !== 'zernio' && !cand.zernioKeys?.tiktok) return draft({ ...cand, tiktokDraft: true });
 
   const used = (deps.usedLast24h || store.tiktokPostsInLast24h)();
   const cap = (deps.cap || zernioDailyCap)();

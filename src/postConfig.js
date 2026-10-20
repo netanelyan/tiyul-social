@@ -1314,7 +1314,8 @@ const intIn = (v, lo, hi, fallback) => {
 export const TIKTOK_PRIVACY_LEVELS = ['PUBLIC_TO_EVERYONE', 'MUTUAL_FOLLOW_FRIENDS', 'FOLLOWER_OF_CREATOR', 'SELF_ONLY'];
 
 /**
- * How a TikTok post leaves: publicly through Zernio, always (src/publish/tiktokRoute.js).
+ * How a TikTok post leaves (src/publish/tiktokRoute.js): `via: "zernio"` posts
+ * publicly through Zernio; anything else, unset included, is an inbox draft.
  *
  * An unset or unknown privacy is SELF_ONLY, never public: a missing line in this
  * file must not be the thing that publishes something.
@@ -1323,6 +1324,7 @@ function publishCfg(raw) {
   const t = raw.tiktok || {};
   return {
     tiktok: {
+      via: t.via === 'zernio' ? 'zernio' : 'draft',
       privacy: TIKTOK_PRIVACY_LEVELS.includes(t.privacy) ? t.privacy : 'SELF_ONLY',
       autoAddMusic: t.autoAddMusic !== false,
       fallback: t.fallback === 'none' ? 'none' : 'draft',

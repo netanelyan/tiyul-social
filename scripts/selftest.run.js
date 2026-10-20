@@ -10315,7 +10315,7 @@ group('the daily slate - one tap a day, and nothing goes out unapproved');
   ok('a refusal comes back as a card-level error with TikTok\'s reason', refused && z.isCardLevelZernio(refused) && /images rejected/.test(refused.message));
 
   // THE FALLBACK TO DRAFTS, and the caps.
-  const route = { privacy: 'SELF_ONLY', autoAddMusic: true, fallback: 'draft', dailyCap: 3 };
+  const route = { via: 'zernio', privacy: 'SELF_ONLY', autoAddMusic: true, fallback: 'draft', dailyCap: 3 };
   const slateCand = { id: 's1', headline: 'h', tiktokDraft: true, deck: { urls: { tiktok: ['a', 'b'] } } };
   let drafted = 0;
   const viaZ = await publishTikTokRouted(slateCand, { cfg: route, deps: { zernio: async () => ({ draft: false, via: 'zernio' }), draft: async () => (drafted++, { draft: true }), usedLast24h: () => 0, cap: () => 3 } });
@@ -10339,16 +10339,33 @@ group('the daily slate - one tap a day, and nothing goes out unapproved');
   }
   ok('the daily cap stops the post before Zernio is called', capped?.code === 'zernio_daily_cap' && !zernioCalled);
   ok('and is a platform limit, so it waits for tomorrow', z.isPlatformLimitZernio(capped));
-  // ONE PATH (12 Oct 2026). There is no `via` switch and no candidate flag that
-  // keeps a post a draft: anything that reaches TikTok goes through Zernio, and the
-  // inbox draft is only what a Zernio failure falls back to.
+  // With `via: "zernio"` no candidate flag keeps a post a draft: anything that
+  // reaches TikTok goes through Zernio, and the inbox draft is only what a Zernio
+  // failure falls back to.
   const anyCand = { id: 'a1', headline: 'h', tiktokDraft: true, deck: { urls: { tiktok: ['a', 'b'] } } };
   let viaAny = null;
   const plain = await publishTikTokRouted(anyCand, { cfg: route, deps: { zernio: async () => ((viaAny = 'zernio'), { draft: false, via: 'zernio' }), draft: async () => (drafted++, { draft: true }), usedLast24h: () => 0, cap: () => 3 } });
   ok('a post that is not from the slate goes through Zernio too', viaAny === 'zernio' && plain.draft === false && drafted === 1);
-  ok('the config has no switch back to drafts', !('via' in postConfig().publish.tiktok));
   const routeSrc = readFileSync(new URL('../src/publish/tiktokRoute.js', import.meta.url), 'utf8');
-  ok('and the router calls the draft only inside the fallback', (routeSrc.match(/publishTikTok\(/g) || []).length === 1 && /draft: true/.test(routeSrc));
+  ok('and the router has one way into the inbox, always a draft', (routeSrc.match(/publishTikTok\(/g) || []).length === 1 && /draft: true/.test(routeSrc));
+
+  // BACK TO DRAFTS (20 Oct 2026): the owner picks the sound in the app.
+  ok('TikTok posts are inbox drafts in the live config', postConfig().publish.tiktok.via === 'draft');
+  const draftRoute = { ...route, via: 'draft' };
+  let zernioAsked = false;
+  const asDraft = await publishTikTokRouted(anyCand, { cfg: draftRoute, deps: { zernio: async () => ((zernioAsked = true), {}), draft: async (c) => (drafted++, { draft: true, tiktokDraft: c.tiktokDraft }), usedLast24h: () => 9, cap: () => 3 } });
+  ok('with via draft, a post goes to the inbox and Zernio is not asked', asDraft.draft === true && asDraft.tiktokDraft === true && !zernioAsked && drafted === 2);
+  ok('the daily cap does not hold a draft back, and it is no fallback', !asDraft.fellBack);
+  const keyed = { ...anyCand, zernioKeys: { tiktok: 'k1' } };
+  const back = await publishTikTokRouted(keyed, { cfg: draftRoute, deps: { zernio: async (c, o) => ({ draft: false, via: 'zernio', key: o.idempotencyKey }), draft: async () => (drafted++, { draft: true }), usedLast24h: () => 0, cap: () => 3 } });
+  ok('a post Zernio may already have made goes back to Zernio, not to a draft', back.via === 'zernio' && back.key === 'k1' && drafted === 2);
+  let silentDraftRefused = null;
+  try {
+    await publishTikTokRouted({ id: 'v3', kind: 'clip', headline: 'h', clip: { audio: false, file: '/x/clip-v3.mp4', url: 'https://cards.example/clip-v3.mp4' } }, { cfg: draftRoute, deps: { draft: async () => (drafted++, { draft: true }) } });
+  } catch (e) {
+    silentDraftRefused = e;
+  }
+  ok('a silent video is refused as a draft too', silentDraftRefused?.code === 'no_sound' && drafted === 2);
 
   // VIDEOS: the same door, as a video post, and only with sound.
   const narrated = { id: 'v1', kind: 'clip', headline: 'h', tiktokCaption: 'c', clip: { narrated: true, file: '/x/clip-v1.mp4', url: 'https://cards.example/clip-v1.mp4' } };
@@ -10609,7 +10626,7 @@ group('a Zernio create call with no answer is looked up before any draft is made
     };
     return { fetchImpl, seen };
   };
-  const cfg = { privacy: 'SELF_ONLY', autoAddMusic: true, fallback: 'draft', dailyCap: 3 };
+  const cfg = { via: 'zernio', privacy: 'SELF_ONLY', autoAddMusic: true, fallback: 'draft', dailyCap: 3 };
   const run = async (z0, c = cand) => {
     let drafted = 0;
     let result = null;
