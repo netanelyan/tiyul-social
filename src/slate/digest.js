@@ -1,4 +1,4 @@
-import { postConfig } from '../postConfig.js';
+import { postConfig, tiktokGoesAsDraft } from '../postConfig.js';
 import { clipPublicUrl } from '../publish/imageHosts.js';
 import { soundLine } from '../video/tracks.js';
 import { STATUS_HE } from './state.js';
@@ -47,7 +47,8 @@ function whatLine(it) {
 
 export function itemLine(it) {
   const d = it.cand?.deck || {};
-  const when = [it.tiktokAt && `טיקטוק ${HHMM(it.tiktokAt)}`, it.instagramAt && `${it.cand?.kind === 'clip' ? 'רילס' : 'אינסטגרם'} ${HHMM(it.instagramAt)}`]
+  // A TikTok draft goes to the inbox on approval, so it has no time of its own.
+  const when = [it.tiktokAt && (tiktokGoesAsDraft(it.cand) ? 'טיקטוק: טיוטה מיד עם האישור' : `טיקטוק ${HHMM(it.tiktokAt)}`), it.instagramAt && `${it.cand?.kind === 'clip' ? 'רילס' : 'אינסטגרם'} ${HHMM(it.instagramAt)}`]
     .filter(Boolean)
     .join(' · ');
   const extra = [

@@ -1,4 +1,4 @@
-import { postConfig } from '../postConfig.js';
+import { postConfig, tiktokGoesAsDraft } from '../postConfig.js';
 import * as store from '../store.js';
 import {
   publishTikTok,
@@ -65,7 +65,7 @@ export async function publishTikTokRouted(cand, { cfg = postConfig().publish.tik
   const draft = deps.draft || ((c) => publishTikTok(c, { draft: true }));
   // A draft publishes nothing, so the cap below is not charged for one;
   // publishTikTok skips TikTok's own cap for a draft for the same reason.
-  if (cfg.via !== 'zernio' && !cand.zernioKeys?.tiktok) return draft({ ...cand, tiktokDraft: true });
+  if (tiktokGoesAsDraft(cand, cfg)) return draft({ ...cand, tiktokDraft: true });
 
   const used = (deps.usedLast24h || store.tiktokPostsInLast24h)();
   const cap = (deps.cap || zernioDailyCap)();

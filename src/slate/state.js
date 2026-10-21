@@ -1,4 +1,5 @@
-import { sendableNow } from '../schedule.js';
+import { inShabbat, sendableNow } from '../schedule.js';
+import { postConfig, tiktokGoesAsDraft } from '../postConfig.js';
 import { israelDate } from './plan.js';
 
 // The slate's state, and the one rule that matters most: nothing posts without
@@ -14,7 +15,7 @@ import { israelDate } from './plan.js';
 // A platform's status is 'planned' until the slate is approved, then 'approved',
 // then 'published' or 'failed'; 'none' where the item has no slot on it.
 
-export const STATUS_HE = { planned: 'ממתין לאישור', approved: 'מאושר', published: 'פורסם', failed: 'נכשל', none: '', skipped: 'דולג', expired: 'פג' };
+export const STATUS_HE = { planned: 'ממתין לאישור', approved: 'מאושר', publishing: 'בשליחה', published: 'פורסם', failed: 'נכשל', none: '', skipped: 'דולג', expired: 'פג' };
 
 export function newSlate({ date, items, autoApprove = false, warnings = [], dropped = [], now = Date.now() }) {
   const slate = {
@@ -71,22 +72,34 @@ export function skipItem(slate, n) {
  * What should publish now: approved halves whose time has come, on the slate's
  * own day, at a moment the schedule allows. Never anything 'planned': an
  * unapproved slate publishes nothing, whatever the clock says.
+ *
+ * A TikTok half that goes to the inbox as a draft is due the moment the slate is
+ * approved, not at its slot (the owner's call, 21 Oct 2026): a draft publishes
+ * nothing, and the owner posts it from the app at the time they choose. So the
+ * posting windows do not hold it, only Shabbat does. Each one comes back with
+ * `draft: true`, ahead of anything public.
  */
-export function dueItems(slate, now = Date.now()) {
+export function dueItems(slate, now = Date.now(), { tiktok = postConfig().publish.tiktok } = {}) {
   if (!slate?.approved) return [];
   if (israelDate(now) !== slate.date) return [];
-  if (!sendableNow(new Date(now)).ok) return [];
+  // The posting windows are about who is on the app, which a draft does not
+  // reach; Shabbat holds a draft too.
+  if (inShabbat(new Date(now))) return [];
+  const publicOk = sendableNow(new Date(now)).ok;
   const out = [];
   for (const it of slate.items) {
     if (it.skipped) continue;
     for (const p of ['tiktok', 'instagram']) {
       const at = it[`${p}At`];
-      if (it[p].status === 'approved' && at && Date.parse(at) <= now) out.push({ item: it, platform: p });
+      if (it[p].status !== 'approved' || !at) continue;
+      const draft = p === 'tiktok' && tiktokGoesAsDraft(it.cand, tiktok);
+      if (draft || (publicOk && Date.parse(at) <= now)) out.push({ item: it, platform: p, draft });
     }
   }
-  // One at a time, the earliest first: two due together are an approval that
-  // came late, and posting them in the same minute is what the gap exists to stop.
-  out.sort((a, b) => Date.parse(a.item[`${a.platform}At`]) - Date.parse(b.item[`${b.platform}At`]));
+  // One at a time, the drafts first and then the earliest: two public posts due
+  // together are an approval that came late, and posting them in the same minute
+  // is what the gap exists to stop.
+  out.sort((a, b) => b.draft - a.draft || Date.parse(a.item[`${a.platform}At`]) - Date.parse(b.item[`${b.platform}At`]));
   return out.slice(0, 1);
 }
 

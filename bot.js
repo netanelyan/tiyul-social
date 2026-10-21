@@ -1541,6 +1541,8 @@ function approveSlate(date, { by = 'telegram' } = {}) {
   if (slate.approved) return { ok: false, said: 'התוכנית כבר מאושרת', slate };
   approveAllSlate(slate, { by });
   store.putSlate(slate);
+  // The TikTok drafts go now, not at the next minute's tick.
+  runSlate().catch((e) => console.error('slate error:', e.message));
   return { ok: true, said: `אושרו ${slate.items.filter((i) => !i.skipped).length} פוסטים`, slate };
 }
 
@@ -1833,6 +1835,25 @@ async function resolveZernioPosts() {
 
 let lastZernioResolve = 0;
 
+/** One half of one slate post, with its outcome written back to the slate. */
+async function publishSlateItem(date, { item, platform }) {
+  const slate = store.getSlate(date);
+  try {
+    markSlateOutcome(slate, item.n, platform, { status: 'publishing', startedAt: new Date().toISOString() });
+    store.putSlate(slate);
+    const ok = await publishNext({ ...item.cand, pendingTargets: [platform] });
+    const after = store.getSlate(date);
+    markSlateOutcome(after, item.n, platform, { status: ok ? 'published' : 'failed', at: new Date().toISOString() });
+    store.putSlate(after);
+    await refreshSlateDigest(after);
+  } catch (e) {
+    console.error(`slate publish ${item.n}/${platform}:`, e.message);
+    const after = store.getSlate(date);
+    markSlateOutcome(after, item.n, platform, { status: 'failed', error: e.message });
+    store.putSlate(after);
+  }
+}
+
 /** The slate's minute: expire, build at digest time, publish what is due, resolve URLs. */
 async function runSlate(now = Date.now()) {
   const cfg = postConfig().slate;
@@ -1861,23 +1882,17 @@ async function runSlate(now = Date.now()) {
     return;
   }
 
-  const [due] = slateDue(slate, now);
-  if (due && !slatePublishing) {
+  // TikTok drafts go out one after another in the same pass, right after the
+  // approval; a public post is one per minute, and ends the pass.
+  if (!slatePublishing) {
     slatePublishing = true;
-    const { item, platform } = due;
     try {
-      markSlateOutcome(slate, item.n, platform, { status: 'publishing', startedAt: new Date(now).toISOString() });
-      store.putSlate(slate);
-      const ok = await publishNext({ ...item.cand, pendingTargets: [platform] });
-      const after = store.getSlate(date);
-      markSlateOutcome(after, item.n, platform, { status: ok ? 'published' : 'failed', at: new Date().toISOString() });
-      store.putSlate(after);
-      await refreshSlateDigest(after);
-    } catch (e) {
-      console.error(`slate publish ${item.n}/${platform}:`, e.message);
-      const after = store.getSlate(date);
-      markSlateOutcome(after, item.n, platform, { status: 'failed', error: e.message });
-      store.putSlate(after);
+      for (let i = 0; i < 20; i++) {
+        const [due] = slateDue(store.getSlate(date), Date.now());
+        if (!due) break;
+        await publishSlateItem(date, due);
+        if (!due.draft) break;
+      }
     } finally {
       slatePublishing = false;
     }

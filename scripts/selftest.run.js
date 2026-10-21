@@ -10219,17 +10219,40 @@ group('the daily slate - one tap a day, and nothing goes out unapproved');
       ],
       now: at('2026-10-11T05:00:00Z'),
     });
+  // Public TikTok posts (via zernio) wait for their slots.
+  const pub = { tiktok: { via: 'zernio' } };
   let slate = fresh();
-  eq('an unapproved slate has nothing due, even at its slot time', st.dueItems(slate, at('2026-10-11T09:20:00Z')).length, 0);
+  eq('an unapproved slate has nothing due, even at its slot time', st.dueItems(slate, at('2026-10-11T09:20:00Z'), pub).length, 0);
   st.approveAll(slate, { by: 'test' });
-  eq('approved, the first TikTok post is due at its time', st.dueItems(slate, at('2026-10-11T09:20:00Z'))[0]?.platform, 'tiktok');
-  eq('and nothing before its time', st.dueItems(slate, at('2026-10-11T09:00:00Z')).length, 0);
-  eq('one at a time even when several are due', st.dueItems(slate, at('2026-10-11T17:00:00Z')).length, 1);
+  eq('approved, the first TikTok post is due at its time', st.dueItems(slate, at('2026-10-11T09:20:00Z'), pub)[0]?.platform, 'tiktok');
+  eq('and nothing before its time', st.dueItems(slate, at('2026-10-11T09:00:00Z'), pub).length, 0);
+  eq('one at a time even when several are due', st.dueItems(slate, at('2026-10-11T17:00:00Z'), pub).length, 1);
   slate = fresh();
   st.skipItem(slate, 1);
   st.approveAll(slate, { by: 'test' });
-  ok('a skipped post never becomes due', !st.dueItems(slate, at('2026-10-11T10:30:00Z')).some((d) => d.item.n === 1));
-  eq('a slate from another day publishes nothing', st.dueItems(slate, at('2026-10-12T09:20:00Z')).length, 0);
+  ok('a skipped post never becomes due', !st.dueItems(slate, at('2026-10-11T10:30:00Z'), pub).some((d) => d.item.n === 1));
+  eq('a slate from another day publishes nothing', st.dueItems(slate, at('2026-10-12T09:20:00Z'), pub).length, 0);
+
+  // TikTok drafts (21 Oct 2026) go to the inbox the moment the slate is approved.
+  const drafts = { tiktok: { via: 'draft' } };
+  slate = fresh();
+  eq('a draft is not due before the approval either', st.dueItems(slate, at('2026-10-11T07:00:00Z'), drafts).length, 0);
+  st.approveAll(slate, { by: 'test' });
+  const firstDraft = st.dueItems(slate, at('2026-10-11T07:00:00Z'), drafts)[0];
+  ok('approved, a TikTok draft is due hours before its slot', firstDraft?.platform === 'tiktok' && firstDraft.draft === true && firstDraft.item.n === 1);
+  st.markOutcome(slate, 1, 'tiktok', { status: 'published' });
+  eq('and the next draft right after it', st.dueItems(slate, at('2026-10-11T07:00:00Z'), drafts)[0]?.item.n, 2);
+  st.markOutcome(slate, 2, 'tiktok', { status: 'published' });
+  eq('while Instagram still waits for its slot', st.dueItems(slate, at('2026-10-11T07:00:00Z'), drafts).length, 0);
+  const late = fresh();
+  st.approveAll(late, { by: 'test' });
+  ok('a draft goes ahead of a public post that is already due', st.dueItems(late, at('2026-10-11T17:00:00Z'), drafts)[0]?.draft === true);
+  const keyedSlate = fresh();
+  keyedSlate.items[0].cand.zernioKeys = { tiktok: 'k1' };
+  st.approveAll(keyedSlate, { by: 'test' });
+  ok('a post Zernio may already have made still waits for its slot', !st.dueItems(keyedSlate, at('2026-10-11T07:00:00Z'), drafts).some((d) => d.item.n === 1));
+  const shabbatSlate = st.newSlate({ date: '2026-10-17', items: [{ key: 'a', cand: cand(1), template: 'verdict', tiktokAt: Date.parse('2026-10-17T17:30:00Z') }], autoApprove: true });
+  eq('and a draft still never goes on Shabbat', st.dueItems(shabbatSlate, at('2026-10-17T08:00:00Z'), drafts).length, 0);
   const auto = st.newSlate({ date: '2026-10-11', items: [{ key: 'a', cand: cand(1), template: 'verdict', tiktokAt: sun.tiktok[0] }], autoApprove: true });
   ok('autoApprove is the only way past the tap', auto.approved && auto.approvedBy === 'autoApprove');
 
@@ -10237,7 +10260,8 @@ group('the daily slate - one tap a day, and nothing goes out unapproved');
   ok('the digest says nothing goes out without approval', /שום דבר לא יוצא בלי אישור/.test(msg.text));
   ok('and carries the one-tap button', msg.keyboard.flat().some((b) => b.callback_data === 'sa:2026-10-11'));
   ok('and a skip per post', msg.keyboard.flat().filter((b) => /^ss:2026-10-11:\d$/.test(b.callback_data)).length === 2);
-  ok('with each post\'s time, platform and slide count', /טיקטוק 12:15/.test(msg.text) && /2 שקפים/.test(msg.text));
+  ok('with each post\'s time, platform and slide count', /אינסטגרם \d\d:\d\d/.test(msg.text) && /2 שקפים/.test(msg.text));
+  ok('and a TikTok draft says it goes on approval, not at a time', /טיקטוק: טיוטה מיד עם האישור/.test(msg.text) && !/טיקטוק 12:15/.test(msg.text));
   ok('once approved the button is gone', !digestMessage(st.approveAll(fresh(), { by: 'test' })).keyboard.flat().some((b) => b.callback_data?.startsWith('sa:')));
   eq('the album is the covers', msg.media.length, 2);
 

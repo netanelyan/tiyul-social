@@ -1335,6 +1335,13 @@ function publishCfg(raw) {
 }
 
 /**
+ * Whether this post's TikTok half goes to the inbox as a draft, the same rule
+ * src/publish/tiktokRoute.js follows: not on `via: "zernio"`, and not for a post
+ * an earlier Zernio attempt may have made (it carries a Zernio key).
+ */
+export const tiktokGoesAsDraft = (cand, cfg = postConfig().publish.tiktok) => cfg.via !== 'zernio' && !cand?.zernioKeys?.tiktok;
+
+/**
  * The daily slate: which times, how many, and the one-tap approval.
  *
  * Times are Israel wall-clock "HH:MM". `slotsByDay` overrides them per weekday
