@@ -76,10 +76,11 @@ const edge = (body) => new RegExp(`(?<![${W}])(?:ו|ש|כש|וש)?(?:${body})(?!
 // `צריכים` and `אמורים` were added after a configured question killed a build at
 // random: "יש עוד אחד שהיינו צריכים להכניס?" is about what belongs in THIS POST, not
 // about a journey, and it is exactly the kind of line the account should be asking.
+// `רוצים` came with the hook "היינו רוצים שכל מי שטס ל{dest} ידע את זה": a wish, not a trip.
 const PLANNER_VERBS =
   'בונים|בונה|עושים|עושה|ממליצים|ממליץ|מוסיפים|מוסיף|מורידים|מוריד|מתחילים|מתחיל|מסיימים|' +
   'בוחרים|בוחר|שמים|משאירים|מדלגים|לוקחים|הולכים|נשארים|מתכננים|משלבים|מחלקים|קובעים|מוותרים|' +
-  'צריכים|צריך|אמורים|אמור|חייבים|יכולים|כותבים|מראים|מספרים';
+  'צריכים|צריך|אמורים|אמור|חייבים|יכולים|כותבים|מראים|מספרים|רוצים|רוצה';
 
 const FIRST_PERSON_PAST = [
   // A temporal frame is always a claim about a trip, whatever follows it: "כשהיינו

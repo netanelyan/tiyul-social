@@ -2505,7 +2505,13 @@
         "types into a search bar, so it is the one shape here with a reason to exist",
         "beyond the feed, and the hook draw excludes the last hook of the same type,",
         "which means at 5/5/1 it appears on about one verdict post in six while the",
-        "other two alternate. See hookShape in src/posts/voice.js."
+        "other two alternate. See hookShape in src/posts/voice.js.",
+        "",
+        "25 OCT 2026: SIX MORE SHAPES REACH THIS TYPE FROM `shared`, weight 17 against",
+        "these 11, from the owner's reference carousel of hooks that worked (the truth,",
+        "in case nobody told you, I wish someone had said). They are the same promise",
+        "as `before`, that the slides hold what a brochure leaves out, and the verdict",
+        "slides keep it. /report hooks decides the weights after a week."
       ],
       "verdict": [
         {
@@ -2613,6 +2619,93 @@
             "roll"
           ],
           "desc": "Counted and superlative without describing the photographs. \"נראים כמו ציור\" was dropped by the owner: it praises the picture rather than the place, which is the one thing a travel account cannot be caught doing."
+        },
+        {
+          "id": "truthabout",
+          "he": "הנה האמת על {dest}",
+          "weight": 4,
+          "for": [
+            "verdict",
+            "know"
+          ],
+          "desc": "Added 25 Oct 2026 from the owner's reference carousel (@reelax.il, 'hooks that took me to 10k'): \"הנה האמת האמיתית על...\". The verdict post pays it off, its good and bad are quoted off our own page."
+        },
+        {
+          "id": "nobodytold",
+          "he": "במקרה שאף אחד עוד לא סיפר לכם על {dest}",
+          "weight": 4,
+          "for": [
+            "verdict",
+            "know"
+          ],
+          "desc": "Same reference: \"במקרה שאף אחד עדיין לא סיפר לך\". Plural, because this account talks to a feed."
+        },
+        {
+          "id": "agentdidnt",
+          "he": "במקרה שסוכן הנסיעות לא אמר לכם את זה על {dest}",
+          "weight": 2,
+          "for": [
+            "verdict",
+            "know"
+          ],
+          "desc": "The reference's \"במקרה שהמאפרת שלך לא אמרה לך\", with the professional who should have said it swapped for this subject's one."
+        },
+        {
+          "id": "wishknew",
+          "he": "הלוואי שמישהו היה אומר לכם את זה על {dest}",
+          "weight": 3,
+          "for": [
+            "verdict",
+            "know"
+          ],
+          "desc": "The reference's \"הלוואי וידעתי קודם ש..\" moved to the second person. Her version is first person and claims a trip, which assertNoExperience refuses; this one gives the viewer the regret instead."
+        },
+        {
+          "id": "everyoneknow",
+          "he": "היינו רוצים שכל מי שטס ל{dest} ידע את זה",
+          "weight": 2,
+          "for": [
+            "verdict",
+            "know"
+          ],
+          "desc": "The reference's \"החלום שלי היה שכולם ידעו ש..\". \"היינו רוצים\" is the planner's conditional, whitelisted in PLANNER_VERBS, not a claim about a trip."
+        },
+        {
+          "id": "reveal",
+          "he": "עומדים לחשוף את האמת על {dest}",
+          "weight": 2,
+          "for": [
+            "verdict"
+          ],
+          "desc": "The reference's \"אני עומדת לחשוף את האמת עכשיו\", plural and with the subject named."
+        },
+        {
+          "id": "nobodytoldcount",
+          "he": "{n} מקומות ב{dest}, במקרה שאף אחד לא סיפר לכם",
+          "weight": 2,
+          "for": [
+            "list",
+            "roll"
+          ],
+          "desc": "nobodytold, counted, so the slides are the delivery."
+        },
+        {
+          "id": "savetime",
+          "he": "{days} ימים ב{dest}? תנו לנו לחסוך לכם זמן",
+          "weight": 3,
+          "for": [
+            "plan"
+          ],
+          "desc": "The reference's \"תנו לי לחסוך לכם זמן...\". A finished day by day route is the time saved, so the post delivers it."
+        },
+        {
+          "id": "savetimemap",
+          "he": "תנו לנו לחסוך לכם זמן ב{dest}",
+          "weight": 2,
+          "for": [
+            "map"
+          ],
+          "desc": "The same line over the map, which saves the searching between places."
         }
       ]
     },
