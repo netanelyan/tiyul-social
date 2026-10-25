@@ -2937,13 +2937,17 @@
       "",
       "`startedAt` and `testDays` drive the stop rule: after 14 days, if no hook shape",
       "has passed `passViews` (1,000) on TikTok at least `passTimes` (2) times, the bot",
-      "says so, once. /report covers is the weekly table."
+      "says so, once. /report covers is the weekly table.",
+      "",
+      "25 Oct 2026: four more shapes from the owner's reference carousel of hooks that",
+      "worked (truth, nobodytold, wishknew, savetime), weighted 2 so they reach the",
+      "feed before the test's day 14. Each is paid off by a line from the page."
     ],
     "cover": {
       "on": true,
       "startedAt": "2026-10-17",
       "testDays": 14,
-      "shapes": { "fact": 1, "money": 1, "mistake": 1, "swap": 1, "season": 1 },
+      "shapes": { "fact": 1, "money": 1, "mistake": 1, "swap": 1, "season": 1, "truth": 2, "nobodytold": 2, "wishknew": 2, "savetime": 2 },
       "shapeMemory": 2,
       "maxLineChars": 13,
       "twoLineChars": 11,

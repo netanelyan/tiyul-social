@@ -12,7 +12,7 @@ import { toShekels, dateHe } from '../fx.js';
 // first slide is replaced by one hook, set huge near the top (render/postSlides.js,
 // the `hook` look), in one of two styles that alternate.
 //
-// THE HOOK IS ONE OF FIVE SHAPES, EACH FILLED FROM THE SITE'S OWN PAGE:
+// THE HOOK IS ONE OF NINE SHAPES, EACH FILLED FROM THE SITE'S OWN PAGE:
 //
 //   fact     a drawback the page states, shortened for the cover:  "פראג העתיקה עמוסה כמעט כל השנה"
 //   money    the page's low-budget day, in shekels at the ECB rate: "אתונה ב-180 ₪ ליום, בלי טיסה ולינה"
@@ -28,7 +28,17 @@ import { toShekels, dateHe } from '../fx.js';
 // the 0.5% post src/posts/deliver.js was written about. The payoff lines are the page's
 // own words, verbatim, so the cover can be short and the claim still sourced.
 
-export const SHAPES = ['fact', 'money', 'mistake', 'swap', 'season'];
+//   truth       "הנה האמת על רומא", paid off by the page's drawbacks
+//   nobodytold  "במקרה שאף אחד לא סיפר לכם על רומא", paid off by its booking notes
+//   wishknew    "הלוואי שידעתם את זה לפני רומא", paid off by its best season
+//   savetime    "תנו לנו לחסוך לכם זמן ברומא", paid off by what to book ahead
+//
+// The last four were added on 25 Oct 2026 from the owner's reference carousel (a
+// creator's "hooks that took me to 10k"). Her lines are first person and end on
+// "..."; these are second person, because the account never claims a trip, and each
+// is finished by a line from our own page rather than by a promise.
+
+export const SHAPES = ['fact', 'money', 'mistake', 'swap', 'season', 'truth', 'nobodytold', 'wishknew', 'savetime'];
 export const STYLES = ['bars', 'outline'];
 
 const MONTHS = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
@@ -321,6 +331,46 @@ function seasonHook(city, destHe, month) {
   return { shape: 'season', lines, payoff: { titleHe: `עד סוף ${end}`, lines: [said] } };
 }
 
+/* -------------------------------------------------------------------------- */
+/* the owner's reference hooks                                                 */
+/* -------------------------------------------------------------------------- */
+
+// Broken where a person would say it, not where the line lengths come out even:
+// "הלוואי / שידעתם את / זה לפני רומא" is what the even split made of one. Null when a
+// line is too wide, which a long name does, and the shape is then not offered.
+const set = (lines) => (fits(lines) ? lines : null);
+
+/** The page's drawbacks, the ones a cover may lean on, verbatim. */
+const usableCons = (city) => (verdictOf(city)?.consHe || []).map(dropAnd).filter((c) => usable(c) && c.length <= 110);
+
+function truthHook(city, destHe) {
+  const cons = usableCons(city).slice(0, 2);
+  const lines = cons.length && set(['הנה האמת', `על ${destHe}`]);
+  if (!lines) return null;
+  return { shape: 'truth', lines, payoff: { titleHe: `האמת על ${destHe}`, lines: cons, quote: verdictOf(city).source } };
+}
+
+function nobodyToldHook(city, destHe) {
+  const notes = bookingLines(city, { want: 4 }).filter((l) => usable(l) && l.length <= 110).slice(0, 2);
+  const lines = notes.length && set(['במקרה שאף אחד', 'לא סיפר לכם', `על ${destHe}`]);
+  if (!lines) return null;
+  return { shape: 'nobodytold', lines, payoff: { titleHe: `מה לדעת לפני ${destHe}`, lines: notes } };
+}
+
+function wishKnewHook(city, destHe) {
+  const said = seasonLine(practicalOf(city), { max: 90 });
+  const lines = said && usable(said) && set(['הלוואי שידעתם', 'את זה לפני', destHe]);
+  if (!lines) return null;
+  return { shape: 'wishknew', lines, payoff: { titleHe: `מתי להגיע ל${destHe}`, lines: [said] } };
+}
+
+function saveTimeHook(city, destHe) {
+  const ahead = bookingLines(city, { want: 6 }).filter((l) => /מראש/.test(l) && BOOKED.test(l) && usable(l) && l.length <= 110);
+  const lines = ahead.length && set(['תנו לנו לחסוך', 'לכם זמן', `ב${destHe}`]);
+  if (!lines) return null;
+  return { shape: 'savetime', lines, payoff: { titleHe: `מה להזמין מראש ב${destHe}`, lines: ahead.slice(0, 2) } };
+}
+
 /**
  * Every shape this page can carry today, in SHAPES order.
  *
@@ -337,6 +387,10 @@ export function coverHooks(city, { dest = null, rates = null, neighbours = [], m
     mistake: () => mistakeHook(city, destHe),
     swap: () => swapHook(city, dest, neighbours),
     season: () => seasonHook(city, destHe, month),
+    truth: () => truthHook(city, destHe),
+    nobodytold: () => nobodyToldHook(city, destHe),
+    wishknew: () => wishKnewHook(city, destHe),
+    savetime: () => saveTimeHook(city, destHe),
   };
   return SHAPES.filter((s) => Number(on[s] ?? 1) > 0)
     .map((s) => all[s]())
@@ -411,7 +465,7 @@ export function withCover(slides, hook, { style, image, payoffImage = null, wher
   const already = textOf(rest);
   const lines = p.lines.filter((l) => l && !already.includes(flat(l)));
   if (!lines.length) return [cover, ...rest];
-  for (const l of lines) line(l, { where: `${where}.payoff`, quote: p.quote && hook.shape === 'fact' ? p.quote : null });
+  for (const l of lines) line(l, { where: `${where}.payoff`, quote: p.quote && ['fact', 'truth'].includes(hook.shape) ? p.quote : null });
   for (const [q, src] of p.quotes || []) line(q, { where: `${where}.payoff`, quote: src });
   const payoff = {
     look: 'sheet',

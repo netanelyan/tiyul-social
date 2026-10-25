@@ -10790,6 +10790,19 @@ group('the cover test - one huge hook from the page, two styles, and its own rep
   ok('no rates, no money shape', !cover.coverHooks(rome, { dest: { he: 'רומא' }, rates: null, month: 9 }).some((h) => h.shape === 'money'));
   ok('in July the season shape is not offered', !cover.coverHooks(rome, { dest: { he: 'רומא' }, rates, month: 6 }).some((h) => h.shape === 'season'));
 
+  // The owner's reference hooks of 25 Oct 2026, each paid off by the page.
+  eq('the truth shape names the place', by.truth?.lines.join(' '), 'הנה האמת על רומא');
+  ok('and its payoff is the page\'s drawbacks', by.truth?.payoff.lines.some((l) => /לוהט/.test(l)));
+  eq('nobody told you, split for the cover', by.nobodytold?.lines.join(' '), 'במקרה שאף אחד לא סיפר לכם על רומא');
+  ok('paid off by the page\'s booking note', /הוותיקן/.test(by.nobodytold?.payoff.lines.join(' ')));
+  eq('I wish you knew, in the second person', by.wishknew?.lines.join(' '), 'הלוואי שידעתם את זה לפני רומא');
+  ok('paid off by the best season', /מרץ-מאי/.test(by.wishknew?.payoff.lines.join(' ')));
+  eq('let us save you time', by.savetime?.lines.join(' '), 'תנו לנו לחסוך לכם זמן ברומא');
+  ok('paid off by what to book ahead', /מראש/.test(by.savetime?.payoff.lines.join(' ')));
+  ok('every reference hook fits three huge lines', ['truth', 'nobodytold', 'wishknew', 'savetime'].every((s) => by[s]?.lines.every((l) => l.length <= postConfig().posts.cover.maxLineChars)));
+  ok('a page with no booking note offers neither booking shape', !cover.coverHooks({ ...rome, itinerary: [] }, { dest: { he: 'רומא' }, rates, month: 9 }).some((h) => ['nobodytold', 'savetime'].includes(h.shape)));
+  ok('and every shape has a name in /report covers', cover.SHAPES.every((s) => postConfig().posts.cover.shapes[s] > 0));
+
   const budapest = { name: 'בודפשט', tagline: 'מרחצאות', editorialRating: { verdict: 'ערך תמורת כסף מהטובים באירופה, מחירים נמוכים. חסרונות: התחבורה לא ידידותית.' }, places: [], itinerary: [] };
   const vienna = { name: 'וינה', editorialRating: { verdict: 'עיר אלגנטית. חסרונות: יקרה יחסית לשכנותיה במזרח אירופה.' }, places: [], itinerary: [] };
   const swap = cover

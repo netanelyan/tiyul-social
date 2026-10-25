@@ -408,7 +408,7 @@ function describe(row) {
 // different question answered in the same column. They are typed in with /views,
 // because the API cannot see a carousel (src/metrics/tiktok.js).
 
-const HOOKS_HE = { fact: 'עובדה מפתיעה', money: 'כסף', mistake: 'טעות', swap: 'החלפה', season: 'עונה' };
+const HOOKS_HE = { fact: 'עובדה מפתיעה', money: 'כסף', mistake: 'טעות', swap: 'החלפה', season: 'עונה', truth: 'האמת על', nobodytold: 'אף אחד לא סיפר', wishknew: 'הלוואי שידעתם', savetime: 'לחסוך זמן' };
 const STYLES_HE = { bars: 'פסים צהובים', outline: 'קו מתאר לבן' };
 
 /** The cover-test rows since the test started, or in the last `days`, whichever is shorter. */

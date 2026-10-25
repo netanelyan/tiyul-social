@@ -179,7 +179,7 @@ export async function buildPost({
     if (!check.ok) throw new Error(`a ${shape.type} post cannot be built from ${slug}: ${check.why}`);
   }
 
-  // THE COVER TEST (./cover.js): which of the five hook shapes this page can carry,
+  // THE COVER TEST (./cover.js): which of the hook shapes this page can carry,
   // asked here for the same reason canBuild is, before the photographs are spent. A
   // page with none of them is refused, and the slate tries another destination.
   const coverOn = postConfig().posts.cover.on;
@@ -196,7 +196,7 @@ export async function buildPost({
       month: israelMonth(),
     });
     coverHook = pickCoverHook(hooks, { history: seen, rand });
-    if (!coverHook) throw new Error(`the cover test: ${slug}'s page supplies none of the five hook shapes`);
+    if (!coverHook) throw new Error(`the cover test: ${slug}'s page supplies none of the cover hook shapes`);
     say(`cover: ${coverHook.shape} in ${coverStyle}, "${coverHook.lines.join(' ')}"`);
   }
 
