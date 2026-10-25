@@ -1006,7 +1006,7 @@ function posts(raw) {
       startedAt: /^\d{4}-\d{2}-\d{2}$/.test(String(raw.cover?.startedAt || '')) ? raw.cover.startedAt : null,
       testDays: Math.max(1, count(raw.cover?.testDays, 14)),
       shapes: Object.fromEntries(
-        ['fact', 'money', 'mistake', 'swap', 'season'].map((s) => [s, Math.max(0, num(raw.cover?.shapes?.[s], 1))])
+        ['fact', 'money', 'mistake', 'swap', 'season', 'truth', 'nobodytold', 'wishknew', 'savetime'].map((s) => [s, Math.max(0, num(raw.cover?.shapes?.[s], 1))])
       ),
       shapeMemory: Math.max(0, count(raw.cover?.shapeMemory, 2)),
       maxLineChars: Math.max(6, count(raw.cover?.maxLineChars, 13)),
