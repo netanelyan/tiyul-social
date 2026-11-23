@@ -1364,6 +1364,9 @@ function slateCfg(raw) {
   const videos = raw.videos || {};
   return {
     on: raw.on === true,
+    // Builds nothing and publishes nothing while true, but keeps `on`, so the
+    // older timers the slate replaced stay off too. See _slate_comment.
+    paused: raw.paused === true,
     autoApprove: raw.autoApprove === true,
     digestAt: HHMM.test(String(raw.digestAt || '')) ? String(raw.digestAt) : '08:00',
     slots: {

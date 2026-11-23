@@ -1857,7 +1857,9 @@ async function publishSlateItem(date, { item, platform }) {
 /** The slate's minute: expire, build at digest time, publish what is due, resolve URLs. */
 async function runSlate(now = Date.now()) {
   const cfg = postConfig().slate;
-  if (!cfg.on) return;
+  // Paused returns before the expiry pass too: an unapproved slate left from
+  // before the pause stays as it was, and nothing in it can come due.
+  if (!cfg.on || cfg.paused) return;
   const date = israelDate(now);
 
   for (const s of store.allSlates()) {
@@ -5298,7 +5300,10 @@ async function main() {
   // guide format switched off in formats.mix still announced "1 guides" at boot, and
   // the only way to know better was to read the config. A status line that disagrees
   // with the program is worse than no status line.
-  if (postConfig().slate.on) {
+  if (postConfig().slate.on && postConfig().slate.paused) {
+    console.log('   daily slate: PAUSED - nothing is built or published (slate.paused in post-config.json)');
+    console.log('   (format rotation, deck ideas and the news gather stay off too)');
+  } else if (postConfig().slate.on) {
     const v = postConfig().slate.videos.slots;
     console.log(`   daily slate: the only path - digest at ${postConfig().slate.digestAt}, then Zernio`);
     console.log(`   videos: ${v.tiktok.length} TikTok + ${v.instagram.length} Reels a day, only with licensed sound`);
