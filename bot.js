@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { loadEnv } from './src/env.js';
 loadEnv();
 
@@ -1564,7 +1564,15 @@ async function sendSlateDigest(slate) {
   else if (media.length === 1) {
     const [m] = media;
     const send = m.type === 'video' ? bot.telegram.sendVideo.bind(bot.telegram) : bot.telegram.sendPhoto.bind(bot.telegram);
-    await send(staging, m.media, { caption: m.caption }).catch(() => {});
+    // One video a day is the whole slate since 24 Nov 2026, so this preview is how
+    // the owner sees what goes out before the skip button stops mattering. When
+    // Telegram cannot fetch the URL (WEBPAGE_CURL_FAILED has happened), the file on
+    // this box goes up instead, and a failure of both is logged, not swallowed.
+    const file = m.type === 'video' ? slate.items.find((it) => it.cand?.kind === 'clip')?.cand.clip?.file : null;
+    await send(staging, m.media, { caption: m.caption }).catch(async (e) => {
+      if (file && existsSync(file)) await send(staging, { source: file }, { caption: m.caption }).catch((e2) => console.error('slate preview:', e2.message));
+      else console.error('slate preview:', e.message);
+    });
   }
   const msg = await bot.telegram.sendMessage(staging, text, keyboard.length ? { reply_markup: { inline_keyboard: keyboard } } : {});
   slate.digest = { chatId: staging, messageId: msg.message_id };
