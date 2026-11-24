@@ -11,6 +11,7 @@
     "start": "node bot.js",
     "growth": "node src/growth/main.js",
     "zernio-test": "node scripts/zernio-test.js",
+    "queue-videos": "node scripts/queue-videos.js",
     "trends": "node scripts/trends-run.js",
     "ig-discovery": "node scripts/ig-discovery-token.js",
     "test": "node scripts/selftest.js",

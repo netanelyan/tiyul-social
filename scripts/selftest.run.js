@@ -10173,13 +10173,40 @@ group('the daily slate - one tap a day, and nothing goes out unapproved');
   const z = await import('../src/publish/zernio.js');
   const { publishTikTokRouted, publishInstagramRouted } = await import('../src/publish/tiktokRoute.js');
   const { inWindow, inShabbat } = await import('../src/schedule.js');
-  const cfg = postConfig().slate;
+  const liveSlate = postConfig().slate;
 
-  // THE SCHEDULE IS ON, since 2026-10-11: the private test and one public post the
-  // owner approved by hand came first. Every day still waits for the morning tap.
-  eq('the slate is on', cfg.on, true);
-  eq('and nothing is approved without the tap', cfg.autoApprove, false);
+  // THE SCHEDULE IS ON, since 2026-10-11. Since 2026-11-24 it posts one queued,
+  // narrated video a day, Sunday to Thursday, approved automatically with the
+  // digest's skip button as the stop, and no slideshows at all (the owner's call).
+  eq('the slate is on', liveSlate.on, true);
+  eq('and not paused', liveSlate.paused, false);
+  eq('approved without a tap, the skip button is the stop', liveSlate.autoApprove, true);
   eq('TikTok slate posts are public', postConfig().publish.tiktok.privacy, 'PUBLIC_TO_EVERYONE');
+  const days = ['2026-10-11', '2026-10-12', '2026-10-13', '2026-10-14', '2026-10-15', '2026-10-16', '2026-10-17'];
+  ok('no slideshow slot on any day of the week', days.every((d) => { const s = plan.slotsFor(d, liveSlate); return !s.tiktok.length && !s.instagram.length; }));
+  ok('one video a day Sunday to Thursday', days.slice(0, 5).every((d) => { const v = plan.slotsFor(d, liveSlate.videos); return v.tiktok.length === 1 && v.instagram.length === 1; }));
+  ok('and none on Friday or Saturday', days.slice(5).every((d) => { const v = plan.slotsFor(d, liveSlate.videos); return !v.tiktok.length && !v.instagram.length; }));
+
+  /*
+    The scheduling mechanics below are checked on the slideshow schedule the
+    slate ran until 2026-11-24, kept here as a fixture: the live config has no
+    slideshow slots left to space, ramp or drop, and the mechanics still serve
+    the video lane and any slideshows that come back.
+  */
+  const cfg = {
+    ...liveSlate,
+    slotsByDay: {
+      5: { tiktok: ['12:10', '12:55', '13:40'], instagram: ['13:20'] },
+      6: { tiktok: ['20:10', '20:55', '21:40'], instagram: ['21:20'] },
+    },
+    videos: {
+      ...liveSlate.videos,
+      slotsByDay: {
+        5: { tiktok: ['12:30'], instagram: ['13:50'] },
+        6: { tiktok: ['20:30'], instagram: ['21:50'] },
+      },
+    },
+  };
 
   // SCHEDULE SPACING. Sunday 2026-10-11, Friday the 16th, Saturday the 17th.
   const sun = plan.slotsFor('2026-10-11', cfg);
@@ -10261,7 +10288,9 @@ group('the daily slate - one tap a day, and nothing goes out unapproved');
   ok('and carries the one-tap button', msg.keyboard.flat().some((b) => b.callback_data === 'sa:2026-10-11'));
   ok('and a skip per post', msg.keyboard.flat().filter((b) => /^ss:2026-10-11:\d$/.test(b.callback_data)).length === 2);
   ok('with each post\'s time, platform and slide count', /אינסטגרם \d\d:\d\d/.test(msg.text) && /2 שקפים/.test(msg.text));
-  ok('and a TikTok draft says it goes on approval, not at a time', /טיקטוק: טיוטה מיד עם האישור/.test(msg.text) && !/טיקטוק 12:15/.test(msg.text));
+  // Through Zernio (the live route since 24 Nov 2026) TikTok posts at its slot, so
+  // the digest shows the time; as a draft it went the moment the slate was approved.
+  ok('and TikTok, through Zernio, shows its slot time', /טיקטוק \d\d:\d\d/.test(msg.text) && !/טיוטה מיד עם האישור/.test(msg.text));
   ok('once approved the button is gone', !digestMessage(st.approveAll(fresh(), { by: 'test' })).keyboard.flat().some((b) => b.callback_data?.startsWith('sa:')));
   eq('the album is the covers', msg.media.length, 2);
 
@@ -10373,8 +10402,10 @@ group('the daily slate - one tap a day, and nothing goes out unapproved');
   const routeSrc = readFileSync(new URL('../src/publish/tiktokRoute.js', import.meta.url), 'utf8');
   ok('and the router has one way into the inbox, always a draft', (routeSrc.match(/publishTikTok\(/g) || []).length === 1 && /draft: true/.test(routeSrc));
 
-  // BACK TO DRAFTS (20 Oct 2026): the owner picks the sound in the app.
-  ok('TikTok posts are inbox drafts in the live config', postConfig().publish.tiktok.via === 'draft');
+  // BACK TO DRAFTS (20 Oct 2026): the owner picked the sound in the app. Through
+  // Zernio again since 24 Nov 2026: the queued videos carry their own sound, and a
+  // draft would go out the moment the slate is approved, before the skip button.
+  ok('TikTok posts go through Zernio in the live config', postConfig().publish.tiktok.via === 'zernio');
   const draftRoute = { ...route, via: 'draft' };
   let zernioAsked = false;
   const asDraft = await publishTikTokRouted(anyCand, { cfg: draftRoute, deps: { zernio: async () => ((zernioAsked = true), {}), draft: async (c) => (drafted++, { draft: true, tiktokDraft: c.tiktokDraft }), usedLast24h: () => 9, cap: () => 3 } });
@@ -10470,7 +10501,7 @@ group('the daily slate - one tap a day, and nothing goes out unapproved');
 
   // A SLATE BUILT LATE drops the slots already past, before the ramp picks: the first
   // start was in the evening, and the tap would have posted every past slot at once.
-  const lateCfg = postConfig().slate;
+  const lateCfg = cfg; // the slideshow fixture above: the live config has no slideshow slots
   const evening = plan.slotsFor('2026-10-11', lateCfg, { rampTiktok: 2, notBefore: Date.parse('2026-10-11T15:50:00Z') });
   eq('at 18:50 only the TikTok slots still ahead are left', evening.tiktok.map((t) => t.toISOString().slice(11, 16)).join(','), '16:15,18:15');
   eq('and the evening Instagram one', evening.instagram.map((t) => t.toISOString().slice(11, 16)).join(','), '17:30');

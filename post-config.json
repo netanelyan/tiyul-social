@@ -3243,7 +3243,7 @@
   ],
   "publish": {
     "tiktok": {
-      "via": "draft",
+      "via": "zernio",
       "privacy": "PUBLIC_TO_EVERYONE",
       "autoAddMusic": true,
       "fallback": "draft",
@@ -3251,7 +3251,19 @@
     }
   },
   "_slate_comment": [
-    "PAUSED SINCE 23 NOV 2026. No slate was approved from 3 to 23 Nov, so every",
+    "SINCE 24 NOV 2026: ONE NARRATED VIDEO A DAY, SUNDAY TO THURSDAY, POSTED UNLESS",
+    "STOPPED. The owner's call: videos only, no stock slideshows, and no daily tap.",
+    "The videos are rendered on the desktop (demos/anim: a narrated mascot over an",
+    "original music bed) from fact-checked scripts, uploaded, and queued into the",
+    "slate inbox by scripts/queue-videos.js, which takes the one video slot a day.",
+    "`autoApprove` is on, so the digest arrives approved and its skip button is",
+    "the stop. `slotsByDay` empties the slideshow slots on every day of the week",
+    "(an empty top-level `slots` list would fall back to the defaults), and the",
+    "video slots run Sunday to Thursday. TikTok goes through Zernio (`via`), so",
+    "it posts publicly at its slot instead of as an inbox draft the moment the",
+    "slate is approved. When the queue is empty nothing posts that day.",
+    "",
+    "PAUSED FROM 23 TO 24 NOV 2026. No slate was approved from 3 to 23 Nov, so every",
     "build was spent on posts nobody published, and the stock-photo slideshows are",
     "the content Instagram (since 30 Apr 2026) and TikTok demote account-wide as",
     "unoriginal. `paused: true` builds and publishes nothing; `on` stays true so",
@@ -3292,22 +3304,27 @@
   ],
   "slate": {
     "on": true,
-    "paused": true,
-    "autoApprove": false,
+    "paused": false,
+    "autoApprove": true,
     "digestAt": "08:00",
     "slots": {
       "tiktok": ["12:15", "19:15", "21:15"],
       "instagram": ["13:15", "20:30"]
     },
     "slotsByDay": {
-      "5": { "tiktok": ["12:10", "12:55", "13:40"], "instagram": ["13:20"] },
-      "6": { "tiktok": ["20:10", "20:55", "21:40"], "instagram": ["21:20"] }
+      "0": { "tiktok": [], "instagram": [] },
+      "1": { "tiktok": [], "instagram": [] },
+      "2": { "tiktok": [], "instagram": [] },
+      "3": { "tiktok": [], "instagram": [] },
+      "4": { "tiktok": [], "instagram": [] },
+      "5": { "tiktok": [], "instagram": [] },
+      "6": { "tiktok": [], "instagram": [] }
     },
     "videos": {
       "slots": { "tiktok": ["13:45"], "instagram": ["21:45"] },
       "slotsByDay": {
-        "5": { "tiktok": ["12:30"], "instagram": ["13:50"] },
-        "6": { "tiktok": ["20:30"], "instagram": ["21:50"] }
+        "5": { "tiktok": [], "instagram": [] },
+        "6": { "tiktok": [], "instagram": [] }
       }
     },
     "rampDays": 7,
