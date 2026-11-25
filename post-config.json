@@ -3251,10 +3251,12 @@
     }
   },
   "_slate_comment": [
-    "PAUSED SINCE THE NIGHT OF 25 NOV 2026. After the first video posted, the owner",
-    "did not like the format (the same card every item, emojis instead of places)",
-    "and asked for a map-journey style about countries and destinations. The 19",
-    "queued videos stay in the inbox; nothing posts until `paused` is false again.",
+    "SINCE 29 NOV 2026: MAP JOURNEYS. After the first video posted on 25 Nov, the",
+    "owner did not like the card format (the same card every item, emojis instead",
+    "of places) and asked for a map-journey style about countries and destinations.",
+    "The slate was paused from that night to the evening of 28 Nov; the 19 card",
+    "videos left the inbox (data/slate-inbox-retired/) and the first batch of map",
+    "journeys took their place, queued from 29 Nov.",
     "",
     "SINCE 24 NOV 2026: ONE NARRATED VIDEO A DAY, SUNDAY TO THURSDAY, POSTED UNLESS",
     "STOPPED. The owner's call: videos only, no stock slideshows, and no daily tap.",
@@ -3309,7 +3311,7 @@
   ],
   "slate": {
     "on": true,
-    "paused": true,
+    "paused": false,
     "autoApprove": true,
     "digestAt": "08:00",
     "slots": {

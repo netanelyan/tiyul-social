@@ -10178,9 +10178,10 @@ group('the daily slate - one tap a day, and nothing goes out unapproved');
   // THE SCHEDULE IS ON, since 2026-10-11. Since 2026-11-24 it posts one queued,
   // narrated video a day, Sunday to Thursday, approved automatically with the
   // digest's skip button as the stop, and no slideshows at all (the owner's call).
-  // Paused from the night of 2026-11-25 while the videos move to a new style.
+  // Paused from the night of 2026-11-25 to 2026-11-28 while the videos moved to
+  // map journeys about countries.
   eq('the slate is on', liveSlate.on, true);
-  eq('and paused while the new video style is built', liveSlate.paused, true);
+  eq('and not paused, the map journeys are queued', liveSlate.paused, false);
   eq('approved without a tap, the skip button is the stop', liveSlate.autoApprove, true);
   eq('TikTok slate posts are public', postConfig().publish.tiktok.privacy, 'PUBLIC_TO_EVERYONE');
   const days = ['2026-10-11', '2026-10-12', '2026-10-13', '2026-10-14', '2026-10-15', '2026-10-16', '2026-10-17'];
