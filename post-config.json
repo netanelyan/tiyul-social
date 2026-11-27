@@ -3251,6 +3251,14 @@
     }
   },
   "_slate_comment": [
+    "SINCE 28 NOV 2026: EXPLAINERS, SEVEN DAYS A WEEK, NO APPROVAL. On 27 Nov the",
+    "owner rejected the map-journey format too and kept the ~40-second narrated",
+    "explainers (videos/explain in demos/anim). They asked for a video every day",
+    "and to post without approving each one: the video slots now run all week,",
+    "Friday before Shabbat (TikTok 12:45, Instagram 13:45) and Saturday after it",
+    "(TikTok 20:30, Instagram 21:45). The skip button in the digest is still the",
+    "stop. The ten journeys left the inbox (data/slate-inbox-retired/).",
+    "",
     "SINCE 29 NOV 2026: MAP JOURNEYS. After the first video posted on 25 Nov, the",
     "owner did not like the card format (the same card every item, emojis instead",
     "of places) and asked for a map-journey style about countries and destinations.",
@@ -3268,7 +3276,8 @@
     "(an empty top-level `slots` list would fall back to the defaults), and the",
     "video slots run Sunday to Thursday. TikTok goes through Zernio (`via`), so",
     "it posts publicly at its slot instead of as an inbox draft the moment the",
-    "slate is approved. When the queue is empty nothing posts that day.",
+    "slate is approved. When the queue is empty nothing posts that day. (Since",
+    "28 Nov the video slots run every day; see the top of this comment.)",
     "",
     "PAUSED FROM 23 TO 24 NOV 2026. No slate was approved from 3 to 23 Nov, so every",
     "build was spent on posts nobody published, and the stock-photo slideshows are",
@@ -3330,8 +3339,8 @@
     "videos": {
       "slots": { "tiktok": ["13:45"], "instagram": ["21:45"] },
       "slotsByDay": {
-        "5": { "tiktok": [], "instagram": [] },
-        "6": { "tiktok": [], "instagram": [] }
+        "5": { "tiktok": ["12:45"], "instagram": ["13:45"] },
+        "6": { "tiktok": ["20:30"], "instagram": ["21:45"] }
       }
     },
     "rampDays": 7,
